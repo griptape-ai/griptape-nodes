@@ -4,11 +4,11 @@ import binascii
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urljoin
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
@@ -31,10 +31,114 @@ STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
 
 logger = logging.getLogger("griptape_nodes_api")
 
+# Global event queue - initialized as None and set when starting the API
+event_queue: Queue | None = None
 
-def create_fastapi_app(static_dir: Path, event_queue: Queue) -> FastAPI:
-    """Create and configure the FastAPI application."""
-    app = FastAPI()
+# Global static directory - initialized as None and set when starting the API
+static_dir: Path | None = None
+
+
+def get_event_queue() -> Queue:
+    """FastAPI dependency to get the event queue."""
+    if event_queue is None:
+        msg = "Event queue is not initialized"
+        raise HTTPException(status_code=500, detail=msg)
+    return event_queue
+
+
+def get_static_dir() -> Path:
+    """FastAPI dependency to get the static directory."""
+    if static_dir is None:
+        msg = "Static directory is not initialized"
+        raise HTTPException(status_code=500, detail=msg)
+    return static_dir
+
+
+"""Create and configure the FastAPI application."""
+app = FastAPI()
+
+
+@app.post("/static-upload-urls")
+async def _create_static_file_upload_url(request: Request) -> dict:
+    """Create a URL for uploading a static file.
+
+    Similar to a presigned URL, but for uploading files to the static server.
+    """
+    base_url = request.base_url
+    body = await request.json()
+    file_name = body["file_name"]
+    url = urljoin(str(base_url), f"/static-uploads/{file_name}")
+
+    return {"url": url}
+
+
+@app.put("/static-uploads/{file_path:path}")
+async def _create_static_file(
+    request: Request, file_path: str, static_directory: Annotated[Path, Depends(get_static_dir)]
+) -> dict:
+    """Upload a static file to the static server."""
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise ValueError(msg)
+
+    file_full_path = Path(static_directory / file_path)
+
+    # Create parent directories if they don't exist
+    file_full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = await request.body()
+    try:
+        file_full_path.write_bytes(data)
+    except binascii.Error as e:
+        msg = f"Invalid base64 encoding for file {file_path}."
+        logger.error(msg)
+        raise HTTPException(status_code=400, detail=msg) from e
+    except (OSError, PermissionError) as e:
+        msg = f"Failed to write file {file_path} to {static_dir}: {e}"
+        logger.error(msg)
+        raise HTTPException(status_code=500, detail=msg) from e
+
+    static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_path}"
+    return {"url": static_url}
+
+
+@app.get("/static-uploads/")
+async def _list_static_files(static_directory: Annotated[Path, Depends(get_static_dir)]) -> dict:
+    """List all static files in the static server."""
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise HTTPException(status_code=500, detail=msg)
+
+    try:
+        file_names = []
+        if static_directory.exists():
+            for file_path in static_directory.rglob("*"):
+                if file_path.is_file():
+                    relative_path = file_path.relative_to(static_directory)
+                    file_names.append(str(relative_path))
+    except (OSError, PermissionError) as e:
+        msg = f"Failed to list files in static directory: {e}"
+        logger.error(msg)
+        raise HTTPException(status_code=500, detail=msg) from e
+    else:
+        return {"files": file_names}
+
+
+@app.post("/engines/request")
+async def _create_event(request: Request, queue: Annotated[Queue, Depends(get_event_queue)]) -> None:
+    body = await request.json()
+    _process_api_event(body, queue)
+
+
+def start_api(static_directory: Path, queue: Queue) -> None:
+    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
+    global event_queue, static_dir  # noqa: PLW0603
+    event_queue = queue
+    static_dir = static_directory
+
+    logging.getLogger("uvicorn").addHandler(
+        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
+    )
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -53,64 +157,8 @@ def create_fastapi_app(static_dir: Path, event_queue: Queue) -> FastAPI:
 
     app.mount(
         STATIC_SERVER_URL,
-        StaticFiles(directory=static_dir),
+        StaticFiles(directory=static_directory),
         name="static",
-    )
-
-    @app.post("/static-upload-urls")
-    async def create_static_file_upload_url(request: Request) -> dict:
-        """Create a URL for uploading a static file.
-
-        Similar to a presigned URL, but for uploading files to the static server.
-        """
-        base_url = request.base_url
-        body = await request.json()
-        file_name = body["file_name"]
-        url = urljoin(str(base_url), f"/static-uploads/{file_name}")
-
-        return {"url": url}
-
-    @app.put("/static-uploads/{file_path:path}")
-    async def create_static_file(request: Request, file_path: str) -> dict:
-        """Upload a static file to the static server."""
-        if not STATIC_SERVER_ENABLED:
-            msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
-            raise ValueError(msg)
-
-        file_full_path = Path(static_dir / file_path)
-
-        # Create parent directories if they don't exist
-        file_full_path.parent.mkdir(parents=True, exist_ok=True)
-
-        data = await request.body()
-        try:
-            file_full_path.write_bytes(data)
-        except binascii.Error as e:
-            msg = f"Invalid base64 encoding for file {file_path}."
-            logger.error(msg)
-            raise HTTPException(status_code=400, detail=msg) from e
-        except (OSError, PermissionError) as e:
-            msg = f"Failed to write file {file_path} to {static_dir}: {e}"
-            logger.error(msg)
-            raise HTTPException(status_code=500, detail=msg) from e
-
-        static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_path}"
-        return {"url": static_url}
-
-    @app.post("/engines/request")
-    async def create_event(request: Request) -> None:
-        body = await request.json()
-        _process_api_event(body, event_queue)
-
-    return app
-
-
-def start_api(static_dir: Path, event_queue: Queue) -> None:
-    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
-    app = create_fastapi_app(static_dir, event_queue)
-
-    logging.getLogger("uvicorn").addHandler(
-        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
     )
 
     uvicorn.run(
