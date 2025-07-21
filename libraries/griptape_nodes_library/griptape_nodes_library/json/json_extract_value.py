@@ -95,17 +95,24 @@ class JsonExtractValue(DataNode):
 
     def _perform_extraction(self) -> None:
         """Perform the JSON extraction and set the output value."""
+        import json
+
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
 
         # Extract the value
         extracted_value = self._extract_value(json_data, path)
 
-        # Convert to string for readability
+        # Ensure the extracted value is valid JSON
         if extracted_value is None:
             result = "{}"
         else:
-            result = extracted_value
+            try:
+                # Convert the extracted value to valid JSON string
+                result = json.dumps(extracted_value, ensure_ascii=False)
+            except (TypeError, ValueError):
+                # If the value can't be serialized as JSON, return empty object
+                result = "{}"
 
         # Set the output
         self.set_parameter_value("output", result)
