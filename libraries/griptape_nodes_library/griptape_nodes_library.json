@@ -960,6 +960,7 @@
         "category": "image",
         "description": "Bash an image together with lots of other images",
         "display_name": "Image Bash",
+        "icon": "images",
         "group": "edit"
       }
     },
@@ -970,7 +971,8 @@
         "category": "image",
         "description": "Merge images together in different layouts with grid options and dynamic image input list",
         "display_name": "Merge Images",
-        "group": "edit"
+        "group": "edit",
+        "icon": "squares-unite"
       }
     },
     {

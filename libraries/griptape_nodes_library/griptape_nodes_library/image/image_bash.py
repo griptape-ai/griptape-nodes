@@ -105,7 +105,7 @@ class ImageBash(DataNode):
                 tooltip="Open the editor to create an image",
                 ui_options={
                     "button": True,
-                    "button_icon": "brush",
+                    "button_icon": "images",
                     "button_label": "Open Image Bash Editor",
                     "modal": "ImageBashModal",
                 },
