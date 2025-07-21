@@ -329,9 +329,16 @@ class ImageBash(DataNode):
                     break
 
             if existing_konva_img:
-                # Preserve existing layer data, just update source_id if needed
+                # Preserve ALL existing layer data, including scale, rotation, position, etc.
                 konva_img = existing_konva_img.copy()
                 konva_img["source_id"] = input_img["id"]
+                # Ensure all required properties are present
+                if "scaleX" not in konva_img:
+                    konva_img["scaleX"] = 1.0
+                if "scaleY" not in konva_img:
+                    konva_img["scaleY"] = 1.0
+                if "rotation" not in konva_img:
+                    konva_img["rotation"] = 0
                 konva_images.append(konva_img)
             else:
                 # Create new layer
@@ -477,8 +484,10 @@ class ImageBash(DataNode):
     def _handle_canvas_size_change(self, value: Any) -> None:
         """Handle canvas_size parameter changes."""
         if value == "custom":
+            # 2. If user modifies canvas_size to custom, let them specify width and height
             self._enable_custom_dimensions()
         elif isinstance(value, str) and value in CANVAS_DIMENSIONS:
+            # 1. If user modifies canvas_size to anything other than custom, get width/height from CANVAS_DIMENSIONS
             self._set_preset_dimensions(value)
 
         # Update bash_image canvas size when canvas_size changes
@@ -526,7 +535,8 @@ class ImageBash(DataNode):
 
     def _handle_bash_image_change(self, value: Any) -> None:
         """Handle bash_image parameter changes."""
-        # Check if canvas dimensions have changed in the metadata
+        # Only sync canvas dimensions if the bash_image is being initialized for the first time
+        # or if there's a significant mismatch that needs to be resolved
         if isinstance(value, dict):
             meta = value.get("meta", {})
         else:
@@ -536,10 +546,15 @@ class ImageBash(DataNode):
         metadata_width = canvas_size_meta.get("width")
         metadata_height = canvas_size_meta.get("height")
 
+        # Only sync if we have metadata dimensions and they're significantly different from current parameters
         if metadata_width and metadata_height:
-            self._sync_canvas_dimensions_from_metadata(metadata_width, metadata_height)
+            current_width, current_height = self._get_canvas_dimensions()
+            # Only sync if there's a significant difference (more than 1 pixel)
+            if abs(metadata_width - current_width) > 1 or abs(metadata_height - current_height) > 1:
+                self._sync_canvas_dimensions_from_metadata(metadata_width, metadata_height)
 
-        # Initialize bash_image metadata with current parameters if it's still using default values
+        # Don't rebuild konva images when bash_image changes - preserve editor changes
+        # Only update output image if it's not a placeholder
         self._update_output_image()
 
     def _sync_canvas_dimensions_from_metadata(self, metadata_width: int, metadata_height: int) -> None:
@@ -548,8 +563,9 @@ class ImageBash(DataNode):
         current_width, current_height = self._get_canvas_dimensions()
 
         if metadata_width != current_width or metadata_height != current_height:
-            # Set canvas_size to custom
+            # Set canvas_size to custom and enable custom dimensions
             self.set_parameter_value("canvas_size", "custom")
+            self._enable_custom_dimensions()
 
             # Update width and height parameters
             self.set_parameter_value("width", metadata_width)
@@ -580,16 +596,19 @@ class ImageBash(DataNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "canvas_size":
+            # 1. If user modifies canvas_size to anything other than custom, get width/height from CANVAS_DIMENSIONS
+            # 2. If user modifies canvas_size to custom, let them specify width and height
             self._handle_canvas_size_change(value)
         elif parameter.name in ["width", "height"] and value is not None:
-            # Update bash_image canvas size when width/height changes
+            # 3. If width and height are changed - update the bash_image.meta value to have the appropriate canvas size width and height
             self._update_bash_image_canvas_size()
         elif "input_images" in parameter.name:
+            # 5. If input_images in parameter.name is updated, handle input_image_changes as before
             self._handle_input_images_change(value)
         elif parameter.name == "bash_image" and value is not None:
+            # 4. If bash_image.meta width and height changes from an external process,
+            # make sure the canvas_size is CUSTOM and set width and height from the bash_image.meta
             self._handle_bash_image_change(value)
-        elif parameter.name == "canvas_size" and value is not None:
-            self._update_canvas_size_metadata(value)
 
         return super().after_value_set(parameter, value)
 
