@@ -22,6 +22,7 @@ class FileSystemPicker(Trait):
 
     def __init__(
         self,
+        *,
         allow_files: bool = False,
         allow_directories: bool = True,
         multiple: bool = False,
