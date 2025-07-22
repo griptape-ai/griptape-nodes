@@ -39,10 +39,7 @@ class SyncManager:
     """Manages workflow file synchronization."""
 
     def __init__(
-        self,
-        config_manager: ConfigManager,
-        secrets_manager: SecretsManager,
-        event_manager: EventManager | None = None,
+        self, config_manager: ConfigManager, secrets_manager: SecretsManager, event_manager: EventManager
     ) -> None:
         """Initialize the SyncManager.
 
@@ -51,7 +48,6 @@ class SyncManager:
             secrets_manager: The SecretsManager for accessing storage secrets.
             event_manager: The EventManager instance to use for event handling.
         """
-        self._event_manager = event_manager
         self._workspace_path = Path(str(config_manager.workspace_path))
 
         bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID")
@@ -61,7 +57,7 @@ class SyncManager:
             logger.warning("GT_CLOUD_BUCKET_ID secret not found - sync functionality will be disabled")
             self._storage_utility = None
         else:
-            workflows_directory = config_manager.get_config_value("workflows_directory", default="workflows")
+            workflows_directory = config_manager.get_config_value("workflows_directory")
 
             storage_driver = GriptapeCloudStorageDriver(
                 bucket_id=bucket_id,
@@ -72,13 +68,8 @@ class SyncManager:
             self._storage_utility = StorageUtility(storage_driver)
 
         # Register event handlers
-        if self._event_manager:
-            self._event_manager.assign_manager_to_request_type(
-                SyncUpWorkflowsRequest, self.on_sync_up_workflows_request
-            )
-            self._event_manager.assign_manager_to_request_type(
-                SyncDownWorkflowsRequest, self.on_sync_down_workflows_request
-            )
+        event_manager.assign_manager_to_request_type(SyncUpWorkflowsRequest, self.on_sync_up_workflows_request)
+        event_manager.assign_manager_to_request_type(SyncDownWorkflowsRequest, self.on_sync_down_workflows_request)
 
     def on_sync_up_workflows_request(
         self, _request: SyncUpWorkflowsRequest
