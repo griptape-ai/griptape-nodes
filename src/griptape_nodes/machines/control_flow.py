@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import time
 from typing import TYPE_CHECKING
-
 from griptape.events import EventBus
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -18,16 +17,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
-
-
-@dataclass
-class NextNodeInfo:
-    """Information about the next node to execute and how to reach it."""
-
-    node: BaseNode
-    entry_parameter: Parameter | None
-
-
+from griptape_nodes.app.app_sessions import event_queue
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
@@ -42,17 +32,14 @@ class ControlFlowContext:
     resolution_machine: NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
+    start_time: float | None  # Track flow start time
 
     def __init__(self) -> None:
         self.resolution_machine = NodeResolutionMachine()
         self.current_node = None
+        self.start_time = None  # Initialize start time
 
-    def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
-        """Get the next node and the target parameter that will receive the control flow.
-
-        Returns:
-            NextNodeInfo | None: Information about the next node or None if no connection
-        """
+    def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
         if self.current_node is not None:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -86,16 +73,21 @@ class ResolveNodeState(State):
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
             return CompleteState
-        # Mark the node unresolved, and broadcast an event to the GUI.
+        # Mark the node unresolved and notify GUI of the active control node
         context.current_node.make_node_unresolved(
             current_states_to_trigger_change_event=set(
-                {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                {
+                    NodeResolutionState.UNRESOLVED,
+                    NodeResolutionState.RESOLVED,
+                    NodeResolutionState.RESOLVING,
+                }
             )
         )
-        # Now broadcast that we have a current control node.
-        EventBus.publish_event(
+        event_queue.put(
             ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
+                wrapped_event=ExecutionEvent(
+                    payload=CurrentControlNodeEvent(node_name=context.current_node.name)
+                )
             )
         )
         logger.info("Resolving %s", context.current_node.name)
@@ -112,8 +104,6 @@ class ResolveNodeState(State):
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
             context.resolution_machine.resolve_node(context.current_node)
-        print("i am in resolvenodestate onupdate")
-        print("current state", context.resolution_machine.get_current_state())
         if context.resolution_machine.is_complete():
             return NextNodeState
         return None
@@ -134,8 +124,9 @@ class NextNodeState(State):
 
         if next_output is not None:
             context.selected_output = next_output
-            next_node_info = context.get_next_node(context.selected_output)
-            EventBus.publish_event(
+            next_node = context.get_next_node(context.selected_output)
+            # Inform GUI which control output was selected
+            event_queue.put(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=SelectedControlOutputEvent(
@@ -176,7 +167,7 @@ class CompleteState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
-            EventBus.publish_event(
+            event_queue.put(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
@@ -189,6 +180,10 @@ class CompleteState(State):
                 )
             )
         logger.info("Flow is complete.")
+        # Log flow duration if start_time was recorded
+        if context.start_time is not None:
+            duration = time.time() - context.start_time
+            logger.info("Flow took %.3f seconds.", duration)
         return None
 
     @staticmethod
@@ -204,23 +199,20 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         self._context.current_node = start_node
-        # Set entry control parameter for initial node (None for workflow start)
-        start_node.set_entry_control_parameter(None)
+        # Record the start time for benchmarking
+        self._context.start_time = time.time()
         # Set up to debug
         self._context.paused = debug_mode
         # Get the flow and make all nodes unresolved
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         parent_flow_str = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(start_node.name)
-        print(parent_flow_str)
         parent_flow = None
 
         if parent_flow_str is not None:
             parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_str)
             all_nodes = list(parent_flow.nodes.values())
             for node_to_unresolve in all_nodes:
-                # make it unresolved if it is resolved:
                 node_to_unresolve.make_node_unresolved({NodeResolutionState.RESOLVED})
-        
         self.start(ResolveNodeState)  # Begins the flow
 
     def update(self) -> None:
