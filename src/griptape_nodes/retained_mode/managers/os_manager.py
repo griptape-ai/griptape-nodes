@@ -3,25 +3,38 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
 from rich.console import Console
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
+    ChangeDirectoryRequest,
+    ChangeDirectoryResultFailure,
+    ChangeDirectoryResultSuccess,
+    FileSystemEntry,
+    GetCurrentDirectoryRequest,
+    GetCurrentDirectoryResultFailure,
+    GetCurrentDirectoryResultSuccess,
+    ListDirectoryRequest,
+    ListDirectoryResultFailure,
+    ListDirectoryResultSuccess,
     OpenAssociatedFileRequest,
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 console = Console()
 logger = logging.getLogger("griptape_nodes")
 
 
-class DiskSpaceInfo(NamedTuple):
-    """Disk space information in bytes."""
+@dataclass
+class DiskSpaceInfo:
+    """Information about disk space usage."""
 
     total: int
     used: int
@@ -40,6 +53,68 @@ class OSManager:
             event_manager.assign_manager_to_request_type(
                 request_type=OpenAssociatedFileRequest, callback=self.on_open_associated_file_request
             )
+            event_manager.assign_manager_to_request_type(
+                request_type=ListDirectoryRequest, callback=self.on_list_directory_request
+            )
+            event_manager.assign_manager_to_request_type(
+                request_type=GetCurrentDirectoryRequest, callback=self.on_get_current_directory_request
+            )
+            event_manager.assign_manager_to_request_type(
+                request_type=ChangeDirectoryRequest, callback=self.on_change_directory_request
+            )
+        self._current_dir = None
+
+    @property
+    def current_dir(self) -> Path:
+        """Get the current directory."""
+        if self._current_dir is None:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            self._current_dir = GriptapeNodes.ConfigManager().workspace_path
+        return self._current_dir
+
+    @current_dir.setter
+    def current_dir(self, path: Path) -> None:
+        """Set the current directory."""
+        self._current_dir = path
+
+    def _expand_path(self, path_str: str) -> Path:
+        """Expand a path string, handling tilde and environment variables.
+
+        Args:
+            path_str: Path string that may contain ~ or environment variables
+
+        Returns:
+            Expanded Path object
+        """
+        # Expand tilde and environment variables
+        expanded = os.path.expanduser(os.path.expandvars(path_str))
+        return Path(expanded).resolve()
+
+    def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
+        """Check if a path is within workspace and return relative path if it is.
+
+        Args:
+            path: Path to validate
+
+        Returns:
+            Tuple of (is_workspace_path, relative_or_absolute_path)
+        """
+        workspace = GriptapeNodes.ConfigManager().workspace_path
+
+        # Ensure both paths are resolved for comparison
+        path = path.resolve()
+        workspace = workspace.resolve()
+
+        logger.debug(f"Validating path: {path} against workspace: {workspace}")
+
+        try:
+            relative = path.relative_to(workspace)
+            logger.debug(f"Path is within workspace, relative path: {relative}")
+            return True, relative
+        except ValueError:
+            logger.debug(f"Path is outside workspace: {path}")
+            return False, path
 
     @staticmethod
     def platform() -> str:
@@ -75,7 +150,8 @@ class OSManager:
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911
         # Sanitize and validate the file path
         try:
-            path = Path(request.path_to_file).resolve(strict=True)
+            # Expand the path first
+            path = self._expand_path(request.path_to_file)
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{request.path_to_file}'"
             logger.info(details)
@@ -90,12 +166,12 @@ class OSManager:
 
         try:
             platform_name = sys.platform
-            if self.is_windows:
+            if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
                 os.startfile(str(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Started file on Windows: %s", path)
-            elif self.is_mac:
+            elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
                     ["/usr/bin/open", str(path)],
@@ -104,7 +180,7 @@ class OSManager:
                     text=True,
                 )
                 logger.info("Started file on macOS: %s", path)
-            elif self.is_linux:
+            elif self.is_linux():
                 # Use full path to xdg-open to satisfy linter
                 # Common locations for xdg-open:
                 xdg_paths = ["/usr/bin/xdg-open", "/bin/xdg-open", "/usr/local/bin/xdg-open"]
@@ -139,6 +215,120 @@ class OSManager:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:
+        """Handle a request to list directory contents."""
+        try:
+            # Get the directory path to list
+            if request.directory_path is None:
+                directory = self.current_dir
+            # Handle relative paths in workspace mode
+            elif request.workspace_only:
+                # In workspace mode, resolve relative to current directory
+                if os.path.isabs(request.directory_path):
+                    directory = self._expand_path(request.directory_path)
+                else:
+                    directory = (self.current_dir / request.directory_path).resolve()
+            else:
+                # In system-wide mode, expand the path normally
+                directory = self._expand_path(request.directory_path)
+
+            # Check if directory exists
+            if not directory.exists() or not directory.is_dir():
+                logger.error(f"Directory does not exist or is not a directory: {directory}")
+                return ListDirectoryResultFailure()
+
+            # Check workspace constraints
+            is_workspace_path, relative_or_abs_path = self._validate_workspace_path(directory)
+            if request.workspace_only and not is_workspace_path:
+                logger.error(f"Directory is outside workspace: {directory}")
+                return ListDirectoryResultFailure()
+
+            entries = []
+            try:
+                # List directory contents
+                for entry in directory.iterdir():
+                    # Skip hidden files if not requested
+                    if not request.show_hidden and entry.name.startswith("."):
+                        continue
+
+                    try:
+                        stat = entry.stat()
+                        # Get path relative to workspace if within workspace
+                        is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        entries.append(
+                            FileSystemEntry(
+                                name=entry.name,
+                                path=str(entry_path),
+                                is_dir=entry.is_dir(),
+                                size=stat.st_size,
+                                modified_time=stat.st_mtime,
+                            )
+                        )
+                    except (OSError, PermissionError) as e:
+                        logger.warning(f"Could not stat entry {entry}: {e}")
+                        continue
+
+            except (OSError, PermissionError) as e:
+                logger.error(f"Error listing directory {directory}: {e}")
+                return ListDirectoryResultFailure()
+
+            return ListDirectoryResultSuccess(
+                entries=entries, current_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path
+            )
+
+        except Exception as e:
+            logger.error(f"Unexpected error in list_directory: {type(e).__name__}: {e}")
+            return ListDirectoryResultFailure()
+
+    def on_get_current_directory_request(self, request: GetCurrentDirectoryRequest) -> ResultPayload:
+        """Handle a request to get the current working directory."""
+        try:
+            is_workspace_path, path = self._validate_workspace_path(self.current_dir)
+            if request.workspace_only and not is_workspace_path:
+                # If workspace only and we're outside, reset to workspace root
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                self.current_dir = GriptapeNodes.ConfigManager().workspace_path
+                return GetCurrentDirectoryResultSuccess(path="", is_workspace_path=True)
+
+            return GetCurrentDirectoryResultSuccess(path=str(path), is_workspace_path=is_workspace_path)
+        except Exception as e:
+            logger.error(f"Error getting current directory: {type(e).__name__}: {e}")
+            return GetCurrentDirectoryResultFailure()
+
+    def on_change_directory_request(self, request: ChangeDirectoryRequest) -> ResultPayload:
+        """Handle a request to change the current working directory."""
+        try:
+            # Handle relative paths in workspace mode
+            if request.workspace_only:
+                # In workspace mode, resolve relative to current directory
+                if os.path.isabs(request.directory_path):
+                    new_dir = self._expand_path(request.directory_path)
+                else:
+                    new_dir = (self.current_dir / request.directory_path).resolve()
+            else:
+                # In system-wide mode, expand the path normally
+                new_dir = self._expand_path(request.directory_path)
+
+            # Check if the directory exists and is actually a directory
+            if not new_dir.exists() or not new_dir.is_dir():
+                logger.error(f"Directory does not exist or is not a directory: {new_dir}")
+                return ChangeDirectoryResultFailure()
+
+            # Check workspace constraints
+            is_workspace_path, relative_or_abs_path = self._validate_workspace_path(new_dir)
+            if request.workspace_only and not is_workspace_path:
+                logger.error(f"Directory is outside workspace: {new_dir}")
+                return ChangeDirectoryResultFailure()
+
+            # Update the current directory
+            self.current_dir = new_dir
+            return ChangeDirectoryResultSuccess(new_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path)
+
+        except Exception as e:
+            logger.error(f"Unexpected error in change_directory: {type(e).__name__}: {e}")
+            return ChangeDirectoryResultFailure()
+
     @staticmethod
     def get_disk_space_info(path: Path) -> DiskSpaceInfo:
         """Get disk space information for a given path.
@@ -154,50 +344,39 @@ class OSManager:
 
     @staticmethod
     def check_available_disk_space(path: Path, required_gb: float) -> bool:
-        """Check if there is sufficient disk space available.
+        """Check if there is enough available disk space at the given path.
 
         Args:
-            path: The path to check disk space for.
-            required_gb: The minimum disk space required in GB.
+            path: The path to check disk space for
+            required_gb: Required space in gigabytes
 
         Returns:
-            True if sufficient space is available, False otherwise.
+            bool: True if enough space is available, False otherwise
         """
         try:
-            disk_info = OSManager.get_disk_space_info(path)
+            disk_space = OSManager.get_disk_space_info(path)
             required_bytes = int(required_gb * 1024 * 1024 * 1024)  # Convert GB to bytes
-            return disk_info.free >= required_bytes  # noqa: TRY300
-        except OSError:
+            return disk_space.free >= required_bytes
+        except Exception as e:
+            logger.error("Failed to check disk space: %s", e)
             return False
 
     @staticmethod
-    def format_disk_space_error(path: Path, exception: Exception | None = None) -> str:
-        """Format a user-friendly disk space error message.
+    def format_disk_space_error(path: Path) -> str:
+        """Format a disk space error message with available space information.
 
         Args:
-            path: The path where the disk space issue occurred.
-            exception: The original exception, if any.
+            path: The path to check disk space for
 
         Returns:
-            A formatted error message with disk space information.
+            str: Formatted error message with available space
         """
         try:
-            disk_info = OSManager.get_disk_space_info(path)
-            free_gb = disk_info.free / (1024**3)
-            used_gb = disk_info.used / (1024**3)
-            total_gb = disk_info.total / (1024**3)
-
-            error_msg = f"Insufficient disk space at {path}. "
-            error_msg += f"Available: {free_gb:.2f} GB, Used: {used_gb:.2f} GB, Total: {total_gb:.2f} GB. "
-
-            if exception:
-                error_msg += f"Error: {exception}"
-            else:
-                error_msg += "Please free up disk space and try again."
-
-            return error_msg  # noqa: TRY300
-        except OSError:
-            return f"Disk space error at {path}. Unable to retrieve disk space information."
+            disk_space = OSManager.get_disk_space_info(path)
+            free_gb = disk_space.free / (1024 * 1024 * 1024)  # Convert GB to bytes
+            return f"Insufficient disk space. Only {free_gb:.1f} GB available at {path}"
+        except Exception as e:
+            return f"Could not determine available disk space at {path}: {e}"
 
     @staticmethod
     def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float) -> bool:

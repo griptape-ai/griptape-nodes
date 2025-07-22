@@ -36,3 +36,117 @@ class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File opening failed. Common causes: file not found, no associated application, permission denied."""
+
+
+@dataclass
+class FileSystemEntry:
+    """Represents a file or directory in the file system."""
+
+    name: str
+    path: str
+    is_dir: bool
+    size: int
+    modified_time: float
+
+
+@dataclass
+@PayloadRegistry.register
+class ListDirectoryRequest(RequestPayload):
+    """List contents of a directory.
+
+    Use when: Browsing file system, showing directory contents,
+    implementing file pickers, navigating folder structures.
+
+    Args:
+        directory_path: Path to the directory to list (None for current directory)
+        show_hidden: Whether to show hidden files/folders
+        workspace_only: If True, constrain to workspace directory. If False, allow system-wide browsing.
+
+    Results: ListDirectoryResultSuccess (with entries) | ListDirectoryResultFailure (access denied, not found)
+    """
+
+    directory_path: str | None = None
+    show_hidden: bool = False
+    workspace_only: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class ListDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Directory listing retrieved successfully."""
+
+    entries: list[FileSystemEntry]
+    current_path: str
+    is_workspace_path: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class ListDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Directory listing failed. Common causes: access denied, path not found."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCurrentDirectoryRequest(RequestPayload):
+    """Get the current working directory.
+
+    Use when: Showing current location, displaying breadcrumbs,
+    getting absolute paths, implementing navigation.
+
+    Args:
+        workspace_only: If True, return path relative to workspace. If False, return absolute system path.
+
+    Results: GetCurrentDirectoryResultSuccess (with path) | GetCurrentDirectoryResultFailure
+    """
+
+    workspace_only: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCurrentDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Current directory retrieved successfully."""
+
+    path: str
+    is_workspace_path: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCurrentDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to get current directory."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ChangeDirectoryRequest(RequestPayload):
+    """Change the current working directory.
+
+    Use when: Navigating file system, changing context directory,
+    implementing directory navigation, setting working directory.
+
+    Args:
+        directory_path: Path to change to
+        workspace_only: If True, constrain to workspace directory. If False, allow system-wide navigation.
+
+    Results: ChangeDirectoryResultSuccess | ChangeDirectoryResultFailure (access denied, not found)
+    """
+
+    directory_path: str
+    workspace_only: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class ChangeDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Directory changed successfully."""
+
+    new_path: str
+    is_workspace_path: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class ChangeDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Directory change failed. Common causes: access denied, path not found."""
