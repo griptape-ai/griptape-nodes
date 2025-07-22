@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
 dependencies = [
-  "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1",
+  "griptape>=1.7.1",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -21,6 +21,7 @@ dependencies = [
   "json-repair>=0.46.1",
   "imageio-ffmpeg>=0.6.0",
   "mcp[ws]>=1.10.1",
+  "pillow>=11.3.0",
 ]
 
 [project.optional-dependencies]
@@ -50,8 +51,8 @@ griptape-nodes = "griptape_nodes:main"
 gtn = "griptape_nodes:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build"]
+build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120

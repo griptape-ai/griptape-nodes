@@ -1,10 +1,12 @@
 import logging
 import threading
 from multiprocessing import Process, Queue
+from multiprocessing import Queue as ProcessQueue
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.app.app import _serve_static_server
+from griptape_nodes.app.api import start_api
+from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.bootstrap.workflow_runners.local_workflow_runner import LocalWorkflowRunner
 from griptape_nodes.bootstrap.workflow_runners.workflow_runner import WorkflowRunner
 
@@ -30,7 +32,9 @@ class SubprocessWorkflowRunner(WorkflowRunner):
         logger.setLevel(logging.NOTSET)
 
         try:
-            threading.Thread(target=_serve_static_server, daemon=True).start()
+            static_dir = _build_static_dir()
+            event_queue = ProcessQueue()
+            threading.Thread(target=start_api, args=(static_dir, event_queue), daemon=True).start()
             workflow_runner = LocalWorkflowRunner(libraries)
             workflow_runner.run(workflow_path, workflow_name, flow_input, "local")
         except Exception as e:

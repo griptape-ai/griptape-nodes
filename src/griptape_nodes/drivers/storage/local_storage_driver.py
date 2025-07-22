@@ -4,7 +4,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from griptape_nodes.app.app import STATIC_SERVER_ENABLED, STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+from griptape_nodes.app.api import STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+from griptape_nodes.app.app import STATIC_SERVER_ENABLED
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 
 logger = logging.getLogger("griptape_nodes")
