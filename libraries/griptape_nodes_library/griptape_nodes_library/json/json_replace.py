@@ -61,80 +61,62 @@ class JsonReplace(DataNode):
             )
         )
 
+    def _parse_array_index(self, part: str) -> tuple[str | None, int | None]:
+        """Parse array indexing from path part (e.g., 'items[0]' -> ('items', 0))."""
+        import re
+
+        match = re.match(r"^(.+)\[(\d+)\]$", part)
+        return (match.group(1), int(match.group(2))) if match else (None, None)
+
+    def _handle_array_part(self, current: Any, key: str, index: int) -> Any:
+        """Handle array indexing in path traversal."""
+        if isinstance(current, dict):
+            if key not in current:
+                current[key] = []
+            current = current[key]
+
+        if isinstance(current, list):
+            while len(current) <= index:
+                current.append({} if index < len(current) else None)
+            return current[index]
+        return None
+
     def _set_value_at_path(self, data: Any, path: str, new_value: Any) -> Any:
         """Set a value at a specific path in nested data using dot notation."""
         if not path:
             return new_value
 
-        # Create a deep copy to avoid modifying the original
         import copy
-
-        result = copy.deepcopy(data)
-
-        # Handle array indexing in path (e.g., "items[0].name")
         import re
 
-        # Split by dots, but preserve array indices
+        result = copy.deepcopy(data)
         path_parts = re.split(r"\.(?![^\[]*\])", path)
-
         current = result
 
-        # Navigate to the parent of the target location
+        # Navigate through path parts except last
         for i, part in enumerate(path_parts[:-1]):
             if not isinstance(current, (dict, list)):
-                # If we can't navigate further, create the path
-                if i == 0:
-                    current = {}
-                else:
+                return result if i > 0 else {}
+
+            key, index = self._parse_array_index(part)
+            if key and index is not None:
+                current = self._handle_array_part(current, key, index)
+                if current is None:
                     return result
-
-            # Check if this part has array indexing
-            array_match = re.match(r"^(.+)\[(\d+)\]$", part)
-            if array_match:
-                # Handle array indexing
-                key = array_match.group(1)
-                index = int(array_match.group(2))
-
-                if isinstance(current, dict):
-                    if key not in current:
-                        current[key] = []
-                    current = current[key]
-
-                if isinstance(current, list):
-                    # Extend list if index is out of bounds
-                    while len(current) <= index:
-                        current.append({})
-                    current = current[index]
-                else:
-                    return result
-            # Handle regular dictionary key
             elif isinstance(current, dict):
-                if part not in current:
-                    current[part] = {}
+                current[part] = current.get(part, {})
                 current = current[part]
             else:
                 return result
 
-        # Set the value at the final path part
+        # Handle final part
         final_part = path_parts[-1]
-        array_match = re.match(r"^(.+)\[(\d+)\]$", final_part)
+        key, index = self._parse_array_index(final_part)
 
-        if array_match:
-            # Handle array indexing for the final part
-            key = array_match.group(1)
-            index = int(array_match.group(2))
-
-            if isinstance(current, dict):
-                if key not in current:
-                    current[key] = []
-                current = current[key]
-
+        if key and index is not None:
+            current = self._handle_array_part(current, key, index)
             if isinstance(current, list):
-                # Extend list if index is out of bounds
-                while len(current) <= index:
-                    current.append(None)
                 current[index] = new_value
-        # Handle regular dictionary key for the final part
         elif isinstance(current, dict):
             current[final_part] = new_value
 

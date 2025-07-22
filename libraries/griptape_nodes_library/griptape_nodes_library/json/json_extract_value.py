@@ -47,7 +47,7 @@ class JsonExtractValue(DataNode):
             )
         )
 
-    def _extract_value(self, data: Any, path: str) -> Any:
+    def _extract_value(self, data: Any, path: str) -> Any:  # noqa: C901, PLR0911
         """Extract a value from nested data using dot notation path."""
         if not path:
             return data
