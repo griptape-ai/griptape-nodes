@@ -92,16 +92,16 @@ class SyncManager:
             Success or failure result
         """
         if self._storage_utility is None:
-            error_msg = "Sync functionality is disabled - GT_CLOUD_BUCKET_ID not configured"
+            error_msg = "Attempted to sync up workflows from local workspace to Griptape Cloud. Failed because GT_CLOUD_BUCKET_ID is not configured"
             logger.error(error_msg)
             return SyncUpWorkflowsResultFailure(exception=Exception(error_msg))
 
         try:
             self._sync_up_workflows(self._storage_utility)
-            logger.info("Successfully synced up workflows to storage")
+            logger.info("Successfully synced up workflows from local storage to Griptape Cloud")
             return SyncUpWorkflowsResultSuccess()
         except Exception as e:
-            error_msg = f"Failed to sync up workflows: {e}"
+            error_msg = f"Attempted to sync up workflows from local storage to Griptape Cloud. Failed because: {e}"
             logger.error(error_msg)
             return SyncUpWorkflowsResultFailure(exception=Exception(error_msg))
 
@@ -117,25 +117,21 @@ class SyncManager:
             Success or failure result
         """
         if self._storage_utility is None:
-            error_msg = "Sync functionality is disabled - GT_CLOUD_BUCKET_ID not configured"
+            error_msg = "Attempted to sync down workflows from Griptape Cloud to local workspace. Failed because GT_CLOUD_BUCKET_ID is not configured"
             logger.error(error_msg)
             return SyncDownWorkflowsResultFailure(exception=Exception(error_msg))
 
         try:
             self._sync_down_workflows(self._storage_utility)
-            logger.info("Successfully synced down workflows from storage")
+            logger.info("Successfully synced down workflows from Griptape Cloud to local workspace")
             return SyncDownWorkflowsResultSuccess()
         except Exception as e:
-            error_msg = f"Failed to sync down workflows: {e}"
+            error_msg = f"Attempted to sync down workflows from Griptape Cloud to local workspace. Failed because: {e}"
             logger.error(error_msg)
             return SyncDownWorkflowsResultFailure(exception=Exception(error_msg))
 
     def _sync_up_workflows(self, storage_utility: StorageUtility) -> None:
         """Upload all workflow files from workspace to storage backend."""
-        if not self._workspace_path.exists():
-            logger.warning("Workspace path does not exist: %s", self._workspace_path)
-            return
-
         try:
             # Find all .py files in the workspace
             py_files = list(self._workspace_path.rglob("*.py"))
@@ -164,8 +160,7 @@ class SyncManager:
             file_name = str(relative_path)
 
             # Read file content
-            with file_path.open("rb") as f:
-                file_content = f.read()
+            file_content = file_path.read_bytes()
 
             # Upload file using storage utility
             storage_utility.save_static_file(file_content, file_name)
@@ -222,8 +217,7 @@ class SyncManager:
             file_path = workspace_path / file_name
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with file_path.open("wb") as f:
-                f.write(file_content)
+            file_path.write_bytes(file_content)
 
             logger.debug("Downloaded workflow file: %s", file_name)
 
