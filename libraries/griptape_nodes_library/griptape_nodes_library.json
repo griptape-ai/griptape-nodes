@@ -686,6 +686,28 @@
       }
     },
     {
+      "class_name": "DictGetValueByKey",
+      "file_path": "griptape_nodes_library/dict/get_dict_value.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Get a value from a dictionary by key with optional default handling",
+        "display_name": "Get Dictionary Value by Key",
+        "icon": "key",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "DictHasValueForKey",
+      "file_path": "griptape_nodes_library/dict/dict_has_value_for_key.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Check if a dictionary has a value for a specific key",
+        "display_name": "Has Dictionary Value for Key",
+        "icon": "search-check",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "GriptapeCloudImage",
       "file_path": "griptape_nodes_library/config/image/griptape_cloud_image_driver.py",
       "metadata": {
