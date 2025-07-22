@@ -9,7 +9,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from griptape.artifacts import ImageUrlArtifact
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from PIL.Image import Image  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]

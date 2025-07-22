@@ -5,7 +5,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")  # Silence noisy but harmless warnings from controlnet_aux
     import controlnet_aux  # type: ignore[reportMissingImports]
 
-import huggingface_hub
+import huggingface_hub  # pyright: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (

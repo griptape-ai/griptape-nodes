@@ -54,7 +54,8 @@
         "git+https://github.com/dylanholmes/cosmos-guardrail.git",
         "sam2>=1.1.0",
         "scipy>=1.10.0",
-        "matplotlib>=3.10.3"
+        "matplotlib>=3.10.3",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1"
       ],
       "pip_install_flags": [
         "--preview",
@@ -509,3 +510,4 @@
     }
   ]
 }
+

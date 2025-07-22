@@ -6,7 +6,15 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.41.0",
     "engine_version": "0.41.0",
-    "tags": ["Griptape", "AI"]
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
+    "dependencies": {
+      "pip_dependencies": [
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1"
+      ]
+    }
   },
   "categories": [
     {
@@ -923,7 +931,6 @@
         "group": "mask"
       }
     },
-
     {
       "class_name": "PaintMask",
       "file_path": "griptape_nodes_library/image/paint_mask.py",
@@ -1110,7 +1117,6 @@
         "group": "tasks"
       }
     },
-
     {
       "class_name": "SaveText",
       "file_path": "griptape_nodes_library/text/save_text.py",
