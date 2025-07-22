@@ -88,7 +88,7 @@ class Settings(BaseModel):
                 "SNOWFLAKE_ACCOUNT": "$SNOWFLAKE_ACCOUNT",
                 "SNOWFLAKE_USER": "$SNOWFLAKE_USER",
                 "SNOWFLAKE_PASSWORD": "$SNOWFLAKE_PASSWORD",
-                "SNOWFLAKE_ROLE": "$SNOWFLAKE_ROLE"
+                "SNOWFLAKE_ROLE": "$SNOWFLAKE_ROLE",
             },
         }
     )
