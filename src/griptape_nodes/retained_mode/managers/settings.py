@@ -84,6 +84,12 @@ class Settings(BaseModel):
             },
             "Tavily": {"TAVILY_API_KEY": "$TAVILY_API_KEY"},
             "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
+            "Snowflake": {
+                "SNOWFLAKE_ACCOUNT": "$SNOWFLAKE_ACCOUNT",
+                "SNOWFLAKE_USER": "$SNOWFLAKE_USER",
+                "SNOWFLAKE_PASSWORD": "$SNOWFLAKE_PASSWORD",
+                "SNOWFLAKE_ROLE": "$SNOWFLAKE_ROLE"
+            },
         }
     )
     log_level: str = Field(default="INFO")
