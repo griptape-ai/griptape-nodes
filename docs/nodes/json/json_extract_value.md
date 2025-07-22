@@ -101,4 +101,4 @@ path = "orders[0].items[1].price"  # Gets price of second item in first order
 - [JSON Input](json_input.md) - Create JSON data from inputs
 - [JSON Replace](json_replace.md) - Replace values in JSON
 - [Display JSON](display_json.md) - Display and format JSON data
-- [To JSON](to_json.md) - Convert other data types to JSON
+- [To JSON](../convert/to_json.md) - Convert other data types to JSON

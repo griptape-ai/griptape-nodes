@@ -126,6 +126,7 @@ nav:
         - Generate Image: nodes/image/create_image.md
         - Describe Image: nodes/image/describe_image.md
         - Display Image: nodes/image/display_image.md
+        - Display Channel: nodes/image/display_channel.md
         - Invert Image: nodes/image/invert_image.md
         - Display Mask: nodes/image/display_mask.md
         - Paint Mask: nodes/image/paint_mask.md
@@ -135,6 +136,7 @@ nav:
         - Create List: nodes/lists/create_list.md
         - Add To List: nodes/lists/add_to_list.md
         - Remove From List: nodes/lists/remove_from_list.md
+        - Get From List: nodes/lists/get_from_list.md
         - Get List Length: nodes/lists/get_list_length.md
         - Get List Is Empty: nodes/lists/get_list_is_empty.md
         - Get List Contains Item: nodes/lists/get_list_contains_item.md

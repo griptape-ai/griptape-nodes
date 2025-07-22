@@ -97,7 +97,7 @@ The To JSON node converts various data types to JSON format using `json-repair` 
 
 ## Related Nodes
 
-- [JSON Input](json_input.md) - Create JSON data from inputs
-- [JSON Extract Value](json_extract_value.md) - Extract values from JSON
-- [JSON Replace](json_replace.md) - Replace values in JSON
-- [Display JSON](display_json.md) - Display and format JSON data
+- [JSON Input](../json/json_input.md) - Create JSON data from inputs
+- [JSON Extract Value](../json/json_extract_value.md) - Extract values from JSON
+- [JSON Replace](../json/json_replace.md) - Replace values in JSON
+- [Display JSON](../json/display_json.md) - Display and format JSON data

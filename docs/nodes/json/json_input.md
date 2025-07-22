@@ -69,4 +69,4 @@ The JSON Input node takes various input types and converts them to proper JSON d
 - [JSON Extract Value](json_extract_value.md) - Extract specific values from JSON
 - [JSON Replace](json_replace.md) - Replace values in JSON
 - [Display JSON](display_json.md) - Display and format JSON data
-- [To JSON](to_json.md) - Convert other data types to JSON
+- [To JSON](../convert/to_json.md) - Convert other data types to JSON

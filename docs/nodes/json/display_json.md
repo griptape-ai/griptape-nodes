@@ -71,4 +71,4 @@ The Display JSON node takes JSON data and formats it for display. It uses `json-
 - [JSON Input](json_input.md) - Create JSON data from inputs
 - [JSON Extract Value](json_extract_value.md) - Extract values from JSON
 - [JSON Replace](json_replace.md) - Replace values in JSON
-- [To JSON](to_json.md) - Convert other data types to JSON
+- [To JSON](../convert/to_json.md) - Convert other data types to JSON
