@@ -10,16 +10,16 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 
 ### Input Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `json` | json, str, dict | The JSON data to extract from | `{}` |
-| `path` | str | Dot notation path to extract (e.g., 'user.name', 'items[0].title') | `""` |
+| Parameter | Type            | Description                                                        | Default |
+| --------- | --------------- | ------------------------------------------------------------------ | ------- |
+| `json`    | json, str, dict | The JSON data to extract from                                      | `{}`    |
+| `path`    | str             | Dot notation path to extract (e.g., 'user.name', 'items[0].title') | `""`    |
 
 ### Output Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `output` | json | The extracted value |
+| Parameter | Type | Description         |
+| --------- | ---- | ------------------- |
+| `output`  | json | The extracted value |
 
 ## Features
 
@@ -101,4 +101,4 @@ path = "orders[0].items[1].price"  # Gets price of second item in first order
 - [JSON Input](json_input.md) - Create JSON data from inputs
 - [JSON Replace](json_replace.md) - Replace values in JSON
 - [Display JSON](display_json.md) - Display and format JSON data
-- [To JSON](to_json.md) - Convert other data types to JSON 
+- [To JSON](to_json.md) - Convert other data types to JSON

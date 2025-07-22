@@ -10,15 +10,15 @@ The To JSON node converts various data types to JSON format using `json-repair` 
 
 ### Input Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `from` | any | The data to convert to JSON | `{}` |
+| Parameter | Type | Description                 | Default |
+| --------- | ---- | --------------------------- | ------- |
+| `from`    | any  | The data to convert to JSON | `{}`    |
 
 ### Output Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `output` | json | The converted data as JSON |
+| Parameter | Type | Description                |
+| --------- | ---- | -------------------------- |
+| `output`  | json | The converted data as JSON |
 
 ## Features
 
@@ -73,14 +73,17 @@ The To JSON node converts various data types to JSON format using `json-repair` 
 ## Input Type Handling
 
 ### Dictionary Input
+
 - **Behavior**: Uses as-is if already a dict
 - **Example**: `{"key": "value"}` → `{"key": "value"}`
 
 ### String Input
+
 - **Behavior**: Attempts to repair malformed JSON, falls back to regular JSON parsing
 - **Example**: `'{"name": "John", age: 30}'` → `{"name": "John", "age": 30}`
 
 ### Other Types
+
 - **Behavior**: Converts to string first, then attempts repair, with fallback to empty dict
 - **Example**: `[1, 2, 3]` → `[1, 2, 3]`
 
@@ -97,4 +100,4 @@ The To JSON node converts various data types to JSON format using `json-repair` 
 - [JSON Input](json_input.md) - Create JSON data from inputs
 - [JSON Extract Value](json_extract_value.md) - Extract values from JSON
 - [JSON Replace](json_replace.md) - Replace values in JSON
-- [Display JSON](display_json.md) - Display and format JSON data 
+- [Display JSON](display_json.md) - Display and format JSON data

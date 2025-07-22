@@ -10,17 +10,17 @@ The JSON Replace node allows you to modify JSON data by replacing values at spec
 
 ### Input Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `json` | json, str, dict | The JSON data to modify | `{}` |
-| `path` | str | Dot notation path to replace (e.g., 'user.name', 'items[0].title') | `""` |
-| `replacement_value` | json, str, dict | The new value to put at the specified path | `""` |
+| Parameter           | Type            | Description                                                        | Default |
+| ------------------- | --------------- | ------------------------------------------------------------------ | ------- |
+| `json`              | json, str, dict | The JSON data to modify                                            | `{}`    |
+| `path`              | str             | Dot notation path to replace (e.g., 'user.name', 'items[0].title') | `""`    |
+| `replacement_value` | json, str, dict | The new value to put at the specified path                         | `""`    |
 
 ### Output Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `output` | json | The modified JSON with the replacement value |
+| Parameter | Type | Description                                  |
+| --------- | ---- | -------------------------------------------- |
+| `output`  | json | The modified JSON with the replacement value |
 
 ## Features
 
@@ -116,4 +116,4 @@ path = "orders[0].items[1].price"  # Replace price of second item in first order
 - [JSON Input](json_input.md) - Create JSON data from inputs
 - [JSON Extract Value](json_extract_value.md) - Extract values from JSON
 - [Display JSON](display_json.md) - Display and format JSON data
-- [To JSON](to_json.md) - Convert other data types to JSON 
+- [To JSON](to_json.md) - Convert other data types to JSON

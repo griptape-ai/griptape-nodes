@@ -10,15 +10,15 @@ The JSON Input node takes various input types and converts them to proper JSON d
 
 ### Input Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `json` | json, str, dict | The input data to convert to JSON | `{}` |
+| Parameter | Type            | Description                       | Default |
+| --------- | --------------- | --------------------------------- | ------- |
+| `json`    | json, str, dict | The input data to convert to JSON | `{}`    |
 
 ### Output Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `json` | json | The processed JSON data |
+| Parameter | Type | Description             |
+| --------- | ---- | ----------------------- |
+| `json`    | json | The processed JSON data |
 
 ## Features
 
@@ -69,4 +69,4 @@ The JSON Input node takes various input types and converts them to proper JSON d
 - [JSON Extract Value](json_extract_value.md) - Extract specific values from JSON
 - [JSON Replace](json_replace.md) - Replace values in JSON
 - [Display JSON](display_json.md) - Display and format JSON data
-- [To JSON](to_json.md) - Convert other data types to JSON 
+- [To JSON](to_json.md) - Convert other data types to JSON
