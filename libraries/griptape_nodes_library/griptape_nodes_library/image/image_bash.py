@@ -30,6 +30,9 @@ default_svg = """<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/s
 default_svg_base64 = base64.b64encode(default_svg.encode("utf-8")).decode("utf-8")
 
 
+UUID_HEX_LENGTH = 32  # Length of UUID without dashes (e.g., "81222ddd97cd4e32b1005cda0178d193")
+
+
 class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -244,7 +247,7 @@ class ImageBash(DataNode):
             return None
 
         # Try to preserve existing name, otherwise generate new one
-        image_name = self._get_image_name(img_artifact, image_url, i, existing_input_images)
+        image_name = self._get_image_name(image_url, i, existing_input_images)
 
         return {
             "id": f"source-img-{i + 1}",
@@ -252,7 +255,7 @@ class ImageBash(DataNode):
             "name": image_name,
         }
 
-    def _get_image_name(self, img_artifact: Any, image_url: str, i: int, existing_input_images: list) -> str:
+    def _get_image_name(self, image_url: str, i: int, existing_input_images: list) -> str:
         """Get or generate a name for an image."""
         # Try to preserve existing name from previous metadata
         for existing_input in existing_input_images:
@@ -260,7 +263,7 @@ class ImageBash(DataNode):
                 existing_name = existing_input.get("name")
                 # Only preserve if it's not a UUID
                 if existing_name and not (
-                    len(existing_name) == 32 and all(c in "0123456789abcdef" for c in existing_name)
+                    len(existing_name) == UUID_HEX_LENGTH and all(c in "0123456789abcdef" for c in existing_name)
                 ):
                     return existing_name
 
@@ -491,7 +494,7 @@ class ImageBash(DataNode):
                 img_artifact = img
 
             # Use the existing helper method for name generation
-            image_name = self._get_image_name(img_artifact, img_artifact.value, i, [])
+            image_name = self._get_image_name(img_artifact.value, i, [])
             input_images.append({"id": f"source-img-{i + 1}", "url": img_artifact.value, "name": image_name})
 
         # Get canvas dimensions from parameters
@@ -621,24 +624,6 @@ class ImageBash(DataNode):
             self.publish_update_to_parameter("canvas_size", "custom")
             self.publish_update_to_parameter("width", metadata_width)
             self.publish_update_to_parameter("height", metadata_height)
-
-    def _update_canvas_size_metadata(self, value: Any) -> None:
-        """Update canvas size metadata when canvas_size changes."""
-        bash_image_value = self.get_parameter_value("bash_image")
-        if bash_image_value is not None and isinstance(bash_image_value, dict):
-            # Only update metadata, don't replace the bash_image value
-            canvas_width, canvas_height = self._get_canvas_dimensions()
-
-            if "meta" not in bash_image_value:
-                bash_image_value["meta"] = {}
-
-            # Preserve existing background color
-            existing_background_color = bash_image_value["meta"].get("canvas_background_color", "#ffffff")
-
-            bash_image_value["meta"]["canvas_size"] = {"width": canvas_width, "height": canvas_height}
-            bash_image_value["meta"]["canvas_background_color"] = existing_background_color
-            bash_image_value["meta"]["viewport"] = self._create_viewport_metadata(canvas_width, canvas_height)
-            self.set_parameter_value("bash_image", bash_image_value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "canvas_size":
