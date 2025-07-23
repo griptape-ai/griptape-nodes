@@ -283,8 +283,12 @@ class OSManager:
                 directory = (self.current_dir / request.directory_path).resolve()
 
             # Check if directory exists
-            if not directory.exists() or not directory.is_dir():
-                msg = f"Directory does not exist or is not a directory: {directory}"
+            if not directory.exists():
+                msg = f"Directory does not exist: {directory}"
+                logger.error(msg)
+                return ListDirectoryResultFailure()
+            if not directory.is_dir():
+                msg = f"Directory is not a directory: {directory}"
                 logger.error(msg)
                 return ListDirectoryResultFailure()
 
