@@ -52,6 +52,7 @@ class IfElse(BaseNode):
 
         # Data flow outputs in a collapsible ParameterGroup
         with ParameterGroup(name="Data Outputs") as group:
+            group.ui_options = {"collapsed": True}
             self.output_if_true = Parameter(
                 name="output_if_true",
                 tooltip="Data to output when condition is true",
