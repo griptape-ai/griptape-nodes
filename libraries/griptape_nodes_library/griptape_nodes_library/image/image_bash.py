@@ -62,7 +62,7 @@ class ImageBash(DataNode):
                 input_types=["int"],
                 type="int",
                 tooltip="The width of the image to create",
-                allowed_modes={ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 ui_options={"ghost": True},
             )
 
@@ -72,7 +72,7 @@ class ImageBash(DataNode):
                 input_types=["int"],
                 type="int",
                 tooltip="The height of the image to create",
-                allowed_modes={ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 ui_options={"ghost": True},
             )
         self.add_node_element(canvas_details_group)
@@ -551,12 +551,12 @@ class ImageBash(DataNode):
     def _enable_custom_dimensions(self) -> None:
         """Enable custom width and height input fields."""
         width_ui_options = self.canvas_width.ui_options
-        self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
+        self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
         width_ui_options["ghost"] = False
         self.canvas_width.ui_options = width_ui_options
 
         height_ui_options = self.canvas_height.ui_options
-        self.canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY}
+        self.canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
         height_ui_options["ghost"] = False
         self.canvas_height.ui_options = height_ui_options
 
@@ -566,12 +566,12 @@ class ImageBash(DataNode):
     def _set_preset_dimensions(self, value: str) -> None:
         """Set width and height based on preset canvas size."""
         width_ui_options = self.canvas_width.ui_options
-        self.canvas_width.allowed_modes = {ParameterMode.PROPERTY}
+        self.canvas_width.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.OUTPUT}
         width_ui_options["ghost"] = True
         self.canvas_width.ui_options = width_ui_options
 
         height_ui_options = self.canvas_height.ui_options
-        self.canvas_height.allowed_modes = {ParameterMode.PROPERTY}
+        self.canvas_height.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.OUTPUT}
         height_ui_options["ghost"] = True
         self.canvas_height.ui_options = height_ui_options
 
