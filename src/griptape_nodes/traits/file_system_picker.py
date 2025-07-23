@@ -20,7 +20,7 @@ class FileSystemPicker(Trait):
     initial_path: str | None = None
     element_id: str = field(default_factory=lambda: "FileSystemPicker")
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         allow_files: bool = False,
@@ -95,10 +95,13 @@ class FileSystemPicker(Trait):
                 raise ValueError(msg)
 
             # Validate file size limits
-            if self.max_file_size is not None and self.min_file_size is not None:
-                if self.max_file_size < self.min_file_size:
-                    msg = "max_file_size cannot be less than min_file_size"
-                    raise ValueError(msg)
+            if (
+                self.max_file_size is not None
+                and self.min_file_size is not None
+                and self.max_file_size < self.min_file_size
+            ):
+                msg = "max_file_size cannot be less than min_file_size"
+                raise ValueError(msg)
 
             # Validate that file types/extensions are valid
             all_file_types = self.file_types + self.file_extensions
