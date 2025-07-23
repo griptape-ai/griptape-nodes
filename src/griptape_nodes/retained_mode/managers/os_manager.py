@@ -415,6 +415,10 @@ class OSManager:
                     ("text/", "application/json", "application/xml", "application/yaml")
                 )
 
+            # Initialize variables
+            content = None
+            encoding = None
+
             # Read file content based on binary detection
             if not is_binary_file:
                 # Read as text
@@ -481,6 +485,7 @@ class OSManager:
                             logger.debug("Fallback to full image data URL")
                 encoding = None
 
+            # Single return point at the bottom
             return ReadFileResultSuccess(
                 content=content,
                 file_size=file_size,
