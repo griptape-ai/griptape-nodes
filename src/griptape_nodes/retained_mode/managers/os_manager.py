@@ -146,13 +146,43 @@ class OSManager:
             sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
             os.execvp(args[0], args)  # noqa: S606
 
-    def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911
+    def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+        # Validate that exactly one of path_to_file or file_entry is provided
+        if request.path_to_file is None and request.file_entry is None:
+            msg = "Either path_to_file or file_entry must be provided"
+            logger.error(msg)
+            return OpenAssociatedFileResultFailure()
+
+        if request.path_to_file is not None and request.file_entry is not None:
+            msg = "Only one of path_to_file or file_entry should be provided, not both"
+            logger.error(msg)
+            return OpenAssociatedFileResultFailure()
+
+        # Get the file path to open
+        if request.file_entry is not None:
+            # Use the path from the FileSystemEntry
+            file_path_str = request.file_entry.path
+        elif request.path_to_file is not None:
+            # Use the provided path_to_file
+            file_path_str = request.path_to_file
+        else:
+            # This should never happen due to validation above, but type checker needs it
+            msg = "No valid file path provided"
+            logger.error(msg)
+            return OpenAssociatedFileResultFailure()
+
+        # At this point, file_path_str is guaranteed to be a string
+        if file_path_str is None:
+            msg = "No valid file path provided"
+            logger.error(msg)
+            return OpenAssociatedFileResultFailure()
+
         # Sanitize and validate the file path
         try:
             # Expand the path first
-            path = self._expand_path(request.path_to_file)
+            path = self._expand_path(file_path_str)
         except (ValueError, RuntimeError):
-            details = f"Invalid file path: '{request.path_to_file}'"
+            details = f"Invalid file path: '{file_path_str}'"
             logger.info(details)
             return OpenAssociatedFileResultFailure()
 
@@ -291,13 +321,36 @@ class OSManager:
     def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection."""
         try:
+            # Validate that exactly one of file_path or file_entry is provided
+            if request.file_path is None and request.file_entry is None:
+                msg = "Either file_path or file_entry must be provided"
+                logger.error(msg)
+                return ReadFileResultFailure()
+
+            if request.file_path is not None and request.file_entry is not None:
+                msg = "Only one of file_path or file_entry should be provided, not both"
+                logger.error(msg)
+                return ReadFileResultFailure()
+
             # Get the file path to read - handle paths consistently
-            if Path(request.file_path).is_absolute() or request.file_path.startswith("~"):
+            if request.file_entry is not None:
+                # Use the path from the FileSystemEntry
+                file_path_str = request.file_entry.path
+            elif request.file_path is not None:
+                # Use the provided file_path
+                file_path_str = request.file_path
+            else:
+                # This should never happen due to validation above, but type checker needs it
+                msg = "No valid file path provided"
+                logger.error(msg)
+                return ReadFileResultFailure()
+
+            if Path(file_path_str).is_absolute() or file_path_str.startswith("~"):
                 # Expand tilde and environment variables for absolute paths or paths starting with ~
-                file_path = self._expand_path(request.file_path)
+                file_path = self._expand_path(file_path_str)
             else:
                 # Both workspace and system-wide modes resolve relative to current directory
-                file_path = (self.current_dir / request.file_path).resolve()
+                file_path = (self.current_dir / file_path_str).resolve()
 
             # Check if file exists and is actually a file
             if not file_path.exists() or not file_path.is_file():

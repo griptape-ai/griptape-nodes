@@ -10,6 +10,17 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
+class FileSystemEntry:
+    """Represents a file or directory in the file system."""
+
+    name: str
+    path: str
+    is_dir: bool
+    size: int
+    modified_time: float
+
+
+@dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileRequest(RequestPayload):
     """Open a file using the operating system's associated application.
@@ -18,12 +29,14 @@ class OpenAssociatedFileRequest(RequestPayload):
     providing file viewing capabilities, implementing file associations.
 
     Args:
-        path_to_file: Path to the file to open with the associated application
+        path_to_file: Path to the file to open (mutually exclusive with file_entry)
+        file_entry: FileSystemEntry object from directory listing (mutually exclusive with path_to_file)
 
     Results: OpenAssociatedFileResultSuccess | OpenAssociatedFileResultFailure (file not found, no association)
     """
 
-    path_to_file: str
+    path_to_file: str | None = None
+    file_entry: FileSystemEntry | None = None
 
 
 @dataclass
@@ -36,17 +49,6 @@ class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File opening failed. Common causes: file not found, no associated application, permission denied."""
-
-
-@dataclass
-class FileSystemEntry:
-    """Represents a file or directory in the file system."""
-
-    name: str
-    path: str
-    is_dir: bool
-    size: int
-    modified_time: float
 
 
 @dataclass
@@ -96,7 +98,8 @@ class ReadFileRequest(RequestPayload):
     Automatically detects file type using MIME type detection and returns appropriate content format.
 
     Args:
-        file_path: Path to the file to read
+        file_path: Path to the file to read (mutually exclusive with file_entry)
+        file_entry: FileSystemEntry object from directory listing (mutually exclusive with file_path)
         encoding: Text encoding to use if file is detected as text (default: 'utf-8')
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
                         If None, workspace constraints don't apply (e.g., cloud environments).
@@ -104,7 +107,8 @@ class ReadFileRequest(RequestPayload):
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
 
-    file_path: str
+    file_path: str | None = None
+    file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
     workspace_only: bool | None = True
 
