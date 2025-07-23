@@ -11,18 +11,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from griptape.utils.contextvars_utils import with_contextvars
+
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.events.workflow_events import (
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultSuccess,
     RegisterWorkflowRequest,
     RegisterWorkflowResultSuccess,
-    SyncDownWorkflowsRequest,
-    SyncDownWorkflowsResultFailure,
-    SyncDownWorkflowsResultSuccess,
-    SyncUpWorkflowsRequest,
-    SyncUpWorkflowsResultFailure,
-    SyncUpWorkflowsResultSuccess,
+    StartSyncDownWorkflowsRequest,
+    StartSyncDownWorkflowsResultFailure,
+    StartSyncDownWorkflowsResultSuccess,
+    StartSyncUpWorkflowsRequest,
+    StartSyncUpWorkflowsResultFailure,
+    StartSyncUpWorkflowsResultSuccess,
 )
 from griptape_nodes.retained_mode.utilities.storage import StorageUtility
 
@@ -68,12 +70,12 @@ class SyncManager:
             self._storage_utility = StorageUtility(storage_driver)
 
         # Register event handlers
-        event_manager.assign_manager_to_request_type(SyncUpWorkflowsRequest, self.on_sync_up_workflows_request)
-        event_manager.assign_manager_to_request_type(SyncDownWorkflowsRequest, self.on_sync_down_workflows_request)
+        event_manager.assign_manager_to_request_type(StartSyncUpWorkflowsRequest, self.on_sync_up_workflows_request)
+        event_manager.assign_manager_to_request_type(StartSyncDownWorkflowsRequest, self.on_sync_down_workflows_request)
 
     def on_sync_up_workflows_request(
-        self, _request: SyncUpWorkflowsRequest
-    ) -> SyncUpWorkflowsResultSuccess | SyncUpWorkflowsResultFailure:
+        self, _request: StartSyncUpWorkflowsRequest
+    ) -> StartSyncUpWorkflowsResultSuccess | StartSyncUpWorkflowsResultFailure:
         """Handle sync up workflows request - upload all workflow files to storage backend.
 
         Args:
@@ -85,20 +87,20 @@ class SyncManager:
         if self._storage_utility is None:
             error_msg = "Attempted to sync up workflows from local workspace to Griptape Cloud. Failed because GT_CLOUD_BUCKET_ID is not configured"
             logger.error(error_msg)
-            return SyncUpWorkflowsResultFailure(exception=Exception(error_msg))
+            return StartSyncUpWorkflowsResultFailure(exception=Exception(error_msg))
 
         try:
             self._sync_up_workflows(self._storage_utility)
             logger.info("Successfully synced up workflows from local storage to Griptape Cloud")
-            return SyncUpWorkflowsResultSuccess()
+            return StartSyncUpWorkflowsResultSuccess()
         except Exception as e:
             error_msg = f"Attempted to sync up workflows from local storage to Griptape Cloud. Failed because: {e}"
             logger.error(error_msg)
-            return SyncUpWorkflowsResultFailure(exception=Exception(error_msg))
+            return StartSyncUpWorkflowsResultFailure(exception=Exception(error_msg))
 
     def on_sync_down_workflows_request(
-        self, _request: SyncDownWorkflowsRequest
-    ) -> SyncDownWorkflowsResultSuccess | SyncDownWorkflowsResultFailure:
+        self, _request: StartSyncDownWorkflowsRequest
+    ) -> StartSyncDownWorkflowsResultSuccess | StartSyncDownWorkflowsResultFailure:
         """Handle sync down workflows request - download workflow files from storage backend.
 
         Args:
@@ -110,16 +112,17 @@ class SyncManager:
         if self._storage_utility is None:
             error_msg = "Attempted to sync down workflows from Griptape Cloud to local workspace. Failed because GT_CLOUD_BUCKET_ID is not configured"
             logger.error(error_msg)
-            return SyncDownWorkflowsResultFailure(exception=Exception(error_msg))
+            return StartSyncDownWorkflowsResultFailure(exception=Exception(error_msg))
 
         try:
-            self._sync_down_workflows(self._storage_utility)
-            logger.info("Successfully synced down workflows from Griptape Cloud to local workspace")
-            return SyncDownWorkflowsResultSuccess()
+            # Kick off sync in background thread and return immediately
+            ThreadPoolExecutor().submit(with_contextvars(self._sync_down_workflows), self._storage_utility)
+            logger.info("Started syncing down workflows from Griptape Cloud to local workspace")
+            return StartSyncDownWorkflowsResultSuccess()
         except Exception as e:
             error_msg = f"Attempted to sync down workflows from Griptape Cloud to local workspace. Failed because: {e}"
             logger.error(error_msg)
-            return SyncDownWorkflowsResultFailure(exception=Exception(error_msg))
+            return StartSyncDownWorkflowsResultFailure(exception=Exception(error_msg))
 
     def _sync_up_workflows(self, storage_utility: StorageUtility) -> None:
         """Upload all workflow files from workspace to storage backend."""
@@ -137,7 +140,7 @@ class SyncManager:
             logger.error("Failed to scan workspace for workflow files: %s", e)
             raise
 
-    def _upload_single_file(self, storage_utility: StorageUtility, file_path: Path, workspace_path: Path) -> None:
+    def _upload_workflow(self, storage_utility: StorageUtility, file_path: Path, workspace_path: Path) -> None:
         """Upload a single file synchronously.
 
         Args:
@@ -171,7 +174,7 @@ class SyncManager:
         # Use thread pool to run uploads concurrently without waiting
         executor = ThreadPoolExecutor()
         for file_path in py_files:
-            executor.submit(self._upload_single_file, storage_utility, file_path, workspace_path)
+            executor.submit(self._upload_workflow, storage_utility, file_path, workspace_path)
 
     def _sync_down_workflows(self, storage_utility: StorageUtility) -> None:
         """Download workflow files from storage backend to workspace."""
@@ -185,15 +188,13 @@ class SyncManager:
 
         self._workspace_path.mkdir(parents=True, exist_ok=True)
 
-        # Kick off downloads and return immediately
+        # Download files and register each workflow as it downloads
         self._download_files(storage_utility, file_names, self._workspace_path)
 
-        # Register downloaded workflows so they become available in the registry
-        logger.info("Registering %d downloaded workflow files...", len(file_names))
-        self._register_downloaded_workflows(file_names)
+        logger.info("All workflow files have been downloaded and registered")
 
-    def _download_single_file(self, storage_utility: StorageUtility, file_name: str, workspace_path: Path) -> None:
-        """Download a single file synchronously.
+    def _download_workflow(self, storage_utility: StorageUtility, file_name: str, workspace_path: Path) -> None:
+        """Download a single file synchronously and register it.
 
         Args:
             storage_utility: Storage utility instance for downloading files
@@ -212,62 +213,56 @@ class SyncManager:
 
             logger.debug("Downloaded workflow file: %s", file_name)
 
+            # Register the workflow immediately after successful download
+            self._register_workflow(file_name)
+
         except Exception as e:
             logger.error("Failed to download workflow file %s: %s", file_name, e)
 
     def _download_files(self, storage_utility: StorageUtility, file_names: list[str], workspace_path: Path) -> None:
-        """Kick off file downloads using thread pool without waiting for results.
+        """Download files using thread pool and wait for all downloads to complete.
 
         Args:
             storage_utility: Storage utility instance for downloading files
             file_names: List of file names to download
             workspace_path: Base workspace path for file writing
         """
-        # Use thread pool to run downloads concurrently without waiting
-        executor = ThreadPoolExecutor()
-        for file_name in file_names:
-            executor.submit(self._download_single_file, storage_utility, file_name, workspace_path)
+        # Use thread pool to run downloads concurrently and wait for completion
+        with ThreadPoolExecutor() as executor:
+            for file_name in file_names:
+                executor.submit(with_contextvars(self._download_workflow), storage_utility, file_name, workspace_path)
 
-    def _register_downloaded_workflows(self, file_names: list[str]) -> None:
-        """Register downloaded workflow files so they become available in the workflow registry.
+    def _register_workflow(self, file_name: str) -> None:
+        """Register a single downloaded workflow file.
 
         Args:
-            file_names: List of workflow file names that were downloaded
+            file_name: Name of the workflow file to register
         """
+        from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        registered_count = 0
-        failed_count = 0
+        try:
+            # Step 1: Load workflow metadata from file
+            load_metadata_request = LoadWorkflowMetadata(file_name=file_name)
+            load_metadata_result = GriptapeNodes.handle_request(load_metadata_request)
 
-        for file_name in file_names:
-            try:
-                # Step 1: Load workflow metadata from file
-                load_metadata_request = LoadWorkflowMetadata(file_name=file_name)
-                load_metadata_result = GriptapeNodes.handle_request(load_metadata_request)
+            if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                logger.warning("Failed to load metadata for workflow file: %s", file_name)
+                return
 
-                if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-                    logger.warning("Failed to load metadata for workflow file: %s", file_name)
-                    failed_count += 1
-                    continue
+            if WorkflowRegistry.has_workflow_with_name(load_metadata_result.metadata.name):
+                return
 
-                # Step 2: Register the workflow using the loaded metadata
-                register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=file_name)
-                register_result = GriptapeNodes.handle_request(register_request)
+            # Step 2: Register the workflow using the loaded metadata
+            register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=file_name)
+            register_result = GriptapeNodes.handle_request(register_request)
 
-                if isinstance(register_result, RegisterWorkflowResultSuccess):
-                    logger.info(
-                        "Successfully registered workflow '%s' from file: %s", register_result.workflow_name, file_name
-                    )
-                    registered_count += 1
-                else:
-                    logger.warning("Failed to register workflow from file: %s", file_name)
-                    failed_count += 1
+            if isinstance(register_result, RegisterWorkflowResultSuccess):
+                logger.info(
+                    "Successfully registered workflow '%s' from file: %s", register_result.workflow_name, file_name
+                )
+            else:
+                logger.warning("Failed to register workflow from file: %s", file_name)
 
-            except Exception as e:
-                logger.error("Error registering workflow from file %s: %s", file_name, e)
-                failed_count += 1
-
-        if registered_count > 0:
-            logger.info("Successfully registered %d workflows", registered_count)
-        if failed_count > 0:
-            logger.warning("Failed to register %d workflows", failed_count)
+        except Exception as e:
+            logger.error("Error registering workflow from file %s: %s", file_name, e)
