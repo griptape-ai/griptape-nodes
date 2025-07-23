@@ -86,20 +86,29 @@ class OSManager:
         expanded_vars = os.path.expandvars(path_str)
         return Path(expanded_vars).expanduser().resolve()
 
-    def _resolve_file_path(self, path_str: str) -> Path:
+    def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
 
         Args:
             path_str: Path string that may be absolute, relative, or start with ~
+            workspace_only: If True and path is invalid, fall back to workspace directory
 
         Returns:
             Resolved Path object
         """
-        if Path(path_str).is_absolute() or path_str.startswith("~"):
-            # Expand tilde and environment variables for absolute paths or paths starting with ~
-            return self._expand_path(path_str)
-        # Both workspace and system-wide modes resolve relative to current directory
-        return (self.current_dir / path_str).resolve()
+        try:
+            if Path(path_str).is_absolute() or path_str.startswith("~"):
+                # Expand tilde and environment variables for absolute paths or paths starting with ~
+                return self._expand_path(path_str)
+            # Both workspace and system-wide modes resolve relative to current directory
+            return (self.current_dir / path_str).resolve()
+        except (ValueError, RuntimeError) as e:
+            if workspace_only:
+                msg = f"Path '{path_str}' not found, using workspace directory: {self.current_dir}"
+                logger.warning(msg)
+                return self.current_dir
+            # Re-raise the exception for non-workspace mode
+            raise e
 
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
@@ -194,8 +203,8 @@ class OSManager:
 
         # Sanitize and validate the file path
         try:
-            # Resolve the path
-            path = self._resolve_file_path(file_path_str)
+            # Resolve the path (no workspace fallback for open requests)
+            path = self._resolve_file_path(file_path_str, workspace_only=False)
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{file_path_str}'"
             logger.info(details)
@@ -360,7 +369,7 @@ class OSManager:
                 logger.error(msg)
                 return ReadFileResultFailure()
 
-            file_path = self._resolve_file_path(file_path_str)
+            file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
 
             # Check if file exists and is actually a file
             if not file_path.exists() or not file_path.is_file():
