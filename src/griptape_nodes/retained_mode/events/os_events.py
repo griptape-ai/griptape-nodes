@@ -150,3 +150,42 @@ class ChangeDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ChangeDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Directory change failed. Common causes: access denied, path not found."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ReadFileRequest(RequestPayload):
+    """Read contents of a file, automatically detecting if it's text or binary using MIME types.
+
+    Use when: Reading file contents for display, processing, or analysis.
+    Automatically detects file type using MIME type detection and returns appropriate content format.
+
+    Args:
+        file_path: Path to the file to read
+        encoding: Text encoding to use if file is detected as text (default: 'utf-8')
+        workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
+
+    Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
+    """
+
+    file_path: str
+    encoding: str = "utf-8"
+    workspace_only: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File contents read successfully."""
+
+    content: str | bytes  # String for text files, bytes for binary files
+    file_size: int
+    mime_type: str  # e.g., "text/plain", "image/png", "application/pdf"
+    is_text: bool  # True if content is text, False if binary
+    encoding: str | None  # Encoding used (None for binary files)
+
+
+@dataclass
+@PayloadRegistry.register
+class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File reading failed. Common causes: file not found, permission denied, encoding error."""
