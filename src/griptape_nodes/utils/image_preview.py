@@ -4,12 +4,8 @@ import base64
 import io
 from pathlib import Path
 
-try:
-    from PIL import Image
+from PIL import Image
 
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -28,10 +24,6 @@ def create_image_preview(
     Returns:
         Base64 encoded data URL of the preview, or None if failed
     """
-    if not PIL_AVAILABLE:
-        logger.warning("PIL not available, cannot create image preview")
-        return None
-
     try:
         # Open and resize the image
         with Image.open(image_path) as img:
@@ -80,10 +72,6 @@ def create_image_preview_from_bytes(
     Returns:
         Base64 encoded data URL of the preview, or None if failed
     """
-    if not PIL_AVAILABLE:
-        logger.warning("PIL not available, cannot create image preview")
-        return None
-
     try:
         # Open image from bytes
         with Image.open(io.BytesIO(image_bytes)) as img:
@@ -126,9 +114,6 @@ def get_image_info(image_path: Path) -> dict | None:
     Returns:
         Dictionary with image info (width, height, format, mode), or None if failed
     """
-    if not PIL_AVAILABLE:
-        return None
-
     try:
         with Image.open(image_path) as img:
             return {

@@ -382,6 +382,10 @@ class OSManager:
 
     def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection."""
+        # Initialize variables that might be used in exception handlers
+        file_path: Path | None = None
+        file_path_str: str | None = None
+
         try:
             # Validate request and get file path
             file_path, file_path_str = self._validate_read_file_request(request)
@@ -448,21 +452,17 @@ class OSManager:
             )
 
         except (ValueError, FileNotFoundError) as e:
-            msg = f"Validation error in read_file for file: {file_path}: {e}"
+            file_info = f" for file: {file_path}" if file_path is not None else ""
+            msg = f"Validation error in read_file{file_info}: {e}"
             logger.error(msg)
             return ReadFileResultFailure()
         except Exception as e:
             # Try to include file path in error message if available
-            try:
-                path_info = (
-                    f" for {file_path}"
-                    if "file_path" in locals()
-                    else f" for {file_path_str}"
-                    if "file_path_str" in locals()
-                    else ""
-                )
-            except NameError:
-                path_info = ""
+            path_info = ""
+            if file_path is not None:
+                path_info = f" for {file_path}"
+            elif file_path_str is not None:
+                path_info = f" for {file_path_str}"
 
             msg = f"Unexpected error in read_file{path_info}: {type(e).__name__}: {e}"
             logger.error(msg)
