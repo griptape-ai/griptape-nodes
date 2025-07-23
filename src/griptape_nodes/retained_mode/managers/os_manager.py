@@ -60,21 +60,10 @@ class OSManager:
             event_manager.assign_manager_to_request_type(
                 request_type=ReadFileRequest, callback=self.on_read_file_request
             )
-        self._current_dir = None
 
-    @property
-    def current_dir(self) -> Path:
-        """Get the current directory."""
-        if self._current_dir is None:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            self._current_dir = GriptapeNodes.ConfigManager().workspace_path
-        return self._current_dir
-
-    @current_dir.setter
-    def current_dir(self, path: Path) -> None:
-        """Set the current directory."""
-        self._current_dir = path
+    def _get_workspace_path(self) -> Path:
+        """Get the workspace path from config."""
+        return GriptapeNodes.ConfigManager().workspace_path
 
     def _expand_path(self, path_str: str) -> Path:
         """Expand a path string, handling tilde and environment variables.
@@ -104,12 +93,12 @@ class OSManager:
                 # Expand tilde and environment variables for absolute paths or paths starting with ~
                 return self._expand_path(path_str)
             # Both workspace and system-wide modes resolve relative to current directory
-            return (self.current_dir / path_str).resolve()
+            return (self._get_workspace_path() / path_str).resolve()
         except (ValueError, RuntimeError) as e:
             if workspace_only:
-                msg = f"Path '{path_str}' not found, using workspace directory: {self.current_dir}"
+                msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
                 logger.warning(msg)
-                return self.current_dir
+                return self._get_workspace_path()
             # Re-raise the exception for non-workspace mode
             raise e
 
@@ -276,14 +265,14 @@ class OSManager:
         try:
             # Get the directory path to list
             if request.directory_path is None:
-                directory = self.current_dir
+                directory = self._get_workspace_path()
             # Handle paths consistently - always resolve relative paths relative to current directory
             elif Path(request.directory_path).is_absolute() or request.directory_path.startswith("~"):
                 # Expand tilde and environment variables for absolute paths or paths starting with ~
                 directory = self._expand_path(request.directory_path)
             else:
                 # Both workspace and system-wide modes resolve relative to current directory
-                directory = (self.current_dir / request.directory_path).resolve()
+                directory = (self._get_workspace_path() / request.directory_path).resolve()
 
             # Check if directory exists
             if not directory.exists():
