@@ -1,4 +1,6 @@
+import base64
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -268,7 +270,7 @@ class OSManager:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
@@ -396,8 +398,6 @@ class OSManager:
             file_size = file_path.stat().st_size
 
             # Determine MIME type
-            import mimetypes
-
             mime_type, _ = mimetypes.guess_type(str(file_path))
             if mime_type is None:
                 # Default to text/plain for unknown types
@@ -428,8 +428,6 @@ class OSManager:
 
                 # For images, convert to base64 string for easier frontend handling
                 if mime_type.startswith("image/"):
-                    import base64
-
                     content = base64.b64encode(content).decode("utf-8")
                 encoding = None
 
