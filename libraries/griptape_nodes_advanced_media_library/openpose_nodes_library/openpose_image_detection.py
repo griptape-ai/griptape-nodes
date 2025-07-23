@@ -3,7 +3,7 @@ import logging
 from collections import OrderedDict
 
 import cv2  # type: ignore[reportMissingImports]
-import huggingface_hub
+import huggingface_hub  # pyright: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
