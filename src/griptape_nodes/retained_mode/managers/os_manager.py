@@ -390,59 +390,9 @@ class OSManager:
             # Validate request and get file path
             file_path, file_path_str = self._validate_read_file_request(request)
 
-            # Get file size
-            file_size = file_path.stat().st_size
+            # Read file content
+            content, encoding, mime_type, compression_encoding, file_size = self._read_file_content(file_path, request)
 
-            # Determine MIME type and compression encoding
-            mime_type, compression_encoding = mimetypes.guess_type(str(file_path), strict=True)
-            if mime_type is None:
-                # Default to text/plain for unknown types
-                mime_type = "text/plain"
-
-            # Determine if file is binary using content-based detection
-            try:
-                is_binary_file = is_binary(str(file_path))
-            except Exception as e:
-                msg = f"binaryornot detection failed for {file_path}: {e}"
-                logger.warning(msg)
-                # Fall back to MIME type detection only if binaryornot fails
-                is_binary_file = not mime_type.startswith(
-                    ("text/", "application/json", "application/xml", "application/yaml")
-                )
-
-            # Initialize variables
-            content = None
-            encoding = None
-
-            # Read file content based on binary detection
-            if not is_binary_file:
-                # Read as text
-                try:
-                    with file_path.open(encoding=request.encoding) as f:
-                        content = f.read()
-                    encoding = request.encoding
-                except UnicodeDecodeError:
-                    # Try with a different encoding if the specified one fails
-                    try:
-                        with file_path.open(encoding="utf-8") as f:
-                            content = f.read()
-                        encoding = "utf-8"
-                    except UnicodeDecodeError:
-                        # If all text encodings fail, treat as binary
-                        with file_path.open("rb") as f:
-                            content = f.read()
-                        encoding = None
-            else:
-                # Read as binary
-                with file_path.open("rb") as f:
-                    content = f.read()
-
-                # For images, provide preview without moving files
-                if mime_type.startswith("image/"):
-                    content = self._handle_image_content(content, file_path, mime_type)
-                encoding = None
-
-            # Single return point at the bottom
             return ReadFileResultSuccess(
                 content=content,
                 file_size=file_size,
@@ -467,6 +417,59 @@ class OSManager:
             msg = f"Unexpected error in read_file{path_info}: {type(e).__name__}: {e}"
             logger.error(msg)
             return ReadFileResultFailure()
+
+    def _read_file_content(
+        self, file_path: Path, request: ReadFileRequest
+    ) -> tuple[bytes | str, str | None, str, str | None, int]:
+        """Read file content and return content, encoding, mime_type, compression_encoding, and file_size."""
+        # Get file size
+        file_size = file_path.stat().st_size
+
+        # Determine MIME type and compression encoding
+        mime_type, compression_encoding = mimetypes.guess_type(str(file_path), strict=True)
+        if mime_type is None:
+            mime_type = "text/plain"
+
+        # Determine if file is binary
+        try:
+            is_binary_file = is_binary(str(file_path))
+        except Exception as e:
+            msg = f"binaryornot detection failed for {file_path}: {e}"
+            logger.warning(msg)
+            is_binary_file = not mime_type.startswith(
+                ("text/", "application/json", "application/xml", "application/yaml")
+            )
+
+        # Read file content
+        if not is_binary_file:
+            content, encoding = self._read_text_file(file_path, request.encoding)
+        else:
+            content, encoding = self._read_binary_file(file_path, mime_type)
+
+        return content, encoding, mime_type, compression_encoding, file_size
+
+    def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
+        """Read file as text with fallback encodings."""
+        try:
+            with file_path.open(encoding=requested_encoding) as f:
+                return f.read(), requested_encoding
+        except UnicodeDecodeError:
+            try:
+                with file_path.open(encoding="utf-8") as f:
+                    return f.read(), "utf-8"
+            except UnicodeDecodeError:
+                with file_path.open("rb") as f:
+                    return f.read(), None
+
+    def _read_binary_file(self, file_path: Path, mime_type: str) -> tuple[bytes | str, None]:
+        """Read file as binary, with special handling for images."""
+        with file_path.open("rb") as f:
+            content = f.read()
+
+        if mime_type.startswith("image/"):
+            content = self._handle_image_content(content, file_path, mime_type)
+
+        return content, None
 
     def _handle_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
         """Handle image content by creating previews or returning static URLs."""
