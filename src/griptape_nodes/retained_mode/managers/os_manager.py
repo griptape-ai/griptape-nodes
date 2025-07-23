@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from binaryornot.check import is_binary
 from rich.console import Console
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -403,8 +404,19 @@ class OSManager:
                 # Default to text/plain for unknown types
                 mime_type = "text/plain"
 
-            # Read file content based on MIME type
-            if mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml")):
+            # Determine if file is binary using content-based detection
+            try:
+                is_binary_file = is_binary(str(file_path))
+            except Exception as e:
+                msg = f"binaryornot detection failed for {file_path}: {e}"
+                logger.warning(msg)
+                # Fall back to MIME type detection only if binaryornot fails
+                is_binary_file = not mime_type.startswith(
+                    ("text/", "application/json", "application/xml", "application/yaml")
+                )
+
+            # Read file content based on binary detection
+            if not is_binary_file:
                 # Read as text
                 try:
                     with file_path.open(encoding=request.encoding) as f:
