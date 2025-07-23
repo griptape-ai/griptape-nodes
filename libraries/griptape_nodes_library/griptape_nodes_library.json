@@ -687,7 +687,7 @@
       "file_path": "griptape_nodes_library/convert/to_json.py",
       "metadata": {
         "category": "convert",
-        "description": "Converts incoming value to JSON data using json-repair",
+        "description": "Converts incoming value to JSON data",
         "display_name": "To JSON"
       }
     },
