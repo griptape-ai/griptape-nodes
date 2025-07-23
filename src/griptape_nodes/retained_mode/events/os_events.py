@@ -121,7 +121,8 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     content: str | bytes  # String for text files, bytes for binary files
     file_size: int
     mime_type: str  # e.g., "text/plain", "image/png", "application/pdf"
-    encoding: str | None  # Encoding used (None for binary files)
+    encoding: str | None  # Text encoding used (None for binary files)
+    compression_encoding: str | None = None  # Compression encoding (e.g., "gzip", "bzip2", None)
     is_text: bool = False  # Will be computed from content type
 
     def __post_init__(self) -> None:

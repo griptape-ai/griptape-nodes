@@ -397,8 +397,8 @@ class OSManager:
             # Get file size
             file_size = file_path.stat().st_size
 
-            # Determine MIME type
-            mime_type, _ = mimetypes.guess_type(str(file_path))
+            # Determine MIME type and compression encoding
+            mime_type, compression_encoding = mimetypes.guess_type(str(file_path), strict=True)
             if mime_type is None:
                 # Default to text/plain for unknown types
                 mime_type = "text/plain"
@@ -431,7 +431,13 @@ class OSManager:
                     content = base64.b64encode(content).decode("utf-8")
                 encoding = None
 
-            return ReadFileResultSuccess(content=content, file_size=file_size, mime_type=mime_type, encoding=encoding)
+            return ReadFileResultSuccess(
+                content=content,
+                file_size=file_size,
+                mime_type=mime_type,
+                encoding=encoding,
+                compression_encoding=compression_encoding,
+            )
 
         except Exception as e:
             msg = f"Unexpected error in read_file: {type(e).__name__}: {e}"
