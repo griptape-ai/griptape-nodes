@@ -94,13 +94,13 @@ class OSManager:
                 return self._expand_path(path_str)
             # Both workspace and system-wide modes resolve relative to current directory
             return (self._get_workspace_path() / path_str).resolve()
-        except (ValueError, RuntimeError) as e:
+        except (ValueError, RuntimeError):
             if workspace_only:
                 msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
                 logger.warning(msg)
                 return self._get_workspace_path()
             # Re-raise the exception for non-workspace mode
-            raise e
+            raise
 
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
@@ -130,6 +130,50 @@ class OSManager:
         msg = f"Path is within workspace, relative path: {relative}"
         logger.debug(msg)
         return True, relative
+
+    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
+        """Validate read file request and return resolved file path and path string."""
+        # Validate that exactly one of file_path or file_entry is provided
+        if request.file_path is None and request.file_entry is None:
+            msg = "Either file_path or file_entry must be provided"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        if request.file_path is not None and request.file_entry is not None:
+            msg = "Only one of file_path or file_entry should be provided, not both"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        # Get the file path to read - handle paths consistently
+        if request.file_entry is not None:
+            file_path_str = request.file_entry.path
+        elif request.file_path is not None:
+            file_path_str = request.file_path
+        else:
+            msg = "No valid file path provided"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
+
+        # Check if file exists and is actually a file
+        if not file_path.exists():
+            msg = f"File does not exist: {file_path}"
+            logger.error(msg)
+            raise FileNotFoundError(msg)
+        if not file_path.is_file():
+            msg = f"File is not a file: {file_path}"
+            logger.error(msg)
+            raise FileNotFoundError(msg)
+
+        # Check workspace constraints
+        is_workspace_path, _ = self._validate_workspace_path(file_path)
+        if request.workspace_only and not is_workspace_path:
+            msg = f"File is outside workspace: {file_path}"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        return file_path, file_path_str
 
     @staticmethod
     def platform() -> str:
@@ -341,48 +385,8 @@ class OSManager:
     def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection."""
         try:
-            # Validate that exactly one of file_path or file_entry is provided
-            if request.file_path is None and request.file_entry is None:
-                msg = "Either file_path or file_entry must be provided"
-                logger.error(msg)
-                return ReadFileResultFailure()
-
-            if request.file_path is not None and request.file_entry is not None:
-                msg = "Only one of file_path or file_entry should be provided, not both"
-                logger.error(msg)
-                return ReadFileResultFailure()
-
-            # Get the file path to read - handle paths consistently
-            if request.file_entry is not None:
-                # Use the path from the FileSystemEntry
-                file_path_str = request.file_entry.path
-            elif request.file_path is not None:
-                # Use the provided file_path
-                file_path_str = request.file_path
-            else:
-                # This should never happen due to validation above, but type checker needs it
-                msg = "No valid file path provided"
-                logger.error(msg)
-                return ReadFileResultFailure()
-
-            file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
-
-            # Check if file exists and is actually a file
-            if not file_path.exists():
-                msg = f"File does not exist: {file_path}"
-                logger.error(msg)
-                return ReadFileResultFailure()
-            if not file_path.is_file():
-                msg = f"File is not a file: {file_path}"
-                logger.error(msg)
-                return ReadFileResultFailure()
-
-            # Check workspace constraints
-            is_workspace_path, _ = self._validate_workspace_path(file_path)
-            if request.workspace_only and not is_workspace_path:
-                msg = f"File is outside workspace: {file_path}"
-                logger.error(msg)
-                return ReadFileResultFailure()
+            # Validate request and get file path
+            file_path, file_path_str = self._validate_read_file_request(request)
 
             # Get file size
             file_size = file_path.stat().st_size
@@ -433,45 +437,7 @@ class OSManager:
 
                 # For images, provide preview without moving files
                 if mime_type.startswith("image/"):
-                    # Store original bytes for preview creation
-                    original_image_bytes = content
-
-                    # Check if file is already in the static files directory
-                    config_manager = GriptapeNodes.ConfigManager()
-                    static_files_directory = config_manager.get_config_value(
-                        "static_files_directory", default="staticfiles"
-                    )
-                    static_dir = config_manager.workspace_path / static_files_directory
-
-                    try:
-                        # Check if file is within the static files directory
-                        file_relative_to_static = file_path.relative_to(static_dir)
-                        # File is in static directory, construct URL directly
-                        static_url = f"http://localhost:8124/static/{file_relative_to_static}"
-                        content = static_url
-                        logger.debug(f"Image already in static directory, returning URL: {static_url}")
-                    except ValueError:
-                        # File is not in static directory, create small preview
-                        from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
-
-                        preview_data_url = create_image_preview_from_bytes(
-                            original_image_bytes,  # type: ignore[arg-type]
-                            max_width=200,
-                            max_height=200,
-                            quality=85,
-                            format="WEBP",
-                        )
-
-                        if preview_data_url:
-                            content = preview_data_url
-                            logger.debug("Image preview created (file not moved)")
-                        else:
-                            # Fallback to data URL if preview creation fails
-                            data_url = (
-                                f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
-                            )
-                            content = data_url
-                            logger.debug("Fallback to full image data URL")
+                    content = self._handle_image_content(content, file_path, mime_type)
                 encoding = None
 
             # Single return point at the bottom
@@ -483,6 +449,10 @@ class OSManager:
                 compression_encoding=compression_encoding,
             )
 
+        except (ValueError, FileNotFoundError) as e:
+            msg = f"Validation error in read_file for file: {file_path}: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure()
         except Exception as e:
             # Try to include file path in error message if available
             try:
@@ -496,9 +466,48 @@ class OSManager:
             except NameError:
                 path_info = ""
 
-            msg = f"Unexpected error in read_file {path_info}: {type(e).__name__}: {e}"
+            msg = f"Unexpected error in read_file{path_info}: {type(e).__name__}: {e}"
             logger.error(msg)
             return ReadFileResultFailure()
+
+    def _handle_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
+        """Handle image content by creating previews or returning static URLs."""
+        # Store original bytes for preview creation
+        original_image_bytes = content
+
+        # Check if file is already in the static files directory
+        config_manager = GriptapeNodes.ConfigManager()
+        static_files_directory = config_manager.get_config_value("static_files_directory", default="staticfiles")
+        static_dir = config_manager.workspace_path / static_files_directory
+
+        try:
+            # Check if file is within the static files directory
+            file_relative_to_static = file_path.relative_to(static_dir)
+            # File is in static directory, construct URL directly
+            static_url = f"http://localhost:8124/static/{file_relative_to_static}"
+            msg = f"Image already in static directory, returning URL: {static_url}"
+            logger.debug(msg)
+        except ValueError:
+            # File is not in static directory, create small preview
+            from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+
+            preview_data_url = create_image_preview_from_bytes(
+                original_image_bytes,  # type: ignore[arg-type]
+                max_width=200,
+                max_height=200,
+                quality=85,
+                format="WEBP",
+            )
+
+            if preview_data_url:
+                logger.debug("Image preview created (file not moved)")
+                return preview_data_url
+            # Fallback to data URL if preview creation fails
+            data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+            logger.debug("Fallback to full image data URL")
+            return data_url
+        else:
+            return static_url
 
     @staticmethod
     def get_disk_space_info(path: Path) -> DiskSpaceInfo:
