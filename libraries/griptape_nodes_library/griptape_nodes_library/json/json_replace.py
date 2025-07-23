@@ -1,3 +1,5 @@
+import copy
+import re
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -63,8 +65,6 @@ class JsonReplace(ControlNode):
 
     def _parse_array_index(self, part: str) -> tuple[str | None, int | None]:
         """Parse array indexing from path part (e.g., 'items[0]' -> ('items', 0))."""
-        import re
-
         match = re.match(r"^(.+)\[(\d+)\]$", part)
         return (match.group(1), int(match.group(2))) if match else (None, None)
 
@@ -85,9 +85,6 @@ class JsonReplace(ControlNode):
         """Set a value at a specific path in nested data using dot notation."""
         if not path:
             return new_value
-
-        import copy
-        import re
 
         result = copy.deepcopy(data)
         path_parts = re.split(r"\.(?![^\[]*\])", path)
