@@ -2,7 +2,6 @@
 
 import base64
 import io
-import logging
 from pathlib import Path
 
 try:
@@ -11,12 +10,11 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-
-logger = logging.getLogger("griptape_nodes")
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
 def create_image_preview(
-    image_path: Path, max_width: int = 512, max_height: int = 512, quality: int = 85, format: str = "WEBP"
+    image_path: Path, max_width: int = 512, max_height: int = 512, quality: int = 85, image_format: str = "WEBP"
 ) -> str | None:
     """Create a small preview image from a file path.
 
@@ -25,7 +23,7 @@ def create_image_preview(
         max_width: Maximum width for the preview
         max_height: Maximum height for the preview
         quality: WebP quality (1-100)
-        format: Output format (WEBP, JPEG, PNG, etc.)
+        image_format: Output format (WEBP, JPEG, PNG, etc.)
 
     Returns:
         Base64 encoded data URL of the preview, or None if failed
@@ -38,15 +36,17 @@ def create_image_preview(
         # Open and resize the image
         with Image.open(image_path) as img:
             # Convert to RGB if necessary (for WebP/JPEG output)
-            if format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
-                img = img.convert("RGB")
+            if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
+                converted_img = img.convert("RGB")
+            else:
+                converted_img = img
 
             # Calculate new size maintaining aspect ratio
-            img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+            converted_img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
 
             # Save to bytes buffer
             buffer = io.BytesIO()
-            img.save(buffer, format=format, quality=quality, optimize=True)
+            converted_img.save(buffer, format=image_format, quality=quality, optimize=True)
             buffer.seek(0)
 
             # Convert to base64
@@ -54,7 +54,7 @@ def create_image_preview(
             base64_data = base64.b64encode(image_bytes).decode("utf-8")
 
             # Create data URL
-            mime_type = f"image/{format.lower()}"
+            mime_type = f"image/{image_format.lower()}"
             data_url = f"data:{mime_type};base64,{base64_data}"
 
             logger.debug(f"Created preview for {image_path}: {img.size} -> {len(image_bytes)} bytes")
@@ -66,7 +66,7 @@ def create_image_preview(
 
 
 def create_image_preview_from_bytes(
-    image_bytes: bytes, max_width: int = 512, max_height: int = 512, quality: int = 85, format: str = "WEBP"
+    image_bytes: bytes, max_width: int = 512, max_height: int = 512, quality: int = 85, image_format: str = "WEBP"
 ) -> str | None:
     """Create a small preview image from bytes.
 
@@ -75,7 +75,7 @@ def create_image_preview_from_bytes(
         max_width: Maximum width for the preview
         max_height: Maximum height for the preview
         quality: WebP quality (1-100)
-        format: Output format (WEBP, JPEG, PNG, etc.)
+        image_format: Output format (WEBP, JPEG, PNG, etc.)
 
     Returns:
         Base64 encoded data URL of the preview, or None if failed
@@ -88,15 +88,17 @@ def create_image_preview_from_bytes(
         # Open image from bytes
         with Image.open(io.BytesIO(image_bytes)) as img:
             # Convert to RGB if necessary (for WebP/JPEG output)
-            if format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
-                img = img.convert("RGB")
+            if image_format.upper() in ("WEBP", "JPEG") and img.mode in ("RGBA", "LA", "P"):
+                converted_img = img.convert("RGB")
+            else:
+                converted_img = img
 
             # Calculate new size maintaining aspect ratio
-            img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+            converted_img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
 
             # Save to bytes buffer
             buffer = io.BytesIO()
-            img.save(buffer, format=format, quality=quality, optimize=True)
+            converted_img.save(buffer, format=image_format, quality=quality, optimize=True)
             buffer.seek(0)
 
             # Convert to base64
@@ -104,7 +106,7 @@ def create_image_preview_from_bytes(
             base64_data = base64.b64encode(preview_bytes).decode("utf-8")
 
             # Create data URL
-            mime_type = f"image/{format.lower()}"
+            mime_type = f"image/{image_format.lower()}"
             data_url = f"data:{mime_type};base64,{base64_data}"
 
             logger.debug(f"Created preview from bytes: {len(image_bytes)} -> {len(preview_bytes)} bytes")

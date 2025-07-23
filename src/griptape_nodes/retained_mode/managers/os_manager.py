@@ -1,5 +1,4 @@
 import base64
-import logging
 import mimetypes
 import os
 import shutil
@@ -25,11 +24,10 @@ from griptape_nodes.retained_mode.events.os_events import (
     ReadFileResultFailure,
     ReadFileResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 console = Console()
-logger = logging.getLogger("griptape_nodes")
 
 
 @dataclass
@@ -496,7 +494,7 @@ class OSManager:
                 max_width=200,
                 max_height=200,
                 quality=85,
-                format="WEBP",
+                image_format="WEBP",
             )
 
             if preview_data_url:
