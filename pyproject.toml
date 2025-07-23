@@ -20,6 +20,7 @@ dependencies = [
   "python-multipart>=0.0.20",
   "json-repair>=0.46.1",
   "imageio-ffmpeg>=0.6.0",
+  "binaryornot>=0.4.4",
   "pillow>=11.3.0",
 ]
 
