@@ -372,8 +372,12 @@ class OSManager:
             file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
 
             # Check if file exists and is actually a file
-            if not file_path.exists() or not file_path.is_file():
-                msg = f"File does not exist or is not a file: {file_path}"
+            if not file_path.exists():
+                msg = f"File does not exist: {file_path}"
+                logger.error(msg)
+                return ReadFileResultFailure()
+            if not file_path.is_file():
+                msg = f"File is not a file: {file_path}"
                 logger.error(msg)
                 return ReadFileResultFailure()
 
