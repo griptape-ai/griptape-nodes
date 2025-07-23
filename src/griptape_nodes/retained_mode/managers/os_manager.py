@@ -110,10 +110,10 @@ class OSManager:
             msg = f"Path is outside workspace: {path}"
             logger.debug(msg)
             return False, path
-        else:
-            msg = f"Path is within workspace, relative path: {relative}"
-            logger.debug(msg)
-            return True, relative
+
+        msg = f"Path is within workspace, relative path: {relative}"
+        logger.debug(msg)
+        return True, relative
 
     @staticmethod
     def platform() -> str:
