@@ -11,13 +11,7 @@ from rich.console import Console
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
-    ChangeDirectoryRequest,
-    ChangeDirectoryResultFailure,
-    ChangeDirectoryResultSuccess,
     FileSystemEntry,
-    GetCurrentDirectoryRequest,
-    GetCurrentDirectoryResultFailure,
-    GetCurrentDirectoryResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -59,12 +53,7 @@ class OSManager:
             event_manager.assign_manager_to_request_type(
                 request_type=ListDirectoryRequest, callback=self.on_list_directory_request
             )
-            event_manager.assign_manager_to_request_type(
-                request_type=GetCurrentDirectoryRequest, callback=self.on_get_current_directory_request
-            )
-            event_manager.assign_manager_to_request_type(
-                request_type=ChangeDirectoryRequest, callback=self.on_change_directory_request
-            )
+
             event_manager.assign_manager_to_request_type(
                 request_type=ReadFileRequest, callback=self.on_read_file_request
             )
@@ -225,22 +214,19 @@ class OSManager:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
             if request.directory_path is None:
                 directory = self.current_dir
-            # Handle relative paths in workspace mode
-            elif request.workspace_only:
-                # In workspace mode, resolve relative to current directory
-                if Path(request.directory_path).is_absolute():
-                    directory = self._expand_path(request.directory_path)
-                else:
-                    directory = (self.current_dir / request.directory_path).resolve()
-            else:
-                # In system-wide mode, expand the path normally
+            # Handle paths consistently - always resolve relative paths relative to current directory
+            elif Path(request.directory_path).is_absolute() or request.directory_path.startswith("~"):
+                # Expand tilde and environment variables for absolute paths or paths starting with ~
                 directory = self._expand_path(request.directory_path)
+            else:
+                # Both workspace and system-wide modes resolve relative to current directory
+                directory = (self.current_dir / request.directory_path).resolve()
 
             # Check if directory exists
             if not directory.exists() or not directory.is_dir():
@@ -286,8 +272,15 @@ class OSManager:
                 logger.error(msg)
                 return ListDirectoryResultFailure()
 
+            # Return appropriate path format based on mode
+            if request.workspace_only:
+                # In workspace mode, return relative path if within workspace, absolute if outside
+                return ListDirectoryResultSuccess(
+                    entries=entries, current_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path
+                )
+            # In system-wide mode, always return the full absolute path
             return ListDirectoryResultSuccess(
-                entries=entries, current_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path
+                entries=entries, current_path=str(directory), is_workspace_path=is_workspace_path
             )
 
         except Exception as e:
@@ -295,72 +288,16 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure()
 
-    def on_get_current_directory_request(self, request: GetCurrentDirectoryRequest) -> ResultPayload:
-        """Handle a request to get the current working directory."""
-        try:
-            is_workspace_path, path = self._validate_workspace_path(self.current_dir)
-            if request.workspace_only and not is_workspace_path:
-                # If workspace only and we're outside, reset to workspace root
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-                self.current_dir = GriptapeNodes.ConfigManager().workspace_path
-                return GetCurrentDirectoryResultSuccess(path="", is_workspace_path=True)
-
-            return GetCurrentDirectoryResultSuccess(path=str(path), is_workspace_path=is_workspace_path)
-        except Exception as e:
-            msg = f"Error getting current directory: {type(e).__name__}: {e}"
-            logger.error(msg)
-            return GetCurrentDirectoryResultFailure()
-
-    def on_change_directory_request(self, request: ChangeDirectoryRequest) -> ResultPayload:
-        """Handle a request to change the current working directory."""
-        try:
-            # Handle relative paths in workspace mode
-            if request.workspace_only:
-                # In workspace mode, resolve relative to current directory
-                if Path(request.directory_path).is_absolute():
-                    new_dir = self._expand_path(request.directory_path)
-                else:
-                    new_dir = (self.current_dir / request.directory_path).resolve()
-            else:
-                # In system-wide mode, expand the path normally
-                new_dir = self._expand_path(request.directory_path)
-
-            # Check if the directory exists and is actually a directory
-            if not new_dir.exists() or not new_dir.is_dir():
-                msg = f"Directory does not exist or is not a directory: {new_dir}"
-                logger.error(msg)
-                return ChangeDirectoryResultFailure()
-
-            # Check workspace constraints
-            is_workspace_path, relative_or_abs_path = self._validate_workspace_path(new_dir)
-            if request.workspace_only and not is_workspace_path:
-                msg = f"Directory is outside workspace: {new_dir}"
-                logger.error(msg)
-                return ChangeDirectoryResultFailure()
-
-            # Update the current directory
-            self.current_dir = new_dir
-            return ChangeDirectoryResultSuccess(new_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path)
-
-        except Exception as e:
-            msg = f"Unexpected error in change_directory: {type(e).__name__}: {e}"
-            logger.error(msg)
-            return ChangeDirectoryResultFailure()
-
-    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection."""
         try:
-            # Get the file path to read
-            if request.workspace_only:
-                # In workspace mode, resolve relative to current directory
-                if Path(request.file_path).is_absolute():
-                    file_path = self._expand_path(request.file_path)
-                else:
-                    file_path = (self.current_dir / request.file_path).resolve()
-            else:
-                # In system-wide mode, expand the path normally
+            # Get the file path to read - handle paths consistently
+            if Path(request.file_path).is_absolute() or request.file_path.startswith("~"):
+                # Expand tilde and environment variables for absolute paths or paths starting with ~
                 file_path = self._expand_path(request.file_path)
+            else:
+                # Both workspace and system-wide modes resolve relative to current directory
+                file_path = (self.current_dir / request.file_path).resolve()
 
             # Check if file exists and is actually a file
             if not file_path.exists() or not file_path.is_file():
