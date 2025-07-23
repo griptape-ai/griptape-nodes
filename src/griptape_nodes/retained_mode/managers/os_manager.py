@@ -214,7 +214,7 @@ class OSManager:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
