@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from json_repair import repair_json
@@ -40,8 +41,6 @@ class JsonInput(DataNode):
                 result = repair_json(json_data)
             except Exception:
                 # If repair fails, try to parse as regular JSON
-                import json
-
                 result = json.loads(json_data)
         else:
             # For other types, convert to string and try to repair

@@ -1,3 +1,5 @@
+import json
+import re
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -53,8 +55,6 @@ class JsonExtractValue(DataNode):
             return data
 
         # Handle array indexing in path (e.g., "items[0].name")
-        import re
-
         default = "{}"
         # Split by dots, but preserve array indices
         path_parts = re.split(r"\.(?![^\[]*\])", path)
@@ -95,8 +95,6 @@ class JsonExtractValue(DataNode):
 
     def _perform_extraction(self) -> None:
         """Perform the JSON extraction and set the output value."""
-        import json
-
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
 
