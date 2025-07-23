@@ -59,12 +59,10 @@ class SyncManager:
             logger.warning("GT_CLOUD_BUCKET_ID secret not found - sync functionality will be disabled")
             self._storage_utility = None
         else:
-            workflows_directory = config_manager.get_config_value("workflows_directory")
-
             storage_driver = GriptapeCloudStorageDriver(
                 bucket_id=bucket_id,
                 api_key=api_key,
-                working_dir=workflows_directory,
+                working_dir="synced_workflows",
             )
 
             self._storage_utility = StorageUtility(storage_driver)
