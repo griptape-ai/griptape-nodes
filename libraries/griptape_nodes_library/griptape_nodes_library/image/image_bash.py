@@ -1,6 +1,7 @@
 import base64
 from io import BytesIO
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact, JsonArtifact
@@ -12,16 +13,25 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 CANVAS_DIMENSIONS = {
-    "HD": {"width": 1920, "height": 1080},  # 16:9 HD
-    "2K": {"width": 2560, "height": 1440},  # 16:9 2K
-    "4K": {"width": 3840, "height": 2160},  # 16:9 4K
-    "A4": {"width": 2480, "height": 3508},  # A4 at 300dpi
-    "A3": {"width": 3508, "height": 4961},  # A3 at 300dpi
-    "square": {"width": 2000, "height": 2000},  # Square format
-    "landscape": {"width": 2000, "height": 1500},  # 4:3 landscape
-    "portrait": {"width": 1500, "height": 2000},  # 3:4 portrait
-    "custom": {"width": 1920, "height": 1080},  # Default custom size
+    "2K Full": {"width": 2048, "height": 1080},
+    "2K Flat": {"width": 1998, "height": 1080},
+    "2K Scope": {"width": 2048, "height": 858},
+    "4K Full": {"width": 4096, "height": 2160},
+    "4K Flat": {"width": 3996, "height": 2160},
+    "4K Scope": {"width": 4096, "height": 1716},
+    "HD (16:9)": {"width": 1920, "height": 1080},
+    "UHD (4K, 16:9)": {"width": 3840, "height": 2160},
+    "Square 2K": {"width": 2048, "height": 2048},
+    "Square 4K": {"width": 4096, "height": 4096},
+    "YouTube Shorts / TikTok / Reels": {"width": 1080, "height": 1920},
+    "Instagram Square": {"width": 1080, "height": 1080},
+    "Instagram Portrait": {"width": 1080, "height": 1350},
+    "Twitter Landscape": {"width": 1600, "height": 900},
+    "Twitter Portrait": {"width": 1080, "height": 1350},
+    "Facebook Cover": {"width": 820, "height": 312},
+    "Custom": {"width": 1920, "height": 1080},
 }
+
 BASE_CANVAS_OPTIONS = [*list(CANVAS_DIMENSIONS.keys())]
 
 default_svg = """<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
@@ -269,8 +279,6 @@ class ImageBash(DataNode):
 
         # Generate new name from filename
         try:
-            from urllib.parse import unquote, urlparse
-
             parsed_url = urlparse(image_url)
             filename = unquote(parsed_url.path.split("/")[-1])
             # Remove extension and query params
@@ -329,8 +337,6 @@ class ImageBash(DataNode):
 
         # Extract filename from URL for the layer name
         try:
-            from urllib.parse import unquote, urlparse
-
             parsed_url = urlparse(input_img["url"])
             filename = unquote(parsed_url.path.split("/")[-1])
             # Remove extension and query params
