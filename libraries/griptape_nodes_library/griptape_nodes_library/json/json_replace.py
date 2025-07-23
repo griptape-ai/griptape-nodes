@@ -4,10 +4,10 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class JsonReplace(DataNode):
+class JsonReplace(ControlNode):
     """Replace a value in JSON using dot notation path."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
