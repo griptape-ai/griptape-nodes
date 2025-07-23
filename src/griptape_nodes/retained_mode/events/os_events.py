@@ -121,8 +121,16 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     content: str | bytes  # String for text files, bytes for binary files
     file_size: int
     mime_type: str  # e.g., "text/plain", "image/png", "application/pdf"
-    is_text: bool  # True if content is text, False if binary
     encoding: str | None  # Encoding used (None for binary files)
+    is_text: bool = False  # Will be computed from content type
+
+    def __post_init__(self) -> None:
+        """Compute is_text from content type after initialization."""
+        # For images, even though content is a string (base64), it's not text content
+        if self.mime_type.startswith("image/"):
+            self.is_text = False
+        else:
+            self.is_text = isinstance(self.content, str)
 
 
 @dataclass

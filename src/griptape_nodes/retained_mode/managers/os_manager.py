@@ -376,11 +376,8 @@ class OSManager:
                 # Default to text/plain for unknown types
                 mime_type = "text/plain"
 
-            # Determine if file is text or binary based on MIME type
-            is_text = mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml"))
-
-            # Read file content
-            if is_text:
+            # Read file content based on MIME type
+            if mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml")):
                 # Read as text
                 try:
                     with file_path.open(encoding=request.encoding) as f:
@@ -396,7 +393,6 @@ class OSManager:
                         # If all text encodings fail, treat as binary
                         with file_path.open("rb") as f:
                             content = f.read()
-                        is_text = False
                         encoding = None
             else:
                 # Read as binary
@@ -410,9 +406,7 @@ class OSManager:
                     content = base64.b64encode(content).decode("utf-8")
                 encoding = None
 
-            return ReadFileResultSuccess(
-                content=content, file_size=file_size, mime_type=mime_type, is_text=is_text, encoding=encoding
-            )
+            return ReadFileResultSuccess(content=content, file_size=file_size, mime_type=mime_type, encoding=encoding)
 
         except Exception as e:
             msg = f"Unexpected error in read_file: {type(e).__name__}: {e}"
