@@ -438,9 +438,47 @@ class OSManager:
                 with file_path.open("rb") as f:
                     content = f.read()
 
-                # For images, convert to base64 string for easier frontend handling
+                # For images, provide preview without moving files
                 if mime_type.startswith("image/"):
-                    content = base64.b64encode(content).decode("utf-8")
+                    # Store original bytes for preview creation
+                    original_image_bytes = content
+
+                    # Check if file is already in the static files directory
+                    config_manager = GriptapeNodes.ConfigManager()
+                    static_files_directory = config_manager.get_config_value(
+                        "static_files_directory", default="staticfiles"
+                    )
+                    static_dir = config_manager.workspace_path / static_files_directory
+
+                    try:
+                        # Check if file is within the static files directory
+                        file_relative_to_static = file_path.relative_to(static_dir)
+                        # File is in static directory, construct URL directly
+                        static_url = f"http://localhost:8124/static/{file_relative_to_static}"
+                        content = static_url
+                        logger.debug(f"Image already in static directory, returning URL: {static_url}")
+                    except ValueError:
+                        # File is not in static directory, create small preview
+                        from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+
+                        preview_data_url = create_image_preview_from_bytes(
+                            original_image_bytes,  # type: ignore[arg-type]
+                            max_width=200,
+                            max_height=200,
+                            quality=85,
+                            format="WEBP",
+                        )
+
+                        if preview_data_url:
+                            content = preview_data_url
+                            logger.debug("Image preview created (file not moved)")
+                        else:
+                            # Fallback to data URL if preview creation fails
+                            data_url = (
+                                f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+                            )
+                            content = data_url
+                            logger.debug("Fallback to full image data URL")
                 encoding = None
 
             return ReadFileResultSuccess(
