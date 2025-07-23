@@ -495,7 +495,19 @@ class OSManager:
             )
 
         except Exception as e:
-            msg = f"Unexpected error in read_file: {type(e).__name__}: {e}"
+            # Try to include file path in error message if available
+            try:
+                path_info = (
+                    f" for {file_path}"
+                    if "file_path" in locals()
+                    else f" for {file_path_str}"
+                    if "file_path_str" in locals()
+                    else ""
+                )
+            except NameError:
+                path_info = ""
+
+            msg = f"Unexpected error in read_file {path_info}: {type(e).__name__}: {e}"
             logger.error(msg)
             return ReadFileResultFailure()
 
@@ -514,43 +526,50 @@ class OSManager:
 
     @staticmethod
     def check_available_disk_space(path: Path, required_gb: float) -> bool:
-        """Check if there is enough available disk space at the given path.
+        """Check if there is sufficient disk space available.
 
         Args:
-            path: The path to check disk space for
-            required_gb: Required space in gigabytes
+            path: The path to check disk space for.
+            required_gb: The minimum disk space required in GB.
 
         Returns:
-            bool: True if enough space is available, False otherwise
+            True if sufficient space is available, False otherwise.
         """
         try:
-            disk_space = OSManager.get_disk_space_info(path)
+            disk_info = OSManager.get_disk_space_info(path)
             required_bytes = int(required_gb * 1024 * 1024 * 1024)  # Convert GB to bytes
-        except Exception as e:
-            logger.error("Failed to check disk space: %s", e)
+            return disk_info.free >= required_bytes  # noqa: TRY300
+        except OSError:
             return False
-        else:
-            return disk_space.free >= required_bytes
 
     @staticmethod
-    def format_disk_space_error(path: Path) -> str:
-        """Format a disk space error message with available space information.
+    def format_disk_space_error(path: Path, exception: Exception | None = None) -> str:
+        """Format a user-friendly disk space error message.
 
         Args:
-            path: The path to check disk space for
+            path: The path where the disk space issue occurred.
+            exception: The original exception, if any.
 
         Returns:
-            str: Formatted error message with available space
+            A formatted error message with disk space information.
         """
         try:
-            disk_space = OSManager.get_disk_space_info(path)
-        except Exception as e:
-            return f"Could not determine available disk space at {path}: {e}"
-        else:
-            free_gb = disk_space.free / (1024 * 1024 * 1024)  # Convert GB to bytes
-            msg = f"Insufficient disk space. Only {free_gb:.1f} GB available at {path}"
-            logger.error(msg)
-            return msg
+            disk_info = OSManager.get_disk_space_info(path)
+            free_gb = disk_info.free / (1024**3)
+            used_gb = disk_info.used / (1024**3)
+            total_gb = disk_info.total / (1024**3)
+
+            error_msg = f"Insufficient disk space at {path}. "
+            error_msg += f"Available: {free_gb:.2f} GB, Used: {used_gb:.2f} GB, Total: {total_gb:.2f} GB. "
+
+            if exception:
+                error_msg += f"Error: {exception}"
+            else:
+                error_msg += "Please free up disk space and try again."
+
+            return error_msg  # noqa: TRY300
+        except OSError:
+            return f"Could not determine disk space at {path}. Please check disk space manually."
 
     @staticmethod
     def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float) -> bool:
