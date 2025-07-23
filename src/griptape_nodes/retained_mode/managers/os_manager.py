@@ -24,6 +24,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     OpenAssociatedFileRequest,
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
+    ReadFileRequest,
+    ReadFileResultFailure,
+    ReadFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -62,6 +65,9 @@ class OSManager:
             event_manager.assign_manager_to_request_type(
                 request_type=ChangeDirectoryRequest, callback=self.on_change_directory_request
             )
+            event_manager.assign_manager_to_request_type(
+                request_type=ReadFileRequest, callback=self.on_read_file_request
+            )
         self._current_dir = None
 
     @property
@@ -87,9 +93,9 @@ class OSManager:
         Returns:
             Expanded Path object
         """
-        # Expand tilde and environment variables
-        expanded = os.path.expanduser(os.path.expandvars(path_str))
-        return Path(expanded).resolve()
+        # Expand environment variables first, then tilde
+        expanded_vars = os.path.expandvars(path_str)
+        return Path(expanded_vars).expanduser().resolve()
 
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
@@ -106,15 +112,19 @@ class OSManager:
         path = path.resolve()
         workspace = workspace.resolve()
 
-        logger.debug(f"Validating path: {path} against workspace: {workspace}")
+        msg = f"Validating path: {path} against workspace: {workspace}"
+        logger.debug(msg)
 
         try:
             relative = path.relative_to(workspace)
-            logger.debug(f"Path is within workspace, relative path: {relative}")
-            return True, relative
         except ValueError:
-            logger.debug(f"Path is outside workspace: {path}")
+            msg = f"Path is outside workspace: {path}"
+            logger.debug(msg)
             return False, path
+        else:
+            msg = f"Path is within workspace, relative path: {relative}"
+            logger.debug(msg)
+            return True, relative
 
     @staticmethod
     def platform() -> str:
@@ -215,7 +225,7 @@ class OSManager:
             logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
@@ -224,7 +234,7 @@ class OSManager:
             # Handle relative paths in workspace mode
             elif request.workspace_only:
                 # In workspace mode, resolve relative to current directory
-                if os.path.isabs(request.directory_path):
+                if Path(request.directory_path).is_absolute():
                     directory = self._expand_path(request.directory_path)
                 else:
                     directory = (self.current_dir / request.directory_path).resolve()
@@ -234,13 +244,15 @@ class OSManager:
 
             # Check if directory exists
             if not directory.exists() or not directory.is_dir():
-                logger.error(f"Directory does not exist or is not a directory: {directory}")
+                msg = f"Directory does not exist or is not a directory: {directory}"
+                logger.error(msg)
                 return ListDirectoryResultFailure()
 
             # Check workspace constraints
             is_workspace_path, relative_or_abs_path = self._validate_workspace_path(directory)
             if request.workspace_only and not is_workspace_path:
-                logger.error(f"Directory is outside workspace: {directory}")
+                msg = f"Directory is outside workspace: {directory}"
+                logger.error(msg)
                 return ListDirectoryResultFailure()
 
             entries = []
@@ -265,11 +277,13 @@ class OSManager:
                             )
                         )
                     except (OSError, PermissionError) as e:
-                        logger.warning(f"Could not stat entry {entry}: {e}")
+                        msg = f"Could not stat entry {entry}: {e}"
+                        logger.warning(msg)
                         continue
 
             except (OSError, PermissionError) as e:
-                logger.error(f"Error listing directory {directory}: {e}")
+                msg = f"Error listing directory {directory}: {e}"
+                logger.error(msg)
                 return ListDirectoryResultFailure()
 
             return ListDirectoryResultSuccess(
@@ -277,7 +291,8 @@ class OSManager:
             )
 
         except Exception as e:
-            logger.error(f"Unexpected error in list_directory: {type(e).__name__}: {e}")
+            msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
+            logger.error(msg)
             return ListDirectoryResultFailure()
 
     def on_get_current_directory_request(self, request: GetCurrentDirectoryRequest) -> ResultPayload:
@@ -293,7 +308,8 @@ class OSManager:
 
             return GetCurrentDirectoryResultSuccess(path=str(path), is_workspace_path=is_workspace_path)
         except Exception as e:
-            logger.error(f"Error getting current directory: {type(e).__name__}: {e}")
+            msg = f"Error getting current directory: {type(e).__name__}: {e}"
+            logger.error(msg)
             return GetCurrentDirectoryResultFailure()
 
     def on_change_directory_request(self, request: ChangeDirectoryRequest) -> ResultPayload:
@@ -302,7 +318,7 @@ class OSManager:
             # Handle relative paths in workspace mode
             if request.workspace_only:
                 # In workspace mode, resolve relative to current directory
-                if os.path.isabs(request.directory_path):
+                if Path(request.directory_path).is_absolute():
                     new_dir = self._expand_path(request.directory_path)
                 else:
                     new_dir = (self.current_dir / request.directory_path).resolve()
@@ -312,13 +328,15 @@ class OSManager:
 
             # Check if the directory exists and is actually a directory
             if not new_dir.exists() or not new_dir.is_dir():
-                logger.error(f"Directory does not exist or is not a directory: {new_dir}")
+                msg = f"Directory does not exist or is not a directory: {new_dir}"
+                logger.error(msg)
                 return ChangeDirectoryResultFailure()
 
             # Check workspace constraints
             is_workspace_path, relative_or_abs_path = self._validate_workspace_path(new_dir)
             if request.workspace_only and not is_workspace_path:
-                logger.error(f"Directory is outside workspace: {new_dir}")
+                msg = f"Directory is outside workspace: {new_dir}"
+                logger.error(msg)
                 return ChangeDirectoryResultFailure()
 
             # Update the current directory
@@ -326,8 +344,90 @@ class OSManager:
             return ChangeDirectoryResultSuccess(new_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path)
 
         except Exception as e:
-            logger.error(f"Unexpected error in change_directory: {type(e).__name__}: {e}")
+            msg = f"Unexpected error in change_directory: {type(e).__name__}: {e}"
+            logger.error(msg)
             return ChangeDirectoryResultFailure()
+
+    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Handle a request to read file contents with automatic text/binary detection."""
+        try:
+            # Get the file path to read
+            if request.workspace_only:
+                # In workspace mode, resolve relative to current directory
+                if Path(request.file_path).is_absolute():
+                    file_path = self._expand_path(request.file_path)
+                else:
+                    file_path = (self.current_dir / request.file_path).resolve()
+            else:
+                # In system-wide mode, expand the path normally
+                file_path = self._expand_path(request.file_path)
+
+            # Check if file exists and is actually a file
+            if not file_path.exists() or not file_path.is_file():
+                msg = f"File does not exist or is not a file: {file_path}"
+                logger.error(msg)
+                return ReadFileResultFailure()
+
+            # Check workspace constraints
+            is_workspace_path, _ = self._validate_workspace_path(file_path)
+            if request.workspace_only and not is_workspace_path:
+                msg = f"File is outside workspace: {file_path}"
+                logger.error(msg)
+                return ReadFileResultFailure()
+
+            # Get file size
+            file_size = file_path.stat().st_size
+
+            # Determine MIME type
+            import mimetypes
+
+            mime_type, _ = mimetypes.guess_type(str(file_path))
+            if mime_type is None:
+                # Default to text/plain for unknown types
+                mime_type = "text/plain"
+
+            # Determine if file is text or binary based on MIME type
+            is_text = mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml"))
+
+            # Read file content
+            if is_text:
+                # Read as text
+                try:
+                    with file_path.open(encoding=request.encoding) as f:
+                        content = f.read()
+                    encoding = request.encoding
+                except UnicodeDecodeError:
+                    # Try with a different encoding if the specified one fails
+                    try:
+                        with file_path.open(encoding="utf-8") as f:
+                            content = f.read()
+                        encoding = "utf-8"
+                    except UnicodeDecodeError:
+                        # If all text encodings fail, treat as binary
+                        with file_path.open("rb") as f:
+                            content = f.read()
+                        is_text = False
+                        encoding = None
+            else:
+                # Read as binary
+                with file_path.open("rb") as f:
+                    content = f.read()
+
+                # For images, convert to base64 string for easier frontend handling
+                if mime_type.startswith("image/"):
+                    import base64
+
+                    content = base64.b64encode(content).decode("utf-8")
+                encoding = None
+
+            return ReadFileResultSuccess(
+                content=content, file_size=file_size, mime_type=mime_type, is_text=is_text, encoding=encoding
+            )
+
+        except Exception as e:
+            msg = f"Unexpected error in read_file: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure()
 
     @staticmethod
     def get_disk_space_info(path: Path) -> DiskSpaceInfo:
@@ -356,10 +456,11 @@ class OSManager:
         try:
             disk_space = OSManager.get_disk_space_info(path)
             required_bytes = int(required_gb * 1024 * 1024 * 1024)  # Convert GB to bytes
-            return disk_space.free >= required_bytes
         except Exception as e:
             logger.error("Failed to check disk space: %s", e)
             return False
+        else:
+            return disk_space.free >= required_bytes
 
     @staticmethod
     def format_disk_space_error(path: Path) -> str:
@@ -373,10 +474,13 @@ class OSManager:
         """
         try:
             disk_space = OSManager.get_disk_space_info(path)
-            free_gb = disk_space.free / (1024 * 1024 * 1024)  # Convert GB to bytes
-            return f"Insufficient disk space. Only {free_gb:.1f} GB available at {path}"
         except Exception as e:
             return f"Could not determine available disk space at {path}: {e}"
+        else:
+            free_gb = disk_space.free / (1024 * 1024 * 1024)  # Convert GB to bytes
+            msg = f"Insufficient disk space. Only {free_gb:.1f} GB available at {path}"
+            logger.error(msg)
+            return msg
 
     @staticmethod
     def cleanup_directory_if_needed(full_directory_path: Path, max_size_gb: float) -> bool:
