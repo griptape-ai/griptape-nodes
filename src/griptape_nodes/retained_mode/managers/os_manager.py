@@ -86,6 +86,21 @@ class OSManager:
         expanded_vars = os.path.expandvars(path_str)
         return Path(expanded_vars).expanduser().resolve()
 
+    def _resolve_file_path(self, path_str: str) -> Path:
+        """Resolve a file path, handling absolute, relative, and tilde paths.
+
+        Args:
+            path_str: Path string that may be absolute, relative, or start with ~
+
+        Returns:
+            Resolved Path object
+        """
+        if Path(path_str).is_absolute() or path_str.startswith("~"):
+            # Expand tilde and environment variables for absolute paths or paths starting with ~
+            return self._expand_path(path_str)
+        # Both workspace and system-wide modes resolve relative to current directory
+        return (self.current_dir / path_str).resolve()
+
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
 
@@ -179,8 +194,8 @@ class OSManager:
 
         # Sanitize and validate the file path
         try:
-            # Expand the path first
-            path = self._expand_path(file_path_str)
+            # Resolve the path
+            path = self._resolve_file_path(file_path_str)
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{file_path_str}'"
             logger.info(details)
@@ -345,12 +360,7 @@ class OSManager:
                 logger.error(msg)
                 return ReadFileResultFailure()
 
-            if Path(file_path_str).is_absolute() or file_path_str.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
-                file_path = self._expand_path(file_path_str)
-            else:
-                # Both workspace and system-wide modes resolve relative to current directory
-                file_path = (self.current_dir / file_path_str).resolve()
+            file_path = self._resolve_file_path(file_path_str)
 
             # Check if file exists and is actually a file
             if not file_path.exists() or not file_path.is_file():
