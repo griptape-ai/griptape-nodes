@@ -61,13 +61,14 @@ class ListDirectoryRequest(RequestPayload):
         directory_path: Path to the directory to list (None for current directory)
         show_hidden: Whether to show hidden files/folders
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide browsing.
+                        If None, workspace constraints don't apply (e.g., cloud environments).
 
     Results: ListDirectoryResultSuccess (with entries) | ListDirectoryResultFailure (access denied, not found)
     """
 
     directory_path: str | None = None
     show_hidden: bool = False
-    workspace_only: bool = True
+    workspace_only: bool | None = True
 
 
 @dataclass
@@ -98,13 +99,14 @@ class ReadFileRequest(RequestPayload):
         file_path: Path to the file to read
         encoding: Text encoding to use if file is detected as text (default: 'utf-8')
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
+                        If None, workspace constraints don't apply (e.g., cloud environments).
 
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
 
     file_path: str
     encoding: str = "utf-8"
-    workspace_only: bool = True
+    workspace_only: bool | None = True
 
 
 @dataclass
