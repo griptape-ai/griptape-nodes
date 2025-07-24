@@ -132,14 +132,14 @@ class CompletedState(State):
     """Final state when loop is completed."""
 
     @staticmethod
-    def on_enter(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
-        """Loop is completed."""
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:
+        """Loop is completed - set completion signal immediately."""
+        context.next_control_output = context.loop_end_condition_met_signal
         return None
 
     @staticmethod
-    def on_update(context: "ForEachStartNode") -> type[State] | None:
+    def on_update(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
         """Stay in completed state."""
-        context.next_control_output = None
         return None
 
     @staticmethod
