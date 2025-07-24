@@ -65,7 +65,7 @@ class TranscribeAudio(ControlNode):
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={
-                    "placeholder_text": "The description of the image",
+                    "placeholder_text": "Text of the transcribed audio",
                     "multiline": True,
                     "display_name": "output",
                 },
