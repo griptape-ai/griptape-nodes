@@ -293,6 +293,7 @@ class ForEachStartNode(StartLoopNode):
         self.current_index = 0
         self._items = []
         self.finished = False
+        self.next_control_output = None
 
         # Clear the coupled ForEach End node's state for fresh workflow runs
         from griptape_nodes_library.execution.for_each_end import ForEachEndNode
