@@ -52,7 +52,7 @@ logger = logging.getLogger("griptape_nodes")
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-GRIPTAPE_NODES_MCP_SERVER_PORT = int(os.getenv("GRIPTAPE_NODES_MCP_SERVER_PORT", "9927"))
+GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -124,7 +124,7 @@ class AgentManager:
     def _initialize_mcp_tool(self) -> MCPTool:
         connection: StreamableHttpConnection = {  # type: ignore[reportAssignmentType]
             "transport": "streamable_http",
-            "url": f"http://localhost:{GRIPTAPE_NODES_MCP_SERVER_PORT}/mcp/",
+            "url": f"http://localhost:{GTN_MCP_SERVER_PORT}/mcp/",
         }
         return MCPTool(connection=connection)
 

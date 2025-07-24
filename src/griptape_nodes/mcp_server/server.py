@@ -16,7 +16,7 @@ from pydantic import TypeAdapter
 from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
-from griptape_nodes.mcp_server_gtn.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
+from griptape_nodes.mcp_server.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -57,7 +57,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetParameterValueRequest": SetParameterValueRequest,
 }
 
-GRIPTAPE_NODES_MCP_SERVER_PORT = int(os.getenv("GRIPTAPE_NODES_MCP_SERVER_PORT", "9927"))
+GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
@@ -123,4 +123,4 @@ def main(api_key: str) -> None:
 
     mcp_server_app.mount("/mcp", app=handle_streamable_http)
 
-    uvicorn.run(mcp_server_app, host="127.0.0.1", port=GRIPTAPE_NODES_MCP_SERVER_PORT)
+    uvicorn.run(mcp_server_app, host="127.0.0.1", port=GTN_MCP_SERVER_PORT)
