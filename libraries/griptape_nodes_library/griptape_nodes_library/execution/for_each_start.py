@@ -270,6 +270,11 @@ class ForEachStartNode(StartLoopNode):
         self.current_index = 0
         self._items = []
         self.finished = False
+
+        # Clear the coupled ForEach End node's state for fresh workflow runs
+        if self.end_node:
+            self.end_node.reset_for_workflow_run()
+
         # Start FSM in initial state
         self._fsm.start(WaitingForStartState)
 

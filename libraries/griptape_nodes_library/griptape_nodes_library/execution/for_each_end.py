@@ -124,8 +124,7 @@ class ForEachEndNode(EndLoopNode):
         self.add_parameter(self.break_loop_signal_output)
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        # Clear results list before each node run to prevent accumulation
-        self._results_list = []
+        # Don't clear results list here - we need to accumulate across loop iterations
         exceptions = []
         if self.start_node is None:
             exceptions.append(Exception("Start node is not set on End Node."))
@@ -319,3 +318,9 @@ class ForEachEndNode(EndLoopNode):
 
         self.current_spotlight_parameter = None
         return False
+
+    def reset_for_workflow_run(self) -> None:
+        """Reset ForEach End state for a fresh workflow run."""
+        self._results_list = []
+        self._index = 0
+
