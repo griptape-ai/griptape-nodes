@@ -15,6 +15,11 @@ class ForEachEndNode(EndLoopNode):
 
     This node marks the end of a loop body and signals the ForEachStartNode to continue with the next item
     or to complete the loop if all items have been processed.
+
+    CONDITIONAL DEPENDENCY RESOLUTION:
+    This node implements conditional evaluation similar to the IfElse pattern.
+    We will ONLY evaluate the current item Parameter if we enter into the node via "Add Item to Output".
+    This prevents unnecessary computation when taking alternative control paths like "Skip" or "Break".
     """
 
     output: Parameter
@@ -23,72 +28,227 @@ class ForEachEndNode(EndLoopNode):
         super().__init__(name, metadata)
         self.start_node = None
         self._index = 0
-        self.continue_loop = ControlParameterOutput(tooltip="Continue to the next iteration", name="exec_out")
-        self.from_start = ControlParameterInput(
-            tooltip="Continue to the next iteration",
-            name="from_start",
+
+        # ForEach End manages its own results list
+        self._results_list: list[Any] = []
+
+        # Connection tracking for validation
+        self._connected_parameters: set[str] = set()
+
+        # Explicit tethering to ForEachStart node
+        self.loop_start_node = Parameter(
+            name="loop_start_node",
+            tooltip="Connected ForEach Start Node",
+            input_types=[ParameterTypeBuiltin.ALL.value],
+            allowed_modes={ParameterMode.INPUT},
         )
-        self.from_start.ui_options = {"hide": True}
-        self.add_parameter(self.continue_loop)
-        self.add_parameter(self.from_start)
-        self.output = Parameter(
-            name="output",
-            tooltip="Output parameter for the loop iteration",
-            output_type="list",
-            allowed_modes={ParameterMode.OUTPUT},
+        self.loop_start_node.ui_options = {"display_name": "Loop Start Node"}
+
+        # Visible control inputs
+        self.add_item_control = ControlParameterInput(
+            tooltip="Add current item to output and continue loop", name="add_item"
         )
-        self.add_parameter(self.output)
-        self.current_item = Parameter(
-            name="current_item",
-            tooltip="Current item in the loop",
+        self.add_item_control.ui_options = {"display_name": "Add Item to Output"}
+
+        self.skip_control = ControlParameterInput(
+            tooltip="Skip current item and continue to next iteration", name="skip_iteration"
+        )
+        self.skip_control.ui_options = {"display_name": "Skip to Next Iteration"}
+
+        self.break_control = ControlParameterInput(tooltip="Break out of loop immediately", name="break_loop")
+        self.break_control.ui_options = {"display_name": "Break Out of Loop"}
+
+        # Visible data input
+        self.new_item_to_add = Parameter(
+            name="new_item_to_add",
+            tooltip="Item to add to results list",
             type=ParameterTypeBuiltin.ANY.value,
             allowed_modes={ParameterMode.INPUT},
         )
-        self.add_parameter(self.current_item)
-        # Add control input parameter
+
+        # Visible outputs
+        self.results = Parameter(
+            name="results",
+            tooltip="Collected loop results",
+            output_type="list",
+            allowed_modes={ParameterMode.OUTPUT},
+        )
+
+        self.exec_out = ControlParameterOutput(tooltip="Triggered when loop completes", name="exec_out")
+        self.exec_out.ui_options = {"display_name": "On Loop Complete"}
+
+        # Hidden inputs from ForEachStart
+        self.results_list_input = Parameter(
+            name="results_list_input",
+            tooltip="Results list from ForEach Start Node",
+            input_types=["list"],
+            allowed_modes={ParameterMode.INPUT},
+        )
+        self.results_list_input.ui_options = {"hide": True, "display_name": "Results List Input"}
+
+        self.loop_end_condition_met_signal_input = ControlParameterInput(
+            tooltip="Signal from ForEachStart when loop should end", name="loop_end_condition_met_signal_input"
+        )
+        self.loop_end_condition_met_signal_input.ui_options = {"hide": True, "display_name": "Loop End Signal Input"}
+        self.loop_end_condition_met_signal_input.settable = False
+
+        # Hidden outputs to ForEachStart
+        self.trigger_next_iteration_signal_output = ControlParameterOutput(
+            tooltip="Signal to ForEachStart to continue to next iteration", name="trigger_next_iteration_signal_output"
+        )
+        self.trigger_next_iteration_signal_output.ui_options = {
+            "hide": True,
+            "display_name": "Next Iteration Signal Output",
+        }
+        self.trigger_next_iteration_signal_output.settable = False
+
+        self.break_loop_signal_output = ControlParameterOutput(
+            tooltip="Signal to ForEachStart to break out of loop", name="break_loop_signal_output"
+        )
+        self.break_loop_signal_output.ui_options = {"hide": True, "display_name": "Break Loop Signal Output"}
+        self.break_loop_signal_output.settable = False
+
+        # Add parameters in order
+        self.add_parameter(self.loop_start_node)
+        self.add_parameter(self.add_item_control)
+        self.add_parameter(self.skip_control)
+        self.add_parameter(self.break_control)
+        self.add_parameter(self.new_item_to_add)
+        self.add_parameter(self.results)
+        self.add_parameter(self.exec_out)
+
+        # Add hidden parameters
+        self.add_parameter(self.results_list_input)
+        self.add_parameter(self.loop_end_condition_met_signal_input)
+        self.add_parameter(self.trigger_next_iteration_signal_output)
+        self.add_parameter(self.break_loop_signal_output)
 
     def validate_before_node_run(self) -> list[Exception] | None:
+        # Clear results list before each node run to prevent accumulation
+        self._results_list = []
+        exceptions = []
         if self.start_node is None:
-            return [Exception("Start node is not set on End Node.")]
+            exceptions.append(Exception("Start node is not set on End Node."))
+
+        # Validate all required connections exist
+        validation_errors = self._validate_foreach_connections()
+        if validation_errors:
+            exceptions.extend(validation_errors)
+
+        if exceptions:
+            return exceptions
         return super().validate_before_node_run()
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         self._index = 0
+        # Clear the results list for fresh workflow run
+        self._results_list = []
+        exceptions = []
         if self.start_node is None:
-            return [Exception("Start node is not set on End Node.")]
+            exceptions.append(Exception("Start node is not set on End Node."))
+
+        # Validate all required connections exist
+        validation_errors = self._validate_foreach_connections()
+        if validation_errors:
+            exceptions.extend(validation_errors)
+
+        if exceptions:
+            return exceptions
         return super().validate_before_node_run()
 
     def process(self) -> None:
-        if self.start_node is None:
-            return
+        # Use our own internal results list instead of shared one
+        results_list = self._results_list
 
-        # Initialize output_list only on the first iteration
-        output_list = self.get_parameter_value("output")
-        if self.start_node.current_index == 1:
-            # Reset the output list at the beginning of a new loop execution
-            output_list = []
-            self.set_parameter_value("output", output_list)
-        elif output_list is None:
-            # If output_list is None (shouldn't happen normally), initialize it
-            output_list = []
-            self.set_parameter_value("output", output_list)
+        # Determine which control input was used to enter this node
+        # CONDITIONAL EVALUATION: We only process the new_item_to_add if we entered via "Add Item to Output"
+        # This prevents unnecessary computation when taking Skip or Break paths
 
-        # Append the current item to the output list
-        output_list.append(self.get_parameter_value("current_item"))
-        # Make the output available when the loop is finished
-        if self.start_node.finished:
-            self.parameter_output_values["output"] = self.get_parameter_value("output")
+        match self._entry_control_parameter:
+            case self.add_item_control:
+                # Only evaluate new_item_to_add parameter when adding to output
+                new_item_value = self.get_parameter_value("new_item_to_add")
+                results_list.append(new_item_value)
+            case self.skip_control:
+                # Skip - don't add anything to output, just continue loop
+                pass
+            case self.break_control:
+                # Break - will trigger break signal in get_next_control_output
+                pass
+            case self.loop_end_condition_met_signal_input:
+                # Loop has ended naturally, output final results
+                self.parameter_output_values["results"] = results_list.copy()
+                return
+
+        # Always output the current results list state
+        self.parameter_output_values["results"] = results_list.copy()
 
     def get_next_control_output(self) -> Parameter | None:
-        """Return the loop_back parameter to continue the loop.
+        """Return the appropriate signal output based on the control path taken.
 
-        This should connect back to the ForEachStartNode's exec_in parameter.
-        If the node is finished, it moves on to the completed parameter.
+        This triggers the correct signal back to ForEachStart to manage loop flow.
         """
-        # Go back to the start node now.
-        if self.start_node is not None and self.start_node.finished:
-            return self.get_parameter_by_name("exec_out")
-        return self.get_parameter_by_name("from_start")
+        match self._entry_control_parameter:
+            case self.add_item_control | self.skip_control:
+                # Both add and skip trigger next iteration
+                return self.trigger_next_iteration_signal_output
+            case self.break_control:
+                # Break triggers break loop signal
+                return self.break_loop_signal_output
+            case self.loop_end_condition_met_signal_input:
+                # Loop end condition triggers normal completion
+                return self.exec_out
+            case _:
+                # Default fallback - should not happen
+                return self.exec_out
+
+    def _validate_foreach_connections(self) -> list[Exception]:
+        """Validate that all required ForEach connections are properly established.
+
+        Returns a list of validation errors with detailed instructions for the user.
+        """
+        errors = []
+
+        # Check if loop_start_node has incoming connection from ForEach Start
+        if self.start_node is None:
+            errors.append(
+                Exception(
+                    f"{self.name}: Missing required tethering connection. "
+                    "REQUIRED ACTION: Connect ForEach Start 'Loop End Node' to ForEach End 'Loop Start Node'. "
+                    "This establishes the explicit relationship between start and end nodes."
+                )
+            )
+
+        # Check if all hidden signal connections exist (only if start_node is connected)
+        if self.start_node:
+            # Note: results_list_input connection is optional now since we manage our own list
+
+            if "loop_end_condition_met_signal_input" not in self._connected_parameters:
+                errors.append(
+                    Exception(
+                        f"{self.name}: Missing hidden signal connection. "
+                        "REQUIRED ACTION: Connect ForEach Start 'Loop End Signal' to ForEach End 'Loop End Signal Input'. "
+                        "This receives the signal when the loop has completed naturally."
+                    )
+                )
+
+            # Note: outgoing connections tracked via start_node relationship
+
+        # Check if control inputs have at least one connection
+        control_names = ["add_item", "skip_iteration", "break_loop"]
+        connected_controls = [name for name in control_names if name in self._connected_parameters]
+
+        if not connected_controls:
+            errors.append(
+                Exception(
+                    f"{self.name}: No control flow connections found. "
+                    "REQUIRED ACTION: Connect at least one control flow to ForEach End. "
+                    "Options: 'Add Item to Output', 'Skip to Next Iteration', or 'Break Out of Loop'. "
+                    "The ForEach End needs to receive control flow from your loop body logic."
+                )
+            )
+
+        return errors
 
     def after_incoming_connection(
         self,
@@ -96,6 +256,66 @@ class ForEachEndNode(EndLoopNode):
         source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
-        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
+        # Track incoming connections for validation
+        self._connected_parameters.add(target_parameter.name)
+
+        if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
             self.start_node = source_node
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Remove from tracking when connection is removed
+        self._connected_parameters.discard(target_parameter.name)
+
+        if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
+            self.start_node = None
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def initialize_spotlight(self) -> None:
+        """Custom spotlight initialization for conditional dependency resolution.
+
+        Similar to the IfElse pattern, we only include the new_item_to_add parameter
+        in the dependency chain if we entered via the "Add Item to Output" control path.
+
+        BIG COMMENT FOR FUTURE ARCHAEOLOGY:
+        This method prevents the automatic resolution of the new_item_to_add parameter
+        when the node is entered via "Skip to Next Iteration" or "Break Out of Loop".
+        This is crucial for performance - we don't want to evaluate expensive upstream
+        computations if we're just going to skip the item anyway.
+
+        The conditional logic works by:
+        1. Checking which control input was used to enter this node
+        2. Only adding new_item_to_add to the spotlight dependency chain if we entered via "Add Item to Output"
+        3. This mirrors the pattern established in the IfElse node for conditional branch evaluation
+        """
+        match self._entry_control_parameter:
+            case self.add_item_control:
+                # Only resolve new_item_to_add dependency if we're actually going to use it
+                new_item_param = self.get_parameter_by_name("new_item_to_add")
+                if new_item_param and ParameterMode.INPUT in new_item_param.get_mode():
+                    self.current_spotlight_parameter = new_item_param
+            case _:
+                # For skip or break paths, don't resolve any input dependencies
+                self.current_spotlight_parameter = None
+
+    def advance_parameter(self) -> bool:
+        """Custom parameter advancement with conditional dependency resolution.
+
+        This ensures we only resolve parameters that are actually needed based on
+        the control path taken to enter this node.
+        """
+        if self.current_spotlight_parameter is None:
+            return False
+
+        # Use default advancement behavior for the new_item_to_add parameter
+        if self.current_spotlight_parameter.next is not None:
+            self.current_spotlight_parameter = self.current_spotlight_parameter.next
+            return True
+
+        self.current_spotlight_parameter = None
+        return False

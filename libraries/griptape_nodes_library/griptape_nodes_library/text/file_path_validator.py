@@ -55,11 +55,11 @@ class FilePathValidator(ControlNode):
     def process(self) -> None:
         """Process the node by validating file paths."""
         file_paths = self.parameter_values.get("file_paths", [])
-        
+
         # Ensure file_paths is a list
         if not isinstance(file_paths, list):
             file_paths = [file_paths] if file_paths else []
-        
+
         valid_paths = []
         errors = []
 
@@ -67,32 +67,32 @@ class FilePathValidator(ControlNode):
             try:
                 # Convert to Path object for easier handling
                 path = Path(file_path)
-                
+
                 # Check if file exists
                 if not path.exists():
                     errors.append(f"File does not exist: {file_path}")
                     continue
-                
+
                 # Check if it's a file (not a directory)
                 if not path.is_file():
                     errors.append(f"Path is not a file: {file_path}")
                     continue
-                
+
                 # Check if it's a Python file
                 if path.suffix.lower() != ".py":
                     errors.append(f"Not a Python file: {file_path}")
                     continue
-                
+
                 # Check if file is readable
                 if not os.access(path, os.R_OK):
                     errors.append(f"File is not readable: {file_path}")
                     continue
-                
+
                 # If we get here, the file path is valid
                 valid_paths.append(str(path.resolve()))
-                
+
             except Exception as e:
-                errors.append(f"Error validating {file_path}: {str(e)}")
+                errors.append(f"Error validating {file_path}: {e!s}")
 
         # Set output values
         self.parameter_output_values["valid_paths"] = valid_paths

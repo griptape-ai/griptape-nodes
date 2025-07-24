@@ -405,7 +405,7 @@ class IfElse(BaseNode):
 
     def initialize_spotlight(self) -> None:
         """Custom spotlight initialization - only include evaluate parameter initially.
-        
+
         This prevents automatic dependency resolution of both input branches.
         We'll conditionally add the appropriate branch in advance_parameter().
         """
@@ -416,25 +416,25 @@ class IfElse(BaseNode):
 
     def advance_parameter(self) -> bool:
         """Custom parameter advancement with conditional dependency resolution.
-        
+
         After evaluate is resolved, add ONLY the appropriate input branch to the dependency chain.
         This prevents resolving the unused branch entirely.
         """
         if self.current_spotlight_parameter is None:
             return False
-            
+
         # If we're currently on the evaluate parameter, decide which branch to resolve next
         if self.current_spotlight_parameter.name == "evaluate":
             try:
                 # Evaluate the condition to determine which branch we need
                 evaluation_result = self.check_evaluation()
-                
+
                 # Select the appropriate input parameter based on evaluation
                 if evaluation_result:
                     next_param = self.output_if_true
                 else:
                     next_param = self.output_if_false
-                    
+
                 # Only add the selected parameter if it has input connections
                 if ParameterMode.INPUT in next_param.get_mode():
                     # Link the selected parameter as the next in the chain
@@ -442,20 +442,19 @@ class IfElse(BaseNode):
                     next_param.prev = self.current_spotlight_parameter
                     self.current_spotlight_parameter = next_param
                     return True
-                else:
-                    # No input connections on the selected parameter, we're done
-                    self.current_spotlight_parameter = None
-                    return False
-                    
+                # No input connections on the selected parameter, we're done
+                self.current_spotlight_parameter = None
+                return False
+
             except Exception:
                 # If evaluation fails, don't resolve any input branches
                 self.current_spotlight_parameter = None
                 return False
-                
-        # For any other parameter, use default advancement behavior  
+
+        # For any other parameter, use default advancement behavior
         if self.current_spotlight_parameter.next is not None:
             self.current_spotlight_parameter = self.current_spotlight_parameter.next
             return True
-            
+
         self.current_spotlight_parameter = None
         return False

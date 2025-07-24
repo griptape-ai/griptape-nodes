@@ -53,21 +53,21 @@ class DictHasValueForKey(DataNode):
         """Check if dictionary has the specified key."""
         input_dict = self.get_parameter_value("dict")
         key = self.get_parameter_value("key")
-        
+
         if not isinstance(input_dict, dict) or not key:
             return False
-        
+
         return key in input_dict
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update outputs when inputs change."""
         if parameter.name in ["dict", "key"]:
             has_key = self._has_key()
-            
+
             # Set output values
             self.parameter_output_values["has_key"] = has_key
             self.set_parameter_value("has_key", has_key)
-            
+
             # Show the output parameter
             self.show_parameter_by_name("has_key")
 
@@ -83,7 +83,7 @@ class DictHasValueForKey(DataNode):
         if target_parameter.name in ["dict", "key"]:
             has_key = self._has_key()
             self.parameter_output_values["has_key"] = has_key
-            
+
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def process(self) -> None:

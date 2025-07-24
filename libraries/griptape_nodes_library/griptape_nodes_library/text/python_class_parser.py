@@ -77,21 +77,21 @@ class PythonClassParser(ControlNode):
     def _get_class_definition(self, node: ast.ClassDef, lines: list[str]) -> str:
         """Get the class definition including decorators and signature."""
         start_line = node.lineno - 1
-        
+
         # Find the actual start including decorators
         actual_start = start_line
         for decorator in node.decorator_list:
             actual_start = min(actual_start, decorator.lineno - 1)
-        
+
         # Find class body start (after colon)
         class_body_start = start_line
         for i in range(start_line, len(lines)):
             if ":" in lines[i]:
                 class_body_start = i
                 break
-        
+
         # Return from decorators to end of class signature
-        return "\n".join(lines[actual_start:class_body_start + 1])
+        return "\n".join(lines[actual_start : class_body_start + 1])
 
     def _inherits_from_payload(self, node: ast.ClassDef) -> str | None:
         """Check if class inherits from RequestPayload or ResultPayload."""
@@ -109,7 +109,7 @@ class PythonClassParser(ControlNode):
         """Get the line numbers where the docstring starts and ends."""
         if not node.body:
             return None
-            
+
         first_stmt = node.body[0]
         if (
             isinstance(first_stmt, ast.Expr)
@@ -123,7 +123,7 @@ class PythonClassParser(ControlNode):
         """Process the node by parsing Python class definitions."""
         file_content = self.parameter_values.get("file_content", "")
         file_path = self.parameter_values.get("file_path", "unknown")
-        
+
         if not file_content:
             self.parameter_output_values["class_info"] = []
             self.parameter_output_values["parsing_errors"] = "No file content provided"
@@ -135,23 +135,23 @@ class PythonClassParser(ControlNode):
             # Parse the Python code
             tree = ast.parse(file_content)
             lines = file_content.splitlines()
-            
+
             class_info = []
             errors = []
-            
+
             # Walk through all nodes in the AST
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
                     # Check if this class inherits from RequestPayload or ResultPayload
                     payload_type = self._inherits_from_payload(node)
-                    
+
                     if payload_type:
                         try:
                             # Extract class information
                             current_docstring = self._extract_docstring(node)
                             docstring_location = self._get_docstring_location(node)
                             class_definition = self._get_class_definition(node, lines)
-                            
+
                             class_data = {
                                 "class_name": node.name,
                                 "payload_type": payload_type,
@@ -163,29 +163,29 @@ class PythonClassParser(ControlNode):
                                 "class_definition": class_definition,
                                 "file_path": file_path,
                             }
-                            
+
                             class_info.append(class_data)
-                            
+
                         except Exception as e:
-                            errors.append(f"Error processing class {node.name}: {str(e)}")
-            
+                            errors.append(f"Error processing class {node.name}: {e!s}")
+
             # Set output values
             self.parameter_output_values["class_info"] = class_info
             self.parameter_output_values["parsing_errors"] = "\n".join(errors) if errors else ""
-            
+
             # Also set in parameter_values for get_value compatibility
             self.parameter_values["class_info"] = class_info
             self.parameter_values["parsing_errors"] = "\n".join(errors) if errors else ""
-            
+
         except SyntaxError as e:
-            error_msg = f"Syntax error in {file_path}: {str(e)}"
+            error_msg = f"Syntax error in {file_path}: {e!s}"
             self.parameter_output_values["class_info"] = []
             self.parameter_output_values["parsing_errors"] = error_msg
             self.parameter_values["class_info"] = []
             self.parameter_values["parsing_errors"] = error_msg
-            
+
         except Exception as e:
-            error_msg = f"Error parsing {file_path}: {str(e)}"
+            error_msg = f"Error parsing {file_path}: {e!s}"
             self.parameter_output_values["class_info"] = []
             self.parameter_output_values["parsing_errors"] = error_msg
             self.parameter_values["class_info"] = []

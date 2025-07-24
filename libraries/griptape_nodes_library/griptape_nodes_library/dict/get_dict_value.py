@@ -87,32 +87,31 @@ class DictGetValueByKey(ControlNode):
         key = self.get_parameter_value("key")
         supply_default = self.get_parameter_value("supply_default_if_not_found")
         default_value = self.get_parameter_value("default_value_if_not_found")
-        
+
         if not isinstance(input_dict, dict):
             if supply_default:
                 return default_value
-            else:
-                raise ValueError("Input is not a dictionary")
-        
+            msg = "Input is not a dictionary"
+            raise ValueError(msg)
+
         if not key:
             if supply_default:
                 return default_value
-            else:
-                raise ValueError("Key cannot be empty")
-        
+            msg = "Key cannot be empty"
+            raise ValueError(msg)
+
         if key in input_dict:
             return input_dict[key]
-        else:
-            if supply_default:
-                return default_value
-            else:
-                raise KeyError(f"Key '{key}' not found in dictionary")
+        if supply_default:
+            return default_value
+        msg = f"Key '{key}' not found in dictionary"
+        raise KeyError(msg)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update outputs and visibility when inputs change."""
         if parameter.name == "supply_default_if_not_found":
             self._update_default_visibility()
-        
+
         if parameter.name in ["dict", "key", "supply_default_if_not_found", "default_value_if_not_found"]:
             try:
                 result_value = self._get_value()
@@ -138,14 +137,10 @@ class DictGetValueByKey(ControlNode):
                 self.parameter_output_values["value"] = result_value
             except Exception:
                 self.parameter_output_values["value"] = None
-            
+
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def process(self) -> None:
         """Process the node by getting the dictionary value."""
-        try:
-            result_value = self._get_value()
-            self.parameter_output_values["value"] = result_value
-        except Exception as e:
-            # Re-raise the exception during actual processing
-            raise e
+        result_value = self._get_value()
+        self.parameter_output_values["value"] = result_value

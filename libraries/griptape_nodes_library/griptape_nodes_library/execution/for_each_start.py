@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -10,6 +11,135 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
+from griptape_nodes.machines.fsm import FSM, State
+
+
+class WaitingForStartState(State):
+    """Initial state - initializes items list and transitions to check end condition."""
+
+    @staticmethod
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:
+        """Initialize the items list on entry."""
+        # Always initialize items list
+        list_values = context.get_parameter_value("items")
+        # Ensure the list is flattened
+        if isinstance(list_values, list):
+            context._items = [
+                item for sublist in list_values for item in (sublist if isinstance(sublist, list) else [sublist])
+            ]
+        else:
+            context._items = []
+
+        return None
+
+    @staticmethod
+    def on_update(context: "ForEachStartNode") -> type[State] | None:
+        """Stay in waiting state until exec_in event is received."""
+        context.next_control_output = None
+        return None
+
+    @staticmethod
+    def on_event(context: "ForEachStartNode", event: Any) -> type[State] | None:
+        """Handle initial exec_in event."""
+        if event == context.exec_in:
+            # Force transition to check end condition when exec_in is received
+            return CheckEndConditionMetState
+        return None
+
+
+class CheckEndConditionMetState(State):
+    """State that checks if loop should end or continue."""
+
+    @staticmethod
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:
+        """Check if we should continue or end the loop and set appropriate output."""
+        # If empty list or finished all items, complete
+        if not context._items or len(context._items) == 0 or context.current_index >= len(context._items):
+            context.finished = True
+            context.next_control_output = context.loop_end_condition_met_signal
+            return CompletedState
+
+        # Unresolve future nodes before continuing to ensure fresh parameter evaluation
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        connections.unresolve_future_nodes(context)
+
+        # Continue with current item
+        context.next_control_output = context.exec_out
+        return ExecuteCurrentItemState
+
+    @staticmethod
+    def on_update(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
+        """Should not stay in this state - always transition in on_enter."""
+        return None
+
+    @staticmethod
+    def on_event(context: "ForEachStartNode", event: Any) -> type[State] | None:  # noqa: ARG004
+        """No events handled in this state."""
+        return None
+
+
+class ExecuteCurrentItemState(State):
+    """State for executing current item - sets data in update and handles events."""
+
+    @staticmethod
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
+        """Enter execution state."""
+        return None
+
+    @staticmethod
+    def on_update(context: "ForEachStartNode") -> type[State] | None:
+        """Set current item data - nodes already unresolved by CheckEndConditionMetState."""
+        # Set current item data if we have items
+        if context._items and context.current_index < len(context._items):
+            current_item_value = context._items[context.current_index]
+            context.parameter_output_values["current_item"] = current_item_value
+            context.parameter_output_values["index"] = context.current_index
+            context.publish_update_to_parameter("current_item", current_item_value)
+            context.publish_update_to_parameter("index", context.current_index)
+
+        # Don't set next_control_output here - let it keep what CheckEndConditionMetState set
+        return None
+
+    @staticmethod
+    def on_event(context: "ForEachStartNode", event: Any) -> type[State] | None:
+        """Handle next iteration or break signals."""
+        if event == context.trigger_next_iteration_signal:
+            # Advance to next item
+            context.current_index += 1
+            # Transition to check end condition
+            return CheckEndConditionMetState
+
+        if event == context.break_loop_signal:
+            # Break out of loop
+            context.finished = True
+            context._items = []
+            context.current_index = 0
+            context.next_control_output = context.loop_end_condition_met_signal
+            return CompletedState
+
+        return None
+
+
+class CompletedState(State):
+    """Final state when loop is completed."""
+
+    @staticmethod
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
+        """Loop is completed."""
+        return None
+
+    @staticmethod
+    def on_update(context: "ForEachStartNode") -> type[State] | None:
+        """Stay in completed state."""
+        context.next_control_output = None
+        return None
+
+    @staticmethod
+    def on_event(context: "ForEachStartNode", event: Any) -> type[State] | None:  # noqa: ARG004
+        """No events handled in completed state."""
+        return None
 
 
 class ForEachStartNode(StartLoopNode):
@@ -19,19 +149,26 @@ class ForEachStartNode(StartLoopNode):
     It provides the current item to the next node in the flow and keeps track of the iteration state.
     """
 
-    _items: list[Any]
+    _items: list[Any] | None = None
     _flow: ControlFlow | None = None
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.finished = False
         self.current_index = 0
-        self._items = []
-        self.exec_out = ControlParameterOutput(tooltip="Continue the flow", name="exec_out")
-        self.exec_out.ui_options = {"display_name": "For Each"}
-        self.add_parameter(self.exec_out)
-        self.exec_in = ControlParameterInput()
+        self._items = None
+
+        # Debug: We'll override set_parameter_value in a method below
+
+        # Connection tracking for validation
+        self._connected_parameters: set[str] = set()
+        # Main control flow
+        self.exec_in = ControlParameterInput(tooltip="Start Loop", name="exec_in")
+        self.exec_in.ui_options = {"display_name": "Start Loop"}
+        self.exec_out = ControlParameterOutput(tooltip="Execute for each item in the list", name="exec_out")
+        self.exec_out.ui_options = {"display_name": "On Each Item"}
         self.add_parameter(self.exec_in)
+        self.add_parameter(self.exec_out)
         self.items_list = Parameter(
             name="items",
             tooltip="List of items to iterate through",
@@ -47,6 +184,7 @@ class ForEachStartNode(StartLoopNode):
                 tooltip="Current item being processed",
                 output_type=ParameterTypeBuiltin.ALL.value,
                 allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
             self.index_count = Parameter(
                 name="index",
@@ -59,50 +197,92 @@ class ForEachStartNode(StartLoopNode):
             )
         self.add_node_element(group)
 
-        self.loop = ControlParameterOutput(tooltip="To the End Node", name="loop")
-        self.loop.ui_options = {"display_name": "Enter Loop", "hide": True}
-        self.add_parameter(self.loop)
+        # Explicit tethering to ForEachEnd node
+        self.loop_end_node = Parameter(
+            name="loop_end_node",
+            tooltip="Connected ForEach End Node",
+            output_type=ParameterTypeBuiltin.ALL.value,
+            allowed_modes={ParameterMode.OUTPUT},
+        )
+        self.loop_end_node.ui_options = {"display_name": "Loop End Node"}
+        self.add_parameter(self.loop_end_node)
+
+        # Hidden signal inputs from ForEachEnd
+        self.trigger_next_iteration_signal = ControlParameterInput(
+            tooltip="Signal from ForEachEnd to continue to next iteration", name="trigger_next_iteration_signal"
+        )
+        self.trigger_next_iteration_signal.ui_options = {"hide": True, "display_name": "Next Iteration Signal"}
+        self.trigger_next_iteration_signal.settable = False
+
+        self.break_loop_signal = ControlParameterInput(
+            tooltip="Signal from ForEachEnd to break out of loop", name="break_loop_signal"
+        )
+        self.break_loop_signal.ui_options = {"hide": True, "display_name": "Break Loop Signal"}
+        self.break_loop_signal.settable = False
+
+        # Hidden data output - results list
+        self.results_list = Parameter(
+            name="results_list",
+            tooltip="Results list passed to ForEach End Node",
+            output_type="list",
+            allowed_modes={ParameterMode.OUTPUT},
+            default_value=[],
+        )
+        self.results_list.ui_options = {"hide": True}
+
+        # Hidden control output - loop end condition
+        self.loop_end_condition_met_signal = ControlParameterOutput(
+            tooltip="Signal to ForEachEnd when loop should end", name="loop_end_condition_met_signal"
+        )
+        self.loop_end_condition_met_signal.ui_options = {"hide": True, "display_name": "Loop End Signal"}
+        self.loop_end_condition_met_signal.settable = False
+
+        # Add hidden parameters
+        self.add_parameter(self.trigger_next_iteration_signal)
+        self.add_parameter(self.break_loop_signal)
+        self.add_parameter(self.results_list)
+        self.add_parameter(self.loop_end_condition_met_signal)
+
+        # Initialize FSM and control output tracking
+        self._fsm = FSM(self)
+        self.next_control_output: Parameter | None = None
+        self._logger = logging.getLogger(f"{__name__}.{self.name}")
 
     def process(self) -> None:
         # Reset state when the node is first processed
         if self._flow is None or self.finished:
             return
-        if self.current_index == 0:
-            # Initialize everything!
-            list_values = self.get_parameter_value("items")
-            # Ensure the list is flattened
-            if isinstance(list_values, list):
-                self._items = [
-                    item for sublist in list_values for item in (sublist if isinstance(sublist, list) else [sublist])
-                ]
-            else:
-                self._items = []
-        # Get the current item and pass it along.
-        # I need to unresolve all future nodes (all of them in the for each loop).
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(self)
-        current_item_value = self._items[self.current_index]
-        self.parameter_output_values["current_item"] = current_item_value
-        self.set_parameter_value("index", self.current_index)
-        self.publish_update_to_parameter("index", self.current_index)
-        self.current_index += 1
-        if self.current_index == len(self._items):
-            self.finished = True
-            self._items = []
-            self.current_index = 0
+        # Update FSM - this will handle all state logic
+        self._fsm.update()
+
+    def set_parameter_value(
+        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+    ) -> None:
+        return super().set_parameter_value(param_name, value, initial_setup=initial_setup, emit_change=emit_change)
 
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
+        # Force complete reset of all state
         self.current_index = 0
         self._items = []
         self.finished = False
+        # Start FSM in initial state
+        self._fsm.start(WaitingForStartState)
+
+        # Validate end node connection
         if self.end_node is None:
             msg = f"{self.name}: End node not found or connected."
             exceptions.append(Exception(msg))
+
+        # Validate all required connections exist
+        validation_errors = self._validate_foreach_connections()
+        if validation_errors:
+            exceptions.extend(validation_errors)
+
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -121,6 +301,12 @@ class ForEachStartNode(StartLoopNode):
         if self.end_node is None:
             msg = f"{self.name}: End node not found or connected."
             exceptions.append(Exception(msg))
+
+        # Validate all required connections exist
+        validation_errors = self._validate_foreach_connections()
+        if validation_errors:
+            exceptions.extend(validation_errors)
+
         try:
             flow = GriptapeNodes.ObjectManager().get_object_by_name(
                 GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
@@ -132,7 +318,84 @@ class ForEachStartNode(StartLoopNode):
         return exceptions
 
     def get_next_control_output(self) -> Parameter | None:
-        return self.loop
+        # Handle event through FSM
+        if self._entry_control_parameter:
+            self._fsm.handle_event(self._entry_control_parameter)
+
+        # Return what the FSM state set as the next control output
+        return self.next_control_output
+
+    def _validate_foreach_connections(self) -> list[Exception]:
+        """Validate that all required ForEach connections are properly established.
+
+        Returns a list of validation errors with detailed instructions for the user.
+        """
+        errors = []
+
+        # Check if items parameter has input connection
+        if "items" not in self._connected_parameters:
+            errors.append(
+                Exception(
+                    f"{self.name}: Missing required 'items' connection. "
+                    "REQUIRED ACTION: Connect a data source (like Create List.output) to the ForEach Start 'items' input. "
+                    "The ForEach Start needs a list of items to iterate through."
+                )
+            )
+
+        # Check if loop_end_node has outgoing connection to ForEach End
+        if self.end_node is None:
+            errors.append(
+                Exception(
+                    f"{self.name}: Missing required tethering connection. "
+                    "REQUIRED ACTION: Connect ForEach Start 'Loop End Node' to ForEach End 'Loop Start Node'. "
+                    "This establishes the explicit relationship between start and end nodes."
+                )
+            )
+
+        # Check if all hidden signal connections exist (only if end_node is connected)
+        if self.end_node:
+            # Check signal inputs from ForEach End
+            if "trigger_next_iteration_signal" not in self._connected_parameters:
+                errors.append(
+                    Exception(
+                        f"{self.name}: Missing hidden signal connection. "
+                        "REQUIRED ACTION: Connect ForEach End 'Next Iteration Signal Output' to ForEach Start 'Next Iteration Signal'. "
+                        "This signal tells the start node to continue to the next item."
+                    )
+                )
+
+            if "break_loop_signal" not in self._connected_parameters:
+                errors.append(
+                    Exception(
+                        f"{self.name}: Missing hidden signal connection. "
+                        "REQUIRED ACTION: Connect ForEach End 'Break Loop Signal Output' to ForEach Start 'Break Loop Signal'. "
+                        "This signal tells the start node to break out of the loop early."
+                    )
+                )
+
+            # Note: outgoing connections (results_list, loop_end_condition_met_signal) are tracked via end_node relationship
+
+        return errors
+
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Track incoming connections for validation
+        self._connected_parameters.add(target_parameter.name)
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Remove from tracking when connection is removed
+        self._connected_parameters.discard(target_parameter.name)
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def after_outgoing_connection(
         self,
@@ -140,6 +403,16 @@ class ForEachStartNode(StartLoopNode):
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
-        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
+        if source_parameter == self.loop_end_node and isinstance(target_node, EndLoopNode):
             self.end_node = target_node
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
+
+    def after_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
+    ) -> None:
+        if source_parameter == self.loop_end_node and isinstance(target_node, EndLoopNode):
+            self.end_node = None
+        return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
