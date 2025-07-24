@@ -263,6 +263,8 @@ class ForEachEndNode(EndLoopNode):
 
         if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
             self.start_node = source_node
+            # Auto-create all hidden signal connections when main tethering connection is made
+            self._create_hidden_signal_connections(source_node)
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
@@ -276,7 +278,111 @@ class ForEachEndNode(EndLoopNode):
 
         if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
             self.start_node = None
+            # Clean up hidden signal connections when main tethering connection is removed
+            self._remove_hidden_signal_connections(source_node)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def _create_hidden_signal_connections(self, start_node: BaseNode) -> None:
+        """Automatically create all hidden signal connections between ForEach Start and End nodes.
+
+        This method is called when the main tethering connection (loop_start_node) is established.
+        It creates all the required hidden connections for the ForEach loop to function properly.
+        """
+        from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Create the four hidden signal connections needed for ForEach loop functionality:
+
+        # 1. Start → End: results_list → results_list_input
+        GriptapeNodes.handle_request(
+            CreateConnectionRequest(
+                source_node_name=start_node.name,
+                source_parameter_name="results_list",
+                target_node_name=self.name,
+                target_parameter_name="results_list_input",
+            )
+        )
+
+        # 2. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
+        GriptapeNodes.handle_request(
+            CreateConnectionRequest(
+                source_node_name=start_node.name,
+                source_parameter_name="loop_end_condition_met_signal",
+                target_node_name=self.name,
+                target_parameter_name="loop_end_condition_met_signal_input",
+            )
+        )
+
+        # 3. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
+        GriptapeNodes.handle_request(
+            CreateConnectionRequest(
+                source_node_name=self.name,
+                source_parameter_name="trigger_next_iteration_signal_output",
+                target_node_name=start_node.name,
+                target_parameter_name="trigger_next_iteration_signal",
+            )
+        )
+
+        # 4. End → Start: break_loop_signal_output → break_loop_signal
+        GriptapeNodes.handle_request(
+            CreateConnectionRequest(
+                source_node_name=self.name,
+                source_parameter_name="break_loop_signal_output",
+                target_node_name=start_node.name,
+                target_parameter_name="break_loop_signal",
+            )
+        )
+
+    def _remove_hidden_signal_connections(self, start_node: BaseNode) -> None:
+        """Remove all hidden signal connections when the main tethering connection is removed.
+
+        This method cleans up the hidden connections when the ForEach Start and End nodes
+        are disconnected via the main tethering connection.
+        """
+        from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Remove the four hidden signal connections:
+
+        # 1. Start → End: results_list → results_list_input
+        GriptapeNodes.handle_request(
+            DeleteConnectionRequest(
+                source_node_name=start_node.name,
+                source_parameter_name="results_list",
+                target_node_name=self.name,
+                target_parameter_name="results_list_input",
+            )
+        )
+
+        # 2. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
+        GriptapeNodes.handle_request(
+            DeleteConnectionRequest(
+                source_node_name=start_node.name,
+                source_parameter_name="loop_end_condition_met_signal",
+                target_node_name=self.name,
+                target_parameter_name="loop_end_condition_met_signal_input",
+            )
+        )
+
+        # 3. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
+        GriptapeNodes.handle_request(
+            DeleteConnectionRequest(
+                source_node_name=self.name,
+                source_parameter_name="trigger_next_iteration_signal_output",
+                target_node_name=start_node.name,
+                target_parameter_name="trigger_next_iteration_signal",
+            )
+        )
+
+        # 4. End → Start: break_loop_signal_output → break_loop_signal
+        GriptapeNodes.handle_request(
+            DeleteConnectionRequest(
+                source_node_name=self.name,
+                source_parameter_name="break_loop_signal_output",
+                target_node_name=start_node.name,
+                target_parameter_name="break_loop_signal",
+            )
+        )
 
     def initialize_spotlight(self) -> None:
         """Custom spotlight initialization for conditional dependency resolution.
@@ -328,4 +434,3 @@ class ForEachEndNode(EndLoopNode):
         self._index = 0
         # Clear any stale output parameter values from previous runs
         self.parameter_output_values["results"] = []
-
