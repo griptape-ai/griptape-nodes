@@ -1,5 +1,15 @@
-# Control flow machine
 from __future__ import annotations
+"""control_flow.py
+~~~~~~~~~~~~~~~~~~~
+
+This module implements a finite-state machine (FSM) called ControlFlowMachine that executes a ControlFlow graph made up of BaseNode instances.
+It uses an internal NodeResolutionMachine to resolve nodes one at a time.
+During execution, it emits detailed ExecutionEvents for real-time visualization and debugging.
+
+The ControlFlowMachine starts at a specified node and moves through the graph using either explicit control connections or a fallback execution queue.
+It also offers a debug mode that pauses after each step to allow inspection of the current state.
+
+"""
 
 import logging
 import time
@@ -24,9 +34,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
-
-# This is the control flow context. Owns the Resolution Machine
 class ControlFlowContext:
+    """Runtime context shared across :class:`ControlFlowMachine` FSM states.
+
+    The context instance holds the current flow, reference to the
+    griptape_nodes.machines.node_resolution.NodeResolutionMachine
+    responsible for resolving individual nodes, as well as various
+    bookkeeping fields that are changed while the flow is running.
+    """
     flow: ControlFlow
     current_node: BaseNode | None
     resolution_machine: NodeResolutionMachine
@@ -40,6 +55,7 @@ class ControlFlowContext:
         self.start_time = None  # Initialize start time
 
     def get_next_node(self, output_parameter: Parameter) -> BaseNode | None:
+        """Return the next node to execute."""
         if self.current_node is not None:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -57,6 +73,7 @@ class ControlFlowContext:
         return None
 
     def reset(self) -> None:
+        """Reset the context back to its initial state."""
         if self.current_node:
             self.current_node.clear_node()
         self.current_node = None
@@ -67,6 +84,7 @@ class ControlFlowContext:
 
 # GOOD!
 class ResolveNodeState(State):
+    """State that resolves the `ControlFlowContext.current_node`."""
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         # The state machine has started, but it hasn't began to execute yet.
@@ -110,6 +128,7 @@ class ResolveNodeState(State):
 
 
 class NextNodeState(State):
+    """State that decides which node should be executed next."""
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is None:
@@ -164,6 +183,7 @@ class NextNodeState(State):
 
 
 class CompleteState(State):
+    """Terminal state – emitted whenever the control-flow finishes running."""
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
@@ -193,11 +213,19 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
+    """Finite-state machine that orchestrates execution of a *ControlFlow*.
+
+    The machine transitions between ResolveNodeState, NextNodeState, and
+    CompleteState until the entire flow graph has been evaluated. Consumers
+    can run the flow in *continuous* mode via update or step through it
+    granularly using granular_step / node_step when debugging.
+    """
     def __init__(self) -> None:
         context = ControlFlowContext()
         super().__init__(context)
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        """Begin execution at start_node."""
         self._context.current_node = start_node
         # Record the start time for benchmarking
         self._context.start_time = time.time()
@@ -226,6 +254,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.resolution_machine.change_debug_mode(debug_mode)
 
     def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
+        """Resolve a single granular step and, optionally, enable debug mode."""
         resolution_machine = self._context.resolution_machine
         if change_debug_mode:
             resolution_machine.change_debug_mode(True)
@@ -238,6 +267,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 self.update()
 
     def node_step(self) -> None:
+        """Resolve exactly one node and update the control-flow state."""
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
         resolution_machine.update()
@@ -249,5 +279,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 self.update()
 
     def reset_machine(self) -> None:
+        """Fully reset the state machine so that it can be re-used."""
         self._context.reset()
         self._current_state = None
