@@ -20,7 +20,7 @@ class WaitingForStartState(State):
     @staticmethod
     def on_enter(context: "ForEachStartNode") -> type[State] | None:
         """Initialize the items list on entry."""
-        # Always initialize items list
+        # Always initialize items list with fresh parameter value
         list_values = context.get_parameter_value("items")
         # Ensure the list is flattened
         if isinstance(list_values, list):
@@ -263,7 +263,8 @@ class ForEachStartNode(StartLoopNode):
         match self._entry_control_parameter:
             case self.exec_in | None:
                 # Starting the loop (either via connection or direct execution)
-                # FSM should already be initialized in WaitingForStartState
+                # Initialize FSM to WaitingForStartState to get fresh parameter values
+                self._fsm.start(WaitingForStartState)
                 self._fsm.update()
             case self.trigger_next_iteration_signal:
                 # Next iteration signal from ForEach End - advance to next item
@@ -300,9 +301,6 @@ class ForEachStartNode(StartLoopNode):
 
         if isinstance(self.end_node, ForEachEndNode):
             self.end_node.reset_for_workflow_run()
-
-        # Start FSM in initial state
-        self._fsm.start(WaitingForStartState)
 
         # Validate end node connection
         if self.end_node is None:
