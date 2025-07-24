@@ -30,13 +30,19 @@ class WaitingForStartState(State):
         else:
             context._items = []
 
+        # Unresolve future nodes immediately to ensure first iteration gets fresh values
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        connections.unresolve_future_nodes(context)
+
         return None
 
     @staticmethod
-    def on_update(context: "ForEachStartNode") -> type[State] | None:
-        """Stay in waiting state until exec_in event is received."""
-        context.next_control_output = None
-        return None
+    def on_update(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
+        """Always transition to check end condition after initialization."""
+        # Always transition to check end condition - we're past initialization
+        return CheckEndConditionMetState
 
     @staticmethod
     def on_event(context: "ForEachStartNode", event: Any) -> type[State] | None:
@@ -81,16 +87,11 @@ class CheckEndConditionMetState(State):
 
 
 class ExecuteCurrentItemState(State):
-    """State for executing current item - sets data in update and handles events."""
+    """State for executing current item - sets data in on_enter and handles events."""
 
     @staticmethod
-    def on_enter(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
-        """Enter execution state."""
-        return None
-
-    @staticmethod
-    def on_update(context: "ForEachStartNode") -> type[State] | None:
-        """Set current item data - nodes already unresolved by CheckEndConditionMetState."""
+    def on_enter(context: "ForEachStartNode") -> type[State] | None:
+        """Set current item data immediately on entering this state."""
         # Set current item data if we have items
         if context._items and context.current_index < len(context._items):
             current_item_value = context._items[context.current_index]
@@ -100,6 +101,11 @@ class ExecuteCurrentItemState(State):
             context.publish_update_to_parameter("index", context.current_index)
 
         # Don't set next_control_output here - let it keep what CheckEndConditionMetState set
+        return None
+
+    @staticmethod
+    def on_update(context: "ForEachStartNode") -> type[State] | None:  # noqa: ARG004
+        """Stay in execution state until event received."""
         return None
 
     @staticmethod
@@ -253,8 +259,25 @@ class ForEachStartNode(StartLoopNode):
         if self._flow is None or self.finished:
             return
 
-        # Update FSM - this will handle all state logic
-        self._fsm.update()
+        # Handle different control entry points
+        match self._entry_control_parameter:
+            case self.exec_in:
+                # Starting the loop - FSM should already be initialized in WaitingForStartState
+                self._fsm.update()
+            case self.trigger_next_iteration_signal:
+                # Next iteration signal from ForEach End - advance to next item
+                self.current_index += 1
+                # Transition to check if we should continue or end
+                self._fsm.transition_state(CheckEndConditionMetState)
+            case self.break_loop_signal:
+                # Break signal from ForEach End - halt loop immediately
+                self.finished = True
+                self._items = []
+                self.current_index = 0
+                self._fsm.transition_state(CompletedState)
+            case _:
+                # No valid control entry point - shouldn't happen
+                return
 
     def set_parameter_value(
         self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
@@ -272,7 +295,8 @@ class ForEachStartNode(StartLoopNode):
         self.finished = False
 
         # Clear the coupled ForEach End node's state for fresh workflow runs
-        if self.end_node:
+        from griptape_nodes_library.execution.for_each_end import ForEachEndNode
+        if isinstance(self.end_node, ForEachEndNode):
             self.end_node.reset_for_workflow_run()
 
         # Start FSM in initial state
@@ -323,11 +347,8 @@ class ForEachStartNode(StartLoopNode):
         return exceptions
 
     def get_next_control_output(self) -> Parameter | None:
-        # Handle event through FSM
-        if self._entry_control_parameter:
-            self._fsm.handle_event(self._entry_control_parameter)
-
         # Return what the FSM state set as the next control output
+        # Note: Events are already handled in process(), no need to handle again
         return self.next_control_output
 
     def _validate_foreach_connections(self) -> list[Exception]:
