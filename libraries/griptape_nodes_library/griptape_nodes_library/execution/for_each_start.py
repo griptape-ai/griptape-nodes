@@ -261,8 +261,9 @@ class ForEachStartNode(StartLoopNode):
 
         # Handle different control entry points
         match self._entry_control_parameter:
-            case self.exec_in:
-                # Starting the loop - FSM should already be initialized in WaitingForStartState
+            case self.exec_in | None:
+                # Starting the loop (either via connection or direct execution)
+                # FSM should already be initialized in WaitingForStartState
                 self._fsm.update()
             case self.trigger_next_iteration_signal:
                 # Next iteration signal from ForEach End - advance to next item
@@ -276,13 +277,12 @@ class ForEachStartNode(StartLoopNode):
                 self.current_index = 0
                 self._fsm.transition_state(CompletedState)
             case _:
-                # No valid control entry point - shouldn't happen
-                return
+                # Unexpected control entry point - log error for debugging
+                err_str = f"ForEach Start node '{self.name}' received unexpected control parameter: {self._entry_control_parameter}. "
+                "Expected: exec_in, trigger_next_iteration_signal, break_loop_signal, or None."
 
-    def set_parameter_value(
-        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
-    ) -> None:
-        return super().set_parameter_value(param_name, value, initial_setup=initial_setup, emit_change=emit_change)
+                self._logger.error(err_str)
+                return
 
     # This node cannot run unless it's connected to a start node.
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -296,6 +296,7 @@ class ForEachStartNode(StartLoopNode):
 
         # Clear the coupled ForEach End node's state for fresh workflow runs
         from griptape_nodes_library.execution.for_each_end import ForEachEndNode
+
         if isinstance(self.end_node, ForEachEndNode):
             self.end_node.reset_for_workflow_run()
 
