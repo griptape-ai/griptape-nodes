@@ -172,7 +172,7 @@ class ForEachStartNode(StartLoopNode):
         self.exec_in = ControlParameterInput(tooltip="Start Loop", name="exec_in")
         self.exec_in.ui_options = {"display_name": "Start Loop"}
         self.add_parameter(self.exec_in)
-        
+
         self.items_list = Parameter(
             name="items",
             tooltip="List of items to iterate through",
@@ -206,15 +206,15 @@ class ForEachStartNode(StartLoopNode):
             )
         self.add_node_element(group)
 
-        # Explicit tethering to ForEachEnd node
-        self.loop_end_node = Parameter(
-            name="loop_end_node",
+        # Explicit tethering to ForEachEnd node (hidden)
+        self.loop = Parameter(
+            name="loop",
             tooltip="Connected ForEach End Node",
             output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
         )
-        self.loop_end_node.ui_options = {"display_name": "Loop End Node"}
-        self.add_parameter(self.loop_end_node)
+        self.loop.ui_options = {"hide": True, "display_name": "Loop End Node"}
+        self.add_parameter(self.loop)
 
         # Hidden signal inputs from ForEachEnd
         self.trigger_next_iteration_signal = ControlParameterInput(
@@ -371,7 +371,7 @@ class ForEachStartNode(StartLoopNode):
                 )
             )
 
-        # Check if loop_end_node has outgoing connection to ForEach End
+        # Check if loop has outgoing connection to ForEach End
         if self.end_node is None:
             errors.append(
                 Exception(
@@ -432,7 +432,7 @@ class ForEachStartNode(StartLoopNode):
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
-        if source_parameter == self.loop_end_node and isinstance(target_node, EndLoopNode):
+        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
             self.end_node = target_node
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
 
@@ -442,6 +442,6 @@ class ForEachStartNode(StartLoopNode):
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
-        if source_parameter == self.loop_end_node and isinstance(target_node, EndLoopNode):
+        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
             self.end_node = None
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)

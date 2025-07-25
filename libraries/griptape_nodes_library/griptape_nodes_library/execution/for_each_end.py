@@ -36,13 +36,13 @@ class ForEachEndNode(EndLoopNode):
         self._connected_parameters: set[str] = set()
 
         # Explicit tethering to ForEachStart node
-        self.loop_start_node = Parameter(
-            name="loop_start_node",
+        self.from_start = Parameter(
+            name="from_start",
             tooltip="Connected ForEach Start Node",
             input_types=[ParameterTypeBuiltin.ALL.value],
             allowed_modes={ParameterMode.INPUT},
         )
-        self.loop_start_node.ui_options = {"display_name": "Loop Start Node"}
+        self.from_start.ui_options = {"hide": True, "display_name": "Loop Start Node"}
 
         # Main control input and data parameter
         self.add_item_control = ControlParameterInput(
@@ -115,15 +115,13 @@ class ForEachEndNode(EndLoopNode):
         self.add_parameter(self.new_item_to_add)
         self.add_parameter(self.exec_out)
         self.add_parameter(self.results)
-        
+
         # Add advanced control options before tethering connection
         self.add_parameter(self.skip_control)
         self.add_parameter(self.break_control)
 
-        # Add tethering connection just above hidden parameters
-        self.add_parameter(self.loop_start_node)
-        
         # Add hidden parameters
+        self.add_parameter(self.from_start)
         self.add_parameter(self.results_list_input)
         self.add_parameter(self.loop_end_condition_met_signal_input)
         self.add_parameter(self.trigger_next_iteration_signal_output)
@@ -217,7 +215,7 @@ class ForEachEndNode(EndLoopNode):
         """
         errors = []
 
-        # Check if loop_start_node has incoming connection from ForEach Start
+        # Check if from_start has incoming connection from ForEach Start
         if self.start_node is None:
             errors.append(
                 Exception(
@@ -267,7 +265,7 @@ class ForEachEndNode(EndLoopNode):
         # Track incoming connections for validation
         self._connected_parameters.add(target_parameter.name)
 
-        if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
+        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
             self.start_node = source_node
             # Auto-create all hidden signal connections when main tethering connection is made
             self._create_hidden_signal_connections(source_node)
@@ -282,7 +280,7 @@ class ForEachEndNode(EndLoopNode):
         # Remove from tracking when connection is removed
         self._connected_parameters.discard(target_parameter.name)
 
-        if target_parameter is self.loop_start_node and isinstance(source_node, StartLoopNode):
+        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
             self.start_node = None
             # Clean up hidden signal connections when main tethering connection is removed
             self._remove_hidden_signal_connections(source_node)
@@ -291,7 +289,7 @@ class ForEachEndNode(EndLoopNode):
     def _create_hidden_signal_connections(self, start_node: BaseNode) -> None:
         """Automatically create all hidden signal connections between ForEach Start and End nodes.
 
-        This method is called when the main tethering connection (loop_start_node) is established.
+        This method is called when the main tethering connection (from_start) is established.
         It creates all the required hidden connections for the ForEach loop to function properly.
         """
         from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
