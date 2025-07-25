@@ -1,6 +1,6 @@
 import logging
 
-from huggingface_hub import scan_cache_dir
+from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
 from griptape_nodes.exe_types.node_types import BaseNode
