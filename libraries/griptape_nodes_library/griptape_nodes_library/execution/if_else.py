@@ -38,17 +38,17 @@ class IfElse(BaseNode):
         self.add_parameter(else_param)
 
         # Evaluation parameter
-        self.add_parameter(
-            Parameter(
-                name="evaluate",
-                tooltip="Evaluates where to go",
-                input_types=["bool", "int", "str"],
-                output_type="bool",
-                type="bool",
-                default_value=False,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
+        self.evaluate = Parameter(
+            name="evaluate",
+            tooltip="Evaluates where to go",
+            input_types=["bool", "int", "str"],
+            output_type="bool",
+            type="bool",
+            default_value=False,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
         )
+
+        self.add_parameter(self.evaluate)
 
         # Data flow outputs in a collapsible ParameterGroup
         with ParameterGroup(name="Data Outputs") as group:
@@ -423,17 +423,18 @@ class IfElse(BaseNode):
         if self.current_spotlight_parameter is None:
             return False
 
-        # If we're currently on the evaluate parameter, decide which branch to resolve next
-        if self.current_spotlight_parameter.name == "evaluate":
+        # Special handling for the evaluate parameter - conditionally link to selected branch
+        if self.current_spotlight_parameter is self.evaluate:
             try:
                 # Evaluate the condition to determine which branch we need
                 evaluation_result = self.check_evaluation()
-
-                # Select the appropriate input parameter based on evaluation
-                if evaluation_result:
-                    next_param = self.output_if_true
-                else:
-                    next_param = self.output_if_false
+            except Exception:  # (we are already logging the error in the check_evaluation)
+                # If evaluation fails, don't resolve any input branches, stop processing
+                self.current_spotlight_parameter = None
+                return False
+            else:
+                # Evaluation succeeded, select the appropriate branch
+                next_param = self.output_if_true if evaluation_result else self.output_if_false
 
                 # Only add the selected parameter if it has input connections
                 if ParameterMode.INPUT in next_param.get_mode():
@@ -442,19 +443,12 @@ class IfElse(BaseNode):
                     next_param.prev = self.current_spotlight_parameter
                     self.current_spotlight_parameter = next_param
                     return True
-                # No input connections on the selected parameter, we're done
-                self.current_spotlight_parameter = None
-                return False
 
-            except Exception:
-                # If evaluation fails, don't resolve any input branches
-                self.current_spotlight_parameter = None
-                return False
-
-        # For any other parameter, use default advancement behavior
+        # Default advancement behavior (handles both evaluate failure and normal parameters)
         if self.current_spotlight_parameter.next is not None:
             self.current_spotlight_parameter = self.current_spotlight_parameter.next
             return True
 
+        # No more parameters to advance to
         self.current_spotlight_parameter = None
         return False

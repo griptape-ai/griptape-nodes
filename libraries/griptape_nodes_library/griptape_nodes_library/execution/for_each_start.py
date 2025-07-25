@@ -199,7 +199,7 @@ class ForEachStartNode(StartLoopNode):
 
         # Reset the coupled ForEach End node's state for fresh loop runs
         if self.end_node and hasattr(self.end_node, "reset_for_workflow_run"):
-            self.end_node.reset_for_workflow_run()
+            self.end_node.reset_for_workflow_run()  # type: ignore[attr-defined] (better damned well be a corresponding End Node type by this point)
 
         # Always initialize items list with fresh parameter value
         list_values = self.get_parameter_value("items")

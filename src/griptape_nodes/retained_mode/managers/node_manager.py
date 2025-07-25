@@ -365,10 +365,10 @@ class NodeManager:
                         logger.error(
                             msg
                         )  # while this is bad, it's not unsalvageable, so we'll consider this a success.
-
-                    # create the connection
-                    node.end_node = end_node
-                    end_node.start_node = node
+                    else:
+                        # create the connection - only when we've confirmed correct types
+                        node.end_node = end_node
+                        end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
