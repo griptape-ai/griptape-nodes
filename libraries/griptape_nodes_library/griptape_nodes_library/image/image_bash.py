@@ -561,7 +561,7 @@ class ImageBash(DataNode):
             # Update bash_image canvas size when canvas_size changes to a preset
             self._update_bash_image_canvas_size()
 
-    def _enable_custom_dimensions(self, publish_updates: bool = True) -> None:
+    def _enable_custom_dimensions(self, *, publish_updates: bool = True) -> None:
         """Enable custom width and height input fields."""
         width_ui_options = self.canvas_width.ui_options
         self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
