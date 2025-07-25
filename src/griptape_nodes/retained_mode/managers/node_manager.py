@@ -428,7 +428,7 @@ class NodeManager:
             parent_flow.clear_execution_queue()
         return None
 
-    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
+    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic, lots of edge cases)
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -461,41 +461,55 @@ class NodeManager:
             cancel_result = self.cancel_conditionally(parent_flow, parent_flow_name, node)
             if cancel_result is not None:
                 return cancel_result
-            # Remove all connections from this Node.
-            list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-            list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
-            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-                details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
-                logger.error(details)
-                return DeleteNodeResultFailure()
+            # Remove all connections from this Node using a loop to handle cascading deletions
+            any_connections_remain = True
+            while any_connections_remain:
+                # Assume we're done
+                any_connections_remain = False
 
-            # Destroy all the incoming Connections
-            for incoming_connection in list_connections_result.incoming_connections:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=incoming_connection.source_node_name,
-                    source_parameter_name=incoming_connection.source_parameter_name,
-                    target_node_name=node_name,
-                    target_parameter_name=incoming_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, ResultPayloadFailure):
-                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+                list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+                if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                    details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                     logger.error(details)
                     return DeleteNodeResultFailure()
 
-            # Destroy all the outgoing Connections
-            for outgoing_connection in list_connections_result.outgoing_connections:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=node_name,
-                    source_parameter_name=outgoing_connection.source_parameter_name,
-                    target_node_name=outgoing_connection.target_node_name,
-                    target_parameter_name=outgoing_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, ResultPayloadFailure):
-                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
-                    logger.error(details)
-                    return DeleteNodeResultFailure()
+                # Check incoming connections
+                if list_connections_result.incoming_connections:
+                    any_connections_remain = True
+                    connection = list_connections_result.incoming_connections[0]
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=connection.source_node_name,
+                        source_parameter_name=connection.source_parameter_name,
+                        target_node_name=node_name,
+                        target_parameter_name=connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = (
+                            f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
+                    continue  # Refresh connection list after cascading deletions
+
+                # Check outgoing connections
+                if list_connections_result.outgoing_connections:
+                    any_connections_remain = True
+                    connection = list_connections_result.outgoing_connections[0]
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=node_name,
+                        source_parameter_name=connection.source_parameter_name,
+                        target_node_name=connection.target_node_name,
+                        target_parameter_name=connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = (
+                            f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
 
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)

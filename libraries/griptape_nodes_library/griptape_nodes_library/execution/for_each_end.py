@@ -323,40 +323,76 @@ class ForEachEndNode(EndLoopNode):
         This method cleans up the hidden connections when the ForEach Start and End nodes
         are disconnected via the main tethering connection.
         """
-        from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+        # Remove the hidden signal connections and default control flow:
+        # Note: Check if connections exist before attempting deletion to avoid error messages
+        from griptape_nodes.retained_mode.events.connection_events import (
+            DeleteConnectionRequest,
+            ListConnectionsForNodeRequest,
+            ListConnectionsForNodeResultSuccess,
+        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Remove the hidden signal connections and default control flow:
+        # Get current connections for start node to check what still exists
+        list_connections_result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=start_node.name))
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            return  # Cannot determine what connections exist, exit gracefully
+
+        # Helper function to check if a connection exists
+        def connection_exists(source_node: str, source_param: str, target_node: str, target_param: str) -> bool:
+            # Check in outgoing connections from source node
+            for conn in list_connections_result.outgoing_connections:
+                if (
+                    conn.source_parameter_name == source_param
+                    and conn.target_node_name == target_node
+                    and conn.target_parameter_name == target_param
+                ):
+                    return True
+            # Check in incoming connections to source node
+            for conn in list_connections_result.incoming_connections:
+                if (
+                    conn.source_node_name == source_node
+                    and conn.source_parameter_name == source_param
+                    and conn.target_parameter_name == target_param
+                ):
+                    return True
+            return False
 
         # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
-        GriptapeNodes.handle_request(
-            DeleteConnectionRequest(
-                source_node_name=start_node.name,
-                source_parameter_name="loop_end_condition_met_signal",
-                target_node_name=self.name,
-                target_parameter_name="loop_end_condition_met_signal_input",
+        if connection_exists(
+            start_node.name, "loop_end_condition_met_signal", self.name, "loop_end_condition_met_signal_input"
+        ):
+            GriptapeNodes.handle_request(
+                DeleteConnectionRequest(
+                    source_node_name=start_node.name,
+                    source_parameter_name="loop_end_condition_met_signal",
+                    target_node_name=self.name,
+                    target_parameter_name="loop_end_condition_met_signal_input",
+                )
             )
-        )
 
         # 2. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
-        GriptapeNodes.handle_request(
-            DeleteConnectionRequest(
-                source_node_name=self.name,
-                source_parameter_name="trigger_next_iteration_signal_output",
-                target_node_name=start_node.name,
-                target_parameter_name="trigger_next_iteration_signal",
+        if connection_exists(
+            self.name, "trigger_next_iteration_signal_output", start_node.name, "trigger_next_iteration_signal"
+        ):
+            GriptapeNodes.handle_request(
+                DeleteConnectionRequest(
+                    source_node_name=self.name,
+                    source_parameter_name="trigger_next_iteration_signal_output",
+                    target_node_name=start_node.name,
+                    target_parameter_name="trigger_next_iteration_signal",
+                )
             )
-        )
 
         # 3. End → Start: break_loop_signal_output → break_loop_signal
-        GriptapeNodes.handle_request(
-            DeleteConnectionRequest(
-                source_node_name=self.name,
-                source_parameter_name="break_loop_signal_output",
-                target_node_name=start_node.name,
-                target_parameter_name="break_loop_signal",
+        if connection_exists(self.name, "break_loop_signal_output", start_node.name, "break_loop_signal"):
+            GriptapeNodes.handle_request(
+                DeleteConnectionRequest(
+                    source_node_name=self.name,
+                    source_parameter_name="break_loop_signal_output",
+                    target_node_name=start_node.name,
+                    target_parameter_name="break_loop_signal",
+                )
             )
-        )
 
         # NOTE: We do NOT automatically delete the default control flow connection
         # (Start exec_out → End add_item) because it's a visible connection that users
