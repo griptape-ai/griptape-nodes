@@ -76,8 +76,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return {"url": response_data["url"], "headers": response_data.get("headers", {}), "method": "PUT"}
 
     def create_signed_download_url(self, file_name: str) -> str:
-        full_file_path = self._get_full_file_path(file_name)
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{full_file_path}")
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{file_name}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
             response.raise_for_status()
@@ -135,6 +134,57 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         logger.info("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
         return bucket_id
 
+    def list_assets(self) -> list[dict]:
+        """List all assets in the bucket.
+
+        Returns:
+            A list of dictionaries containing asset information.
+
+        Raises:
+            RuntimeError: If asset listing fails.
+        """
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
+        try:
+            response = httpx.get(url, headers=self.headers, params={"prefix": self.static_files_directory or ""})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to list assets in bucket {self.bucket_id}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        response_data = response.json()
+        return response_data.get("assets", [])
+
+    def download_file(self, file_name: str) -> bytes:
+        """Download a file from the bucket.
+
+        Args:
+            file_name: The name of the file to download.
+
+        Returns:
+            The file content as bytes.
+
+        Raises:
+            RuntimeError: If file download fails.
+        """
+        try:
+            # Get signed download URL
+            download_url = self.create_signed_download_url(file_name)
+
+            # Download the file
+            response = httpx.get(download_url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to download file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error downloading file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+        else:
+            return response.content
+
     @staticmethod
     def list_buckets(*, base_url: str, api_key: str) -> list[dict]:
         """List all buckets in Griptape Cloud.
@@ -158,3 +208,20 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise RuntimeError(msg) from e
 
         return response.json().get("buckets", [])
+
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from the bucket.
+
+        Args:
+            file_name: The name of the file to delete.
+        """
+        full_file_path = self._get_full_file_path(file_name)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{full_file_path}")
+
+        try:
+            response = httpx.delete(url, headers=self.headers)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to delete file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e

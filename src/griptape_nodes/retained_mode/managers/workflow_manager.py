@@ -45,9 +45,15 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
+    CompareWorkflowsRequest,
+    CompareWorkflowsResultFailure,
+    CompareWorkflowsResultSuccess,
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
+    ForkWorkflowRequest,
+    ForkWorkflowResultFailure,
+    ForkWorkflowResultSuccess,
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultFailure,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -57,6 +63,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultFailure,
     LoadWorkflowMetadataResultSuccess,
+    MergeWorkflowRequest,
+    MergeWorkflowResultFailure,
+    MergeWorkflowResultSuccess,
     PublishWorkflowRequest,
     PublishWorkflowResultFailure,
     RegisterWorkflowRequest,
@@ -239,6 +248,18 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             ImportWorkflowAsReferencedSubFlowRequest,
             self.on_import_workflow_as_referenced_sub_flow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            ForkWorkflowRequest,
+            self.on_fork_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            MergeWorkflowRequest,
+            self.on_merge_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            CompareWorkflowsRequest,
+            self.on_compare_workflows_request,
         )
 
     def has_current_referenced_workflow(self) -> bool:
@@ -932,7 +953,11 @@ class WorkflowManager:
         return import_statements
 
     def _generate_workflow_file_contents_and_metadata(  # noqa: C901, PLR0912, PLR0915
-        self, file_name: str, creation_date: datetime, image_path: str | None = None
+        self,
+        file_name: str,
+        creation_date: datetime,
+        image_path: str | None = None,
+        prior_workflow: Workflow | None = None,
     ) -> tuple[str, WorkflowMetadata]:
         """Generate the contents of a workflow file.
 
@@ -940,6 +965,7 @@ class WorkflowManager:
             file_name: The name of the workflow file
             creation_date: The creation date for the workflow
             image_path: Optional; the path to an image to include in the workflow metadata
+            prior_workflow: Optional; existing workflow to preserve fork info from
 
         Returns:
             A tuple of (workflow_file_contents, workflow_metadata)
@@ -999,6 +1025,7 @@ class WorkflowManager:
             creation_date=creation_date,
             node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
             workflows_referenced=workflows_referenced,
+            prior_workflow=prior_workflow,
         )
         if workflow_metadata is None:
             details = f"Failed to generate metadata for workflow '{file_name}'."
@@ -1139,9 +1166,43 @@ class WorkflowManager:
 
         return final_code_output, workflow_metadata
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
-        local_tz = datetime.now().astimezone().tzinfo
+    def _validate_forked_workflow_sync_status(
+        self, workflow_name: str, prior_workflow: Workflow
+    ) -> SaveWorkflowResultFailure | None:
+        """Validate that a forked workflow is in sync with its source.
 
+        Args:
+            workflow_name: Name of the workflow to validate
+            prior_workflow: The workflow object to check
+
+        Returns:
+            SaveWorkflowResultFailure if validation fails, None if validation passes
+        """
+        if not prior_workflow.metadata.forked_from:
+            # Not a forked workflow, validation passes
+            return None
+
+        # This is a forked workflow, check if it's in sync with source
+        compare_request = CompareWorkflowsRequest(
+            workflow_name=workflow_name, compare_workflow_name=prior_workflow.metadata.forked_from
+        )
+        compare_result = GriptapeNodes.handle_request(compare_request)
+
+        if isinstance(compare_result, CompareWorkflowsResultSuccess):
+            if compare_result.status != "up_to_date":
+                # Not in sync - return error with informative message
+                error_msg = f"Cannot save workflow '{workflow_name}': workflow is {compare_result.status} relative to source '{compare_result.source_workflow_name}'. Please resolve conflicts before saving."
+                logger.error(error_msg)
+                return SaveWorkflowResultFailure()
+        else:
+            # Status evaluation failed
+            logger.error("Failed to evaluate fork status for workflow '%s'", workflow_name)
+            return SaveWorkflowResultFailure()
+
+        # Validation passed
+        return None
+
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Start with the file name provided; we may change it.
         file_name = request.file_name
 
@@ -1154,9 +1215,15 @@ class WorkflowManager:
             # We'll use its creation date.
             creation_date = prior_workflow.metadata.creation_date
 
+        # Validate forked workflow sync status if applicable
+        if prior_workflow and file_name:
+            validation_error = self._validate_forked_workflow_sync_status(file_name, prior_workflow)
+            if validation_error:
+                return validation_error
+
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
             # Either a new workflow, or a backcompat situation.
-            creation_date = datetime.now(tz=local_tz)
+            creation_date = datetime.now(tz=UTC)
 
         # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
         if prior_workflow and prior_workflow.metadata.is_template:
@@ -1178,14 +1245,17 @@ class WorkflowManager:
 
         # Get file name stuff prepped.
         if not file_name:
-            file_name = datetime.now(tz=local_tz).strftime("%d.%m_%H.%M")
+            file_name = datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
         relative_file_path = f"{file_name}.py"
         file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         # Generate the workflow file contents
         try:
             final_code_output, workflow_metadata = self._generate_workflow_file_contents_and_metadata(
-                file_name=file_name, creation_date=creation_date, image_path=request.image_path
+                file_name=file_name,
+                creation_date=creation_date,
+                image_path=request.image_path,
+                prior_workflow=prior_workflow,
             )
         except Exception as err:
             details = f"Attempted to save workflow '{relative_file_path}', but {err}"
@@ -1228,19 +1298,29 @@ class WorkflowManager:
                 logger.error("Attempted to save workflow '%s'. Failed when saving configuration: %s", file_name, str(e))
                 return SaveWorkflowResultFailure()
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+        # Update existing workflow's metadata in the registry
+        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+        existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {serialized_file_path}"
         logger.info(details)
         return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
 
-    def _generate_workflow_metadata(
+    def _generate_workflow_metadata(  # noqa: PLR0913
         self,
         file_name: str,
         engine_version: str,
         creation_date: datetime,
         node_libraries_referenced: list[LibraryNameAndVersion],
         workflows_referenced: list[str] | None = None,
+        prior_workflow: Workflow | None = None,
     ) -> WorkflowMetadata | None:
-        local_tz = datetime.now().astimezone().tzinfo
+        # Preserve forked workflow information if it exists
+        forked_from = None
+        fork_timestamp = None
+        if prior_workflow and prior_workflow.metadata.forked_from:
+            forked_from = prior_workflow.metadata.forked_from
+            fork_timestamp = prior_workflow.metadata.fork_timestamp
+
         workflow_metadata = WorkflowMetadata(
             name=str(file_name),
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
@@ -1248,7 +1328,9 @@ class WorkflowManager:
             node_libraries_referenced=node_libraries_referenced,
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
-            last_modified_date=datetime.now(tz=local_tz),
+            last_modified_date=datetime.now(tz=UTC),
+            forked_from=forked_from,
+            fork_timestamp=fork_timestamp,
         )
 
         return workflow_metadata
@@ -2677,6 +2759,319 @@ class WorkflowManager:
             "Successfully imported workflow '%s' as referenced sub flow '%s'", request.workflow_name, created_flow_name
         )
         return ImportWorkflowAsReferencedSubFlowResultSuccess(created_flow_name=created_flow_name)
+
+    def on_fork_workflow_request(self, request: ForkWorkflowRequest) -> ResultPayload:
+        """Create a fork (copy) of an existing workflow with fork tracking."""
+        try:
+            # Validate source workflow exists
+            source_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except KeyError:
+            logger.error("Failed to fork workflow '%s' because it does not exist", request.workflow_name)
+            return ForkWorkflowResultFailure()
+
+        # Generate fork name if not provided
+        fork_name = request.forked_workflow_name
+        if fork_name is None:
+            base_name = request.workflow_name
+            counter = 1
+            fork_name = f"{base_name}_fork_{counter}"
+            while WorkflowRegistry.has_workflow_with_name(fork_name):
+                counter += 1
+                fork_name = f"{base_name}_fork_{counter}"
+
+        # Check if fork name already exists
+        if WorkflowRegistry.has_workflow_with_name(fork_name):
+            logger.error(
+                "Failed to fork workflow '%s' because fork name '%s' already exists", request.workflow_name, fork_name
+            )
+            return ForkWorkflowResultFailure()
+
+        try:
+            # Create fork metadata by copying source metadata
+            fork_metadata = WorkflowMetadata(
+                name=fork_name,
+                schema_version=source_workflow.metadata.schema_version,
+                engine_version_created_with=source_workflow.metadata.engine_version_created_with,
+                node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
+                if source_workflow.metadata.workflows_referenced
+                else None,
+                description=source_workflow.metadata.description,
+                image=source_workflow.metadata.image,
+                is_griptape_provided=False,  # Forks are always user-created
+                is_template=False,
+                creation_date=datetime.now(tz=UTC),
+                last_modified_date=source_workflow.metadata.last_modified_date,
+                forked_from=request.workflow_name,
+                fork_timestamp=datetime.now(tz=UTC),
+            )
+
+            # Prepare fork file path
+            fork_file_path = f"{fork_name}.py"
+
+            # Read source workflow content
+            source_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
+            if not Path(source_file_path).exists():
+                logger.error(
+                    "Failed to fork workflow '%s': File path '%s' does not exist. "
+                    "The workflow may have been moved or the workspace configuration may have changed.",
+                    request.workflow_name,
+                    source_file_path,
+                )
+                return ForkWorkflowResultFailure()
+
+            with Path(source_file_path).open("r", encoding="utf-8") as file:
+                source_content = file.read()
+
+            # Generate the new metadata header using the fork metadata
+            new_metadata_header = self._generate_workflow_metadata_header(fork_metadata)
+            if new_metadata_header is None:
+                logger.error("Failed to generate metadata header for fork workflow '%s'", fork_name)
+                return ForkWorkflowResultFailure()
+
+            # Replace the old metadata block with the new one
+            import re
+
+            metadata_pattern = r"(# /// script\n)(.*?)(# ///)"
+            fork_content = re.sub(metadata_pattern, new_metadata_header, source_content, flags=re.DOTALL)
+
+            # Write fork workflow file to disk BEFORE registering in registry
+            fork_full_path = WorkflowRegistry.get_complete_file_path(fork_file_path)
+            with Path(fork_full_path).open("w", encoding="utf-8") as file:
+                file.write(fork_content)
+
+            # Now create the fork workflow in registry (file must exist on disk first)
+            WorkflowRegistry.generate_new_workflow(metadata=fork_metadata, file_path=fork_file_path)
+
+            # Register the fork in user configuration
+            config_manager = GriptapeNodes.ConfigManager()
+            config_manager.save_user_workflow_json(fork_full_path)
+
+            logger.info("Successfully forked workflow '%s' as '%s'", request.workflow_name, fork_name)
+            return ForkWorkflowResultSuccess(
+                forked_workflow_name=fork_name, original_workflow_name=request.workflow_name
+            )
+
+        except Exception as e:
+            logger.error("Failed to fork workflow '%s': %s", request.workflow_name, str(e))
+            import traceback
+
+            traceback.print_exc()
+            return ForkWorkflowResultFailure()
+
+    def on_merge_workflow_request(self, request: MergeWorkflowRequest) -> ResultPayload:  # noqa: PLR0915
+        """Merge two workflows with fork relationship, choosing which version to keep."""
+        try:
+            # Validate both workflows exist
+            source_workflow = WorkflowRegistry.get_workflow_by_name(request.source_workflow_name)
+            target_workflow = WorkflowRegistry.get_workflow_by_name(request.target_workflow_name)
+        except KeyError as e:
+            logger.error("Failed to merge workflows because one does not exist: %s", str(e))
+            return MergeWorkflowResultFailure()
+
+        # Validate fork relationship exists
+        source_forked_from = source_workflow.metadata.forked_from
+        target_forked_from = target_workflow.metadata.forked_from
+
+        has_relationship = (
+            source_forked_from == request.target_workflow_name  # source is fork of target
+            or target_forked_from == request.source_workflow_name  # target is fork of source
+            or (
+                source_forked_from is not None and source_forked_from == target_forked_from
+            )  # both are forks of same workflow
+        )
+
+        if not has_relationship:
+            logger.error(
+                "Failed to merge workflows '%s' and '%s' because they don't have a fork relationship",
+                request.source_workflow_name,
+                request.target_workflow_name,
+            )
+            return MergeWorkflowResultFailure()
+
+        try:
+            if request.keep_version == "source":
+                # Keep source workflow (filename and content), delete target
+                kept_workflow = source_workflow
+                workflow_to_delete = target_workflow
+                merged_name = request.source_workflow_name
+                strategy = "kept_source"
+            elif request.keep_version == "fork":
+                # Keep fork workflow (filename and content), delete source
+                kept_workflow = target_workflow
+                workflow_to_delete = source_workflow
+                merged_name = request.target_workflow_name
+                strategy = "kept_fork"
+            else:
+                logger.error("Invalid keep_version value '%s'. Must be 'source' or 'fork'", request.keep_version)
+                return MergeWorkflowResultFailure()
+
+            # Read content from the workflow we're keeping
+            kept_content_file_path = WorkflowRegistry.get_complete_file_path(kept_workflow.file_path)
+            with Path(kept_content_file_path).open("r", encoding="utf-8") as file:
+                content_to_keep = file.read()
+
+            # Create updated metadata for merged workflow
+            # Only clear fork relationship if we're keeping the fork (which was the one with the relationship we're resolving)
+            # If we're keeping the source, preserve any existing fork info from the source
+            if request.keep_version == "fork":
+                # Keeping the fork - clear the fork relationship since it's now merged
+                forked_from_value = None
+                fork_timestamp_value = None
+            else:
+                # Keeping the source - preserve any existing fork info from the source
+                forked_from_value = kept_workflow.metadata.forked_from
+                fork_timestamp_value = kept_workflow.metadata.fork_timestamp
+
+            merged_metadata = WorkflowMetadata(
+                name=merged_name,
+                schema_version=kept_workflow.metadata.schema_version,
+                engine_version_created_with=kept_workflow.metadata.engine_version_created_with,
+                node_libraries_referenced=kept_workflow.metadata.node_libraries_referenced.copy(),
+                workflows_referenced=kept_workflow.metadata.workflows_referenced.copy()
+                if kept_workflow.metadata.workflows_referenced
+                else None,
+                description=kept_workflow.metadata.description,
+                image=kept_workflow.metadata.image,
+                is_griptape_provided=kept_workflow.metadata.is_griptape_provided,
+                is_template=kept_workflow.metadata.is_template,
+                creation_date=kept_workflow.metadata.creation_date,
+                last_modified_date=datetime.now(tz=UTC),
+                forked_from=forked_from_value,
+                fork_timestamp=fork_timestamp_value,
+            )
+
+            # Generate new metadata header and replace the old one
+            import re
+
+            new_metadata_header = self._generate_workflow_metadata_header(merged_metadata)
+            if new_metadata_header is None:
+                logger.error("Failed to generate metadata header for merged workflow '%s'", merged_name)
+                return MergeWorkflowResultFailure()
+
+            # Replace the entire metadata block in the workflow content
+            metadata_pattern = r"(# /// script\n)(.*?)(# ///)"
+            merged_content = re.sub(metadata_pattern, new_metadata_header, content_to_keep, flags=re.DOTALL)
+
+            # Write the updated content to the kept workflow file
+            merged_file_path = WorkflowRegistry.get_complete_file_path(kept_workflow.file_path)
+            with Path(merged_file_path).open("w", encoding="utf-8") as file:
+                file.write(merged_content)
+
+            # Update the registry with new metadata for the kept workflow
+            kept_workflow.metadata = merged_metadata
+
+            # Delete the other workflow (file and registry entry)
+            try:
+                # Remove from registry
+                WorkflowRegistry.delete_workflow_by_name(workflow_to_delete.metadata.name)
+
+                # Remove from user config
+                config_manager = GriptapeNodes.ConfigManager()
+                config_manager.delete_user_workflow(workflow_to_delete.file_path)
+
+                # Delete the actual file
+                delete_file_path = WorkflowRegistry.get_complete_file_path(workflow_to_delete.file_path)
+                Path(delete_file_path).unlink(missing_ok=True)
+
+                logger.info("Deleted workflow file and registry entry for '%s'", workflow_to_delete.metadata.name)
+            except Exception as delete_error:
+                logger.warning(
+                    "Failed to fully clean up deleted workflow '%s': %s",
+                    workflow_to_delete.metadata.name,
+                    str(delete_error),
+                )
+                # Continue anyway - the merge was successful even if cleanup failed
+
+            logger.info(
+                "Successfully merged workflow '%s' with '%s' using strategy '%s'",
+                request.source_workflow_name,
+                request.target_workflow_name,
+                strategy,
+            )
+            return MergeWorkflowResultSuccess(merged_workflow_name=merged_name, strategy_used=strategy)
+
+        except Exception as e:
+            logger.error(
+                "Failed to merge workflows '%s' and '%s': %s",
+                request.source_workflow_name,
+                request.target_workflow_name,
+                str(e),
+            )
+            return MergeWorkflowResultFailure()
+
+    def on_compare_workflows_request(self, request: CompareWorkflowsRequest) -> ResultPayload:
+        """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other."""
+        try:
+            # Get the workflow to evaluate
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except KeyError:
+            logger.error("Failed to compare workflow '%s' because it does not exist", request.workflow_name)
+            return CompareWorkflowsResultFailure()
+
+        # Use the provided compare_workflow_name
+        source_workflow_name = request.compare_workflow_name
+
+        # Try to get the source workflow
+        try:
+            source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
+        except KeyError:
+            # Source workflow no longer exists
+            details = f"Source workflow '{source_workflow_name}' for '{request.workflow_name}' no longer exists"
+            logger.warning(details)
+            return CompareWorkflowsResultSuccess(
+                workflow_name=request.workflow_name,
+                source_workflow_name=source_workflow_name,
+                status="no_source",
+                workflow_last_modified=workflow.metadata.last_modified_date.isoformat()
+                if workflow.metadata.last_modified_date
+                else None,
+                source_last_modified=None,
+                details=details,
+            )
+
+        # Compare last modified dates
+        workflow_last_modified = workflow.metadata.last_modified_date
+        source_last_modified = source_workflow.metadata.last_modified_date
+
+        # Handle missing timestamps
+        if workflow_last_modified is None or source_last_modified is None:
+            details = f"Cannot compare timestamps - workflow: {workflow_last_modified}, source: {source_last_modified}"
+            logger.warning(details)
+            return CompareWorkflowsResultSuccess(
+                workflow_name=request.workflow_name,
+                source_workflow_name=source_workflow_name,
+                status="diverged",
+                workflow_last_modified=workflow_last_modified.isoformat() if workflow_last_modified else None,
+                source_last_modified=source_last_modified.isoformat() if source_last_modified else None,
+                details=details,
+            )
+
+        # Compare timestamps to determine status
+        logger.info(
+            "Fork last modified date: %s, Source last modified date: %s", workflow_last_modified, source_last_modified
+        )
+        if workflow_last_modified == source_last_modified:
+            status = "up_to_date"
+            details = f"Workflow '{request.workflow_name}' is up-to-date with source '{source_workflow_name}'"
+        elif workflow_last_modified > source_last_modified:
+            status = "ahead"
+            details = f"Workflow '{request.workflow_name}' is ahead of source '{source_workflow_name}' (local changes)"
+        else:
+            status = "behind"
+            details = (
+                f"Workflow '{request.workflow_name}' is behind source '{source_workflow_name}' (source has updates)"
+            )
+
+        logger.info(details)
+        return CompareWorkflowsResultSuccess(
+            workflow_name=request.workflow_name,
+            source_workflow_name=source_workflow_name,
+            status=status,
+            workflow_last_modified=workflow_last_modified.isoformat(),
+            source_last_modified=source_last_modified.isoformat(),
+            details=details,
+        )
 
     def _walk_object_tree(
         self, obj: Any, process_class_fn: Callable[[type, Any], None], visited: set[int] | None = None

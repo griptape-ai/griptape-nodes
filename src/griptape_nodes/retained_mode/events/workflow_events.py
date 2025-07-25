@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
 from griptape_nodes.retained_mode.events.base_events import (
@@ -364,3 +365,130 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class PublishWorkflowResultFailure(ResultPayloadFailure):
     """Workflow publish failed. Common causes: workflow not found, publish error, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ForkWorkflowRequest(RequestPayload):
+    """Create a fork (copy) of an existing workflow with fork tracking.
+
+    Use when: Creating workflow variants, branching workflows for experimentation,
+    creating personal copies of shared workflows, preparing for workflow collaboration.
+
+    Args:
+        workflow_name: Name of the workflow to fork
+        forked_workflow_name: Name for the forked workflow (None for auto-generated)
+
+    Results: ForkWorkflowResultSuccess (with fork name) | ForkWorkflowResultFailure (fork error)
+    """
+
+    workflow_name: str
+    forked_workflow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ForkWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow forked successfully.
+
+    Args:
+        forked_workflow_name: Name of the created fork
+        original_workflow_name: Name of the original workflow
+    """
+
+    forked_workflow_name: str
+    original_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ForkWorkflowResultFailure(ResultPayloadFailure):
+    """Workflow fork failed. Common causes: workflow not found, name conflict, save error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowRequest(RequestPayload):
+    """Merge two workflows with fork relationship, choosing which version to keep.
+
+    Use when: Integrating changes from forked workflows, consolidating workflow versions,
+    merging experimental changes back to original, resolving workflow conflicts.
+
+    Args:
+        source_workflow_name: Name of the source workflow
+        target_workflow_name: Name of the target workflow (must be fork-related)
+        keep_version: Which version to keep ("source" or "fork")
+
+    Results: MergeWorkflowResultSuccess (with merge details) | MergeWorkflowResultFailure (merge error)
+    """
+
+    source_workflow_name: str
+    target_workflow_name: str
+    keep_version: Literal["source", "fork"]
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflows merged successfully.
+
+    Args:
+        merged_workflow_name: Name of the workflow after merge
+        strategy_used: Description of merge strategy applied
+    """
+
+    merged_workflow_name: str
+    strategy_used: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowResultFailure(ResultPayloadFailure):
+    """Workflow merge failed. Common causes: workflows not fork-related, invalid merge strategy, save error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsRequest(RequestPayload):
+    """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other.
+
+    Use when: Checking if forked workflows need updates, determining if local changes exist,
+    managing workflow synchronization, preparing for merge operations.
+
+    Args:
+        workflow_name: Name of the workflow to evaluate
+        compare_workflow_name: Name of the workflow to compare against
+
+    Results: CompareWorkflowsResultSuccess (with status details) | CompareWorkflowsResultFailure (evaluation error)
+    """
+
+    workflow_name: str
+    compare_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow comparison completed successfully.
+
+    Args:
+        workflow_name: Name of the evaluated workflow
+        source_workflow_name: Name of the source workflow (if any)
+        status: Status relative to source - "up_to_date", "ahead", "behind", "diverged", or "no_source"
+        workflow_last_modified: Last modified timestamp of the workflow
+        source_last_modified: Last modified timestamp of the source (if exists)
+        details: Additional details about the comparison
+    """
+
+    workflow_name: str
+    source_workflow_name: str | None
+    status: Literal["up_to_date", "ahead", "behind", "diverged", "no_source"]
+    workflow_last_modified: str | None
+    source_last_modified: str | None
+    details: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsResultFailure(ResultPayloadFailure):
+    """Workflow comparison failed. Common causes: workflow not found, source not accessible, comparison error."""

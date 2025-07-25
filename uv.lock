@@ -416,6 +416,7 @@ dependencies = [
     { name = "tomlkit" },
     { name = "uv" },
     { name = "uvicorn" },
+    { name = "watchdog" },
     { name = "websockets" },
     { name = "xdg-base-dirs" },
 ]
@@ -463,6 +464,7 @@ requires-dist = [
     { name = "tomlkit", specifier = ">=0.13.2" },
     { name = "uv", specifier = ">=0.6.16" },
     { name = "uvicorn", specifier = ">=0.34.2" },
+    { name = "watchdog", specifier = ">=6.0.0" },
     { name = "websockets", specifier = ">=15.0.1,<16.0.0" },
     { name = "xdg-base-dirs", specifier = ">=6.0.2" },
 ]

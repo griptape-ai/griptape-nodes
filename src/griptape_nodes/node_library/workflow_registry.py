@@ -26,6 +26,8 @@ class WorkflowMetadata(BaseModel):
     is_template: bool | None = False
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
+    forked_from: str | None = None
+    fork_timestamp: datetime | None = Field(default=None)
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):
@@ -80,6 +82,32 @@ class WorkflowRegistry(metaclass=SingletonMeta):
             msg = f"Failed to delete Workflow. Workflow with name '{name}' has not been registered."
             raise KeyError(msg)
         return instance._workflows.pop(name)
+
+    @classmethod
+    def get_forks_of_workflow(cls, workflow_name: str) -> list[str]:
+        """Get all workflows that are forks of the specified workflow."""
+        instance = cls()
+        forks = []
+        for name, workflow in instance._workflows.items():
+            if workflow.metadata.forked_from == workflow_name:
+                forks.append(name)
+        return forks
+
+    @classmethod
+    def get_workflow_fork_tree(cls, workflow_name: str) -> dict[str, list[str]]:
+        """Get the fork relationships for a workflow and its descendants."""
+        instance = cls()
+        if workflow_name not in instance._workflows:
+            msg = f"Workflow with name '{workflow_name}' has not been registered."
+            raise KeyError(msg)
+
+        fork_tree = {workflow_name: cls.get_forks_of_workflow(workflow_name)}
+
+        # Recursively get fork trees for all direct forks
+        for fork_name in fork_tree[workflow_name]:
+            fork_tree.update(cls.get_workflow_fork_tree(fork_name))
+
+        return fork_tree
 
 
 class Workflow:

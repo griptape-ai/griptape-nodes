@@ -36,3 +36,12 @@ class BaseStorageDriver(ABC):
             str: The signed URL for downloading the file.
         """
         ...
+
+    @abstractmethod
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from storage.
+
+        Args:
+            file_name: The name of the file to delete.
+        """
+        ...
