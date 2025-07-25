@@ -1,18 +1,27 @@
 from __future__ import annotations
 
-
 import logging
+import time
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-import time
 
 from griptape.utils import with_contextvars
 
 from griptape_nodes.app.app_sessions import event_queue
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, ParameterTypeBuiltin
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.data_helpers import (
+    clear_parameter_output_values,
+    get_library_name,
+    pass_values_to_connected_nodes,
+)
+from griptape_nodes.machines.execution_utils import CompleteState, Focus, ResolutionContext
 from griptape_nodes.machines.fsm import State
+from griptape_nodes.machines.ui_helpers import (
+    log_serialization,
+    mark_node_as_finished,
+    mark_node_as_starting,
+)
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -22,20 +31,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
-from griptape_nodes.machines.execution_utils import ResolutionContext, Focus, CompleteState
-
-from griptape_nodes.machines.ui_helpers import (
-    mark_node_as_starting,
-    mark_node_as_finished,
-    log_serialization,
-)
-from griptape_nodes.machines.data_helpers import (
-    pass_values_to_connected_nodes,
-    get_library_name,
-    clear_parameter_output_values,
-)
 
 logger = logging.getLogger("griptape_nodes")
+
 
 class ExecuteNodeState(State):
     """State responsible for executing ready nodes in the flow graph.
@@ -51,23 +49,23 @@ class ExecuteNodeState(State):
     4. Mark nodes as processed/resolved and transition to CompleteState once the
        DAG is empty.
     """
+
     executor: ThreadPoolExecutor = ThreadPoolExecutor()
 
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
-        """Enter hook for the FSM."""
+    def on_enter(_: ResolutionContext) -> type[State] | None:
+        """Return the starting state for the FSM."""
         return ExecuteNodeState
 
     @staticmethod
     def on_update(context: ResolutionContext) -> type[State] | None:
         """Main execution loop."""
-
         ready_nodes = context.DAG.get_ready_nodes()
         # Prepare a list of current focuses
         for node in ready_nodes:
             # if it is not already in the current focuses
             if node not in [focus.node for focus in context.current_focuses]:
-                ExecuteNodeState._before_node(context, node)
+                ExecuteNodeState._before_node(node)
                 focus_obj = Focus(node, scheduled_value=None, process_generator=None)
                 context.current_focuses.append(focus_obj)
 
@@ -77,15 +75,16 @@ class ExecuteNodeState(State):
             if focus.updated:
                 try:
                     # This returns False if the node is not done
-                    done = ExecuteNodeState.do_ui_tasks_and_run_node(context, focus)
-                except Exception as e:
-                    raise e
+                    done = ExecuteNodeState.do_ui_tasks_and_run_node(focus)
+                except Exception as exc:
+                    msg = f"Node execution failed for node {focus.node.name} because of {exc}"
+                    raise RuntimeError(msg) from exc
                 focus.updated = False
             # If the node is done
             if done:
                 context.DAG.mark_processed(focus.node)
                 context.current_focuses.remove(focus)
-    
+
         # If we don't have any more nodes left, we are done
         if context.DAG.get_all_nodes() == []:
             return CompleteState
@@ -95,11 +94,10 @@ class ExecuteNodeState(State):
         return ExecuteNodeState
 
     @staticmethod
-    def do_ui_tasks_and_run_node(context: ResolutionContext, current_focus: Focus) -> bool:
+    def do_ui_tasks_and_run_node(current_focus: Focus) -> bool:
         """Execute a node and perform related UI/event bookkeeping.
 
         Args:
-            context: The active ResolutionContext.
             current_focus: The Focus object wrapping the current node.
 
         Returns:
@@ -107,9 +105,8 @@ class ExecuteNodeState(State):
             still needs further processing, otherwise False signaling that
             the node has completely finished.
         """
-
         current_node = current_focus.node
-        mark_node_as_starting(context, current_focus)
+        mark_node_as_starting(current_focus)
         logger.debug("Node '%s' is processing.", current_node.name)
         try:
             more_work = ExecuteNodeState._run_node_process_method(current_focus)
@@ -117,9 +114,9 @@ class ExecuteNodeState(State):
             if more_work:
                 logger.debug("Pausing Node '%s' to run background work", current_node.name)
                 return False
-        except Exception as e:
+        except Exception as exc:
             logger.exception("Error processing node '%s'", current_node.name)
-            msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
+            msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {exc}"
             # Mark the node as unresolved, broadcasting to everyone.
             current_node.make_node_unresolved(
                 current_states_to_trigger_change_event=set(
@@ -136,15 +133,15 @@ class ExecuteNodeState(State):
                     wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                 )
             )
-            raise RuntimeError(msg) from e
+            raise RuntimeError(msg) from exc
 
         # Various tasks done by helper class
-        mark_node_as_finished(context, current_focus)
-        log_serialization(context, current_focus)
-        pass_values_to_connected_nodes(context, current_focus)
+        mark_node_as_finished(current_focus)
+        log_serialization(current_focus)
+        pass_values_to_connected_nodes(current_focus)
 
         # Output values should already be saved!
-        library_name = get_library_name(context,current_node)
+        library_name = get_library_name(current_focus.node)
         event_queue.put(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
@@ -160,7 +157,7 @@ class ExecuteNodeState(State):
         return True
 
     @staticmethod
-    def _before_node(context: ResolutionContext, current_node):
+    def _before_node(current_node: BaseNode) -> None:
         """Prepare a node for execution by clearing/propagating parameter values and performing validation.
 
         This method is called immediately before a node's ``process`` method is
@@ -169,7 +166,7 @@ class ExecuteNodeState(State):
         propagate up and abort the flow run early.
         """
         # Clear all of the current output values
-        clear_parameter_output_values(context, current_node)
+        clear_parameter_output_values(current_node)
         # Iterate over all parameters of the current node
         for parameter in current_node.parameters:
             # Skip parameters that are of control type (not data parameters)
@@ -208,12 +205,9 @@ class ExecuteNodeState(State):
             msg = f"Canceling flow run. Node '{current_node.name}' encountered problems: {exceptions}"
             # Mark the node as unresolved, broadcasting to everyone.
             raise RuntimeError(msg)
-        if not context.paused:
-            return ExecuteNodeState
-        return None
 
     @staticmethod
-    def _run_node_process_method(current_focus) -> bool:
+    def _run_node_process_method(current_focus: Focus) -> bool:
         """Run the process method of the node.
 
         If the node's process method returns a generator, take the next value from the generator (a callable) and run
@@ -227,6 +221,7 @@ class ExecuteNodeState(State):
         Returns:
             bool: True if work has been scheduled, False if the node is done processing.
         """
+
         def on_future_done(future: Future) -> None:
             """Called when the future is done.
 

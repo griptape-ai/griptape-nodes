@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from doctest import debug
+import concurrent.futures
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING, cast
-import concurrent.futures
 
 from griptape.events import EventBus
 
@@ -1071,8 +1070,6 @@ class FlowManager:
         try:
             # Run start_flow in a background thread
             self._threadpool_executor.submit(self.start_flow, flow, start_node, debug_mode)
-            #self.start_flow(flow, start_node, debug_mode)
-            #self.start_flow(flow, start_node, debug_mode)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1755,7 +1752,7 @@ class FlowManager:
         self._global_control_flow_machine._context.current_node = node
         resolution_machine = self._global_control_flow_machine._context.resolution_machine
         # Set debug mode
-        resolution_machine.change_debug_mode(debug_mode)
+        resolution_machine.change_debug_mode(debug_mode=debug_mode)
         # Resolve the node.
         node.state = NodeResolutionState.UNRESOLVED
         resolution_machine.resolve_node(node)
@@ -1831,7 +1828,9 @@ class FlowManager:
             if self._global_control_flow_machine._context.current_node is not None
             else None
         )
-        current_resolving_node = self._global_control_flow_machine._context.resolution_machine._context.root_node_resolving
+        current_resolving_node = (
+            self._global_control_flow_machine._context.resolution_machine._context.root_node_resolving
+        )
         if current_resolving_node is not None:
             return current_control_node, current_resolving_node.name
         return current_control_node, None

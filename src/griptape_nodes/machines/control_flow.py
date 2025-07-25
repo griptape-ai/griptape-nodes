@@ -5,6 +5,7 @@ import time
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.app.app_sessions import event_queue
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -15,15 +16,17 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
-from griptape_nodes.app.app_sessions import event_queue
+
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
 
 logger = logging.getLogger("griptape_nodes")
 
+
 class ControlFlowContext:
-    """Shared context containing information about whole flow execution"""
+    """Shared context containing information about whole flow execution."""
+
     flow: ControlFlow
     current_node: BaseNode | None
     resolution_machine: NodeResolutionMachine
@@ -83,9 +86,7 @@ class ResolveNodeState(State):
         )
         event_queue.put(
             ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=CurrentControlNodeEvent(node_name=context.current_node.name)
-                )
+                wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
             )
         )
         logger.info("Resolving %s", context.current_node.name)
@@ -195,6 +196,7 @@ class CompleteState(State):
 
 class ControlFlowMachine(FSM[ControlFlowContext]):
     """Finite-state machine that resolves nodes in a flow graph."""
+
     def __init__(self) -> None:
         context = ControlFlowContext()
         super().__init__(context)
@@ -208,6 +210,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.paused = debug_mode
         # Get the flow and make all nodes unresolved
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         parent_flow_str = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(start_node.name)
         parent_flow = None
 
@@ -226,13 +229,13 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
-        self._context.resolution_machine.change_debug_mode(debug_mode)
+        self._context.resolution_machine.change_debug_mode(debug_mode=debug_mode)
 
     def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         """Resolve a single granular step and, optionally, enable debug mode."""
         resolution_machine = self._context.resolution_machine
         if change_debug_mode:
-            resolution_machine.change_debug_mode(True)
+            resolution_machine.change_debug_mode(debug_mode=True)
         resolution_machine.update()
 
         # Tick the control flow if the resolution machine inside it isn't busy.
@@ -244,7 +247,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     def node_step(self) -> None:
         """Resolve exactly one node and update the control-flow state."""
         resolution_machine = self._context.resolution_machine
-        resolution_machine.change_debug_mode(False)
+        resolution_machine.change_debug_mode(debug_mode=False)
         resolution_machine.update()
 
         # Tick the control flow if the resolution machine inside it isn't busy.

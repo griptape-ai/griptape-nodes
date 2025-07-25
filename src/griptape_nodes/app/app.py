@@ -272,7 +272,6 @@ def _process_event_queue() -> None:
         elif isinstance(event, AppEvent):
             __process_app_event(event)
         elif isinstance(event, ExecutionGriptapeNodeEvent):
-            print("anyone there, please")
             __process_execution_node_event(event)
         else:
             logger.warning("Unknown event type encountered: '%s'.", type(event))
