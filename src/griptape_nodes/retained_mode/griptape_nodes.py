@@ -9,8 +9,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -527,44 +525,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Determine deployment type based on presence of instance environment variables
         instance_info["deployment_type"] = "griptape_hosted" if any(instance_info.values()) else "local"
 
-        # Get public IP address
-        public_ip = self._get_public_ip()
-        if public_ip:
-            instance_info["public_ip"] = public_ip
-
         return instance_info
-
-    def _get_public_ip(self) -> str | None:
-        """Get the public IP address of this device.
-
-        Returns the public IP address if available, None otherwise.
-        """
-        try:
-            # Try multiple services in case one is down
-            services = [
-                "https://api.ipify.org",
-                "https://ipinfo.io/ip",
-                "https://icanhazip.com",
-            ]
-
-            for service in services:
-                try:
-                    with httpx.Client(timeout=5.0) as client:
-                        response = client.get(service)
-                        response.raise_for_status()
-                        public_ip = response.text.strip()
-                        if public_ip:
-                            logger.debug("Retrieved public IP from %s: %s", service, public_ip)
-                            return public_ip
-                except Exception as err:
-                    logger.debug("Failed to get public IP from %s: %s", service, err)
-                    continue
-            logger.warning("Unable to retrieve public IP from any service")
-        except Exception as err:
-            logger.warning("Failed to get public IP: %s", err)
-            return None
-        else:
-            return None
 
     def _get_current_workflow_info(self) -> dict[str, Any]:
         """Get information about the currently loaded workflow.
