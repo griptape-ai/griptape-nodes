@@ -1290,17 +1290,6 @@
       }
     },
     {
-      "class_name": "PythonClassParser",
-      "file_path": "griptape_nodes_library/text/python_class_parser.py",
-      "metadata": {
-        "category": "text",
-        "description": "Parses Python file content to extract classes inheriting from RequestPayload or ResultPayload",
-        "display_name": "Python Class Parser",
-        "icon": "code",
-        "group": "parsing"
-      }
-    },
-    {
       "class_name": "Calculator",
       "file_path": "griptape_nodes_library/tools/calculator_tool.py",
       "metadata": {

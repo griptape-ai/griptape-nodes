@@ -94,7 +94,6 @@ class ForEachStartNode(StartLoopNode):
         self.break_loop_signal.ui_options = {"hide": True, "display_name": "Break Loop Signal"}
         self.break_loop_signal.settable = False
 
-
         # Hidden control output - loop end condition
         self.loop_end_condition_met_signal = ControlParameterOutput(
             tooltip="Signal to ForEachEnd when loop should end", name="loop_end_condition_met_signal"
