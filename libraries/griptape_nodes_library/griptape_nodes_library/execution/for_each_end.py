@@ -275,7 +275,7 @@ class ForEachEndNode(EndLoopNode):
         from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Create the three hidden signal connections needed for ForEach loop functionality:
+        # Create the hidden signal connections and default control flow for ForEach loop functionality:
 
         # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
         GriptapeNodes.handle_request(
@@ -304,6 +304,16 @@ class ForEachEndNode(EndLoopNode):
                 source_parameter_name="break_loop_signal_output",
                 target_node_name=start_node.name,
                 target_parameter_name="break_loop_signal",
+            )
+        )
+
+        # 4. Default control flow: Start → End: exec_out → add_item (default "happy path")
+        GriptapeNodes.handle_request(
+            CreateConnectionRequest(
+                source_node_name=start_node.name,
+                source_parameter_name="exec_out",
+                target_node_name=self.name,
+                target_parameter_name="add_item",
             )
         )
 
@@ -316,7 +326,7 @@ class ForEachEndNode(EndLoopNode):
         from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Remove the three hidden signal connections:
+        # Remove the hidden signal connections and default control flow:
 
         # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
         GriptapeNodes.handle_request(
@@ -347,6 +357,11 @@ class ForEachEndNode(EndLoopNode):
                 target_parameter_name="break_loop_signal",
             )
         )
+
+        # NOTE: We do NOT automatically delete the default control flow connection
+        # (Start exec_out → End add_item) because it's a visible connection that users
+        # may have intentionally kept, modified, or replaced with custom logic.
+        # Unlike the hidden signal connections above, this is user-controllable.
 
     def initialize_spotlight(self) -> None:
         """Custom spotlight initialization for conditional dependency resolution.
