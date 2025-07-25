@@ -29,7 +29,7 @@ CANVAS_DIMENSIONS = {
     "Twitter Landscape": {"width": 1600, "height": 900},
     "Twitter Portrait": {"width": 1080, "height": 1350},
     "Facebook Cover": {"width": 820, "height": 312},
-    "Custom": {"width": 1920, "height": 1080},
+    "Custom": {"width": None, "height": None},
 }
 
 BASE_CANVAS_OPTIONS = [*list(CANVAS_DIMENSIONS.keys())]
@@ -47,10 +47,13 @@ class ImageBash(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        # Add flag to prevent sync during initialization
+        self._initializing = True
+
         with ParameterGroup(name="canvas_details", ui_options={"collapsed": True}) as canvas_details_group:
             self.canvas_size = Parameter(
                 name="canvas_size",
-                default_value=BASE_CANVAS_OPTIONS[0],
+                default_value="Custom",
                 type="string",
                 tooltip="The size of the canvas to create",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -58,22 +61,22 @@ class ImageBash(DataNode):
             self.canvas_size.add_trait(Options(choices=BASE_CANVAS_OPTIONS))
             self.canvas_width = Parameter(
                 name="width",
-                default_value=CANVAS_DIMENSIONS[BASE_CANVAS_OPTIONS[0]]["width"],
+                default_value=1920,
                 input_types=["int"],
                 type="int",
                 tooltip="The width of the image to create",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                ui_options={"ghost": True},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                ui_options={"ghost": False},
             )
 
             self.canvas_height = Parameter(
                 name="height",
-                default_value=CANVAS_DIMENSIONS[BASE_CANVAS_OPTIONS[0]]["height"],
+                default_value=1080,
                 input_types=["int"],
                 type="int",
                 tooltip="The height of the image to create",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                ui_options={"ghost": True},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                ui_options={"ghost": False},
             )
         self.add_node_element(canvas_details_group)
 
@@ -126,6 +129,9 @@ class ImageBash(DataNode):
             )
         )
 
+        # Mark initialization as complete
+        self._initializing = False
+
     def _get_image_dimensions(self, image_url: str) -> tuple[int, int]:
         """Get the width and height of an image from its URL."""
         try:
@@ -142,11 +148,18 @@ class ImageBash(DataNode):
         """Get canvas dimensions based on canvas_size parameter."""
         canvas_size = self.get_parameter_value("canvas_size")
         if canvas_size == "custom":
-            width = self.get_parameter_value("width") or CANVAS_DIMENSIONS["custom"]["width"]
-            height = self.get_parameter_value("height") or CANVAS_DIMENSIONS["custom"]["height"]
+            # For custom, use the current width/height parameter values
+            width = self.get_parameter_value("width") or 1920
+            height = self.get_parameter_value("height") or 1080
             return (width, height)
         if canvas_size in CANVAS_DIMENSIONS:
             dimensions = CANVAS_DIMENSIONS[canvas_size]
+            # Handle None values (for Custom)
+            if dimensions["width"] is None or dimensions["height"] is None:
+                # Fallback to current parameter values
+                width = self.get_parameter_value("width") or 1920
+                height = self.get_parameter_value("height") or 1080
+                return (width, height)
             return (dimensions["width"], dimensions["height"])
         # Fallback to HD
         dimensions = CANVAS_DIMENSIONS["HD"]
@@ -540,15 +553,15 @@ class ImageBash(DataNode):
         """Handle canvas_size parameter changes."""
         if value == "custom":
             # 2. If user modifies canvas_size to custom, let them specify width and height
-            self._enable_custom_dimensions()
+            # Don't publish updates when switching to custom - preserve current width/height values
+            self._enable_custom_dimensions(publish_updates=False)
         elif isinstance(value, str) and value in CANVAS_DIMENSIONS:
             # 1. If user modifies canvas_size to anything other than custom, get width/height from CANVAS_DIMENSIONS
             self._set_preset_dimensions(value)
+            # Update bash_image canvas size when canvas_size changes to a preset
+            self._update_bash_image_canvas_size()
 
-        # Update bash_image canvas size when canvas_size changes
-        self._update_bash_image_canvas_size()
-
-    def _enable_custom_dimensions(self) -> None:
+    def _enable_custom_dimensions(self, publish_updates: bool = True) -> None:
         """Enable custom width and height input fields."""
         width_ui_options = self.canvas_width.ui_options
         self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
@@ -560,8 +573,9 @@ class ImageBash(DataNode):
         height_ui_options["ghost"] = False
         self.canvas_height.ui_options = height_ui_options
 
-        self.publish_update_to_parameter("width", self.canvas_width.default_value)
-        self.publish_update_to_parameter("height", self.canvas_height.default_value)
+        if publish_updates:
+            self.publish_update_to_parameter("width", self.canvas_width.default_value)
+            self.publish_update_to_parameter("height", self.canvas_height.default_value)
 
     def _set_preset_dimensions(self, value: str) -> None:
         """Set width and height based on preset canvas size."""
@@ -590,6 +604,10 @@ class ImageBash(DataNode):
 
     def _handle_bash_image_change(self, value: Any) -> None:
         """Handle bash_image parameter changes."""
+        # Skip during initialization to prevent unwanted syncs
+        if self._initializing:
+            return
+
         # Only sync canvas dimensions if the bash_image is being initialized for the first time
         # or if there's a significant mismatch that needs to be resolved
         if isinstance(value, dict):
@@ -604,8 +622,20 @@ class ImageBash(DataNode):
         # Only sync if we have metadata dimensions and they're significantly different from current parameters
         if metadata_width and metadata_height:
             current_width, current_height = self._get_canvas_dimensions()
+            current_canvas_size = self.get_parameter_value("canvas_size")
+
             # Only sync if there's a significant difference (more than 1 pixel)
-            if abs(metadata_width - current_width) > 1 or abs(metadata_height - current_height) > 1:
+            # AND if the current canvas_size is not a preset that matches the metadata
+            if current_canvas_size in CANVAS_DIMENSIONS:
+                preset_dimensions = CANVAS_DIMENSIONS[current_canvas_size]
+                if metadata_width == preset_dimensions["width"] and metadata_height == preset_dimensions["height"]:
+                    # Metadata matches the current preset, don't sync
+                    pass
+                elif abs(metadata_width - current_width) > 1 or abs(metadata_height - current_height) > 1:
+                    # Metadata doesn't match current dimensions, sync
+                    self._sync_canvas_dimensions_from_metadata(metadata_width, metadata_height)
+            # Current canvas_size is custom, sync if different
+            elif abs(metadata_width - current_width) > 1 or abs(metadata_height - current_height) > 1:
                 self._sync_canvas_dimensions_from_metadata(metadata_width, metadata_height)
 
         # Don't rebuild konva images when bash_image changes - preserve editor changes
@@ -618,16 +648,12 @@ class ImageBash(DataNode):
         current_width, current_height = self._get_canvas_dimensions()
 
         if metadata_width != current_width or metadata_height != current_height:
-            # Set canvas_size to custom and enable custom dimensions
-            self.set_parameter_value("canvas_size", "custom")
-            self._enable_custom_dimensions()
-
-            # Update width and height parameters
+            # Just update width and height parameters to match metadata
+            # Don't change canvas_size - let it stay whatever it is
             self.set_parameter_value("width", metadata_width)
             self.set_parameter_value("height", metadata_height)
 
             # publish the changes
-            self.publish_update_to_parameter("canvas_size", "custom")
             self.publish_update_to_parameter("width", metadata_width)
             self.publish_update_to_parameter("height", metadata_height)
 
