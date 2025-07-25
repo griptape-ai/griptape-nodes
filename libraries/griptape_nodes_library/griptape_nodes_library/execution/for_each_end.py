@@ -27,7 +27,6 @@ class ForEachEndNode(EndLoopNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.start_node = None
-        self._index = 0
 
         # ForEach End manages its own results list
         self._results_list: list[Any] = []
@@ -143,9 +142,7 @@ class ForEachEndNode(EndLoopNode):
         return super().validate_before_node_run()
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
-        self._index = 0
-        # Clear the results list for fresh workflow run
-        self._results_list = []
+        # Don't reset here - let reset_for_workflow_run() handle it to avoid conflicts
         exceptions = []
         if self.start_node is None:
             exceptions.append(Exception("Start node is not set on End Node."))
@@ -160,9 +157,6 @@ class ForEachEndNode(EndLoopNode):
         return super().validate_before_node_run()
 
     def process(self) -> None:
-        # Use our own internal results list instead of shared one
-        results_list = self._results_list
-
         # Determine which control input was used to enter this node
         # CONDITIONAL EVALUATION: We only process the new_item_to_add if we entered via "Add Item to Output"
         # This prevents unnecessary computation when taking Skip or Break paths
@@ -171,7 +165,7 @@ class ForEachEndNode(EndLoopNode):
             case self.add_item_control:
                 # Only evaluate new_item_to_add parameter when adding to output
                 new_item_value = self.get_parameter_value("new_item_to_add")
-                results_list.append(new_item_value)
+                self._results_list.append(new_item_value)
             case self.skip_control:
                 # Skip - don't add anything to output, just continue loop
                 pass
@@ -179,15 +173,12 @@ class ForEachEndNode(EndLoopNode):
                 # Break - will trigger break signal in get_next_control_output
                 pass
             case self.loop_end_condition_met_signal_input:
-                # Loop has ended naturally, output final results from ForEach Start
-                final_results = self.get_parameter_value("results_list_input")
-                if final_results is None:
-                    final_results = []
-                self.parameter_output_values["results"] = final_results
+                # Loop has ended naturally, output final results
+                self.parameter_output_values["results"] = self._results_list.copy()
                 return
 
         # Always output the current results list state
-        self.parameter_output_values["results"] = results_list.copy()
+        self.parameter_output_values["results"] = self._results_list.copy()
 
     def get_next_control_output(self) -> Parameter | None:
         """Return the appropriate signal output based on the control path taken.
@@ -226,17 +217,14 @@ class ForEachEndNode(EndLoopNode):
             )
 
         # Check if all hidden signal connections exist (only if start_node is connected)
-        if self.start_node:
-            # Note: results_list_input connection is optional now since we manage our own list
-
-            if "loop_end_condition_met_signal_input" not in self._connected_parameters:
-                errors.append(
-                    Exception(
-                        f"{self.name}: Missing hidden signal connection. "
-                        "REQUIRED ACTION: Connect ForEach Start 'Loop End Signal' to ForEach End 'Loop End Signal Input'. "
-                        "This receives the signal when the loop has completed naturally."
-                    )
+        if self.start_node and "loop_end_condition_met_signal_input" not in self._connected_parameters:
+            errors.append(
+                Exception(
+                    f"{self.name}: Missing hidden signal connection. "
+                    "REQUIRED ACTION: Connect ForEach Start 'Loop End Signal' to ForEach End 'Loop End Signal Input'. "
+                    "This receives the signal when the loop has completed naturally."
                 )
+            )
 
             # Note: outgoing connections tracked via start_node relationship
 
@@ -435,6 +423,3 @@ class ForEachEndNode(EndLoopNode):
     def reset_for_workflow_run(self) -> None:
         """Reset ForEach End state for a fresh workflow run."""
         self._results_list = []
-        self._index = 0
-        # Clear any stale output parameter values from previous runs
-        self.parameter_output_values["results"] = []

@@ -204,6 +204,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         self._context.current_node = start_node
+        # Set entry control parameter for initial node (None for workflow start)
+        start_node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
         self.start(ResolveNodeState)  # Begins the flow
