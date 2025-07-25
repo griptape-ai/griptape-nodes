@@ -171,10 +171,8 @@ class ForEachStartNode(StartLoopNode):
         # Main control flow
         self.exec_in = ControlParameterInput(tooltip="Start Loop", name="exec_in")
         self.exec_in.ui_options = {"display_name": "Start Loop"}
-        self.exec_out = ControlParameterOutput(tooltip="Execute for each item in the list", name="exec_out")
-        self.exec_out.ui_options = {"display_name": "On Each Item"}
         self.add_parameter(self.exec_in)
-        self.add_parameter(self.exec_out)
+        
         self.items_list = Parameter(
             name="items",
             tooltip="List of items to iterate through",
@@ -182,6 +180,11 @@ class ForEachStartNode(StartLoopNode):
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
+
+        # On Each Item control output - moved outside group for proper rendering
+        self.exec_out = ControlParameterOutput(tooltip="Execute for each item in the list", name="exec_out")
+        self.exec_out.ui_options = {"display_name": "On Each Item"}
+        self.add_parameter(self.exec_out)
 
         with ParameterGroup(name="For Each Item") as group:
             # Add current item output parameter

@@ -44,21 +44,13 @@ class ForEachEndNode(EndLoopNode):
         )
         self.loop_start_node.ui_options = {"display_name": "Loop Start Node"}
 
-        # Visible control inputs
+        # Main control input and data parameter
         self.add_item_control = ControlParameterInput(
             tooltip="Add current item to output and continue loop", name="add_item"
         )
         self.add_item_control.ui_options = {"display_name": "Add Item to Output"}
 
-        self.skip_control = ControlParameterInput(
-            tooltip="Skip current item and continue to next iteration", name="skip_iteration"
-        )
-        self.skip_control.ui_options = {"display_name": "Skip to Next Iteration"}
-
-        self.break_control = ControlParameterInput(tooltip="Break out of loop immediately", name="break_loop")
-        self.break_control.ui_options = {"display_name": "Break Out of Loop"}
-
-        # Visible data input
+        # Data input for the item to add - positioned right under Add Item control
         self.new_item_to_add = Parameter(
             name="new_item_to_add",
             tooltip="Item to add to results list",
@@ -66,7 +58,11 @@ class ForEachEndNode(EndLoopNode):
             allowed_modes={ParameterMode.INPUT},
         )
 
-        # Visible outputs
+        # Loop completion output
+        self.exec_out = ControlParameterOutput(tooltip="Triggered when loop completes", name="exec_out")
+        self.exec_out.ui_options = {"display_name": "On Loop Complete"}
+
+        # Results output - positioned below On Loop Complete
         self.results = Parameter(
             name="results",
             tooltip="Collected loop results",
@@ -74,8 +70,14 @@ class ForEachEndNode(EndLoopNode):
             allowed_modes={ParameterMode.OUTPUT},
         )
 
-        self.exec_out = ControlParameterOutput(tooltip="Triggered when loop completes", name="exec_out")
-        self.exec_out.ui_options = {"display_name": "On Loop Complete"}
+        # Advanced control options for skip and break
+        self.skip_control = ControlParameterInput(
+            tooltip="Skip current item and continue to next iteration", name="skip_iteration"
+        )
+        self.skip_control.ui_options = {"display_name": "Skip to Next Iteration"}
+
+        self.break_control = ControlParameterInput(tooltip="Break out of loop immediately", name="break_loop")
+        self.break_control.ui_options = {"display_name": "Break Out of Loop"}
 
         # Hidden inputs from ForEachStart
         self.results_list_input = Parameter(
@@ -108,15 +110,19 @@ class ForEachEndNode(EndLoopNode):
         self.break_loop_signal_output.ui_options = {"hide": True, "display_name": "Break Loop Signal Output"}
         self.break_loop_signal_output.settable = False
 
-        # Add parameters in order
-        self.add_parameter(self.loop_start_node)
+        # Add main workflow parameters first
         self.add_parameter(self.add_item_control)
+        self.add_parameter(self.new_item_to_add)
+        self.add_parameter(self.exec_out)
+        self.add_parameter(self.results)
+        
+        # Add advanced control options before tethering connection
         self.add_parameter(self.skip_control)
         self.add_parameter(self.break_control)
-        self.add_parameter(self.new_item_to_add)
-        self.add_parameter(self.results)
-        self.add_parameter(self.exec_out)
 
+        # Add tethering connection just above hidden parameters
+        self.add_parameter(self.loop_start_node)
+        
         # Add hidden parameters
         self.add_parameter(self.results_list_input)
         self.add_parameter(self.loop_end_condition_met_signal_input)
