@@ -121,12 +121,12 @@ class ExecuteNodeState(State):
         """
         current_node = current_focus.node
         ExecuteNodeHelpers._mark_node_as_starting(context, current_focus)
-
+        logger.debug("Node '%s' is processing.", current_node.name)
         try:
             more_work = ExecuteNodeState._run_node_process_method(current_focus)
             # If the node is still not done
             if more_work:
-                logger.info("Pausing Node '%s' to run background work", current_node.name)
+                logger.debug("Pausing Node '%s' to run background work", current_node.name)
                 return False
         except Exception as e:
             logger.exception("Error processing node '%s'", current_node.name)

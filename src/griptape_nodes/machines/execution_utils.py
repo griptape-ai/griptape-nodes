@@ -140,7 +140,6 @@ class ExecuteNodeHelpers:
                 wrapped_event=ExecutionEvent(payload=NodeStartProcessEvent(node_name=current_node.name))
             )
         )
-        logger.info("Node '%s' is processing.", current_node.name)
     
     @staticmethod
     def _mark_node_as_finished(context: ResolutionContext, current_focus: Focus):
