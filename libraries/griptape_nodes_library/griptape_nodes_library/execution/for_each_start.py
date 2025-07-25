@@ -94,15 +94,6 @@ class ForEachStartNode(StartLoopNode):
         self.break_loop_signal.ui_options = {"hide": True, "display_name": "Break Loop Signal"}
         self.break_loop_signal.settable = False
 
-        # Hidden data output - results list
-        self.results_list = Parameter(
-            name="results_list",
-            tooltip="Results list passed to ForEach End Node",
-            output_type="list",
-            allowed_modes={ParameterMode.OUTPUT},
-            default_value=[],
-        )
-        self.results_list.ui_options = {"hide": True}
 
         # Hidden control output - loop end condition
         self.loop_end_condition_met_signal = ControlParameterOutput(
@@ -114,7 +105,6 @@ class ForEachStartNode(StartLoopNode):
         # Add hidden parameters
         self.add_parameter(self.trigger_next_iteration_signal)
         self.add_parameter(self.break_loop_signal)
-        self.add_parameter(self.results_list)
         self.add_parameter(self.loop_end_condition_met_signal)
 
         # Control output tracking
@@ -308,7 +298,7 @@ class ForEachStartNode(StartLoopNode):
                     )
                 )
 
-            # Note: outgoing connections (results_list, loop_end_condition_met_signal) are tracked via end_node relationship
+            # Note: outgoing connections (loop_end_condition_met_signal) are tracked via end_node relationship
 
         return errors
 

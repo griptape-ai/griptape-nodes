@@ -79,13 +79,6 @@ class ForEachEndNode(EndLoopNode):
         self.break_control.ui_options = {"display_name": "Break Out of Loop"}
 
         # Hidden inputs from ForEachStart
-        self.results_list_input = Parameter(
-            name="results_list_input",
-            tooltip="Results list from ForEach Start Node",
-            input_types=["list"],
-            allowed_modes={ParameterMode.INPUT},
-        )
-        self.results_list_input.ui_options = {"hide": True, "display_name": "Results List Input"}
 
         self.loop_end_condition_met_signal_input = ControlParameterInput(
             tooltip="Signal from ForEachStart when loop should end", name="loop_end_condition_met_signal_input"
@@ -121,7 +114,6 @@ class ForEachEndNode(EndLoopNode):
 
         # Add hidden parameters
         self.add_parameter(self.from_start)
-        self.add_parameter(self.results_list_input)
         self.add_parameter(self.loop_end_condition_met_signal_input)
         self.add_parameter(self.trigger_next_iteration_signal_output)
         self.add_parameter(self.break_loop_signal_output)
@@ -283,19 +275,9 @@ class ForEachEndNode(EndLoopNode):
         from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Create the four hidden signal connections needed for ForEach loop functionality:
+        # Create the three hidden signal connections needed for ForEach loop functionality:
 
-        # 1. Start → End: results_list → results_list_input
-        GriptapeNodes.handle_request(
-            CreateConnectionRequest(
-                source_node_name=start_node.name,
-                source_parameter_name="results_list",
-                target_node_name=self.name,
-                target_parameter_name="results_list_input",
-            )
-        )
-
-        # 2. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
+        # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=start_node.name,
@@ -305,7 +287,7 @@ class ForEachEndNode(EndLoopNode):
             )
         )
 
-        # 3. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
+        # 2. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=self.name,
@@ -315,7 +297,7 @@ class ForEachEndNode(EndLoopNode):
             )
         )
 
-        # 4. End → Start: break_loop_signal_output → break_loop_signal
+        # 3. End → Start: break_loop_signal_output → break_loop_signal
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=self.name,
@@ -334,19 +316,9 @@ class ForEachEndNode(EndLoopNode):
         from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Remove the four hidden signal connections:
+        # Remove the three hidden signal connections:
 
-        # 1. Start → End: results_list → results_list_input
-        GriptapeNodes.handle_request(
-            DeleteConnectionRequest(
-                source_node_name=start_node.name,
-                source_parameter_name="results_list",
-                target_node_name=self.name,
-                target_parameter_name="results_list_input",
-            )
-        )
-
-        # 2. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
+        # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
         GriptapeNodes.handle_request(
             DeleteConnectionRequest(
                 source_node_name=start_node.name,
@@ -356,7 +328,7 @@ class ForEachEndNode(EndLoopNode):
             )
         )
 
-        # 3. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
+        # 2. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
         GriptapeNodes.handle_request(
             DeleteConnectionRequest(
                 source_node_name=self.name,
@@ -366,7 +338,7 @@ class ForEachEndNode(EndLoopNode):
             )
         )
 
-        # 4. End → Start: break_loop_signal_output → break_loop_signal
+        # 3. End → Start: break_loop_signal_output → break_loop_signal
         GriptapeNodes.handle_request(
             DeleteConnectionRequest(
                 source_node_name=self.name,
