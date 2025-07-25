@@ -1,20 +1,8 @@
 from __future__ import annotations
-"""control_flow.py
-~~~~~~~~~~~~~~~~~~~
-
-This module implements a finite-state machine (FSM) called ControlFlowMachine that executes a ControlFlow graph made up of BaseNode instances.
-It uses an internal NodeResolutionMachine to resolve nodes one at a time.
-During execution, it emits detailed ExecutionEvents for real-time visualization and debugging.
-
-The ControlFlowMachine starts at a specified node and moves through the graph using either explicit control connections or a fallback execution queue.
-It also offers a debug mode that pauses after each step to allow inspection of the current state.
-
-"""
 
 import logging
 import time
 from typing import TYPE_CHECKING
-from griptape.events import EventBus
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
@@ -35,13 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 class ControlFlowContext:
-    """Runtime context shared across :class:`ControlFlowMachine` FSM states.
-
-    The context instance holds the current flow, reference to the
-    griptape_nodes.machines.node_resolution.NodeResolutionMachine
-    responsible for resolving individual nodes, as well as various
-    bookkeeping fields that are changed while the flow is running.
-    """
+    """Shared context containing information about whole flow execution"""
     flow: ControlFlow
     current_node: BaseNode | None
     resolution_machine: NodeResolutionMachine
@@ -82,9 +64,7 @@ class ControlFlowContext:
         self.paused = False
 
 
-# GOOD!
 class ResolveNodeState(State):
-    """State that resolves the `ControlFlowContext.current_node`."""
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         # The state machine has started, but it hasn't began to execute yet.
@@ -129,6 +109,7 @@ class ResolveNodeState(State):
 
 class NextNodeState(State):
     """State that decides which node should be executed next."""
+
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is None:
@@ -183,10 +164,10 @@ class NextNodeState(State):
 
 
 class CompleteState(State):
-    """Terminal state – emitted whenever the control-flow finishes running."""
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
+            # Notify GUI that the flow is complete
             event_queue.put(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
@@ -199,6 +180,7 @@ class CompleteState(State):
                     )
                 )
             )
+
         logger.info("Flow is complete.")
         # Log flow duration if start_time was recorded
         if context.start_time is not None:
@@ -211,15 +193,8 @@ class CompleteState(State):
         return None
 
 
-# MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    """Finite-state machine that orchestrates execution of a *ControlFlow*.
-
-    The machine transitions between ResolveNodeState, NextNodeState, and
-    CompleteState until the entire flow graph has been evaluated. Consumers
-    can run the flow in *continuous* mode via update or step through it
-    granularly using granular_step / node_step when debugging.
-    """
+    """Finite-state machine that resolves nodes in a flow graph."""
     def __init__(self) -> None:
         context = ControlFlowContext()
         super().__init__(context)
