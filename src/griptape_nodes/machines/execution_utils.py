@@ -1,27 +1,28 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Any
-from typing import Generator
-
-from dataclasses import dataclass
-
 import logging
-from griptape.utils import with_contextvars
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.app.app_sessions import event_queue
-from griptape_nodes.exe_types.node_types import BaseNode
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from griptape_nodes.exe_types.node_types import BaseNode
+
 from griptape_nodes.machines.fsm import State
 
 logger = logging.getLogger("griptape_nodes")
 
+
 # Directed Acyclic Graph
 class DAG:
     """Directed Acyclic Graph for tracking node dependencies during resolution."""
-    def __init__(self):
+
+    def __init__(self) -> None:
         """Initialize the DAG with empty graph and in-degree structures."""
-        self.graph = defaultdict(set)        # adjacency list
-        self.in_degree = defaultdict(int)    # number of unmet dependencies
+        self.graph = defaultdict(set)  # adjacency list
+        self.in_degree = defaultdict(int)  # number of unmet dependencies
 
     def add_node(self, node: BaseNode) -> None:
         """Ensure the node exists in the graph."""
@@ -52,6 +53,7 @@ class DAG:
 @dataclass
 class Focus:
     """Represents a node currently being resolved, with optional scheduled value and generator."""
+
     node: BaseNode
     scheduled_value: Any | None = None
     updated: bool = True
@@ -61,6 +63,7 @@ class Focus:
 # This is on a per-node basis
 class ResolutionContext:
     """Context for node resolution, including the focus stack, DAG, and paused state."""
+
     root_node_resolving: BaseNode | None
     current_focuses: list[Focus]
     paused: bool
@@ -85,6 +88,7 @@ class ResolutionContext:
 
 class CompleteState(State):
     """State indicating node resolution is complete."""
+
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         """Enter the CompleteState."""
@@ -94,4 +98,3 @@ class CompleteState(State):
     def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         """Update the CompleteState (no-op)."""
         return None
-

@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.machines.fsm import FSM
-from griptape_nodes.machines.execution_utils import ResolutionContext
-from griptape_nodes.machines.execution_utils import CompleteState
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import BaseNode
+
 from griptape_nodes.machines.evaluate_parameter import EvaluateParameterState
+from griptape_nodes.machines.execution_utils import CompleteState, ResolutionContext
+from griptape_nodes.machines.fsm import FSM
 
 logger = logging.getLogger("griptape_nodes")
 
+
 class NodeResolutionMachine(FSM[ResolutionContext]):
     """Finite state machine for resolving nodes and their dependencies."""
+
     def __init__(self) -> None:
         """Initialize the node resolution machine with a new context."""
         resolution_context = ResolutionContext()
@@ -22,13 +26,13 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         self._context.root_node_resolving = node
         self.start(EvaluateParameterState)
 
-    def change_debug_mode(self, debug_mode: bool) -> None:
+    def change_debug_mode(self, *, debug_mode: bool) -> None:
         """Change the debug mode for the resolution machine."""
         self._debug_mode = debug_mode
 
     def is_complete(self) -> bool:
         """Return True if the resolution is complete."""
-        return (self._current_state == CompleteState)
+        return self._current_state == CompleteState
 
     def is_started(self) -> bool:
         """Return True if the resolution has started."""

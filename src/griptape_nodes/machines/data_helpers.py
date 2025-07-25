@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import logging
-from griptape.utils import with_contextvars
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.machines.execution_utils import Focus
 
 from griptape_nodes.app.app_sessions import event_queue
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -20,12 +21,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
-from griptape_nodes.machines.execution_utils import ResolutionContext, Focus
 
 logger = logging.getLogger("griptape_nodes")
 
 
-def pass_values_to_connected_nodes(context: ResolutionContext, current_focus: Focus) -> None:
+def pass_values_to_connected_nodes(current_focus: Focus) -> None:
     """Push parameter output values from the current node to all connected downstream nodes."""
     current_node = current_focus.node
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -33,9 +33,11 @@ def pass_values_to_connected_nodes(context: ResolutionContext, current_focus: Fo
     for parameter_name, value in current_node.parameter_output_values.items():
         parameter = current_node.get_parameter_by_name(parameter_name)
         if parameter is None:
-            raise KeyError(
-                f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
+            message = (
+                f"Canceling flow run. Node '{current_node.name}' specified a Parameter "
+                f"'{parameter_name}', but no such Parameter could be found on that Node."
             )
+            raise KeyError(message)
         data_type = parameter.type or ParameterTypeBuiltin.NONE.value
         event_queue.put(
             ExecutionGriptapeNodeEvent(
@@ -62,20 +64,22 @@ def pass_values_to_connected_nodes(context: ResolutionContext, current_focus: Fo
             )
 
 
-def get_library_name(context: ResolutionContext, node: BaseNode) -> str | None:
+def get_library_name(node: BaseNode) -> str | None:
     """Return the registered library that owns *node* if exactly one match is found."""
     libraries = LibraryRegistry.get_libraries_with_node_type(node.__class__.__name__)
     return libraries[0] if len(libraries) == 1 else None
 
 
-def clear_parameter_output_values(context: ResolutionContext, current_node) -> None:
+def clear_parameter_output_values(current_node: BaseNode) -> None:
     """Clear all parameter output values for *current_node* and notify the GUI."""
     for parameter_name in current_node.parameter_output_values.copy():
         parameter = current_node.get_parameter_by_name(parameter_name)
         if parameter is None:
-            raise ValueError(
-                f"Attempted to execute node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
+            message = (
+                f"Attempted to execute node '{current_node.name}' but could not find parameter "
+                f"'{parameter_name}' that was indicated as having a value."
             )
+            raise ValueError(message)
         parameter_type = parameter.type or ParameterTypeBuiltin.NONE.value
         payload = ParameterValueUpdateEvent(
             node_name=current_node.name,
