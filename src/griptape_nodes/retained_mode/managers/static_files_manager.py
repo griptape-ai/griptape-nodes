@@ -2,7 +2,6 @@ import base64
 import binascii
 import logging
 
-import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage import StorageBackend
@@ -22,6 +21,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.utilities.storage import StorageUtility
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -60,16 +60,18 @@ class StaticFilesManager:
                 static_files_directory = config_manager.get_config_value(
                     "static_files_directory", default="staticfiles"
                 )
-                self.storage_driver = GriptapeCloudStorageDriver(
+                storage_driver = GriptapeCloudStorageDriver(
                     bucket_id=bucket_id,
                     api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
-                    static_files_directory=static_files_directory,
+                    working_dir=static_files_directory,
                 )
             case StorageBackend.LOCAL:
-                self.storage_driver = LocalStorageDriver()
+                storage_driver = LocalStorageDriver()
             case _:
                 msg = f"Invalid storage backend: {storage_backend}"
                 raise ValueError(msg)
+
+        self.storage_utility = StorageUtility(storage_driver)
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
@@ -96,7 +98,7 @@ class StaticFilesManager:
             return CreateStaticFileResultFailure(error=msg)
 
         try:
-            url = self.save_static_file(content_bytes, file_name)
+            url = self.storage_utility.save_static_file(content_bytes, file_name)
         except ValueError as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
@@ -118,7 +120,7 @@ class StaticFilesManager:
         """
         file_name = request.file_name
         try:
-            response = self.storage_driver.create_signed_upload_url(file_name)
+            response = self.storage_utility.storage_driver.create_signed_upload_url(file_name)
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
@@ -142,7 +144,7 @@ class StaticFilesManager:
         """
         file_name = request.file_name
         try:
-            url = self.storage_driver.create_signed_download_url(file_name)
+            url = self.storage_utility.storage_driver.create_signed_download_url(file_name)
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
@@ -162,21 +164,26 @@ class StaticFilesManager:
         Returns:
             The URL of the saved file.
         """
-        response = self.storage_driver.create_signed_upload_url(file_name)
+        return self.storage_utility.save_static_file(data, file_name)
 
-        try:
-            response = httpx.request(
-                response["method"],
-                response["url"],
-                content=data,
-                headers=response["headers"],
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e.response.json())
-            logger.error(msg)
-            raise ValueError(msg) from e
+    def get_static_file(self, file_name: str) -> bytes:
+        """Get a static file from storage.
 
-        url = self.storage_driver.create_signed_download_url(file_name)
+        Args:
+            file_name: The name of the file to get.
 
-        return url
+        Returns:
+            The file content as bytes.
+        """
+        return self.storage_utility.get_static_file(file_name)
+
+    def delete_static_file(self, file_name: str) -> None:
+        """Delete a static file from storage.
+
+        Args:
+            file_name: The name of the file to delete.
+
+        Raises:
+            ValueError: If the file could not be deleted.
+        """
+        return self.storage_utility.delete_static_file(file_name)

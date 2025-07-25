@@ -364,3 +364,51 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class PublishWorkflowResultFailure(ResultPayloadFailure):
     """Workflow publish failed. Common causes: workflow not found, publish error, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncUpWorkflowsRequest(RequestPayload):
+    """Start syncing up all workflow files from workspace to storage backend asynchronously.
+
+    Use when: Uploading local workflow files to cloud storage, backing up workflows,
+    preparing for collaborative editing, syncing changes to remote.
+
+    Results: StartSyncUpWorkflowsResultSuccess (with uploaded files list) | StartSyncUpWorkflowsResultFailure (upload error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncUpWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """All workflow files synced up successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncUpWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow sync up failed. Common causes: storage error, network issue, permission denied."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncDownWorkflowsRequest(RequestPayload):
+    """Start syncing down workflow files from storage backend to workspace asynchronously.
+
+    Use when: Downloading workflow files from cloud storage, restoring from backup,
+    pulling changes from collaborative editing, syncing remote changes.
+
+    Results: StartSyncDownWorkflowsResultSuccess | StartSyncDownWorkflowsResultFailure (download error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncDownWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """All workflow files synced down successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartSyncDownWorkflowsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow sync down failed. Common causes: storage error, network issue, permission denied."""
