@@ -5,11 +5,16 @@ from collections import defaultdict
 from typing import Any
 import time
 
+from griptape_nodes.app.app_sessions import event_queue
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.execute_node import ExecuteNodeState
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.execution_utils import ResolutionContext
 from griptape_nodes.machines.execution_utils import CompleteState
+from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.retained_mode.events.base_events import ExecutionGriptapeNodeEvent
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent
+from griptape_nodes.retained_mode.events.execution_events import NodeFinishProcessEvent
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -34,6 +39,9 @@ class EvaluateParameterState(State):
 
                 if connected_node in context.DAG.graph[current_node]:
                     # Check if there is a cycle, aka nodes that depend on each other to run
+                    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                    GriptapeNodes.FlowManager().cancel_flow_run()
                     raise RuntimeError(f"Cycle detected between node {current_node.name} and {connected_node.name}")
 
                 context.DAG.add_node(connected_node)
