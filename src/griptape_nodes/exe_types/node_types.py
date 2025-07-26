@@ -593,7 +593,7 @@ class BaseNode(ABC):
 
         def _flatten(items: Iterable[Any]) -> Generator[Any, None, None]:
             for item in items:
-                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes, dict)):
                     yield from _flatten(item)
                 elif item:
                     yield item
