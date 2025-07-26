@@ -198,7 +198,6 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         instance_region: Cloud instance region (None if not applicable)
         instance_provider: Cloud provider name (None if not applicable)
         deployment_type: Type of deployment (None if not applicable)
-        public_ip: Public IP address (None if not available)
         current_workflow: Name of active workflow (None if none)
         workflow_file_path: Path to workflow file (None if none)
         has_active_flow: Whether there's an active flow running
@@ -214,7 +213,6 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     instance_region: str | None
     instance_provider: str | None
     deployment_type: str | None
-    public_ip: str | None
     current_workflow: str | None
     workflow_file_path: str | None
     has_active_flow: bool
