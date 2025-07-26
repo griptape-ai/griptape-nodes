@@ -7,9 +7,11 @@ The `allow_create` and `allow_rename` features allow users to create new files o
 ## Backend Events
 
 ### CreateFileRequest
+
 **Purpose**: Request to create a new file or directory
 
 **Payload**:
+
 ```typescript
 interface CreateFileRequest {
   path: string;                    // Path where file/directory should be created
@@ -21,9 +23,11 @@ interface CreateFileRequest {
 ```
 
 ### CreateFileResultSuccess
+
 **Purpose**: Successful file/directory creation response
 
 **Payload**:
+
 ```typescript
 interface CreateFileResultSuccess {
   created_path: string;           // Full path of created file/directory
@@ -31,9 +35,11 @@ interface CreateFileResultSuccess {
 ```
 
 ### CreateFileResultFailure
+
 **Purpose**: Failed file/directory creation response
 
 **Payload**:
+
 ```typescript
 interface CreateFileResultFailure {
   error?: string;                 // Optional error message
@@ -41,9 +47,11 @@ interface CreateFileResultFailure {
 ```
 
 ### RenameFileRequest
+
 **Purpose**: Request to rename a file or directory
 
 **Payload**:
+
 ```typescript
 interface RenameFileRequest {
   old_path: string;               // Current path of the file/directory to rename
@@ -53,9 +61,11 @@ interface RenameFileRequest {
 ```
 
 ### RenameFileResultSuccess
+
 **Purpose**: Successful file/directory rename response
 
 **Payload**:
+
 ```typescript
 interface RenameFileResultSuccess {
   old_path: string;               // Original path of the renamed item
@@ -64,9 +74,11 @@ interface RenameFileResultSuccess {
 ```
 
 ### RenameFileResultFailure
+
 **Purpose**: Failed file/directory rename response
 
 **Payload**:
+
 ```typescript
 interface RenameFileResultFailure {
   error?: string;                 // Optional error message
@@ -76,6 +88,7 @@ interface RenameFileResultFailure {
 ## Frontend Implementation Flow
 
 ### 1. UI State Management
+
 ```typescript
 interface FileSystemPickerState {
   allowCreate: boolean;           // From trait configuration
@@ -90,6 +103,7 @@ interface FileSystemPickerState {
 ```
 
 ### 2. User Input Detection
+
 ```typescript
 function handlePathInput(inputPath: string, state: FileSystemPickerState) {
   // Check if user is trying to create something new
@@ -114,6 +128,7 @@ function handlePathInput(inputPath: string, state: FileSystemPickerState) {
 ```
 
 ### 3. Creation Prompt UI
+
 ```typescript
 function promptForCreation(path: string, isDirectory: boolean) {
   const message = isDirectory 
@@ -138,6 +153,7 @@ function promptForCreation(path: string, isDirectory: boolean) {
 ```
 
 ### 4. Backend Communication
+
 ```typescript
 async function createFileOrDirectory(path: string, isDirectory: boolean) {
   setState({ isCreating: true });
@@ -169,6 +185,7 @@ async function createFileOrDirectory(path: string, isDirectory: boolean) {
 ```
 
 ### 5. Enhanced File Input Handling
+
 ```typescript
 function handleFileInput(input: string) {
   // Normal file selection logic
@@ -199,6 +216,7 @@ function handleFileInput(input: string) {
 ```
 
 ### 6. File vs Directory Choice Dialog
+
 ```typescript
 function showFileOrDirectoryChoice(path: string) {
   const baseName = path.replace(/[/\\]$/, ''); // Remove trailing slash
@@ -225,6 +243,7 @@ function showFileOrDirectoryChoice(path: string) {
 ```
 
 ### 7. Rename Functionality
+
 ```typescript
 function handleRenameRequest(oldPath: string, newPath: string) {
   if (!state.allowRename) {
@@ -294,6 +313,7 @@ async function renameFileOrDirectory(oldPath: string, newPath: string) {
 ```
 
 ### 8. Context Menu Integration
+
 ```typescript
 function showContextMenu(item: FileSystemEntry, position: { x: number, y: number }) {
   const menuItems = [];
@@ -341,21 +361,25 @@ function showRenameDialog(item: FileSystemEntry) {
 ## UI/UX Considerations
 
 ### 1. Visual Indicators
+
 - Show a "Create" button or icon when `allowCreate` is true
 - Use different icons for file vs directory creation
 - Show loading spinner during creation process
 
 ### 2. Error Handling
+
 - Display specific error messages from backend
 - Handle permission errors gracefully
 - Provide helpful suggestions for common issues
 
 ### 3. Validation
+
 - Prevent creation of files with invalid names
 - Check for reserved characters in file/directory names
 - Validate path length limits
 
 ### 4. Accessibility
+
 - Provide keyboard shortcuts for creation actions
 - Include proper ARIA labels for screen readers
 - Ensure focus management during dialogs
@@ -363,6 +387,7 @@ function showRenameDialog(item: FileSystemEntry) {
 ## Example Usage Scenarios
 
 ### Scenario 1: Creating a Directory
+
 ```
 User types: "new_project/"
 System detects: Directory doesn't exist, allowCreate=true, allowDirectories=true
@@ -370,6 +395,7 @@ Action: Shows creation prompt → Creates directory → Refreshes listing
 ```
 
 ### Scenario 2: Creating a File
+
 ```
 User types: "config.json"
 System detects: File doesn't exist, allowCreate=true, allowFiles=true
@@ -377,6 +403,7 @@ Action: Shows creation prompt → Creates empty file → Refreshes listing
 ```
 
 ### Scenario 3: Ambiguous Input
+
 ```
 User types: "data"
 System detects: Doesn't exist, allowCreate=true, allowFiles=true, allowDirectories=true
@@ -384,6 +411,7 @@ Action: Shows choice dialog → User selects file/directory → Creates item
 ```
 
 ### Scenario 4: Renaming a File
+
 ```
 User right-clicks: "old_name.txt"
 System detects: allowRename=true, allowFiles=true
@@ -391,6 +419,7 @@ Action: Shows rename dialog → User enters "new_name.txt" → Renames file → 
 ```
 
 ### Scenario 5: Renaming a Directory
+
 ```
 User right-clicks: "old_folder"
 System detects: allowRename=true, allowDirectories=true
@@ -410,15 +439,15 @@ The `allow_create` functionality should integrate seamlessly with existing FileS
 
 The backend implementation includes:
 
-1. **New Events**: 
-   - `CreateFileRequest`, `CreateFileResultSuccess`, `CreateFileResultFailure`
-   - `RenameFileRequest`, `RenameFileResultSuccess`, `RenameFileResultFailure`
-2. **OS Manager Handlers**: 
-   - `on_create_file_request()` method in `OSManager`
-   - `on_rename_file_request()` method in `OSManager`
-3. **Validation**: Workspace constraints, path validation, existence checks
-4. **Error Handling**: Comprehensive error messages and logging
+1. **New Events**:
+    - `CreateFileRequest`, `CreateFileResultSuccess`, `CreateFileResultFailure`
+    - `RenameFileRequest`, `RenameFileResultSuccess`, `RenameFileResultFailure`
+1. **OS Manager Handlers**:
+    - `on_create_file_request()` method in `OSManager`
+    - `on_rename_file_request()` method in `OSManager`
+1. **Validation**: Workspace constraints, path validation, existence checks
+1. **Error Handling**: Comprehensive error messages and logging
 
 The trait configuration passes `allowCreate` and `allowRename` in the UI options, which the frontend should use to enable/disable the respective functionalities.
 
-This implementation provides a smooth user experience for creating files and directories directly through the file picker interface! 🚀 
+This implementation provides a smooth user experience for creating files and directories directly through the file picker interface! 🚀
