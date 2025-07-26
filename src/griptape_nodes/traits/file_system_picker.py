@@ -18,6 +18,8 @@ class FileSystemPicker(Trait):
     min_file_size: int | None = None
     workspace_only: bool = True
     initial_path: str | None = None
+    allow_create: bool = False
+    allow_rename: bool = False
     element_id: str = field(default_factory=lambda: "FileSystemPicker")
 
     def __init__(  # noqa: PLR0913
@@ -34,6 +36,8 @@ class FileSystemPicker(Trait):
         min_file_size: int | None = None,
         workspace_only: bool = True,
         initial_path: str | None = None,
+        allow_create: bool = False,
+        allow_rename: bool = False,
     ) -> None:
         super().__init__()
         self.allow_files = allow_files
@@ -47,6 +51,8 @@ class FileSystemPicker(Trait):
         self.min_file_size = min_file_size
         self.workspace_only = workspace_only
         self.initial_path = initial_path
+        self.allow_create = allow_create
+        self.allow_rename = allow_rename
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
@@ -59,6 +65,8 @@ class FileSystemPicker(Trait):
             "allowDirectories": self.allow_directories,
             "multiple": self.multiple,
             "workspaceOnly": self.workspace_only,
+            "allowCreate": self.allow_create,
+            "allowRename": self.allow_rename,
         }
 
         # Add file types/extensions
@@ -92,6 +100,16 @@ class FileSystemPicker(Trait):
             # Validate that at least one selection type is enabled
             if not self.allow_files and not self.allow_directories:
                 msg = "At least one of allow_files or allow_directories must be True"
+                raise ValueError(msg)
+
+            # Validate that creation is only allowed when appropriate selection types are enabled
+            if self.allow_create and not self.allow_files and not self.allow_directories:
+                msg = "allow_create requires at least one of allow_files or allow_directories to be True"
+                raise ValueError(msg)
+
+            # Validate that rename is only allowed when appropriate selection types are enabled
+            if self.allow_rename and not self.allow_files and not self.allow_directories:
+                msg = "allow_rename requires at least one of allow_files or allow_directories to be True"
                 raise ValueError(msg)
 
             # Validate file size limits

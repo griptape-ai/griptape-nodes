@@ -138,3 +138,78 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File reading failed. Common causes: file not found, permission denied, encoding error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileRequest(RequestPayload):
+    """Create a new file or directory.
+
+    Use when: Creating files/directories through file picker,
+    implementing file creation functionality.
+
+    Args:
+        path: Path where the file/directory should be created
+        is_directory: True to create a directory, False for a file
+        content: Initial content for files (optional)
+        encoding: Text encoding for file content (default: 'utf-8')
+        workspace_only: If True, constrain to workspace directory
+
+    Results: CreateFileResultSuccess | CreateFileResultFailure
+    """
+
+    path: str
+    is_directory: bool = False
+    content: str | None = None
+    encoding: str = "utf-8"
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory created successfully."""
+
+    created_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory creation failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileRequest(RequestPayload):
+    """Rename a file or directory.
+
+    Use when: Renaming files/directories through file picker,
+    implementing file rename functionality.
+
+    Args:
+        old_path: Current path of the file/directory to rename
+        new_path: New path for the file/directory
+        workspace_only: If True, constrain to workspace directory
+
+    Results: RenameFileResultSuccess | RenameFileResultFailure
+    """
+
+    old_path: str
+    new_path: str
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory renamed successfully."""
+
+    old_path: str
+    new_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory rename failed."""
