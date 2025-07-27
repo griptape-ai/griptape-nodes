@@ -384,13 +384,90 @@ class ParameterMessage(BaseNodeElement):
     type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
 
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
-    variant: VariantType
-    title: str | None = None
-    value: str
-    button_link: str | None = None
-    button_text: str | None = None
-    full_width: bool = False
+    _variant: VariantType = field(init=False)
+    _title: str | None = field(default=None, init=False)
+    _value: str = field(init=False)
+    _button_link: str | None = field(default=None, init=False)
+    _button_text: str | None = field(default=None, init=False)
+    _full_width: bool = field(default=False, init=False)
     ui_options: dict = field(default_factory=dict)
+
+    def __init__(  # noqa: PLR0913
+        self,
+        variant: VariantType,
+        value: str,
+        *,
+        title: str | None = None,
+        button_link: str | None = None,
+        button_text: str | None = None,
+        full_width: bool = False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._variant = variant
+        self._title = title
+        self._value = value
+        self._button_link = button_link
+        self._button_text = button_text
+        self._full_width = full_width
+
+    @property
+    def variant(self) -> VariantType:
+        return self._variant
+
+    @variant.setter
+    @BaseNodeElement.emits_update_on_write
+    def variant(self, value: VariantType) -> None:
+        self._variant = value
+
+    @property
+    def title(self) -> str | None:
+        return self._title
+
+    @title.setter
+    @BaseNodeElement.emits_update_on_write
+    def title(self, value: str | None) -> None:
+        self._title = value
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    @value.setter
+    @BaseNodeElement.emits_update_on_write
+    def value(self, value: str) -> None:
+        self._value = value
+
+    @property
+    def button_link(self) -> str | None:
+        return self._button_link
+
+    @button_link.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_link(self, value: str | None) -> None:
+        self._button_link = value
+
+    @property
+    def button_text(self) -> str | None:
+        return self._button_text
+
+    @button_text.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_text(self, value: str | None) -> None:
+        self._button_text = value
+
+    @property
+    def full_width(self) -> bool:
+        return self._full_width
+
+    @full_width.setter
+    @BaseNodeElement.emits_update_on_write
+    def full_width(self, value: bool) -> None:
+        self._full_width = value
+
+    def publish_update(self) -> None:
+        """Publish any accumulated changes as an AlterElementEvent."""
+        self._emit_alter_element_event_if_possible()
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
