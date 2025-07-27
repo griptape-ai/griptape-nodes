@@ -390,7 +390,7 @@ class ParameterMessage(BaseNodeElement):
     _button_link: str | None = field(default=None, init=False)
     _button_text: str | None = field(default=None, init=False)
     _full_width: bool = field(default=False, init=False)
-    ui_options: dict = field(default_factory=dict)
+    _ui_options: dict = field(default_factory=dict, init=False)
 
     def __init__(  # noqa: PLR0913
         self,
@@ -401,6 +401,7 @@ class ParameterMessage(BaseNodeElement):
         button_link: str | None = None,
         button_text: str | None = None,
         full_width: bool = False,
+        ui_options: dict | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -410,6 +411,7 @@ class ParameterMessage(BaseNodeElement):
         self._button_link = button_link
         self._button_text = button_text
         self._full_width = full_width
+        self._ui_options = ui_options or {}
 
     @property
     def variant(self) -> VariantType:
@@ -464,6 +466,15 @@ class ParameterMessage(BaseNodeElement):
     @BaseNodeElement.emits_update_on_write
     def full_width(self, value: bool) -> None:
         self._full_width = value
+
+    @property
+    def ui_options(self) -> dict:
+        return self._ui_options
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        self._ui_options = value
 
     def publish_update(self) -> None:
         """Publish any accumulated changes as an AlterElementEvent."""
