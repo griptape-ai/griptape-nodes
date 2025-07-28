@@ -205,8 +205,18 @@ class Agent(ControlNode):
                 name="color_picker",
                 type="str",
                 default_value="",
-                tooltip="Custom component for fotmob integration.",
+                tooltip="Custom component for color picker integration.",
                 ui_options={"custom_src": "http://localhost:8124/static/custom_components/CustomTest.html"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="capybara",
+                type="int",
+                default_value="",
+                tooltip="Custom component for capybara integration.",
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CapybaraTest.html"},
             )
         )
 

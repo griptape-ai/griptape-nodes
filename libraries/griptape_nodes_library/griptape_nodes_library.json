@@ -1491,6 +1491,11 @@
       "name": "CustomTest",
       "file_path": "griptape_nodes_library/CustomTest.html",
       "description": "A test custom component for iframe communication"
+    },
+    {
+      "name": "CapybaraTest",
+      "file_path": "griptape_nodes_library/CapybaraTest.html",
+      "description": "A test custom component for iframe communication"
     }
   ],
   "is_default_library": true

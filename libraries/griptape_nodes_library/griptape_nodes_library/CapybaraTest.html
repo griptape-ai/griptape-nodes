@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capybara Rotation Component</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 300px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .capybara-container {
+            text-align: center;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        
+        .capybara {
+            width: 300px;
+            height: 200px;
+            margin: 0 auto 15px;
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.1s ease;
+            position: relative;
+        }
+        
+        .capybara:active {
+            cursor: grabbing;
+        }
+        
+        .capybara-head {
+            width: 200px;
+            height: 150px;
+            background-color: #8B4513;
+            border-radius: 50%;
+            position: absolute;
+            left: 50px;
+            top: 25px;
+        }
+        
+        .capybara-ear {
+            width: 40px;
+            height: 30px;
+            background-color: #8B4513;
+            border-radius: 50%;
+            position: absolute;
+            top: 35px;
+        }
+        
+        .left-ear {
+            left: 60px;
+        }
+        
+        .right-ear {
+            right: 60px;
+        }
+        
+        .capybara-eye {
+            width: 20px;
+            height: 20px;
+            background-color: #000;
+            border-radius: 50%;
+            position: absolute;
+            top: 80px;
+        }
+        
+        .left-eye {
+            left: 100px;
+        }
+        
+        .right-eye {
+            right: 100px;
+        }
+        
+        .capybara-snout {
+            width: 60px;
+            height: 40px;
+            background-color: #A0522D;
+            border-radius: 50%;
+            position: absolute;
+            left: 120px;
+            top: 105px;
+        }
+        
+        .capybara-nose {
+            width: 15px;
+            height: 10px;
+            background-color: #654321;
+            border-radius: 50%;
+            position: absolute;
+            left: 142px;
+            top: 110px;
+        }
+        
+        .capybara-mouth {
+            width: 30px;
+            height: 15px;
+            border: 2px solid #654321;
+            border-top: none;
+            border-radius: 0 0 30px 30px;
+            position: absolute;
+            left: 135px;
+            top: 125px;
+        }
+        
+        .rotation-display {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .rotation-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            box-sizing: border-box;
+            margin-top: 10px;
+        }
+        
+        .instructions {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            margin-top: 10px;
+        }
+        
+        .status {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .reset-button {
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .reset-button:hover {
+            background: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Loading state -->
+        <div id="loadingState" class="loading">
+            <div class="loading-spinner"></div>
+            <div>Waiting for parent value...</div>
+        </div>
+        
+        <!-- Main content (hidden until we get a value) -->
+        <div id="mainContent" class="hidden">
+            <div class="header">
+                <h2>Capybara Rotator</h2>
+                <p>Drag to rotate the capybara</p>
+            </div>
+            
+            <div class="capybara-container">
+                <div id="capybara" class="capybara">
+                    <!-- Head -->
+                    <div class="capybara-head"></div>
+                    
+                    <!-- Ears -->
+                    <div class="capybara-ear left-ear"></div>
+                    <div class="capybara-ear right-ear"></div>
+                    
+                    <!-- Eyes -->
+                    <div class="capybara-eye left-eye"></div>
+                    <div class="capybara-eye right-eye"></div>
+                    
+                    <!-- Snout -->
+                    <div class="capybara-snout"></div>
+                    
+                    <!-- Nose -->
+                    <div class="capybara-nose"></div>
+                    
+                    <!-- Mouth -->
+                    <div class="capybara-mouth"></div>
+                </div>
+                
+                <div class="rotation-display">
+                    <strong>Rotation:</strong> <span id="rotationValue">0</span>°
+                </div>
+                
+                <input 
+                    type="number" 
+                    id="rotationInput" 
+                    class="rotation-input"
+                    placeholder="0"
+                    min="0"
+                    max="359"
+                    onchange="updateFromInput()"
+                    oninput="updateFromInput()"
+                >
+                
+                <button class="reset-button" onclick="resetRotation()">Reset to 0°</button>
+                
+                <div class="instructions">
+                    Drag the capybara to rotate, or type a value (0-359)
+                </div>
+            </div>
+            
+            <div class="status" id="status">
+                <strong>Status:</strong> <span id="statusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentValue = 0;
+        let hasReceivedInitialValue = false;
+        let isReceivingFromParent = false;
+        let isDragging = false;
+        let startAngle = 0;
+        let startRotation = 0;
+        
+        // Update status display
+        function updateStatus(message) {
+            const statusElement = document.getElementById('statusText');
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
+            console.log('Status:', message);
+        }
+        
+        // Show main content and hide loading
+        function showMainContent() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+        
+        // Update rotation display
+        function updateRotationDisplay(angle) {
+            const display = document.getElementById('rotationValue');
+            const input = document.getElementById('rotationInput');
+            if (display) display.textContent = angle;
+            if (input) input.value = angle;
+        }
+        
+        // Apply rotation to capybara
+        function applyRotation(angle) {
+            const capybara = document.getElementById('capybara');
+            if (capybara) {
+                capybara.style.transform = `rotate(${angle}deg)`;
+            }
+        }
+        
+        // Send value update to parent
+        function sendValueUpdate(value) {
+            // Don't send if we're receiving from parent
+            if (isReceivingFromParent) {
+                console.log('Skipping send to parent - receiving from parent');
+                return;
+            }
+            
+            try {
+                const message = {
+                    type: 'VALUE_UPDATE',
+                    value: value
+                };
+                
+                window.parent.postMessage(message, '*');
+                updateStatus(`Sent rotation: ${value}°`);
+                
+            } catch (error) {
+                console.error('Failed to send message to parent:', error);
+                updateStatus('Error sending message to parent');
+            }
+        }
+        
+        // Handle messages from parent
+        function handleParentMessage(event) {
+            console.log('Iframe received message:', event.data);
+            
+            try {
+                const { type, value, label } = event.data;
+                
+                if (type === 'SET_VALUE') {
+                    console.log('Received SET_VALUE from parent:', value);
+                    
+                    // Mark that we're receiving from parent
+                    isReceivingFromParent = true;
+                    
+                    // Show main content
+                    showMainContent();
+                    
+                    // Update our rotation with the received value
+                    if (value !== null && value !== undefined) {
+                        currentValue = parseInt(value) || 0;
+                        // Normalize to 0-359 range
+                        currentValue = ((currentValue % 360) + 360) % 360;
+                        applyRotation(currentValue);
+                        updateRotationDisplay(currentValue);
+                        updateStatus(`Received rotation from parent: ${currentValue}°`);
+                    } else {
+                        // Handle null/undefined values
+                        currentValue = 0;
+                        applyRotation(0);
+                        updateRotationDisplay(0);
+                        updateStatus('Received empty value from parent');
+                    }
+                    
+                    hasReceivedInitialValue = true;
+                    
+                    // Reset the flag immediately after updating UI
+                    isReceivingFromParent = false;
+                } else {
+                    console.log('Received message with type:', type);
+                }
+                
+            } catch (error) {
+                console.error('Failed to process message from parent:', error);
+                updateStatus('Error processing message from parent');
+            }
+        }
+        
+        // Calculate angle from center point
+        function getAngleFromCenter(centerX, centerY, pointX, pointY) {
+            const deltaX = pointX - centerX;
+            const deltaY = pointY - centerY;
+            let angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+            // Convert to 0-360 range
+            angle = (angle + 360) % 360;
+            return angle;
+        }
+        
+        // Handle mouse/touch events for rotation
+        function handleStart(e) {
+            e.preventDefault();
+            isDragging = true;
+            
+            const capybara = document.getElementById('capybara');
+            const rect = capybara.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            
+            startAngle = getAngleFromCenter(centerX, centerY, clientX, clientY);
+            startRotation = currentValue;
+            
+            capybara.style.cursor = 'grabbing';
+        }
+        
+        function handleMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const capybara = document.getElementById('capybara');
+            const rect = capybara.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            
+            const currentAngle = getAngleFromCenter(centerX, centerY, clientX, clientY);
+            const deltaAngle = currentAngle - startAngle;
+            
+            // Handle angle wrapping
+            let newRotation = startRotation + deltaAngle;
+            if (deltaAngle > 180) newRotation -= 360;
+            if (deltaAngle < -180) newRotation += 360;
+            
+            // Normalize to 0-359 range
+            newRotation = ((newRotation % 360) + 360) % 360;
+            
+            currentValue = Math.round(newRotation);
+            applyRotation(currentValue);
+            updateRotationDisplay(currentValue);
+            // Don't send update while dragging - only update the display
+        }
+        
+        function handleEnd(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            isDragging = false;
+            const capybara = document.getElementById('capybara');
+            capybara.style.cursor = 'grab';
+            
+            // Send the final value when dragging ends
+            sendValueUpdate(currentValue);
+        }
+        
+        // Update rotation from input
+        function updateFromInput() {
+            const input = document.getElementById('rotationInput');
+            let newValue = parseInt(input.value) || 0;
+            
+            // Normalize to 0-359 range
+            newValue = ((newValue % 360) + 360) % 360;
+            
+            currentValue = newValue;
+            applyRotation(newValue);
+            updateRotationDisplay(newValue);
+            sendValueUpdate(newValue);
+        }
+        
+        // Reset rotation to 0
+        function resetRotation() {
+            currentValue = 0;
+            applyRotation(0);
+            updateRotationDisplay(0);
+            sendValueUpdate(0);
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Capybara rotation iframe loaded - waiting for parent value...');
+            
+            // Listen for messages from parent
+            window.addEventListener('message', handleParentMessage);
+            
+            // Set up mouse events
+            const capybara = document.getElementById('capybara');
+            
+            // Mouse events
+            capybara.addEventListener('mousedown', handleStart);
+            document.addEventListener('mousemove', handleMove);
+            document.addEventListener('mouseup', handleEnd);
+            
+            // Touch events for mobile
+            capybara.addEventListener('touchstart', handleStart, { passive: false });
+            document.addEventListener('touchmove', handleMove, { passive: false });
+            document.addEventListener('touchend', handleEnd);
+            
+            // Notify parent that we're ready
+            setTimeout(() => {
+                try {
+                    window.parent.postMessage({
+                        type: 'IFRAME_READY',
+                        message: 'Capybara rotator is ready to receive values'
+                    }, '*');
+                } catch (error) {
+                    console.warn('Could not send ready message to parent:', error);
+                }
+            }, 100);
+        });
+    </script>
+</body>
+</html> 
