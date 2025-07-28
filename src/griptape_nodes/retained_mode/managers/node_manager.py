@@ -1923,6 +1923,8 @@ class NodeManager:
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
+                else:
+                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
