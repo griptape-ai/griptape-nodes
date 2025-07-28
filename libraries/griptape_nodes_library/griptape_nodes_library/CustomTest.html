@@ -29,6 +29,27 @@
             border-bottom: 2px solid #e0e0e0;
         }
         
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         .color-picker-container {
             text-align: center;
             margin-bottom: 20px;
@@ -72,57 +93,87 @@
             font-size: 12px;
             text-align: center;
         }
+        
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h2>Color Picker</h2>
-            <p>Select a color and see the hex code</p>
+        <!-- Loading state -->
+        <div id="loadingState" class="loading">
+            <div class="loading-spinner"></div>
+            <div>Waiting for parent value...</div>
         </div>
         
-        <div class="color-picker-container">
-            <input 
-                type="color" 
-                id="colorPicker" 
-                class="color-picker"
-                value="#ff0000"
-                onchange="updateColor()"
-            >
-            <input 
-                type="text" 
-                id="colorInput" 
-                class="color-input"
-                placeholder="#ff0000"
-                onchange="updateFromInput()"
-                oninput="updateFromInput()"
-            >
-            <div id="colorPreview" class="color-preview"></div>
-        </div>
-        
-        <div class="status" id="status">
-            <strong>Status:</strong> <span id="statusText">Ready</span>
+        <!-- Main content (hidden until we get a value) -->
+        <div id="mainContent" class="hidden">
+            <div class="header">
+                <h2>Color Picker</h2>
+                <p>Select a color and see the hex code</p>
+            </div>
+            
+            <div class="color-picker-container">
+                <input 
+                    type="color" 
+                    id="colorPicker" 
+                    class="color-picker"
+                    onchange="updateColor()"
+                >
+                <input 
+                    type="text" 
+                    id="colorInput" 
+                    class="color-input"
+                    placeholder="#ff0000"
+                    onchange="updateFromInput()"
+                    oninput="updateFromInput()"
+                >
+                <div id="colorPreview" class="color-preview"></div>
+            </div>
+            
+            <div class="status" id="status">
+                <strong>Status:</strong> <span id="statusText">Ready</span>
+            </div>
         </div>
     </div>
 
     <script>
-        let currentValue = null; // Start with null to indicate no value yet
+        let currentValue = null;
         let hasReceivedInitialValue = false;
+        let isReceivingFromParent = false;
         
         // Update status display
         function updateStatus(message) {
-            document.getElementById('statusText').textContent = message;
+            const statusElement = document.getElementById('statusText');
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
             console.log('Status:', message);
         }
         
         // Update color preview
         function updateColorPreview(color) {
             const preview = document.getElementById('colorPreview');
-            preview.style.backgroundColor = color || '#ffffff';
+            if (preview) {
+                preview.style.backgroundColor = color || '#ffffff';
+            }
+        }
+        
+        // Show main content and hide loading
+        function showMainContent() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
         }
         
         // Send value update to parent
         function sendValueUpdate(value) {
+            // Don't send if we're receiving from parent
+            if (isReceivingFromParent) {
+                console.log('Skipping send to parent - receiving from parent');
+                return;
+            }
+            
             try {
                 const message = {
                     type: 'VALUE_UPDATE',
@@ -140,11 +191,19 @@
         
         // Handle messages from parent
         function handleParentMessage(event) {
+            console.log('Iframe received message:', event.data);
+            
             try {
                 const { type, value, label } = event.data;
                 
                 if (type === 'SET_VALUE') {
                     console.log('Received SET_VALUE from parent:', value);
+                    
+                    // Mark that we're receiving from parent
+                    isReceivingFromParent = true;
+                    
+                    // Show main content
+                    showMainContent();
                     
                     // Update our color picker and input with the received value
                     if (value !== null && value !== undefined) {
@@ -153,7 +212,6 @@
                         document.getElementById('colorInput').value = value;
                         updateColorPreview(value);
                         updateStatus(`Received color from parent: ${value}`);
-                        hasReceivedInitialValue = true;
                     } else {
                         // Handle null/undefined values
                         currentValue = '';
@@ -161,8 +219,14 @@
                         document.getElementById('colorInput').value = '';
                         updateColorPreview('#ffffff');
                         updateStatus('Received empty value from parent');
-                        hasReceivedInitialValue = true;
                     }
+                    
+                    hasReceivedInitialValue = true;
+                    
+                    // Reset the flag immediately after updating UI
+                    isReceivingFromParent = false;
+                } else {
+                    console.log('Received message with type:', type);
                 }
                 
             } catch (error) {
@@ -209,21 +273,9 @@
             }
         }
         
-        // Initialize with default values if no parent value received
-        function initializeWithDefaults() {
-            if (!hasReceivedInitialValue) {
-                currentValue = '#ff0000';
-                document.getElementById('colorPicker').value = '#ff0000';
-                document.getElementById('colorInput').value = '#ff0000';
-                updateColorPreview('#ff0000');
-                updateStatus('Using default color (no parent value received)');
-            }
-        }
-        
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            updateStatus('Color picker ready - waiting for parent value...');
-            updateColorPreview('#ffffff'); // Start with white preview
+            console.log('Color picker iframe loaded - waiting for parent value...');
             
             // Listen for messages from parent
             window.addEventListener('message', handleParentMessage);
@@ -239,9 +291,6 @@
                     console.warn('Could not send ready message to parent:', error);
                 }
             }, 100);
-            
-            // Set defaults after a timeout if no parent value received
-            setTimeout(initializeWithDefaults, 1000);
         });
     </script>
 </body>
