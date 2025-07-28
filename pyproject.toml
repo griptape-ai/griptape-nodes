@@ -23,6 +23,7 @@ dependencies = [
   "mcp[ws]>=1.10.1",
   "binaryornot>=0.4.4",
   "pillow>=11.3.0",
+  "watchfiles>=1.1.0",
 ]
 
 [project.optional-dependencies]
