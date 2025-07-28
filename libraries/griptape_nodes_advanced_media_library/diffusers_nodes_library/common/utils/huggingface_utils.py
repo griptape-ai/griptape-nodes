@@ -3,8 +3,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import scan_cache_dir
-from huggingface_hub.constants import HF_HUB_CACHE
+from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
+from huggingface_hub.constants import HF_HUB_CACHE  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger("griptape_nodes")
 

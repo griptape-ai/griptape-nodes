@@ -19,6 +19,11 @@ class State:
         """Called when exiting the state."""
         return
 
+    @staticmethod
+    def on_event(context: Any, event: Any) -> type["State"] | None:  # noqa: ARG004
+        """Called on an event, which may trigger a State transition."""
+        return None
+
 
 class FSM[T]:
     def __init__(self, context: T) -> None:
@@ -50,6 +55,15 @@ class FSM[T]:
             new_state = None
         else:
             new_state = self._current_state.on_update(self._context)
+
+        if new_state is not None:
+            self.transition_state(new_state)
+
+    def handle_event(self, event: Any) -> None:
+        if self._current_state is None:
+            new_state = None
+        else:
+            new_state = self._current_state.on_event(self._context, event)
 
         if new_state is not None:
             self.transition_state(new_state)

@@ -6,7 +6,16 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.41.0",
     "engine_version": "0.41.0",
-    "tags": ["Griptape", "AI"]
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
+    "dependencies": {
+      "pip_dependencies": [
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1",
+        "json-repair>=0.46.1"
+      ]
+    }
   },
   "categories": [
     {
@@ -191,6 +200,14 @@
         "title": "Convert",
         "description": "Convert nodes",
         "icon": "Shuffle"
+      }
+    },
+    {
+      "json": {
+        "color": "border-cyan-500",
+        "title": "JSON",
+        "description": "JSON data manipulation nodes",
+        "icon": "Braces"
       }
     },
     {
@@ -596,6 +613,49 @@
       }
     },
     {
+      "class_name": "JsonExtractValue",
+      "file_path": "griptape_nodes_library/json/json_extract_value.py",
+      "metadata": {
+        "category": "json",
+        "description": "Extract a value from JSON using dot notation path",
+        "display_name": "JSON Extract Value",
+        "icon": "search",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "JsonInput",
+      "file_path": "griptape_nodes_library/json/json_input.py",
+      "metadata": {
+        "category": "json",
+        "description": "Create a JSON node from input data",
+        "display_name": "JSON Input",
+        "icon": "file-json"
+      }
+    },
+    {
+      "class_name": "DisplayJson",
+      "file_path": "griptape_nodes_library/json/display_json.py",
+      "metadata": {
+        "category": "json",
+        "description": "Display JSON data with automatic repair and formatting",
+        "display_name": "Display JSON",
+        "icon": "eye",
+        "group": "display"
+      }
+    },
+    {
+      "class_name": "JsonReplace",
+      "file_path": "griptape_nodes_library/json/json_replace.py",
+      "metadata": {
+        "category": "json",
+        "description": "Replace values in JSON using dot notation paths",
+        "display_name": "JSON Replace",
+        "icon": "edit",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToFloat",
       "file_path": "griptape_nodes_library/convert/to_float.py",
       "metadata": {
@@ -621,6 +681,15 @@
         "category": "convert",
         "description": "Converts incoming value to text",
         "display_name": "To Text"
+      }
+    },
+    {
+      "class_name": "ToJson",
+      "file_path": "griptape_nodes_library/convert/to_json.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts incoming value to JSON data",
+        "display_name": "To JSON"
       }
     },
     {
@@ -682,6 +751,28 @@
         "description": "Save dictionary data to a file",
         "display_name": "Save Dictionary",
         "icon": "file-down",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "DictGetValueByKey",
+      "file_path": "griptape_nodes_library/dict/get_dict_value.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Get a value from a dictionary by key with optional default handling",
+        "display_name": "Get Dictionary Value by Key",
+        "icon": "key",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "DictHasValueForKey",
+      "file_path": "griptape_nodes_library/dict/dict_has_value_for_key.py",
+      "metadata": {
+        "category": "dict",
+        "description": "Check if a dictionary has a value for a specific key",
+        "display_name": "Has Dictionary Value for Key",
+        "icon": "search-check",
         "group": "general"
       }
     },
@@ -853,6 +944,16 @@
       }
     },
     {
+      "class_name": "DisplayChannel",
+      "file_path": "griptape_nodes_library/image/display_channel.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display a channel from an image's color channels (red, green, blue, or alpha). Defaults to red channel. Outputs to 'output' parameter.",
+        "display_name": "Display Channel",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "GenerateImage",
       "file_path": "griptape_nodes_library/image/create_image.py",
       "metadata": {
@@ -894,13 +995,35 @@
       }
     },
     {
+      "class_name": "ImageBash",
+      "file_path": "griptape_nodes_library/image/image_bash.py",
+      "metadata": {
+        "category": "image",
+        "description": "Bash an image together with lots of other images",
+        "display_name": "Image Bash",
+        "icon": "images",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "MergeImages",
       "file_path": "griptape_nodes_library/image/merge_images.py",
       "metadata": {
         "category": "image",
         "description": "Merge images together in different layouts with grid options and dynamic image input list",
         "display_name": "Merge Images",
-        "group": "edit"
+        "group": "edit",
+        "icon": "squares-unite"
+      }
+    },
+    {
+      "class_name": "ApplyMask",
+      "file_path": "griptape_nodes_library/image/apply_mask.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a mask to an image.",
+        "display_name": "Apply Mask",
+        "group": "mask"
       }
     },
     {
@@ -1089,7 +1212,6 @@
         "group": "tasks"
       }
     },
-
     {
       "class_name": "SaveText",
       "file_path": "griptape_nodes_library/text/save_text.py",
@@ -1154,6 +1276,17 @@
         "display_name": "Text Input",
         "icon": "text-cursor",
         "group": "general"
+      }
+    },
+    {
+      "class_name": "FilePathValidator",
+      "file_path": "griptape_nodes_library/text/file_path_validator.py",
+      "metadata": {
+        "category": "text",
+        "description": "Validates that file paths exist and are readable Python files",
+        "display_name": "File Path Validator",
+        "icon": "file-check",
+        "group": "validation"
       }
     },
     {

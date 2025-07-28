@@ -2,76 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Development Commands
+## Development
+
+**Commands**
 
 All development commands use the Makefile:
 
-**Development workflow:**
-
 ```bash
-make install          # Install all dependencies (core + dev + test + docs)
-make run               # Run the engine locally (--no-update flag)
-make run/watch         # Run engine in watch mode for development
+make check # check linting/formatting/type errors
+make fix # fix autofixable errors
 ```
 
-**Testing:**
+**Iteration Loop**
 
-```bash
-make test              # Run all tests (unit, integration, workflow)
-make test/unit         # Run unit tests only
-make test/integration  # Run integration tests only
-make test/workflows    # Run workflow tests only
-```
+When developing, follow this iteration loop:
 
-**Code quality:**
+1. **Make the change**: make the changes required to implement a feature or fix a bug
+1. **Run checks**: run `make check` (or `make fix`) to see if any linting/formatting/type errors arose
+1. **Fix issues**: resolve all issues from previous step
+1. **Continue working**: continue to the next change
 
-```bash
-make check             # Run all checks (format, lint, types, spell)
-make lint              # Run ruff linting with auto-fix
-make format            # Format code with ruff + mdformat
-make fix               # Format + unsafe ruff fixes (excludes libraries/tests)
-```
+## Code Style Preferences
 
-**IMPORTANT - AI Agent Linting Workflow:**
+**Avoid Tuples For Return Values** - Tuples should be a last resort. When unavoidable, use NamedTuples for clarity. Prefer separate variables, class instances, or other data structures.
 
-Claude Code must follow this pattern to prevent lint debt accumulation:
+**Simple, Readable Logic Flow** - Prefer simple, easy-to-follow logic over complex nested expressions:
 
-1. **After completing a logical group of changes** (e.g., implementing a feature, fixing a bug)
-1. **Run lint check**: `make check`
-1. **Fix any issues found** before moving to next major task. Ask the user if they are comfortable running `make fix` (which will make all changes for them) or if they want to step through them one by one.
-1. **Always check before completing work sessions**
+- Use explicit if/else statements instead of ternary operators or nested conditionals
+- Put failure cases at the top so the success path flows naturally to the bottom
+- Avoid complex nested expressions - break them into clear, separate statements
+- Example: Instead of `value = func() if condition else None`, use:
+    ```python
+    if condition:
+        value = func()
+    else:
+        value = None
+    ```
 
-**Goal: Zero lint errors, always.** Never let lint issues accumulate for "later cleanup."
+**Avoid Lazy Imports** - Prefer importing modules at the top of the file as a standard practice:
 
-```bash
-# Check specific files/directories:
-uv run ruff check path/to/file.py
-uv run ruff check libraries/griptape_nodes_neo4j_library/
-
-# Auto-fix simple issues:
-uv run ruff check --fix path/to/file.py
-
-# Quick status check:
-uv run ruff check --statistics
-```
-
-**Documentation:**
-
-```bash
-make docs              # Build documentation with mkdocs
-make docs/serve        # Serve docs locally for development
-```
-
-**Version management:**
-
-```bash
-make version/patch     # Bump patch version
-make version/minor     # Bump minor version 
-make version/major     # Bump major version
-make version/publish   # Create and push git tags
-```
-
-Single test execution: `uv run pytest tests/path/to/test.py::test_function`
+- Put imports at the top of the file in the standard order whenever possible
+- Only use lazy imports (imports inside functions) as a last resort when necessary to avoid circular imports or other import-time issues
+- This improves readability, makes dependencies clear, and avoids most import-time problems
 
 ## Architecture Overview
 
@@ -139,64 +111,3 @@ The `RetainedMode` class in `retained_mode/retained_mode.py` provides the script
 - Default library: `libraries/griptape_nodes_library/`
 - Advanced library: `libraries/griptape_nodes_advanced_media_library/`
 - Custom libraries registered via config: `app_events.on_app_initialization_complete.libraries_to_register`
-
-**Bootstrap System:**
-
-- `bootstrap/register_libraries_script.py` handles library discovery and registration
-- Workflow runners in `bootstrap/workflow_runners/` for different execution contexts
-- Structure defined in `bootstrap/structure_config.yaml`
-
-## Profiling (Optional)
-
-**Installation (for advanced users):**
-
-```bash
-uv add griptape-nodes[profiling]  # Add profiling extra to existing project
-# OR
-uv sync --extra profiling         # Sync with profiling extra in development
-```
-
-**VS Code Tasks Available:**
-
-- **Find Griptape Nodes Process ID** - Finds running Griptape process PID
-- **Attach to Griptape Nodes App: CPU/Memory profiling** - Start profiling (4 variants: with/without sudo, CPU/memory)
-- **Stop/Detach Profiling** - Stop profiling sessions (6 variants: with/without sudo, CPU/memory/all)
-
-**Profiling Workflow:**
-
-1. Start Griptape Nodes in debug mode
-1. Run "Find Griptape Nodes Process ID" task to get PID
-1. Run attach profiling task (use sudo variants on Mac if needed)
-1. Exercise your application
-1. Run stop/detach task to save profile
-1. Profile files saved to `profiles/` with timestamps: `profile_attach_cpu_YYYYMMDD_HHMMSS.mojo`
-
-**Key Points:**
-
-- Austin overwrites existing files - timestamped filenames prevent data loss
-- Use detach tasks rather than killing main program for complete data
-- Sudo variants required on some systems (especially Mac) for process attachment
-
-# important-instruction-reminders
-
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User.
-
-# Code Style Preferences
-
-**Avoid tuples for return values** - Tuples should be a last resort. When unavoidable, use NamedTuples for clarity. Prefer separate variables, class instances, or other data structures.
-
-**Simple, readable logic flow** - Prefer simple, easy-to-follow logic over complex nested expressions:
-
-- Use explicit if/else statements instead of ternary operators or nested conditionals
-- Put failure cases at the top so the success path flows naturally to the bottom
-- Avoid complex nested expressions - break them into clear, separate statements
-- Example: Instead of `value = func() if condition else None`, use:
-    ```python
-    if condition:
-        value = func()
-    else:
-        value = None
-    ```

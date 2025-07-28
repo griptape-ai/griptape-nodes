@@ -39,7 +39,7 @@ class OllamaPrompt(BasePrompt):
         self.add_parameter(Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip=""))
 
     def get_model_list(self) -> None:
-        import ollama
+        import ollama  # pyright: ignore[reportMissingImports]
 
         self.models = [model["model"] for model in ollama.list()["models"]]
 

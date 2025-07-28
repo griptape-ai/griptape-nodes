@@ -57,7 +57,8 @@
         "matplotlib>=3.10.3",
         "triton-windows<3.4",
         "nvidia-cuda-nvcc-cu12",
-        "nvidia-cuda-runtime-cu12"
+        "nvidia-cuda-runtime-cu12",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1"
       ],
       "pip_install_flags": [
         "--preview",

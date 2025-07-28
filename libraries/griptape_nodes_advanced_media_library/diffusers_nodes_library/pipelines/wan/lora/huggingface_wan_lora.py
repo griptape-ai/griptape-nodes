@@ -1,7 +1,7 @@
 import logging
 from abc import abstractmethod
 
-import huggingface_hub
+import huggingface_hub  # pyright: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
