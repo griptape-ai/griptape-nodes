@@ -177,6 +177,11 @@ class WanPipelineParameters:
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
+        # Clear cache for models with incompatible VAE architectures
+        repo_id, _ = self.get_repo_revision()
+        if "5B" in repo_id:  # 5B models have different VAE architecture
+            from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
+            model_cache.from_pretrained.cache_clear()
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
