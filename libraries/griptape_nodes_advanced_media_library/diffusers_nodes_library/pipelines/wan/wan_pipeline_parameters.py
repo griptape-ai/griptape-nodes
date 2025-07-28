@@ -170,6 +170,10 @@ class WanPipelineParameters:
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self._seed_parameter.after_value_set(parameter, value)
         self._update_dimensions_for_model(parameter, value)
+        # Clear model cache when switching models to avoid VAE architecture mismatches
+        if parameter.name == "model":
+            from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
+            model_cache.from_pretrained.cache_clear()
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
