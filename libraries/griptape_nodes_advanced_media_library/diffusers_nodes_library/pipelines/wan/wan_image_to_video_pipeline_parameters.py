@@ -33,6 +33,7 @@ class WanImageToVideoPipelineParameters:
             repo_ids=[
                 "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
                 "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
+                "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
             ],
         )
         self._seed_parameter = SeedParameter(node)
@@ -223,6 +224,8 @@ class WanImageToVideoPipelineParameters:
                 return 832, 480  # I2V 480P model - optimized for consumer GPUs
             case "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers":
                 return 1280, 720  # I2V 720P model - higher resolution
+            case "Wan-AI/Wan2.2-I2V-A14B-Diffusers":
+                return 1280, 720  # I2V 720P model - higher resolution
             case _:
                 msg = f"Unsupported model repo_id: {repo_id}."
                 raise ValueError(msg)
@@ -263,6 +266,8 @@ class WanImageToVideoPipelineParameters:
                 max_area = 832 * 480  # I2V 480P model
             case "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers":
                 max_area = 1280 * 720  # I2V 720P model
+            case "Wan-AI/Wan2.2-I2V-A14B-Diffusers":
+                max_area = 480 * 832
             case _:
                 msg = f"Unsupported model repo_id: {repo_id}."
                 raise ValueError(msg)
