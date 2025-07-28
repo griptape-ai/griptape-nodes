@@ -13,6 +13,9 @@ from rich.console import Console
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
+    CreateFileRequest,
+    CreateFileResultFailure,
+    CreateFileResultSuccess,
     FileSystemEntry,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
@@ -23,6 +26,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
+    RenameFileRequest,
+    RenameFileResultFailure,
+    RenameFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -57,6 +63,14 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=ReadFileRequest, callback=self.on_read_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=CreateFileRequest, callback=self.on_create_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=RenameFileRequest, callback=self.on_rename_file_request
             )
 
     def _get_workspace_path(self) -> Path:
@@ -703,3 +717,97 @@ class OSManager:
             logger.error("Attempted to clean up old files from %s, but no files could be deleted.")
 
         return removed_count > 0
+
+    def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:
+        """Handle a request to create a file or directory."""
+        try:
+            # Get the full path using the new method
+            full_path_str = request.get_full_path()
+
+            # Determine if path is absolute (not constrained to workspace)
+            is_absolute = Path(full_path_str).is_absolute()
+
+            # If workspace_only is True and path is absolute, it's outside workspace
+            if request.workspace_only and is_absolute:
+                msg = f"Absolute path is outside workspace: {full_path_str}"
+                logger.error(msg)
+                return CreateFileResultFailure()
+
+            # Resolve path - if absolute, use as-is; if relative, align to workspace
+            if is_absolute:
+                file_path = Path(full_path_str).resolve()
+            else:
+                file_path = (self._get_workspace_path() / full_path_str).resolve()
+
+            # Check if it already exists - warn but treat as success
+            if file_path.exists():
+                msg = f"Path already exists: {file_path}"
+                logger.warning(msg)
+                return CreateFileResultSuccess(created_path=str(file_path))
+
+            # Create parent directories if needed
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if request.is_directory:
+                file_path.mkdir()
+                logger.info("Created directory: %s", file_path)
+            # Create file with optional content
+            elif request.content is not None:
+                with file_path.open("w", encoding=request.encoding) as f:
+                    f.write(request.content)
+                logger.info("Created file with content: %s", file_path)
+            else:
+                file_path.touch()
+                logger.info("Created empty file: %s", file_path)
+
+            return CreateFileResultSuccess(created_path=str(file_path))
+
+        except Exception as e:
+            path_info = request.get_full_path() if hasattr(request, "get_full_path") else str(request.path)
+            msg = f"Failed to create {'directory' if request.is_directory else 'file'} at {path_info}: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure()
+
+    def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:
+        """Handle a request to rename a file or directory."""
+        try:
+            # Resolve and validate old path
+            old_path = self._resolve_file_path(request.old_path, workspace_only=request.workspace_only is True)
+
+            # Resolve and validate new path
+            new_path = self._resolve_file_path(request.new_path, workspace_only=request.workspace_only is True)
+
+            # Check if old path exists
+            if not old_path.exists():
+                msg = f"Source path does not exist: {old_path}"
+                logger.error(msg)
+                return RenameFileResultFailure()
+
+            # Check if new path already exists
+            if new_path.exists():
+                msg = f"Destination path already exists: {new_path}"
+                logger.error(msg)
+                return RenameFileResultFailure()
+
+            # Check workspace constraints for both paths
+            is_old_in_workspace, _ = self._validate_workspace_path(old_path)
+            is_new_in_workspace, _ = self._validate_workspace_path(new_path)
+
+            if request.workspace_only and (not is_old_in_workspace or not is_new_in_workspace):
+                msg = f"One or both paths are outside workspace: {old_path} -> {new_path}"
+                logger.error(msg)
+                return RenameFileResultFailure()
+
+            # Create parent directories for new path if needed
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Perform the rename operation
+            old_path.rename(new_path)
+            logger.info("Renamed: %s -> %s", old_path, new_path)
+
+            return RenameFileResultSuccess(old_path=str(old_path), new_path=str(new_path))
+
+        except Exception as e:
+            msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure()

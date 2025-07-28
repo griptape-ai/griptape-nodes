@@ -1837,7 +1837,7 @@ class NodeManager:
             validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
 
-    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         node_name = request.node_name
         node = None
 
@@ -1923,6 +1923,8 @@ class NodeManager:
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
+                else:
+                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
