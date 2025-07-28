@@ -149,7 +149,9 @@ class CreateFileRequest(RequestPayload):
     implementing file creation functionality.
 
     Args:
-        path: Path where the file/directory should be created
+        path: Path where the file/directory should be created (legacy, use directory_path + name instead)
+        directory_path: Directory where to create the file/directory (mutually exclusive with path)
+        name: Name of the file/directory to create (mutually exclusive with path)
         is_directory: True to create a directory, False for a file
         content: Initial content for files (optional)
         encoding: Text encoding for file content (default: 'utf-8')
@@ -158,11 +160,24 @@ class CreateFileRequest(RequestPayload):
     Results: CreateFileResultSuccess | CreateFileResultFailure
     """
 
-    path: str
+    path: str | None = None
+    directory_path: str | None = None
+    name: str | None = None
     is_directory: bool = False
     content: str | None = None
     encoding: str = "utf-8"
     workspace_only: bool | None = True
+
+    def get_full_path(self) -> str:
+        """Get the full path, constructing from directory_path + name if path is not provided."""
+        if self.path is not None:
+            return self.path
+        if self.directory_path is not None and self.name is not None:
+            from pathlib import Path
+
+            return str(Path(self.directory_path) / self.name)
+        msg = "Either 'path' or both 'directory_path' and 'name' must be provided"
+        raise ValueError(msg)
 
 
 @dataclass
