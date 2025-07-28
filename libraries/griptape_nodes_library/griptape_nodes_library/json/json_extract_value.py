@@ -63,7 +63,8 @@ class JsonExtractValue(DataNode):
 
         for part in path_parts:
             if not isinstance(current, (dict, list)):
-                return default
+                msg = f"JsonExtractValue: Cannot extract from path '{path}' - expected dict or list at path segment, but got {type(current).__name__}: {current!r}"
+                raise TypeError(msg)
 
             # Check if this part has array indexing
             array_match = re.match(r"^(.+)\[(\d+)\]$", part)
@@ -97,6 +98,17 @@ class JsonExtractValue(DataNode):
         """Perform the JSON extraction and set the output value."""
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
+
+        # Parse JSON string if needed
+        if isinstance(json_data, str):
+            try:
+                json_data = json.loads(json_data)
+            except json.JSONDecodeError as e:
+                msg = f"JsonExtractValue: Invalid JSON string provided. Failed to parse JSON: {e}. Input was: {json_data[:200]!r}"
+                raise ValueError(msg) from e
+            except TypeError as e:
+                msg = f"JsonExtractValue: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
+                raise ValueError(msg) from e
 
         # Extract the value
         extracted_value = self._extract_value(json_data, path)
