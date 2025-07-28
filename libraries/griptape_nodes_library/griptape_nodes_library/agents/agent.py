@@ -206,7 +206,7 @@ class Agent(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="Custom component for fotmob integration.",
-                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CustomTest.html"}
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CustomTest.html"},
             )
         )
 

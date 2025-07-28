@@ -729,13 +729,14 @@ class LibraryManager:
 
         # Load the advanced library module if specified
         advanced_library_instance = None
-        
+
         # Register custom components from this library
         try:
             import importlib.util
+
             spec = importlib.util.spec_from_file_location(
-                "custom_component_manager", 
-                base_dir / "griptape_nodes_library" / "utils" / "custom_component_manager.py"
+                "custom_component_manager",
+                base_dir / "griptape_nodes_library" / "utils" / "custom_component_manager.py",
             )
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
