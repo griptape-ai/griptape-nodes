@@ -1486,5 +1486,12 @@
     "workflows/templates/compare_prompts.py",
     "workflows/templates/photography_team.py"
   ],
+  "custom_components": [
+    {
+      "name": "CustomTest",
+      "file_path": "griptape_nodes_library/CustomTest.html",
+      "description": "A test custom component for iframe communication"
+    }
+  ],
   "is_default_library": true
 }

@@ -200,6 +200,16 @@ class Agent(ControlNode):
             )
         )
 
+        self.add_parameter(
+            Parameter(
+                name="fotmob",
+                type="Custom",
+                default_value="",
+                tooltip="Custom component for fotmob integration.",
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CustomTest.html"}
+            )
+        )
+
         # Group for logging information.
         with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
