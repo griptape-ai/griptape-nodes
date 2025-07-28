@@ -721,21 +721,29 @@ class OSManager:
     def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:
         """Handle a request to create a file or directory."""
         try:
-            # Resolve and validate path
-            file_path = self._resolve_file_path(request.path, workspace_only=request.workspace_only is True)
+            # Get the full path using the new method
+            full_path_str = request.get_full_path()
 
-            # Check if it already exists
+            # Determine if path is absolute (not constrained to workspace)
+            is_absolute = Path(full_path_str).is_absolute()
+
+            # If workspace_only is True and path is absolute, it's outside workspace
+            if request.workspace_only and is_absolute:
+                msg = f"Absolute path is outside workspace: {full_path_str}"
+                logger.error(msg)
+                return CreateFileResultFailure()
+
+            # Resolve path - if absolute, use as-is; if relative, align to workspace
+            if is_absolute:
+                file_path = Path(full_path_str).resolve()
+            else:
+                file_path = (self._get_workspace_path() / full_path_str).resolve()
+
+            # Check if it already exists - warn but treat as success
             if file_path.exists():
                 msg = f"Path already exists: {file_path}"
-                logger.error(msg)
-                return CreateFileResultFailure()
-
-            # Check workspace constraints
-            is_workspace_path, _ = self._validate_workspace_path(file_path)
-            if request.workspace_only and not is_workspace_path:
-                msg = f"Path is outside workspace: {file_path}"
-                logger.error(msg)
-                return CreateFileResultFailure()
+                logger.warning(msg)
+                return CreateFileResultSuccess(created_path=str(file_path))
 
             # Create parent directories if needed
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -755,7 +763,8 @@ class OSManager:
             return CreateFileResultSuccess(created_path=str(file_path))
 
         except Exception as e:
-            msg = f"Failed to create {'directory' if request.is_directory else 'file'} at {request.path}: {e}"
+            path_info = request.get_full_path() if hasattr(request, "get_full_path") else str(request.path)
+            msg = f"Failed to create {'directory' if request.is_directory else 'file'} at {path_info}: {e}"
             logger.error(msg)
             return CreateFileResultFailure()
 
