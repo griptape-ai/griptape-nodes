@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from json_repair import repair_json
@@ -50,25 +51,29 @@ class ToJson(DataNode):
 
         input_value = params.get("from", {})
 
-        # Convert to JSON using json-repair
+        # Convert to JSON string
         if isinstance(input_value, dict):
-            # If it's already a dict, use it as is
-            result = input_value
-        elif isinstance(input_value, str):
-            # If it's a string, try to repair and parse it
+            # Convert dict to JSON string
             try:
-                result = repair_json(input_value)
-            except Exception:
-                # If repair fails, try to parse as regular JSON
-                import json
-
-                result = json.loads(input_value)
+                result = json.dumps(input_value, ensure_ascii=False)
+            except (TypeError, ValueError) as e:
+                msg = f"ToJson: Failed to serialize dictionary to JSON string: {e}. Input: {input_value!r}"
+                raise ValueError(msg) from e
+        elif isinstance(input_value, str):
+            # If it's a string, try to repair and parse it, then convert back to string
+            try:
+                parsed_data = repair_json(input_value)
+                result = json.dumps(parsed_data, ensure_ascii=False)
+            except Exception as e:
+                msg = f"ToJson: Failed to repair and convert JSON string: {e}. Input: {input_value[:200]!r}"
+                raise ValueError(msg) from e
         else:
             # For other types, convert to string and try to repair
             try:
-                result = repair_json(str(input_value))
-            except Exception:
-                # Fallback to empty dict
-                result = {}
+                parsed_data = repair_json(str(input_value))
+                result = json.dumps(parsed_data, ensure_ascii=False)
+            except Exception as e:
+                msg = f"ToJson: Failed to convert input to JSON string: {e}. Input type: {type(input_value)}, value: {input_value!r}"
+                raise ValueError(msg) from e
 
         self.parameter_output_values["output"] = result
