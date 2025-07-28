@@ -30,11 +30,7 @@ class WanImageToVideoPipelineParameters:
         self._node = node
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(
             node,
-            repo_ids=[
-                "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
-                "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
-                "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
-            ],
+            repo_ids=["Wan-AI/Wan2.1-I2V-14B-480P-Diffusers", "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"],
         )
         self._seed_parameter = SeedParameter(node)
 

@@ -78,8 +78,6 @@ class WanPipeline(ControlNode):
                 subfolder="vae",
                 torch_dtype=torch.float32,
                 local_files_only=True,
-                low_cpu_mem_usage=False,
-                ignore_mismatched_sizes=True,
             )
 
             pipe = model_cache.from_pretrained(

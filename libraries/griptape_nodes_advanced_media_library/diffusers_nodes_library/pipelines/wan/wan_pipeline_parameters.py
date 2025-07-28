@@ -26,7 +26,6 @@ class WanPipelineParameters:
                 "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
                 "Wan-AI/Wan2.1-T2V-14B-Diffusers",
                 "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-                "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
             ],
         )
         self._seed_parameter = SeedParameter(node)
