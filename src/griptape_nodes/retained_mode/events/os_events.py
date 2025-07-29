@@ -138,3 +138,93 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File reading failed. Common causes: file not found, permission denied, encoding error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileRequest(RequestPayload):
+    """Create a new file or directory.
+
+    Use when: Creating files/directories through file picker,
+    implementing file creation functionality.
+
+    Args:
+        path: Path where the file/directory should be created (legacy, use directory_path + name instead)
+        directory_path: Directory where to create the file/directory (mutually exclusive with path)
+        name: Name of the file/directory to create (mutually exclusive with path)
+        is_directory: True to create a directory, False for a file
+        content: Initial content for files (optional)
+        encoding: Text encoding for file content (default: 'utf-8')
+        workspace_only: If True, constrain to workspace directory
+
+    Results: CreateFileResultSuccess | CreateFileResultFailure
+    """
+
+    path: str | None = None
+    directory_path: str | None = None
+    name: str | None = None
+    is_directory: bool = False
+    content: str | None = None
+    encoding: str = "utf-8"
+    workspace_only: bool | None = True
+
+    def get_full_path(self) -> str:
+        """Get the full path, constructing from directory_path + name if path is not provided."""
+        if self.path is not None:
+            return self.path
+        if self.directory_path is not None and self.name is not None:
+            from pathlib import Path
+
+            return str(Path(self.directory_path) / self.name)
+        msg = "Either 'path' or both 'directory_path' and 'name' must be provided"
+        raise ValueError(msg)
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory created successfully."""
+
+    created_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory creation failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileRequest(RequestPayload):
+    """Rename a file or directory.
+
+    Use when: Renaming files/directories through file picker,
+    implementing file rename functionality.
+
+    Args:
+        old_path: Current path of the file/directory to rename
+        new_path: New path for the file/directory
+        workspace_only: If True, constrain to workspace directory
+
+    Results: RenameFileResultSuccess | RenameFileResultFailure
+    """
+
+    old_path: str
+    new_path: str
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory renamed successfully."""
+
+    old_path: str
+    new_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory rename failed."""
