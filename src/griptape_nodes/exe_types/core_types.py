@@ -410,7 +410,7 @@ class ParameterMessage(BaseNodeElement):
         ui_options: dict | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(element_type=ParameterMessage.__name__, **kwargs)
         self._variant = variant
         self._title = title
         self._value = value
@@ -684,7 +684,7 @@ class Parameter(BaseNodeElement):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
         if not element_type:
-            element_type = BaseNodeElement.__name__
+            element_type = self.__class__.__name__
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
         self.tooltip = tooltip
