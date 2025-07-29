@@ -245,7 +245,7 @@ class BaseNodeElement:
             "node_name": self._node_context.name,
         }
         # If ui_options changed, send the complete ui_options from to_dict()
-        if "ui_options" in self._changes:
+        if "ui_options" in self._changes or "variant" in self._changes or "button_link" in self._changes or "button_text" in self._changes:
             complete_dict = self.to_dict()
             if "ui_options" in complete_dict:
                 self._changes["ui_options"] = complete_dict["ui_options"]
