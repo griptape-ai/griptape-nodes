@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 from json_repair import repair_json
@@ -37,15 +36,15 @@ class DisplayJson(DataNode):
             # If it's a string, try to repair and parse it
             try:
                 result = repair_json(json_data)
-            except Exception:
-                # If repair fails, try to parse as regular JSON
-                result = json.loads(json_data)
+            except Exception as e:
+                msg = f"DisplayJson: Failed to repair JSON string: {e}. Input: {json_data[:200]!r}"
+                raise ValueError(msg) from e
         else:
             # For other types, convert to string and try to repair
             try:
                 result = repair_json(str(json_data))
-            except Exception:
-                # Fallback to empty dict
-                result = {}
+            except Exception as e:
+                msg = f"DisplayJson: Failed to convert input to JSON: {e}. Input type: {type(json_data)}, value: {json_data!r}"
+                raise ValueError(msg) from e
 
         self.parameter_output_values["json"] = result
