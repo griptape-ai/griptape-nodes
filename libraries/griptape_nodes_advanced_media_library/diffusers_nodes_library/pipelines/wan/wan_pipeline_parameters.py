@@ -145,7 +145,7 @@ class WanPipelineParameters:
             case "Wan-AI/Wan2.2-T2V-A14B-Diffusers":
                 return 1280, 720  # 14B model - same resolution but higher quality
             case "Wan-AI/Wan2.2-TI2V-5B-Diffusers":
-                return 1280, 704  # 5B model - same resolution but higher quality
+                return 1280, 704  # 5B model - 720p resolution but lighter computational requirements.
             case _:
                 msg = f"Unsupported model repo_id: {repo_id}."
                 raise ValueError(msg)
