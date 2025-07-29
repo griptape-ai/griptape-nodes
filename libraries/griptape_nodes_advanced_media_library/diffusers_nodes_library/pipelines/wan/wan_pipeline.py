@@ -108,6 +108,8 @@ class WanPipeline(ControlNode):
         # Inference
         # -------------------------------------------------------------
         num_inference_steps = self.pipe_params.get_num_inference_steps()
+        # compile for faster inference
+        pipe.transformer = torch.compile(pipe.transformer)
 
         def callback_on_step_end(
             pipe: diffusers.WanPipeline,

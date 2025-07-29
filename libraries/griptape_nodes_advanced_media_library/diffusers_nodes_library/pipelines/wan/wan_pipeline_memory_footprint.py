@@ -47,6 +47,10 @@ def optimize_wan_pipeline_memory_footprint(
         if model_memory <= free_memory:
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
+            pipe.transformer.enable_layerwise_casting(
+                storage_dtype=torch.float8_e4m3fn,
+                compute_dtype=torch.bfloat16
+            )
             pipe.to(device)
         logger.warning("Insufficient memory on %s for Pipeline.", device)
     elif device.type == "mps":
