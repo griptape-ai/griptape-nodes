@@ -27,9 +27,11 @@ STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
-STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
+STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "ERROR").lower()
 
 logger = logging.getLogger("griptape_nodes_api")
+logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+
 
 # Global event queue - initialized as None and set when starting the API
 event_queue: Queue | None = None
@@ -166,10 +168,6 @@ def start_api(static_directory: Path, queue: Queue) -> None:
     global event_queue, static_dir  # noqa: PLW0603
     event_queue = queue
     static_dir = static_directory
-
-    logging.getLogger("uvicorn").addHandler(
-        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
-    )
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
