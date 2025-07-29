@@ -1498,9 +1498,9 @@
       "description": "A test custom component for iframe communication"
     },
     {
-      "name": "ImageCropTest",
-      "path": "griptape_nodes_library/ImageCropTest.html",
-      "description": "A test custom component for image cropping"
+      "name": "SimpleTextInput",
+      "path": "griptape_nodes_library/SimpleTextInput.html",
+      "description": "A test custom component for simple text input"
     }
   ],
   "advanced_library_path": "griptape_nodes_library/advanced_library.py",

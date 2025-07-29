@@ -223,10 +223,10 @@ class Agent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="image_crop",
-                type="ImageUrlArtifact",
+                type="str",
                 default_value="",
                 tooltip="Custom component for image cropping.",
-                ui_options={"custom_src": "http://localhost:8124/static/custom_components/ImageCropTest.html"},
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/SimpleTextInput.html"},
             )
         )
 
