@@ -228,3 +228,38 @@ class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File/directory rename failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class OpenSystemExplorerRequest(RequestPayload):
+    """Open the system file explorer at a given path.
+
+    Use when: Opening file explorer to show files/folders to users,
+    providing quick access to file system locations, implementing
+    "Show in Finder/Explorer" functionality.
+
+    Args:
+        path: Path to the directory or file to open in system explorer
+        workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
+                        If None, workspace constraints don't apply (e.g., cloud environments).
+
+    Results: OpenSystemExplorerResultSuccess | OpenSystemExplorerResultFailure (path not found, permission denied)
+    """
+
+    path: str
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class OpenSystemExplorerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """System file explorer opened successfully."""
+
+    opened_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class OpenSystemExplorerResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """System file explorer opening failed. Common causes: path not found, permission denied, unsupported platform."""

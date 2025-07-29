@@ -23,6 +23,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     OpenAssociatedFileRequest,
     OpenAssociatedFileResultFailure,
     OpenAssociatedFileResultSuccess,
+    OpenSystemExplorerRequest,
+    OpenSystemExplorerResultFailure,
+    OpenSystemExplorerResultSuccess,
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
@@ -71,6 +74,9 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=RenameFileRequest, callback=self.on_rename_file_request
+            )
+            event_manager.assign_manager_to_request_type(
+                request_type=OpenSystemExplorerRequest, callback=self.on_open_system_explorer_request
             )
 
     def _get_workspace_path(self) -> Path:
@@ -811,3 +817,82 @@ class OSManager:
             msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
             logger.error(msg)
             return RenameFileResultFailure()
+
+    def on_open_system_explorer_request(self, request: OpenSystemExplorerRequest) -> ResultPayload:
+        """Handle a request to open the system file explorer at a given path."""
+        try:
+            # Resolve the path - if workspace_only is True, use workspace fallback, otherwise allow any path
+            workspace_only = request.workspace_only is True
+            path = self._resolve_file_path(request.path, workspace_only=workspace_only)
+
+            # Check if path exists
+            if not path.exists():
+                msg = f"Path does not exist: {path}"
+                logger.error(msg)
+                return OpenSystemExplorerResultFailure()
+
+            # Check workspace constraints only if workspace_only is True
+            if request.workspace_only is True:
+                is_workspace_path, _ = self._validate_workspace_path(path)
+                if not is_workspace_path:
+                    msg = f"Path is outside workspace: {path}"
+                    logger.error(msg)
+                    return OpenSystemExplorerResultFailure()
+
+            logger.info("Attempting to open system explorer at: %s on platform: %s", path, sys.platform)
+
+            try:
+                if self.is_windows():
+                    # On Windows, use explorer.exe
+                    subprocess.run(  # noqa: S603
+                        ["explorer", str(path)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    logger.info("Opened system explorer on Windows: %s", path)
+                elif self.is_mac():
+                    # On macOS, use open command
+                    subprocess.run(  # noqa: S603
+                        ["/usr/bin/open", str(path)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    logger.info("Opened system explorer on macOS: %s", path)
+                elif self.is_linux():
+                    # On Linux, use xdg-open
+                    xdg_paths = ["/usr/bin/xdg-open", "/bin/xdg-open", "/usr/local/bin/xdg-open"]
+                    xdg_path = next((p for p in xdg_paths if Path(p).exists()), None)
+
+                    if not xdg_path:
+                        logger.info("xdg-open not found in standard locations")
+                        return OpenSystemExplorerResultFailure()
+
+                    subprocess.run(  # noqa: S603
+                        [xdg_path, str(path)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    logger.info("Opened system explorer on Linux: %s", path)
+                else:
+                    details = f"Unsupported platform: '{sys.platform}'"
+                    logger.info(details)
+                    return OpenSystemExplorerResultFailure()
+
+                return OpenSystemExplorerResultSuccess(opened_path=str(path))
+
+            except subprocess.CalledProcessError as e:
+                details = f"Failed to open system explorer: {e}"
+                logger.info(details)
+                return OpenSystemExplorerResultFailure()
+            except FileNotFoundError as e:
+                details = f"System explorer command not found: {e}"
+                logger.info(details)
+                return OpenSystemExplorerResultFailure()
+
+        except Exception as e:
+            msg = f"Failed to open system explorer at {request.path}: {e}"
+            logger.error(msg)
+            return OpenSystemExplorerResultFailure()
