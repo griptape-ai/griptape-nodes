@@ -23,16 +23,17 @@ class FileSystemEntry:
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileRequest(RequestPayload):
-    """Open a file using the operating system's associated application.
+    """Open a file or directory using the operating system's associated application.
 
     Use when: Opening generated files, launching external applications,
-    providing file viewing capabilities, implementing file associations.
+    providing file viewing capabilities, implementing file associations,
+    opening folders in system explorer.
 
     Args:
-        path_to_file: Path to the file to open (mutually exclusive with file_entry)
+        path_to_file: Path to the file or directory to open (mutually exclusive with file_entry)
         file_entry: FileSystemEntry object from directory listing (mutually exclusive with path_to_file)
 
-    Results: OpenAssociatedFileResultSuccess | OpenAssociatedFileResultFailure (file not found, no association)
+    Results: OpenAssociatedFileResultSuccess | OpenAssociatedFileResultFailure (path not found, no association)
     """
 
     path_to_file: str | None = None
@@ -42,13 +43,13 @@ class OpenAssociatedFileRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """File opened successfully with associated application."""
+    """File or directory opened successfully with associated application."""
 
 
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File opening failed. Common causes: file not found, no associated application, permission denied."""
+    """File or directory opening failed. Common causes: path not found, no associated application, permission denied."""
 
 
 @dataclass
