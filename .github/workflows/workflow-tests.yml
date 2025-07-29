@@ -32,6 +32,8 @@ jobs:
     runs-on: windows-latest
     env:
       GT_CLOUD_API_KEY: ${{ secrets.GT_CLOUD_API_KEY }}
+      # https://github.com/Textualize/rich/issues/212#issuecomment-671399010
+      PYTHONIOENCODING: utf-8
     strategy:
       fail-fast: false
       matrix:

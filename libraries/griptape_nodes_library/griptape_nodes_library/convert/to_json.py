@@ -50,25 +50,23 @@ class ToJson(DataNode):
 
         input_value = params.get("from", {})
 
-        # Convert to JSON using json-repair
+        # Convert to normalized JSON
         if isinstance(input_value, dict):
-            # If it's already a dict, use it as is
+            # Dict stays as dict - already proper JSON structure
             result = input_value
         elif isinstance(input_value, str):
-            # If it's a string, try to repair and parse it
+            # Parse JSON string to object for better downstream handling
             try:
                 result = repair_json(input_value)
-            except Exception:
-                # If repair fails, try to parse as regular JSON
-                import json
-
-                result = json.loads(input_value)
+            except Exception as e:
+                msg = f"ToJson: Failed to repair and parse JSON string: {e}. Input: {input_value[:200]!r}"
+                raise ValueError(msg) from e
         else:
             # For other types, convert to string and try to repair
             try:
                 result = repair_json(str(input_value))
-            except Exception:
-                # Fallback to empty dict
-                result = {}
+            except Exception as e:
+                msg = f"ToJson: Failed to convert input to JSON object: {e}. Input type: {type(input_value)}, value: {input_value!r}"
+                raise ValueError(msg) from e
 
         self.parameter_output_values["output"] = result

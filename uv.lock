@@ -1,6 +1,6 @@
 version = 1
 revision = 2
-requires-python = ">=3.12.0, <3.13"
+requires-python = "==3.12.*"
 
 [[package]]
 name = "annotated-types"
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.42.0"
+version = "0.43.1"
 source = { editable = "." }
 dependencies = [
     { name = "binaryornot" },

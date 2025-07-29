@@ -34,9 +34,6 @@ version/publish: ## Create and push git tags.
 	@git tag v$$(make version/get)
 	@git tag stable -f
 	@git push -f --tags
-	# Push to a release branch (e.g. release/v0.34).
-	# Create branch if it doesn't exist locally, otherwise checkout existing branch
-	@git checkout -b release/v$$(make version/get | awk -F. '{print $$1 "." $$2}') || git checkout release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	@git push -u origin release/v$$(make version/get | awk -F. '{print $$1 "." $$2}')
 	
 .PHONY: run

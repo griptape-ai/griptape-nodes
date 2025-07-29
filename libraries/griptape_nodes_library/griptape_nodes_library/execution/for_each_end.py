@@ -308,14 +308,19 @@ class ForEachEndNode(EndLoopNode):
         )
 
         # 4. Default control flow: Start → End: exec_out → add_item (default "happy path")
-        GriptapeNodes.handle_request(
-            CreateConnectionRequest(
-                source_node_name=start_node.name,
-                source_parameter_name="exec_out",
-                target_node_name=self.name,
-                target_parameter_name="add_item",
+        # Only create this connection if the exec_out parameter doesn't already have a connection
+        connections = GriptapeNodes.FlowManager().get_connections()
+        existing_connections = connections.outgoing_index.get(start_node.name, {}).get("exec_out", [])
+
+        if not existing_connections:
+            GriptapeNodes.handle_request(
+                CreateConnectionRequest(
+                    source_node_name=start_node.name,
+                    source_parameter_name="exec_out",
+                    target_node_name=self.name,
+                    target_parameter_name="add_item",
+                )
             )
-        )
 
     def _remove_hidden_signal_connections(self, start_node: BaseNode) -> None:
         """Remove all hidden signal connections when the main tethering connection is removed.
