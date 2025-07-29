@@ -244,6 +244,12 @@ class BaseNodeElement:
             "name": self.name,
             "node_name": self._node_context.name,
         }
+        # If ui_options changed, send the complete ui_options from to_dict()
+        if "ui_options" in self._changes:
+            complete_dict = self.to_dict()
+            if "ui_options" in complete_dict:
+                self._changes["ui_options"] = complete_dict["ui_options"]
+
         event_data.update(self._changes)
 
         # Publish the event
@@ -475,10 +481,6 @@ class ParameterMessage(BaseNodeElement):
     @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
-
-    def publish_update(self) -> None:
-        """Publish any accumulated changes as an AlterElementEvent."""
-        self._emit_alter_element_event_if_possible()
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()

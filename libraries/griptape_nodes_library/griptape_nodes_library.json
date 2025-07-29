@@ -1069,6 +1069,16 @@
       }
     },
     {
+      "class_name": "ParameterMessageTestNode",
+      "file_path": "griptape_nodes_library/misc/test_parameter_message_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Test node demonstrating ParameterMessage with publish_update() method for dynamic UI updates based on parameter connections and value changes",
+        "display_name": "ParameterMessage Test Node",
+        "icon": "message-square-code"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {
