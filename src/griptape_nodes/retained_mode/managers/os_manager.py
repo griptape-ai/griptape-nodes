@@ -249,7 +249,7 @@ class OSManager:
             logger.error(msg)
             return OpenAssociatedFileResultFailure()
 
-        # Sanitize and validate the file path
+        # Sanitize and validate the path (file or directory)
         try:
             # Resolve the path (no workspace fallback for open requests)
             path = self._resolve_file_path(file_path_str, workspace_only=False)
@@ -258,12 +258,12 @@ class OSManager:
             logger.info(details)
             return OpenAssociatedFileResultFailure()
 
-        if not path.exists() or not path.is_file():
-            details = f"File does not exist: '{path}'"
+        if not path.exists():
+            details = f"Path does not exist: '{path}'"
             logger.info(details)
             return OpenAssociatedFileResultFailure()
 
-        logger.info("Attempting to open: %s on platform: %s", path, sys.platform)
+        logger.info("Attempting to open path: %s on platform: %s", path, sys.platform)
 
         try:
             platform_name = sys.platform
@@ -271,7 +271,7 @@ class OSManager:
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
                 os.startfile(str(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
-                logger.info("Started file on Windows: %s", path)
+                logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
@@ -280,7 +280,7 @@ class OSManager:
                     capture_output=True,
                     text=True,
                 )
-                logger.info("Started file on macOS: %s", path)
+                logger.info("Opened path on macOS: %s", path)
             elif self.is_linux():
                 # Use full path to xdg-open to satisfy linter
                 # Common locations for xdg-open:
@@ -297,7 +297,7 @@ class OSManager:
                     capture_output=True,
                     text=True,
                 )
-                logger.info("Started file on Linux: %s", path)
+                logger.info("Opened path on Linux: %s", path)
             else:
                 details = f"Unsupported platform: '{platform_name}'"
                 logger.info(details)
@@ -313,7 +313,7 @@ class OSManager:
             )
             return OpenAssociatedFileResultFailure()
         except Exception as e:
-            logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
+            logger.error("Exception occurred when trying to open path: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911
