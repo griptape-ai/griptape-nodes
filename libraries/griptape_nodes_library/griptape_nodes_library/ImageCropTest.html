@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Crop Component</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .image-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .simple-image {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+            border-radius: 4px;
+        }
+        
+        .status {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 15px;
+            text-align: center;
+        }
+    </style>
+
+</head>
+<body>
+    <div class="container">
+        <!-- Loading state -->
+        <div id="loadingState" class="loading">
+            <div class="loading-spinner"></div>
+            <div>Waiting for parent value...</div>
+        </div>
+        
+        <!-- Main content (hidden until we get a value) -->
+        <div id="mainContent" class="hidden">
+            <div class="header">
+                <h2>Image Display</h2>
+                <p>Simple image viewer</p>
+            </div>
+            
+            <div id="imageContainer" class="image-container">
+                <!-- Image will be displayed here -->
+            </div>
+            
+            <div class="status" id="status">
+                <strong>Status:</strong> <span id="statusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentValue = null;
+        let hasReceivedInitialValue = false;
+        let isReceivingFromParent = false;
+        
+        // Update status display
+        function updateStatus(message) {
+            const statusElement = document.getElementById('statusText');
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
+            console.log('Status:', message);
+        }
+        
+        // Show main content and hide loading
+        function showMainContent() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        }
+        
+        // Send value update to parent
+        function sendValueUpdate(value) {
+            // Don't send if we're receiving from parent
+            if (isReceivingFromParent) {
+                console.log('Skipping send to parent - receiving from parent');
+                return;
+            }
+            
+            try {
+                const message = {
+                    type: 'VALUE_UPDATE',
+                    value: value
+                };
+                
+                window.parent.postMessage(message, '*');
+                updateStatus(`Sent image URL: ${value}`);
+                
+            } catch (error) {
+                console.error('Failed to send message to parent:', error);
+                updateStatus('Error sending message to parent');
+            }
+        }
+        
+        // Display simple image
+        function displayImage(imageSrc) {
+            const container = document.getElementById('imageContainer');
+            container.innerHTML = `<img src="${imageSrc}" class="simple-image" alt="Displayed image" onload="updateStatus('Image loaded successfully')" onerror="updateStatus('Failed to load image')">`;
+        }
+        
+        // Handle messages from parent
+        function handleParentMessage(event) {
+            console.log('Iframe received message:', event.data);
+            
+            try {
+                const { type, value, label } = event.data;
+                
+                if (type === 'SET_VALUE') {
+                    console.log('Received SET_VALUE from parent:', value);
+                    
+                    // Mark that we're receiving from parent
+                    isReceivingFromParent = true;
+                    
+                    // Show main content
+                    showMainContent();
+                    
+                    // Update with the received image URL
+                    if (value !== null && value !== undefined) {
+                        currentValue = value;
+                        
+                        // Clean the URL by removing query parameters
+                        let cleanImageUrl = value;
+                        if (typeof value === 'string' && value.includes('?')) {
+                            cleanImageUrl = value.split('?')[0];
+                            console.log('Cleaned image URL:', cleanImageUrl);
+                        }
+                        
+                        // Validate that it's an image URL
+                        if (typeof value === 'string' && (value.startsWith('http') || value.startsWith('data:image'))) {
+                            displayImage(cleanImageUrl);
+                            updateStatus(`Received image from parent: ${cleanImageUrl.substring(0, 50)}...`);
+                        } else {
+                            // Show error for non-image values
+                            document.getElementById('imageContainer').innerHTML = 
+                                `<div class="error">Invalid image URL received from parent: ${value}</div>`;
+                            updateStatus(`Received invalid image URL from parent: ${value}`);
+                        }
+                    } else {
+                        // Handle null/undefined values
+                        currentValue = '';
+                        document.getElementById('imageContainer').innerHTML = 
+                            '<div class="error">No image URL received from parent</div>';
+                        updateStatus('Received empty value from parent');
+                    }
+                    
+                    hasReceivedInitialValue = true;
+                    
+                    // Reset the flag immediately after updating UI
+                    isReceivingFromParent = false;
+                } else {
+                    console.log('Received message with type:', type);
+                }
+                
+            } catch (error) {
+                console.error('Failed to process message from parent:', error);
+                updateStatus('Error processing message from parent');
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Image display iframe loaded - waiting for parent value...');
+            
+            // Listen for messages from parent
+            window.addEventListener('message', handleParentMessage);
+            
+            // Notify parent that we're ready
+            setTimeout(() => {
+                try {
+                    window.parent.postMessage({
+                        type: 'IFRAME_READY',
+                        message: 'Image display is ready to receive values'
+                    }, '*');
+                } catch (error) {
+                    console.warn('Could not send ready message to parent:', error);
+                }
+            }, 100);
+        });
+    </script>
+</body>
+</html> 

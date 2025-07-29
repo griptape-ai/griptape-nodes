@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Library",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.3.0",
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
@@ -1486,17 +1486,23 @@
     "workflows/templates/compare_prompts.py",
     "workflows/templates/photography_team.py"
   ],
-  "custom_components": [
+  "components": [
     {
       "name": "CustomTest",
-      "file_path": "griptape_nodes_library/CustomTest.html",
+      "path": "griptape_nodes_library/CustomTest.html",
       "description": "A test custom component for iframe communication"
     },
     {
       "name": "CapybaraTest",
-      "file_path": "griptape_nodes_library/CapybaraTest.html",
+      "path": "griptape_nodes_library/CapybaraTest.html",
       "description": "A test custom component for iframe communication"
+    },
+    {
+      "name": "ImageCropTest",
+      "path": "griptape_nodes_library/ImageCropTest.html",
+      "description": "A test custom component for image cropping"
     }
   ],
+  "advanced_library_path": "griptape_nodes_library/advanced_library.py",
   "is_default_library": true
 }

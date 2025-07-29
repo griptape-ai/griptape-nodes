@@ -43,6 +43,17 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
 
 
+class ComponentDefinition(BaseModel):
+    """Defines a custom component that can be used within the library.
+    
+    Custom components can be HTML files, URLs, or other resources that provide
+    additional functionality to the library beyond standard nodes.
+    """
+    name: str
+    path: str  # Can be file path, URL, or other resource identifier
+    description: str | None = None
+
+
 class IconVariant(BaseModel):
     """Icon variant for light and dark themes."""
 
@@ -95,7 +106,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     library_schema_version: str
@@ -107,6 +118,7 @@ class LibrarySchema(BaseModel):
     settings: list[Setting] | None = None
     is_default_library: bool | None = None
     advanced_library_path: str | None = None
+    components: list[ComponentDefinition] | None = None
 
 
 class LibraryRegistry(metaclass=SingletonMeta):
