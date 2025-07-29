@@ -735,7 +735,7 @@ class LibraryManager:
                     library_data=library_data,
                     base_dir=base_dir,
                 )
-                
+
                 # Register custom components from this library
                 try:
                     import importlib.util

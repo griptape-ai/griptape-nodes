@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
     """Advanced library implementation for Griptape Nodes Library.
-    
+
     This class handles custom components and other advanced functionality
     for the Griptape Nodes Library.
     """
@@ -34,13 +34,13 @@ class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
             return
 
         logger.info(f"Processing {len(library_data.components)} custom components for library '{library_data.name}'")
-        
+
         for component in library_data.components:
             self._process_component(component, library_data.name)
 
     def _process_component(self, component, library_name: str) -> None:
         """Process a single custom component.
-        
+
         Args:
             component: The ComponentDefinition to process
             library_name: Name of the library for logging purposes
@@ -51,20 +51,20 @@ class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
             # - Validating the component path exists
             # - Registering the component with the UI system
             # - Setting up any necessary resources
-            
+
             logger.info(f"Processing component '{component.name}' from library '{library_name}'")
             logger.debug(f"Component path: {component.path}")
             if component.description:
                 logger.debug(f"Component description: {component.description}")
-            
+
             # Check if the component path exists (for file-based components)
-            if not component.path.startswith(('http://', 'https://', '//')):
+            if not component.path.startswith(("http://", "https://", "//")):
                 # This appears to be a file path
                 component_path = Path(component.path)
                 if not component_path.exists():
                     logger.warning(f"Component file not found: {component_path}")
                 else:
                     logger.debug(f"Component file exists: {component_path}")
-                    
+
         except Exception as e:
-            logger.error(f"Error processing component '{component.name}': {e}") 
+            logger.error(f"Error processing component '{component.name}': {e}")

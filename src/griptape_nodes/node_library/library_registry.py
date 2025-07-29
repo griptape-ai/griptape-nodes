@@ -45,10 +45,11 @@ class LibraryMetadata(BaseModel):
 
 class ComponentDefinition(BaseModel):
     """Defines a custom component that can be used within the library.
-    
+
     Custom components can be HTML files, URLs, or other resources that provide
     additional functionality to the library beyond standard nodes.
     """
+
     name: str
     path: str  # Can be file path, URL, or other resource identifier
     description: str | None = None
