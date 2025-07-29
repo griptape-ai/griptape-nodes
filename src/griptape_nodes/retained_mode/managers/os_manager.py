@@ -834,10 +834,11 @@ class OSManager:
                 text=True,
             )
             logger.info("Opened system explorer on Windows: %s", path)
-            return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.info("Failed to open system explorer on Windows: %s", e)
             return False
+        else:
+            return True
 
     def _open_system_explorer_mac(self, path: Path) -> bool:
         """Open system explorer on macOS."""
@@ -849,10 +850,11 @@ class OSManager:
                 text=True,
             )
             logger.info("Opened system explorer on macOS: %s", path)
-            return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.info("Failed to open system explorer on macOS: %s", e)
             return False
+        else:
+            return True
 
     def _open_system_explorer_linux(self, path: Path) -> bool:
         """Open system explorer on Linux."""
@@ -871,10 +873,11 @@ class OSManager:
                 text=True,
             )
             logger.info("Opened system explorer on Linux: %s", path)
-            return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logger.info("Failed to open system explorer on Linux: %s", e)
             return False
+        else:
+            return True
 
     def _open_system_explorer(self, path: Path) -> bool:
         """Open system explorer based on platform."""
