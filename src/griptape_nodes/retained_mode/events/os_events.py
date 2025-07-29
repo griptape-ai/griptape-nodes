@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -173,8 +174,6 @@ class CreateFileRequest(RequestPayload):
         if self.path is not None:
             return self.path
         if self.directory_path is not None and self.name is not None:
-            from pathlib import Path
-
             return str(Path(self.directory_path) / self.name)
         msg = "Either 'path' or both 'directory_path' and 'name' must be provided"
         raise ValueError(msg)
