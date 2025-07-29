@@ -57,19 +57,21 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "SetParameterValueRequest": SetParameterValueRequest,
 }
 
+GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")
 GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
+GTN_MCP_SERVER_LOG_LEVEL = os.getenv("GTN_MCP_SERVER_LOG_LEVEL", "ERROR").lower()
 
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 
+mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
+mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+mcp_server_logger.setLevel(logging.INFO)
+
 
 def main(api_key: str) -> None:
     """Main entry point for the Griptape Nodes MCP server."""
-    mcp_server_logger = logging.getLogger("griptape_nodes_mcp_server")
-    mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
-    mcp_server_logger.setLevel(logging.INFO)
-    mcp_server_logger.info("Starting MCP GTN server...")
-
+    mcp_server_logger.debug("Starting MCP GTN server...")
     # Give these a session ID
     connection_manager = WebSocketConnectionManager()
     request_manager = AsyncRequestManager(connection_manager, api_key)
@@ -108,11 +110,11 @@ def main(api_key: str) -> None:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         """Context manager for managing session manager lifecycle."""
         async with session_manager.run():
-            mcp_server_logger.info("GTN MCP server started with StreamableHTTP session manager!")
+            mcp_server_logger.debug("GTN MCP server started with StreamableHTTP session manager!")
             try:
                 yield
             finally:
-                mcp_server_logger.info("GTN MCP server shutting down...")
+                mcp_server_logger.debug("GTN MCP server shutting down...")
 
     # Create an ASGI application using the transport
     mcp_server_app = FastAPI(lifespan=lifespan)
@@ -123,4 +125,10 @@ def main(api_key: str) -> None:
 
     mcp_server_app.mount("/mcp", app=handle_streamable_http)
 
-    uvicorn.run(mcp_server_app, host="127.0.0.1", port=GTN_MCP_SERVER_PORT)
+    uvicorn.run(
+        mcp_server_app,
+        host=GTN_MCP_SERVER_HOST,
+        port=GTN_MCP_SERVER_PORT,
+        log_config=None,
+        log_level=GTN_MCP_SERVER_LOG_LEVEL,
+    )
