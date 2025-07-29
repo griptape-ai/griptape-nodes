@@ -818,6 +818,75 @@ class OSManager:
             logger.error(msg)
             return RenameFileResultFailure()
 
+    def _open_system_explorer_windows(self, path: Path) -> bool:
+        """Open system explorer on Windows."""
+        try:
+            # Use full path to explorer.exe for security
+            explorer_path = shutil.which("explorer")
+            if not explorer_path:
+                logger.info("explorer.exe not found")
+                return False
+
+            subprocess.run(  # noqa: S603
+                [explorer_path, str(path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Opened system explorer on Windows: %s", path)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.info("Failed to open system explorer on Windows: %s", e)
+            return False
+
+    def _open_system_explorer_mac(self, path: Path) -> bool:
+        """Open system explorer on macOS."""
+        try:
+            subprocess.run(  # noqa: S603
+                ["/usr/bin/open", str(path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Opened system explorer on macOS: %s", path)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.info("Failed to open system explorer on macOS: %s", e)
+            return False
+
+    def _open_system_explorer_linux(self, path: Path) -> bool:
+        """Open system explorer on Linux."""
+        try:
+            xdg_paths = ["/usr/bin/xdg-open", "/bin/xdg-open", "/usr/local/bin/xdg-open"]
+            xdg_path = next((p for p in xdg_paths if Path(p).exists()), None)
+
+            if not xdg_path:
+                logger.info("xdg-open not found in standard locations")
+                return False
+
+            subprocess.run(  # noqa: S603
+                [xdg_path, str(path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Opened system explorer on Linux: %s", path)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.info("Failed to open system explorer on Linux: %s", e)
+            return False
+
+    def _open_system_explorer(self, path: Path) -> bool:
+        """Open system explorer based on platform."""
+        if self.is_windows():
+            return self._open_system_explorer_windows(path)
+        if self.is_mac():
+            return self._open_system_explorer_mac(path)
+        if self.is_linux():
+            return self._open_system_explorer_linux(path)
+        logger.info("Unsupported platform: '%s'", sys.platform)
+        return False
+
     def on_open_system_explorer_request(self, request: OpenSystemExplorerRequest) -> ResultPayload:
         """Handle a request to open the system file explorer at a given path."""
         try:
@@ -841,56 +910,9 @@ class OSManager:
 
             logger.info("Attempting to open system explorer at: %s on platform: %s", path, sys.platform)
 
-            try:
-                if self.is_windows():
-                    # On Windows, use explorer.exe
-                    subprocess.run(  # noqa: S603
-                        ["explorer", str(path)],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    logger.info("Opened system explorer on Windows: %s", path)
-                elif self.is_mac():
-                    # On macOS, use open command
-                    subprocess.run(  # noqa: S603
-                        ["/usr/bin/open", str(path)],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    logger.info("Opened system explorer on macOS: %s", path)
-                elif self.is_linux():
-                    # On Linux, use xdg-open
-                    xdg_paths = ["/usr/bin/xdg-open", "/bin/xdg-open", "/usr/local/bin/xdg-open"]
-                    xdg_path = next((p for p in xdg_paths if Path(p).exists()), None)
-
-                    if not xdg_path:
-                        logger.info("xdg-open not found in standard locations")
-                        return OpenSystemExplorerResultFailure()
-
-                    subprocess.run(  # noqa: S603
-                        [xdg_path, str(path)],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    logger.info("Opened system explorer on Linux: %s", path)
-                else:
-                    details = f"Unsupported platform: '{sys.platform}'"
-                    logger.info(details)
-                    return OpenSystemExplorerResultFailure()
-
+            if self._open_system_explorer(path):
                 return OpenSystemExplorerResultSuccess(opened_path=str(path))
-
-            except subprocess.CalledProcessError as e:
-                details = f"Failed to open system explorer: {e}"
-                logger.info(details)
-                return OpenSystemExplorerResultFailure()
-            except FileNotFoundError as e:
-                details = f"System explorer command not found: {e}"
-                logger.info(details)
-                return OpenSystemExplorerResultFailure()
+            return OpenSystemExplorerResultFailure()
 
         except Exception as e:
             msg = f"Failed to open system explorer at {request.path}: {e}"
