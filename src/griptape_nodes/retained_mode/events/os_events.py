@@ -18,6 +18,7 @@ class FileSystemEntry:
     is_dir: bool
     size: int
     modified_time: float
+    mime_type: str | None = None  # None for directories, mimetype for files
 
 
 @dataclass
