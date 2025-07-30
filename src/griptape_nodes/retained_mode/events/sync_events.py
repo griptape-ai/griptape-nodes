@@ -49,12 +49,12 @@ class SyncComplete(AppPayload):
 
     Args:
         sync_directory: Path to the local sync directory where files were saved
-        synced_workflows: Number of workflows that were successfully synced
-        failed_workflows: Number of workflows that failed to sync
+        synced_workflows: List of workflows that were successfully synced
+        failed_workflows: List of workflows that failed to sync
         total_workflows: Total number of workflows that were processed
     """
 
     sync_directory: str
-    synced_workflows: int
-    failed_workflows: int
+    synced_workflows: list[str]
+    failed_workflows: list[str]
     total_workflows: int

@@ -430,17 +430,15 @@ class MergeWorkflowBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSucces
 
     Args:
         merged_workflow_name: Name of the source workflow after merge
-        strategy_used: Description of merge strategy applied
     """
 
     merged_workflow_name: str
-    strategy_used: str
 
 
 @dataclass
 @PayloadRegistry.register
 class MergeWorkflowBranchResultFailure(ResultPayloadFailure):
-    """Workflow branch merge failed. Common causes: workflows not branch-related, merge conflict, save error."""
+    """Workflow branch merge failed."""
 
 
 @dataclass
@@ -467,11 +465,9 @@ class ResetWorkflowBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSucces
 
     Args:
         reset_workflow_name: Name of the branch workflow after reset
-        strategy_used: Description of reset strategy applied
     """
 
     reset_workflow_name: str
-    strategy_used: str
 
 
 @dataclass
@@ -506,7 +502,7 @@ class CompareWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 
     Args:
         workflow_name: Name of the evaluated workflow
-        source_workflow_name: Name of the source workflow (if any)
+        compare_workflow_name: Name of the workflow being compared against (if any)
         status: Status relative to source - "up_to_date", "ahead", "behind", "diverged", or "no_source"
         workflow_last_modified: Last modified timestamp of the workflow
         source_last_modified: Last modified timestamp of the source (if exists)
@@ -514,7 +510,7 @@ class CompareWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
     """
 
     workflow_name: str
-    source_workflow_name: str | None
+    compare_workflow_name: str | None
     status: Literal["up_to_date", "ahead", "behind", "diverged", "no_source"]
     workflow_last_modified: str | None
     source_last_modified: str | None
@@ -587,10 +583,12 @@ class RegisterWorkflowsFromConfigResultSuccess(WorkflowNotAlteredMixin, ResultPa
     """Workflows registered from configuration successfully.
 
     Args:
-        registered_count: Number of workflows successfully registered
+        succeeded_workflows: List of workflow names that were successfully registered
+        failed_workflows: List of workflow names that failed to register
     """
 
-    registered_count: int
+    succeeded_workflows: list[str]
+    failed_workflows: list[str]
 
 
 @dataclass

@@ -118,6 +118,13 @@ T = TypeVar("T")
 logger = logging.getLogger("griptape_nodes")
 
 
+class WorkflowRegistrationResult(NamedTuple):
+    """Result of processing workflows for registration."""
+
+    succeeded: list[str]
+    failed: list[str]
+
+
 class WorkflowManager:
     WORKFLOW_METADATA_HEADER: ClassVar[str] = "script"
     MAX_MINOR_VERSION_DEVIATION: ClassVar[int] = (
@@ -308,8 +315,9 @@ class WorkflowManager:
 
         if isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
             logger.info(
-                "Registered %d workflows from configuration during library initialization",
-                register_result.registered_count,
+                "Registered %d workflows from configuration during library initialization: %s",
+                len(register_result.succeeded_workflows),
+                register_result.succeeded_workflows,
             )
         else:
             logger.warning("Failed to register workflows from configuration during library initialization")
@@ -722,9 +730,6 @@ class WorkflowManager:
             config_manager.delete_user_workflow(workflow.file_path)
             config_manager.save_user_workflow_json(str(new_absolute_path))
 
-            logger.info("Successfully moved workflow '%s' to '%s'", request.workflow_name, new_relative_path)
-            return MoveWorkflowResultSuccess(moved_file_path=new_relative_path)
-
         except OSError as e:
             logger.error("Failed to move workflow file '%s' to '%s': %s", current_file_path, new_absolute_path, str(e))
 
@@ -740,6 +745,9 @@ class WorkflowManager:
         except Exception as e:
             logger.error("Failed to move workflow '%s': %s", request.workflow_name, str(e))
             return MoveWorkflowResultFailure()
+        else:
+            logger.info("Successfully moved workflow '%s' to '%s'", request.workflow_name, new_relative_path)
+            return MoveWorkflowResultSuccess(moved_file_path=new_relative_path)
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
         self, request: LoadWorkflowMetadata
@@ -3228,9 +3236,7 @@ class WorkflowManager:
                 request.workflow_name,
                 source_workflow_name,
             )
-            return MergeWorkflowBranchResultSuccess(
-                merged_workflow_name=source_workflow_name, strategy_used="merged_branch_into_source"
-            )
+            return MergeWorkflowBranchResultSuccess(merged_workflow_name=source_workflow_name)
 
         except Exception as e:
             logger.error(
@@ -3275,7 +3281,7 @@ class WorkflowManager:
             source_content_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
             source_content = Path(source_content_file_path).read_text(encoding="utf-8")
 
-            # Create updated metadata for branch workflow - preserve branch relationship and update timestamp
+            # Create updated metadata for branch workflow - preserve branch relationship and source timestamp
             reset_metadata = WorkflowMetadata(
                 name=request.workflow_name,
                 schema_version=source_workflow.metadata.schema_version,
@@ -3289,7 +3295,7 @@ class WorkflowManager:
                 is_griptape_provided=branch_workflow.metadata.is_griptape_provided,
                 is_template=branch_workflow.metadata.is_template,
                 creation_date=branch_workflow.metadata.creation_date,
-                last_modified_date=datetime.now(tz=UTC),
+                last_modified_date=source_workflow.metadata.last_modified_date,
                 branched_from=source_workflow_name,  # Preserve branch relationship
             )
 
@@ -3306,15 +3312,6 @@ class WorkflowManager:
             # Update the registry with new metadata for the branch workflow
             branch_workflow.metadata = reset_metadata
 
-            logger.info(
-                "Successfully reset branch workflow '%s' to match source workflow '%s'",
-                request.workflow_name,
-                source_workflow_name,
-            )
-            return ResetWorkflowBranchResultSuccess(
-                reset_workflow_name=request.workflow_name, strategy_used="reset_branch_to_source"
-            )
-
         except Exception as e:
             logger.error(
                 "Failed to reset branch workflow '%s' to source workflow '%s': %s",
@@ -3323,6 +3320,13 @@ class WorkflowManager:
                 str(e),
             )
             return ResetWorkflowBranchResultFailure()
+        else:
+            logger.info(
+                "Successfully reset branch workflow '%s' to match source workflow '%s'",
+                request.workflow_name,
+                source_workflow_name,
+            )
+            return ResetWorkflowBranchResultSuccess(reset_workflow_name=request.workflow_name)
 
     def on_compare_workflows_request(self, request: CompareWorkflowsRequest) -> ResultPayload:
         """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other."""
@@ -3334,17 +3338,17 @@ class WorkflowManager:
             return CompareWorkflowsResultFailure()
 
         # Use the provided compare_workflow_name
-        source_workflow_name = request.compare_workflow_name
+        compare_workflow_name = request.compare_workflow_name
 
         # Try to get the source workflow
         try:
-            source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
+            source_workflow = WorkflowRegistry.get_workflow_by_name(compare_workflow_name)
         except KeyError:
             # Source workflow no longer exists
-            details = f"Source workflow '{source_workflow_name}' for '{request.workflow_name}' no longer exists"
+            details = f"Source workflow '{compare_workflow_name}' for '{request.workflow_name}' no longer exists"
             return CompareWorkflowsResultSuccess(
                 workflow_name=request.workflow_name,
-                source_workflow_name=source_workflow_name,
+                compare_workflow_name=compare_workflow_name,
                 status="no_source",
                 workflow_last_modified=workflow.metadata.last_modified_date.isoformat()
                 if workflow.metadata.last_modified_date
@@ -3363,7 +3367,7 @@ class WorkflowManager:
             logger.warning(details)
             return CompareWorkflowsResultSuccess(
                 workflow_name=request.workflow_name,
-                source_workflow_name=source_workflow_name,
+                compare_workflow_name=compare_workflow_name,
                 status="diverged",
                 workflow_last_modified=workflow_last_modified.isoformat() if workflow_last_modified else None,
                 source_last_modified=source_last_modified.isoformat() if source_last_modified else None,
@@ -3373,19 +3377,19 @@ class WorkflowManager:
         # Compare timestamps to determine status
         if workflow_last_modified == source_last_modified:
             status = "up_to_date"
-            details = f"Workflow '{request.workflow_name}' is up-to-date with source '{source_workflow_name}'"
+            details = f"Workflow '{request.workflow_name}' is up-to-date with source '{compare_workflow_name}'"
         elif workflow_last_modified > source_last_modified:
             status = "ahead"
-            details = f"Workflow '{request.workflow_name}' is ahead of source '{source_workflow_name}' (local changes)"
+            details = f"Workflow '{request.workflow_name}' is ahead of source '{compare_workflow_name}' (local changes)"
         else:
             status = "behind"
             details = (
-                f"Workflow '{request.workflow_name}' is behind source '{source_workflow_name}' (source has updates)"
+                f"Workflow '{request.workflow_name}' is behind source '{compare_workflow_name}' (source has updates)"
             )
 
         return CompareWorkflowsResultSuccess(
             workflow_name=request.workflow_name,
-            source_workflow_name=source_workflow_name,
+            compare_workflow_name=compare_workflow_name,
             status=status,
             workflow_last_modified=workflow_last_modified.isoformat(),
             source_last_modified=source_last_modified.isoformat(),
@@ -3550,57 +3554,60 @@ class WorkflowManager:
             workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(request.config_section)
             if not workflows_to_register:
                 logger.info("No workflows found in configuration section '%s'", request.config_section)
-                return RegisterWorkflowsFromConfigResultSuccess(registered_count=0)
+                return RegisterWorkflowsFromConfigResultSuccess(succeeded_workflows=[], failed_workflows=[])
 
             # Process all workflows and track results
-            registered_count, skipped_count = self._process_workflows_for_registration(workflows_to_register)
-
-            logger.info(
-                "Processed workflows from configuration section '%s': %d registered, %d skipped (already registered)",
-                request.config_section,
-                registered_count,
-                skipped_count,
-            )
-            return RegisterWorkflowsFromConfigResultSuccess(registered_count=registered_count)
+            succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
 
         except Exception as e:
             logger.error(
                 "Failed to register workflows from configuration section '%s': %s", request.config_section, str(e)
             )
             return RegisterWorkflowsFromConfigResultFailure()
+        else:
+            logger.info(
+                "Processed workflows from configuration section '%s': %d registered (%s), %d failed (%s)",
+                request.config_section,
+                len(succeeded),
+                succeeded,
+                len(failed),
+                failed,
+            )
+            return RegisterWorkflowsFromConfigResultSuccess(succeeded_workflows=succeeded, failed_workflows=failed)
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> tuple[int, int]:
+    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:
         """Process a list of workflow paths for registration.
 
         Returns:
-            Tuple of (registered_count, skipped_count)
+            WorkflowRegistrationResult with succeeded and failed workflow names
         """
-        registered_count = 0
-        skipped_count = 0
+        succeeded = []
+        failed = []
 
         for workflow_to_register in workflows_to_register:
             path = Path(workflow_to_register)
 
             if path.is_dir():
-                reg_count, skip_count = self._process_workflow_directory(path)
-                registered_count += reg_count
-                skipped_count += skip_count
+                dir_result = self._process_workflow_directory(path)
+                succeeded.extend(dir_result.succeeded)
+                failed.extend(dir_result.failed)
             elif path.suffix == ".py":
-                if self._process_single_workflow_file(path):
-                    registered_count += 1
+                workflow_name = self._process_single_workflow_file(path)
+                if workflow_name:
+                    succeeded.append(workflow_name)
                 else:
-                    skipped_count += 1
+                    failed.append(str(path))
 
-        return registered_count, skipped_count
+        return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
-    def _process_workflow_directory(self, directory_path: Path) -> tuple[int, int]:
+    def _process_workflow_directory(self, directory_path: Path) -> WorkflowRegistrationResult:
         """Process all workflow files in a directory.
 
         Returns:
-            Tuple of (registered_count, skipped_count)
+            WorkflowRegistrationResult with succeeded and failed workflow names
         """
-        registered_count = 0
-        skipped_count = 0
+        succeeded = []
+        failed = []
 
         for workflow_file in directory_path.glob("*.py"):
             # Check that the python file has script metadata
@@ -3608,18 +3615,19 @@ class WorkflowManager:
                 workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
             )
             if len(metadata_blocks) == 1:
-                if self._process_single_workflow_file(workflow_file):
-                    registered_count += 1
+                workflow_name = self._process_single_workflow_file(workflow_file)
+                if workflow_name:
+                    succeeded.append(workflow_name)
                 else:
-                    skipped_count += 1
+                    failed.append(str(workflow_file))
 
-        return registered_count, skipped_count
+        return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
-    def _process_single_workflow_file(self, workflow_file: Path) -> bool:
+    def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
         """Process a single workflow file for registration.
 
         Returns:
-            True if registered, False if skipped
+            Workflow name if registered successfully, None if failed or skipped
         """
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
@@ -3627,19 +3635,21 @@ class WorkflowManager:
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             logger.debug("Skipping workflow with invalid metadata: %s", workflow_file)
-            return False
+            return None
 
         workflow_metadata = load_metadata_result.metadata
 
         # Check if workflow is already registered using the parsed metadata
         if WorkflowRegistry.has_workflow_with_name(workflow_metadata.name):
             logger.debug("Skipping already registered workflow: %s", workflow_file)
-            return False
+            return None
 
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
-        return self._register_workflow(str(workflow_file))
+        if self._register_workflow(str(workflow_file)):
+            return workflow_metadata.name
+        return None
 
 
 class ASTContainer:

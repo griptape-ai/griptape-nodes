@@ -143,15 +143,14 @@ class SyncManager:
 
             self._active_sync_tasks[sync_task_id] = sync_thread
             sync_thread.start()
-
+        except Exception as e:
+            logger.error("Failed to start cloud workflow sync: %s", str(e))
+            return StartSyncAllCloudWorkflowsResultFailure()
+        else:
             logger.info("Started background sync for %d workflow files", len(workflow_files))
             return StartSyncAllCloudWorkflowsResultSuccess(
                 sync_directory=str(sync_dir), total_workflows=len(workflow_files)
             )
-
-        except Exception as e:
-            logger.error("Failed to start cloud workflow sync: %s", str(e))
-            return StartSyncAllCloudWorkflowsResultFailure()
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Automatically start syncing cloud workflows when the app initializes."""
@@ -466,8 +465,8 @@ class SyncManager:
         # Emit sync complete event
         sync_complete_event = SyncComplete(
             sync_directory=str(sync_dir),
-            synced_workflows=len(synced_workflows),
-            failed_workflows=len(failed_downloads),
+            synced_workflows=synced_workflows,
+            failed_workflows=failed_downloads,
             total_workflows=total_workflows,
         )
         event_queue.put(AppEvent(payload=sync_complete_event))
@@ -485,7 +484,9 @@ class SyncManager:
 
                 if isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
                     logger.info(
-                        "Successfully registered %d workflows after sync completion", register_result.registered_count
+                        "Successfully registered %d workflows after sync completion: %s",
+                        len(register_result.succeeded_workflows),
+                        register_result.succeeded_workflows,
                     )
                 else:
                     logger.warning("Failed to register workflows after sync completion")
