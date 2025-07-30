@@ -196,8 +196,56 @@ class ExecuteNodeState(State):
         current_node.parameter_output_values.clear()
 
     @staticmethod
+    def collect_values_from_resolved_upstream_nodes(context: ResolutionContext) -> None:
+        """Collect output values from resolved upstream nodes and pass them to the current node.
+
+        This method iterates through all input parameters of the current node, finds their
+        connected upstream nodes, and if those nodes are resolved, retrieves their output
+        values and passes them through using SetParameterValueRequest.
+
+        Args:
+            context (ResolutionContext): The resolution context containing the focus stack
+                with the current node being processed.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        current_node = context.focus_stack[-1].node
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        for parameter in current_node.parameters:
+            # Skip control type parameters
+            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
+                continue
+
+            # Get the connected upstream node for this parameter
+            upstream_connection = connections.get_connected_node(current_node, parameter)
+            if upstream_connection:
+                upstream_node, upstream_parameter = upstream_connection
+
+                # If the upstream node is resolved, collect its output value
+                if (
+                    upstream_node.state == NodeResolutionState.RESOLVED
+                    and upstream_parameter.name in upstream_node.parameter_output_values
+                ):
+                    output_value = upstream_node.parameter_output_values[upstream_parameter.name]
+
+                    # Pass the value through using the same mechanism as normal resolution
+                    GriptapeNodes.get_instance().handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=parameter.name,
+                            node_name=current_node.name,
+                            value=output_value,
+                            data_type=upstream_parameter.output_type,
+                        )
+                    )
+
+    @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
+
+        # Always collect values from resolved upstream nodes, regardless of lock status
+        ExecuteNodeState.collect_values_from_resolved_upstream_nodes(context)
+
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
@@ -326,16 +374,16 @@ class ExecuteNodeState(State):
                     )
                 )
                 # Pass the value through to the new nodes.
-                conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(current_node, parameter)
-                for target_node, target_parameter in conn_output_nodes:
-                    GriptapeNodes.get_instance().handle_request(
-                        SetParameterValueRequest(
-                            parameter_name=target_parameter.name,
-                            node_name=target_node.name,
-                            value=value,
-                            data_type=parameter.output_type,
-                        )
-                    )
+                # conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(current_node, parameter)
+                # for target_node, target_parameter in conn_output_nodes:
+                #     GriptapeNodes.get_instance().handle_request(
+                #         SetParameterValueRequest(
+                #             parameter_name=target_parameter.name,
+                #             node_name=target_node.name,
+                #             value=value,
+                #             data_type=parameter.output_type,
+                #         )
+                #     )
 
             # Output values should already be saved!
         library = LibraryRegistry.get_libraries_with_node_type(current_node.__class__.__name__)

@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from tld import Result
 
 
 class NewPosition(NamedTuple):
@@ -332,6 +331,7 @@ class ToggleLockNodeRequest(WorkflowNotAlteredMixin, RequestPayload):
 
     Results: LockNodeResultSuccess (node locked) | LockNodeResultFailure (node not found)
     """
+
     node_name: str | None
     lock: bool
 
@@ -340,8 +340,10 @@ class ToggleLockNodeRequest(WorkflowNotAlteredMixin, RequestPayload):
 @PayloadRegistry.register
 class ToggleLockNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Node locked successfully."""
+
     node_name: str
     locked: bool
+
 
 @dataclass
 @PayloadRegistry.register

@@ -1286,7 +1286,7 @@ class NodeManager:
 
                 return AlterParameterDetailsResultFailure()
 
-        # Is the node locked? 
+        # Is the node locked?
         if node.lock:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
             logger.error(details)
@@ -1625,7 +1625,7 @@ class NodeManager:
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
-            locked = node.lock,
+            locked=node.lock,
             connections=list_connections_success,
             element_id_to_value=element_id_to_value,
             root_node_element=element_details,
@@ -1965,7 +1965,7 @@ class NodeManager:
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
             node_library_details=library_details,
-            lock_node_command=lock_command
+            lock_node_command=lock_command,
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
