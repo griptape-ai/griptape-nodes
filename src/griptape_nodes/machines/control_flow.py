@@ -13,8 +13,6 @@ from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
-    CurrentControlNodeEvent,
-    SelectedControlOutputEvent,
 )
 
 if TYPE_CHECKING:

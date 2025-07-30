@@ -12,7 +12,6 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, P
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.data_helpers import (
     clear_parameter_output_values,
-    get_library_name,
     pass_values_to_connected_nodes,
 )
 from griptape_nodes.machines.execution_utils import CompleteState, Focus, ResolutionContext
@@ -28,7 +27,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     NodeFinishProcessEvent,
-    NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
 

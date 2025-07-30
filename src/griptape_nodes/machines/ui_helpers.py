@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.type_validator import TypeValidator
 
 if TYPE_CHECKING:
     from griptape_nodes.machines.execution_utils import Focus
+from griptape_nodes.machines.data_helpers import get_library_name
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -19,7 +20,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     NodeStartProcessEvent,
 )
-from griptape_nodes.machines.data_helpers import get_library_name
+
 logger = logging.getLogger("griptape_nodes")
 
 
