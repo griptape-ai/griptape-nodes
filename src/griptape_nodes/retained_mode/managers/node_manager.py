@@ -1954,12 +1954,17 @@ class NodeManager:
                     set_value_commands.extend(set_param_value_requests)
                 else:
                     create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
-
+        # now check if locked
+        if node.lock:
+            lock_command = ToggleLockNodeRequest(node_name=None, lock=True)
+        else:
+            lock_command = None
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
             node_library_details=library_details,
+            lock_node_command=lock_command
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
