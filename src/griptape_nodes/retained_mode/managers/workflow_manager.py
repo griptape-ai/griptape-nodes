@@ -1284,7 +1284,7 @@ class WorkflowManager:
 
         return final_code_output, workflow_metadata
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Start with the file name provided; we may change it.
         file_name = request.file_name
 
@@ -1318,31 +1318,6 @@ class WorkflowManager:
                 else:
                     free_file_found = True
                     file_name = new_file_name
-
-        # Check if this is a synced workflow; if so, branch it instead of modifying the original.
-        if prior_workflow and prior_workflow.is_synced and file_name:
-            # User is attempting to save a synced workflow. Check if a branch already exists.
-            existing_branches = WorkflowRegistry.get_branches_of_workflow(file_name)
-            if existing_branches:
-                # Use the first existing branch for subsequent saves
-                file_name = existing_branches[0]
-                prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-                creation_date = prior_workflow.metadata.creation_date or datetime.now(tz=UTC)
-            else:
-                # No existing branch, create a new one
-                branch_request = BranchWorkflowRequest(workflow_name=file_name)
-                branch_result = self.on_branch_workflow_request(branch_request)
-                if isinstance(branch_result, BranchWorkflowResultSuccess):
-                    # Use the branched workflow name for saving
-                    file_name = branch_result.branched_workflow_name
-                    # Update prior_workflow to the newly created branch
-                    prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-                    # Update creation_date from the branch
-                    creation_date = prior_workflow.metadata.creation_date or datetime.now(tz=UTC)
-                else:
-                    details = f"Failed to branch synced workflow '{file_name}' before saving."
-                    logger.error(details)
-                    return SaveWorkflowResultFailure()
 
         # Get file name stuff prepped.
         if not file_name:
