@@ -316,6 +316,21 @@ class OSManager:
             logger.error("Exception occurred when trying to open path: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
 
+    def _detect_mime_type(self, file_path: Path) -> str | None:
+        """Detect MIME type for a file. Returns None for directories or if detection fails."""
+        if file_path.is_dir():
+            return None
+
+        try:
+            mime_type, _ = mimetypes.guess_type(str(file_path), strict=True)
+            if mime_type is None:
+                mime_type = "text/plain"
+            return mime_type  # noqa: TRY300
+        except Exception as e:
+            msg = f"MIME type detection failed for {file_path}: {e}"
+            logger.warning(msg)
+            return "text/plain"
+
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Handle a request to list directory contents."""
         try:
@@ -359,6 +374,7 @@ class OSManager:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
                         is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
                                 name=entry.name,
@@ -366,6 +382,7 @@ class OSManager:
                                 is_dir=entry.is_dir(),
                                 size=stat.st_size,
                                 modified_time=stat.st_mtime,
+                                mime_type=mime_type,
                             )
                         )
                     except (OSError, PermissionError) as e:
