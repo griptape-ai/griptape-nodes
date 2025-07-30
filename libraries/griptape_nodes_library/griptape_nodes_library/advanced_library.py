@@ -30,10 +30,10 @@ class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
             library: The library instance containing the loaded nodes
         """
         if not library_data.components:
-            logger.debug(f"No custom components found in library '{library_data.name}'")
+            logger.debug("No custom components found in library '%s'", library_data.name)
             return
 
-        logger.info(f"Processing {len(library_data.components)} custom components for library '{library_data.name}'")
+        logger.info("Processing %d custom components for library '%s'", len(library_data.components), library_data.name)
 
         for component in library_data.components:
             self._process_component(component, library_data.name)
@@ -52,19 +52,19 @@ class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
             # - Registering the component with the UI system
             # - Setting up any necessary resources
 
-            logger.info(f"Processing component '{component.name}' from library '{library_name}'")
-            logger.debug(f"Component path: {component.path}")
+            logger.info("Processing component '%s' from library '%s'", component.name, library_name)
+            logger.debug("Component path: %s", component.path)
             if component.description:
-                logger.debug(f"Component description: {component.description}")
+                logger.debug("Component description: %s", component.description)
 
             # Check if the component path exists (for file-based components)
             if not component.path.startswith(("http://", "https://", "//")):
                 # This appears to be a file path
                 component_path = Path(component.path)
                 if not component_path.exists():
-                    logger.warning(f"Component file not found: {component_path}")
+                    logger.warning("Component file not found: %s", component_path)
                 else:
-                    logger.debug(f"Component file exists: {component_path}")
+                    logger.debug("Component file exists: %s", component_path)
 
         except Exception as e:
-            logger.error(f"Error processing component '{component.name}': {e}")
+            logger.error("Error processing component '%s': %s", component.name, e)
