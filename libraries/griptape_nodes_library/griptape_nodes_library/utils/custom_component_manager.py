@@ -44,6 +44,9 @@ class CustomComponentManager:
 
             for component in custom_components:
                 self._register_custom_component(library_path, component)
+            
+            # Also copy the SDK file if it exists
+            self._copy_sdk_file(library_path)
 
         except Exception as e:
             logger.error("Failed to register custom components from %s: %s", library_path, e)
@@ -83,6 +86,33 @@ class CustomComponentManager:
 
         except Exception as e:
             logger.error("Failed to register custom component %s: %s", component, e)
+
+    def _copy_sdk_file(self, library_path: Path) -> None:
+        """Copy the SDK file to the static directory.
+
+        Args:
+            library_path: Path to the library directory
+        """
+        try:
+            sdk_file_path = library_path / "griptape_nodes_library/iframe-sdk.js"
+            
+            if not sdk_file_path.exists():
+                logger.warning("SDK file not found at %s", sdk_file_path)
+                return
+
+            # Create the static directory if it doesn't exist
+            self.static_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy the SDK file to the static directory
+            static_sdk_path = self.static_dir / "custom_components/iframe-sdk.js"
+            static_sdk_path.parent.mkdir(parents=True, exist_ok=True)
+
+            shutil.copy2(sdk_file_path, static_sdk_path)
+
+            logger.info("Copied SDK file to %s", static_sdk_path)
+
+        except Exception as e:
+            logger.error("Failed to copy SDK file: %s", e)
 
     def get_custom_component_url(self, component_name: str) -> str:
         """Get the URL for a custom component.

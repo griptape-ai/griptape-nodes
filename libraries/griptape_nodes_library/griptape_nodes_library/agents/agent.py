@@ -206,27 +206,17 @@ class Agent(ControlNode):
                 type="str",
                 default_value="",
                 tooltip="Custom component for color picker integration.",
-                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CustomTest.html"},
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/ColorPickerWithSDK.html"},
             )
         )
 
         self.add_parameter(
             Parameter(
-                name="capybara",
-                type="int",
-                default_value="",
-                tooltip="Custom component for capybara integration.",
-                ui_options={"custom_src": "http://localhost:8124/static/custom_components/CapybaraTest.html"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="image_crop",
+                name="simple_text_input",
                 type="str",
                 default_value="",
-                tooltip="Custom component for image cropping.",
-                ui_options={"custom_src": "http://localhost:8124/static/custom_components/SimpleTextInput.html"},
+                tooltip="Custom component for simple text input integration.",
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/SimpleTextInputWithSDK.html"},
             )
         )
 

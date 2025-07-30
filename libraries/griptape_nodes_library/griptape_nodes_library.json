@@ -1486,21 +1486,16 @@
     "workflows/templates/compare_prompts.py",
     "workflows/templates/photography_team.py"
   ],
-  "components": [
+  "custom_components": [
     {
-      "name": "CustomTest",
-      "path": "griptape_nodes_library/CustomTest.html",
-      "description": "A test custom component for iframe communication"
+      "name": "ColorPickerWithSDK",
+      "file_path": "griptape_nodes_library/ColorPickerWithSDK.html",
+      "description": "A color picker component using the iframe SDK"
     },
     {
-      "name": "CapybaraTest",
-      "path": "griptape_nodes_library/CapybaraTest.html",
-      "description": "A test custom component for iframe communication"
-    },
-    {
-      "name": "SimpleTextInput",
-      "path": "griptape_nodes_library/SimpleTextInput.html",
-      "description": "A test custom component for simple text input"
+      "name": "SimpleTextInputWithSDK",
+      "file_path": "griptape_nodes_library/SimpleTextInputWithSDK.html",
+      "description": "A simple text input component using the iframe SDK"
     }
   ],
   "advanced_library_path": "griptape_nodes_library/advanced_library.py",

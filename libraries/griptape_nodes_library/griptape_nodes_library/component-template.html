@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Component Template</title>
+    <style>
+        /* Common styles from SDK */
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 300px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        /* Add your custom styles here */
+        .my-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Loading state -->
+        <div id="loadingState" class="loading">
+            <div class="loading-spinner"></div>
+            <div>Waiting for parent value...</div>
+        </div>
+        
+        <!-- Main content (hidden until we get a value) -->
+        <div id="mainContent" class="hidden">
+            <!-- Add your component UI here -->
+            <input 
+                type="text" 
+                id="myInput" 
+                class="my-input"
+                placeholder="Enter value..."
+                onchange="updateValue()"
+                oninput="updateValue()"
+            >
+            
+            <div class="status" id="status">
+                <strong>Status:</strong> <span id="statusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include the SDK -->
+    <script src="iframe-sdk.js"></script>
+    
+    <script>
+        // Create the component instance
+        const component = new IframeComponent({
+            componentName: 'My Component',  // Change this to your component name
+            defaultValue: '',               // Change this to your default value
+            onValueChange: (value) => {
+                // This is called when we receive a value from the parent
+                console.log('Value changed:', value);
+                
+                // Show main content
+                UIUtils.showMainContent();
+                
+                // Update your UI elements here
+                const input = document.getElementById('myInput');
+                if (input) {
+                    input.value = value || '';
+                }
+                
+                // Update status
+                UIUtils.updateStatus(`Received value from parent: ${value}`);
+            },
+            onError: (error) => {
+                UIUtils.updateStatus(`Error: ${error}`);
+            }
+        });
+        
+        // Update value from your input
+        function updateValue() {
+            const input = document.getElementById('myInput');
+            const newValue = input.value;
+            
+            // Update the component value
+            component.updateValue(newValue);
+            
+            // Update status
+            UIUtils.updateStatus(`Sent value: ${newValue}`);
+        }
+        
+        // Add your custom functions here
+        function myCustomFunction() {
+            // Your custom logic here
+        }
+    </script>
+</body>
+</html> 
