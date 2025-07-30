@@ -196,7 +196,7 @@ class ExecuteNodeState(State):
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def collect_values_from_resolved_upstream_nodes(context: ResolutionContext) -> None:
+    def collect_values_from_upstream_nodes(context: ResolutionContext) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
         This method iterates through all input parameters of the current node, finds their
@@ -224,8 +224,7 @@ class ExecuteNodeState(State):
 
                 # If the upstream node is resolved, collect its output value
                 if (
-                    upstream_node.state == NodeResolutionState.RESOLVED
-                    and upstream_parameter.name in upstream_node.parameter_output_values
+                    upstream_parameter.name in upstream_node.parameter_output_values
                 ):
                     output_value = upstream_node.parameter_output_values[upstream_parameter.name]
 
@@ -243,13 +242,11 @@ class ExecuteNodeState(State):
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
-        # Always collect values from resolved upstream nodes, regardless of lock status
-        ExecuteNodeState.collect_values_from_resolved_upstream_nodes(context)
-
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
             return ExecuteNodeState
+        ExecuteNodeState.collect_values_from_upstream_nodes(context)
         ExecuteNodeState.clear_parameter_output_values(context)
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
