@@ -320,7 +320,7 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
-class ToggleLockNodeRequest(WorkflowNotAlteredMixin, RequestPayload):
+class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
     """Lock a node.
 
     Use when: Implementing locking functionality, preventing changes to nodes.
@@ -338,7 +338,7 @@ class ToggleLockNodeRequest(WorkflowNotAlteredMixin, RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ToggleLockNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class SetLockNodeStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Node locked successfully."""
 
     node_name: str
@@ -347,7 +347,7 @@ class ToggleLockNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess)
 
 @dataclass
 @PayloadRegistry.register
-class ToggleLockNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class SetLockNodeStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node failed to lock."""
 
 
@@ -388,7 +388,7 @@ class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
-    lock_node_command: ToggleLockNodeRequest | None = None
+    lock_node_command: SetLockNodeStateRequest | None = None
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 

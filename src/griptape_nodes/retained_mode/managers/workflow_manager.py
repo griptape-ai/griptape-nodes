@@ -91,7 +91,7 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
-    from griptape_nodes.retained_mode.events.node_events import ToggleLockNodeRequest
+    from griptape_nodes.retained_mode.events.node_events import SetLockNodeStateRequest
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -2538,7 +2538,7 @@ class WorkflowManager:
         indirect_set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
         unique_values_dict_name: str,
         import_recorder: ImportRecorder,
-        lock_node_command: ToggleLockNodeRequest | None = None,
+        lock_node_command: SetLockNodeStateRequest | None = None,
     ) -> list[ast.stmt]:
         if not indirect_set_parameter_value_commands and lock_node_command is None:
             return []
@@ -2632,7 +2632,9 @@ class WorkflowManager:
 
         # Add lock command as the LAST command in the with context
         if lock_node_command is not None:
-            import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "ToggleLockNodeRequest")
+            import_recorder.add_from_import(
+                "griptape_nodes.retained_mode.events.node_events", "SetLockNodeStateRequest"
+            )
 
             lock_node_call_ast = ast.Expr(
                 value=ast.Call(
@@ -2645,7 +2647,7 @@ class WorkflowManager:
                     ),
                     args=[
                         ast.Call(
-                            func=ast.Name(id="ToggleLockNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            func=ast.Name(id="SetLockNodeStateRequest", ctx=ast.Load(), lineno=1, col_offset=0),
                             args=[],
                             keywords=[
                                 ast.keyword(arg="node_name", value=ast.Constant(value=None, lineno=1, col_offset=0)),
