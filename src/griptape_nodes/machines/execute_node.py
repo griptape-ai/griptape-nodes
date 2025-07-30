@@ -107,7 +107,7 @@ class ExecuteNodeState(State):
         """
         current_node = current_focus.node
         mark_node_as_starting(current_focus)
-        logger.debug("Node '%s' is processing.", current_node.name)
+
         try:
             more_work = ExecuteNodeState._run_node_process_method(current_focus)
             # If the node is still not done
@@ -140,20 +140,6 @@ class ExecuteNodeState(State):
         log_serialization(current_focus)
         pass_values_to_connected_nodes(current_focus)
 
-        # Output values should already be saved!
-        library_name = get_library_name(current_focus.node)
-        event_queue.put(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=NodeResolvedEvent(
-                        node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
-                        node_type=current_node.__class__.__name__,
-                        specific_library_name=library_name,
-                    )
-                )
-            )
-        )
         return True
 
     @staticmethod

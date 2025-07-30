@@ -84,11 +84,6 @@ class ResolveNodeState(State):
                 }
             )
         )
-        event_queue.put(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
-            )
-        )
         logger.info("Resolving %s", context.current_node.name)
         if not context.paused:
             # Call the update. Otherwise wait
@@ -126,17 +121,6 @@ class NextNodeState(State):
         if next_output is not None:
             context.selected_output = next_output
             next_node = context.get_next_node(context.selected_output)
-            # Inform GUI which control output was selected
-            event_queue.put(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(
-                        payload=SelectedControlOutputEvent(
-                            node_name=context.current_node.name,
-                            selected_output_parameter_name=next_output.name,
-                        )
-                    )
-                )
-            )
         else:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -218,7 +202,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_str)
             all_nodes = list(parent_flow.nodes.values())
             for node_to_unresolve in all_nodes:
-                node_to_unresolve.make_node_unresolved({NodeResolutionState.RESOLVED})
+                node_to_unresolve.make_node_unresolved({NodeResolutionState.RESOLVED, NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVING})
         self.start(ResolveNodeState)  # Begins the flow
 
     def update(self) -> None:
