@@ -304,6 +304,7 @@ class GetAllNodeInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess)
 
     metadata: dict
     node_resolution_state: str
+    locked: bool
     connections: ListConnectionsForNodeResultSuccess
     element_id_to_value: dict[str, ParameterInfoValue]
     root_node_element: dict[str, Any]

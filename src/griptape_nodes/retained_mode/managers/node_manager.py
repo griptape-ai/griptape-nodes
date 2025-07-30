@@ -1625,6 +1625,7 @@ class NodeManager:
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
+            locked = node.lock,
             connections=list_connections_success,
             element_id_to_value=element_id_to_value,
             root_node_element=element_details,
