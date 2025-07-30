@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from tld import Result
 
 
 class NewPosition(NamedTuple):
@@ -317,6 +318,36 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     """
 
 
+@dataclass
+@PayloadRegistry.register
+class ToggleLockNodeRequest(WorkflowNotAlteredMixin, RequestPayload):
+    """Lock a node.
+
+    Use when: Implementing locking functionality, preventing changes to nodes.
+
+    Args:
+        node_name: Name of the node to lock
+        lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
+
+    Results: LockNodeResultSuccess (node locked) | LockNodeResultFailure (node not found)
+    """
+    node_name: str | None
+    lock: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class ToggleLockNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node locked successfully."""
+    node_name: str
+    locked: bool
+
+@dataclass
+@PayloadRegistry.register
+class ToggleLockNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node failed to lock."""
+
+
 # A Node's state can be serialized to a sequence of commands that the engine runs.
 @dataclass
 class SerializedNodeCommands:
@@ -354,6 +385,7 @@ class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
+    lock_node_command: ToggleLockNodeRequest | None = None
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 

@@ -78,6 +78,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_events import ToggleLockNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
     Version,
@@ -1110,6 +1111,7 @@ class WorkflowManager:
             # Now generate all the set parameter value code and add it to the flow context.
             set_parameter_value_asts = self._generate_set_parameter_value_code(
                 set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
+                serialized_flow_commands=serialized_flow_commands,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
                 unique_values_dict_name="top_level_unique_values_dict",
                 import_recorder=import_recorder,
@@ -2503,6 +2505,7 @@ class WorkflowManager:
         set_parameter_value_commands: dict[
             SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
         ],
+        serialized_flow_commands: SerializedFlowCommands,
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
         unique_values_dict_name: str,
         import_recorder: ImportRecorder,
@@ -2510,9 +2513,17 @@ class WorkflowManager:
         parameter_value_asts = []
         for node_uuid, indirect_set_parameter_value_commands in set_parameter_value_commands.items():
             node_variable_name = node_uuid_to_node_variable_name[node_uuid]
+            
+            # Find the corresponding serialized node command to get the lock command
+            lock_node_command = None
+            for serialized_node_command in serialized_flow_commands.serialized_node_commands:
+                if serialized_node_command.node_uuid == node_uuid:
+                    lock_node_command = serialized_node_command.lock_node_command
+                    break
+            
             parameter_value_asts.extend(
                 self._generate_set_parameter_value_for_node(
-                    node_variable_name, indirect_set_parameter_value_commands, unique_values_dict_name, import_recorder
+                    node_variable_name, indirect_set_parameter_value_commands, unique_values_dict_name, import_recorder, lock_node_command
                 )
             )
         return parameter_value_asts
@@ -2523,13 +2534,15 @@ class WorkflowManager:
         indirect_set_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
         unique_values_dict_name: str,
         import_recorder: ImportRecorder,
+        lock_node_command: ToggleLockNodeRequest | None = None,
     ) -> list[ast.stmt]:
-        if not indirect_set_parameter_value_commands:
+        if not indirect_set_parameter_value_commands and lock_node_command is None:
             return []
 
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.parameter_events", "SetParameterValueRequest"
-        )
+        if indirect_set_parameter_value_commands:
+            import_recorder.add_from_import(
+                "griptape_nodes.retained_mode.events.parameter_events", "SetParameterValueRequest"
+            )
 
         set_parameter_value_asts = []
         with_node_context = ast.With(
@@ -2612,6 +2625,46 @@ class WorkflowManager:
                 col_offset=0,
             )
             with_node_context.body.append(set_parameter_value_request_call)
+
+        # Add lock command as the LAST command in the with context
+        if lock_node_command is not None:
+            import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "ToggleLockNodeRequest")
+            
+            lock_node_call_ast = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                        lineno=1,
+                        col_offset=0,
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="ToggleLockNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="node_name",
+                                    value=ast.Constant(value=None, lineno=1, col_offset=0)
+                                ),
+                                ast.keyword(
+                                    arg="lock",
+                                    value=ast.Constant(value=lock_node_command.lock, lineno=1, col_offset=0)
+                                ),
+                            ],
+                            lineno=1,
+                            col_offset=0,
+                        )
+                    ],
+                    keywords=[],
+                    lineno=1,
+                    col_offset=0,
+                ),
+                lineno=1,
+                col_offset=0,
+            )
+            with_node_context.body.append(lock_node_call_ast)
 
         set_parameter_value_asts.append(with_node_context)
         return set_parameter_value_asts

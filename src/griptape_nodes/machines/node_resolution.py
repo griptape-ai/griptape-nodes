@@ -71,6 +71,8 @@ class InitializeSpotlightState(State):
                 wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
             )
         )
+        if current_node.lock:
+            return CompleteState
         if not context.paused:
             return InitializeSpotlightState
         return None

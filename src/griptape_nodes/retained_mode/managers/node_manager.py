@@ -84,6 +84,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
+    ToggleLockNodeRequest,
+    ToggleLockNodeResultFailure,
+    ToggleLockNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -178,6 +181,7 @@ class NodeManager:
             DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
+        event_manager.assign_manager_to_request_type(ToggleLockNodeRequest, self.on_toggle_lock_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -781,6 +785,13 @@ class NodeManager:
                 result = AddParameterToNodeResultFailure()
                 return result
 
+        # Check if node is locked
+        if node.lock:
+            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
+
         if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
             if parameter is None:
@@ -923,7 +934,13 @@ class NodeManager:
 
                 result = RemoveParameterFromNodeResultFailure()
                 return result
+        # Check if the node is locked
+        if node.lock:
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
 
+            result = RemoveParameterFromNodeResultFailure()
+            return result
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
         if element is None:
@@ -1246,7 +1263,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1268,6 +1285,12 @@ class NodeManager:
                 logger.error(details)
 
                 return AlterParameterDetailsResultFailure()
+
+        # Is the node locked? 
+        if node.lock:
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
 
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
@@ -1396,6 +1419,12 @@ class NodeManager:
                 details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
                 logger.error(details)
                 return SetParameterValueResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -2391,7 +2420,7 @@ class NodeManager:
                 commands.append(output_command)
         return commands if commands else None
 
-    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
 
         Args:
@@ -2416,6 +2445,12 @@ class NodeManager:
                 details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
                 logger.error(details)
                 return RenameParameterResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node is locked."
+            logger.error(details)
+            return RenameParameterResultFailure()
 
         # Get the parameter
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -2471,3 +2506,22 @@ class NodeManager:
         return RenameParameterResultSuccess(
             old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
         )
+
+    def on_toggle_lock_node_request(self, request: ToggleLockNodeRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return ToggleLockNodeResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except ValueError as err:
+                details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
+                logger.error(details)
+                return ToggleLockNodeResultFailure()
+        node.lock = request.lock
+        return ToggleLockNodeResultSuccess(node_name=node_name, locked=node.lock)

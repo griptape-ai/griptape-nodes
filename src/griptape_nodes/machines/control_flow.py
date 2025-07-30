@@ -88,6 +88,8 @@ class ResolveNodeState(State):
             return CompleteState
 
         # Mark the node unresolved, and broadcast an event to the GUI.
+        if context.current_node.lock:
+            return NextNodeState
         context.current_node.make_node_unresolved(
             current_states_to_trigger_change_event=set(
                 {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
