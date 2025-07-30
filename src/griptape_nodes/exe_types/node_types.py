@@ -65,6 +65,9 @@ class BaseNode(ABC):
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
     _tracked_parameters: list[BaseNodeElement]
+    _entry_control_parameter: Parameter | None = (
+        None  # The control input parameter used to enter this node during execution
+    )
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -92,6 +95,7 @@ class BaseNode(ABC):
         self.root_ui_element._node_context = self
         self.process_generator = None
         self._tracked_parameters = []
+        self.set_entry_control_parameter(None)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -106,6 +110,18 @@ class BaseNode(ABC):
                 )
             )
         self.state = NodeResolutionState.UNRESOLVED
+        # NOTE: _entry_control_parameter is NOT cleared here as it represents execution context
+        # that should persist through the resolve/unresolve cycle during a single execution
+
+    def set_entry_control_parameter(self, parameter: Parameter | None) -> None:
+        """Set the control parameter that was used to enter this node.
+
+        This should only be called by the ControlFlowContext during execution.
+
+        Args:
+            parameter: The control input parameter that triggered this node's execution, or None to clear
+        """
+        self._entry_control_parameter = parameter
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:
@@ -577,7 +593,7 @@ class BaseNode(ABC):
 
         def _flatten(items: Iterable[Any]) -> Generator[Any, None, None]:
             for item in items:
-                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes, dict)):
                     yield from _flatten(item)
                 elif item:
                     yield item

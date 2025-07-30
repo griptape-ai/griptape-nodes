@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
@@ -101,7 +101,7 @@ class AppPayload(Payload):
 
 
 # Type variables for our generic payloads
-P = TypeVar("P", bound=Payload)
+P = TypeVar("P", bound=RequestPayload)
 R = TypeVar("R", bound=ResultPayload)
 E = TypeVar("E", bound=ExecutionPayload)
 A = TypeVar("A", bound=AppPayload)
@@ -181,7 +181,7 @@ class BaseEvent(BaseModel, ABC):
         """
 
 
-class EventRequest(BaseEvent, Generic[P]):
+class EventRequest[P: Payload](BaseEvent):
     """Request event."""
 
     request: P
@@ -245,7 +245,7 @@ class EventRequest(BaseEvent, Generic[P]):
         return cls(request=request_payload, **event_data)
 
 
-class EventResult(BaseEvent, Generic[P, R], ABC):
+class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     """Abstract base class for result events."""
 
     request: P
@@ -429,7 +429,7 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent(BaseEvent, Generic[E]):
+class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
 
     def __init__(self, **data) -> None:
@@ -490,7 +490,7 @@ class ExecutionEvent(BaseEvent, Generic[E]):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent(BaseEvent, Generic[A]):
+class AppEvent[A: AppPayload](BaseEvent):
     payload: A
 
     def __init__(self, **data) -> None:

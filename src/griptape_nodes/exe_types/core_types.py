@@ -244,6 +244,11 @@ class BaseNodeElement:
             "name": self.name,
             "node_name": self._node_context.name,
         }
+        # If ui_options changed, send the complete ui_options from to_dict()
+        complete_dict = self.to_dict()
+        if "ui_options" in complete_dict:
+            self._changes["ui_options"] = complete_dict["ui_options"]
+
         event_data.update(self._changes)
 
         # Publish the event
@@ -384,13 +389,97 @@ class ParameterMessage(BaseNodeElement):
     type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
 
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
-    variant: VariantType
-    title: str | None = None
-    value: str
-    button_link: str | None = None
-    button_text: str | None = None
-    full_width: bool = False
-    ui_options: dict = field(default_factory=dict)
+    _variant: VariantType = field(init=False)
+    _title: str | None = field(default=None, init=False)
+    _value: str = field(init=False)
+    _button_link: str | None = field(default=None, init=False)
+    _button_text: str | None = field(default=None, init=False)
+    _full_width: bool = field(default=False, init=False)
+    _ui_options: dict = field(default_factory=dict, init=False)
+
+    def __init__(  # noqa: PLR0913
+        self,
+        variant: VariantType,
+        value: str,
+        *,
+        title: str | None = None,
+        button_link: str | None = None,
+        button_text: str | None = None,
+        full_width: bool = False,
+        ui_options: dict | None = None,
+        **kwargs,
+    ):
+        super().__init__(element_type=ParameterMessage.__name__, **kwargs)
+        self._variant = variant
+        self._title = title
+        self._value = value
+        self._button_link = button_link
+        self._button_text = button_text
+        self._full_width = full_width
+        self._ui_options = ui_options or {}
+
+    @property
+    def variant(self) -> VariantType:
+        return self._variant
+
+    @variant.setter
+    @BaseNodeElement.emits_update_on_write
+    def variant(self, value: VariantType) -> None:
+        self._variant = value
+
+    @property
+    def title(self) -> str | None:
+        return self._title
+
+    @title.setter
+    @BaseNodeElement.emits_update_on_write
+    def title(self, value: str | None) -> None:
+        self._title = value
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    @value.setter
+    @BaseNodeElement.emits_update_on_write
+    def value(self, value: str) -> None:
+        self._value = value
+
+    @property
+    def button_link(self) -> str | None:
+        return self._button_link
+
+    @button_link.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_link(self, value: str | None) -> None:
+        self._button_link = value
+
+    @property
+    def button_text(self) -> str | None:
+        return self._button_text
+
+    @button_text.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_text(self, value: str | None) -> None:
+        self._button_text = value
+
+    @property
+    def full_width(self) -> bool:
+        return self._full_width
+
+    @full_width.setter
+    @BaseNodeElement.emits_update_on_write
+    def full_width(self, value: bool) -> None:
+        self._full_width = value
+
+    @property
+    def ui_options(self) -> dict:
+        return self._ui_options
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        self._ui_options = value
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
@@ -594,7 +683,7 @@ class Parameter(BaseNodeElement):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
         if not element_type:
-            element_type = BaseNodeElement.__name__
+            element_type = self.__class__.__name__
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
         self.tooltip = tooltip

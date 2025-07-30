@@ -4,7 +4,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from griptape_nodes.app.app import STATIC_SERVER_ENABLED, STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+from griptape_nodes.app.api import STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+from griptape_nodes.app.app import STATIC_SERVER_ENABLED
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 
 logger = logging.getLogger("griptape_nodes")
@@ -52,3 +53,40 @@ class LocalStorageDriver(BaseStorageDriver):
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
+
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from local storage.
+
+        Args:
+            file_name: The name of the file to delete.
+        """
+        # Use the static server's delete endpoint
+        delete_url = urljoin(self.base_url, f"/static-files/{file_name}")
+
+        try:
+            response = httpx.delete(delete_url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to delete file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+    def list_files(self) -> list[str]:
+        """List all files in local storage.
+
+        Returns:
+            A list of file names in storage.
+        """
+        # Use the static server's list endpoint
+        list_url = urljoin(self.base_url, "/static-uploads/")
+
+        try:
+            response = httpx.get(list_url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to list files: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        response_data = response.json()
+        return response_data.get("files", [])

@@ -1810,6 +1810,8 @@ class FlowManager:
     def unresolve_whole_flow(self, flow: ControlFlow) -> None:
         for node in flow.nodes.values():
             node.make_node_unresolved(current_states_to_trigger_change_event=None)
+            # Clear entry control parameter for new execution
+            node.set_entry_control_parameter(None)
 
     def flow_state(self, flow: ControlFlow) -> tuple[str | None, str | None]:  # noqa: ARG002
         if not self.check_for_existing_running_flow():

@@ -1,4 +1,4 @@
-# TilingFluxImg2ImgPipeline
+# Flux Post Upscale
 
 !!! warning "You need to perform setup steps to use Hugging Face nodes"
 
@@ -6,7 +6,7 @@
 
 ## What is it?
 
-The TilingFluxImg2ImgPipeline node is designed to transform images using the FLUX.1 model with a tiling approach. It allows for image-to-image transformations based on text prompts, utilizing Hugging Face's diffusers library to apply changes across image tiles for efficient processing.
+The Flux Post Upscale node is designed to transform images using the FLUX.1 model with a tiling approach. It allows for image-to-image transformations based on text prompts, utilizing Hugging Face's diffusers library to apply changes across image tiles for efficient processing.
 
 ## When would I use it?
 
@@ -21,7 +21,7 @@ Use this node when you need to:
 
 ### Basic Setup
 
-1. Add the TilingFluxImg2ImgPipeline node to your workflow
+1. Add the Flux Post Upscale node to your workflow
 1. Connect an image source to the "input_image" parameter
 1. Set the desired model in the "model" parameter
 1. Provide a text prompt in the "prompt" parameter

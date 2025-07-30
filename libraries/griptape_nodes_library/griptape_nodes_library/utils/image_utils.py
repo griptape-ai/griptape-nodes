@@ -103,3 +103,62 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
         raise ValueError(details) from err
 
     return ImageLoader().parse(image_bytes)
+
+
+def extract_channel_from_image(image: Image.Image, channel: str, context_name: str = "image") -> Image.Image:  # noqa: C901, PLR0911, PLR0912
+    """Extract the specified channel from an image.
+
+    Args:
+        image: PIL Image to extract channel from
+        channel: Channel to extract ("red", "green", "blue", "alpha")
+        context_name: Name for error messages (e.g., "mask", "image")
+
+    Returns:
+        PIL Image containing the extracted channel
+
+    Raises:
+        ValueError: If the image mode is not supported
+    """
+    match image.mode:
+        case "RGB":
+            if channel == "red":
+                r, _, _ = image.split()
+                return r
+            if channel == "green":
+                _, g, _ = image.split()
+                return g
+            if channel == "blue":
+                _, _, b = image.split()
+                return b
+            # alpha not available in RGB, use red as fallback
+            r, _, _ = image.split()
+            return r
+        case "RGBA":
+            if channel == "red":
+                r, _, _, _ = image.split()
+                return r
+            if channel == "green":
+                _, g, _, _ = image.split()
+                return g
+            if channel == "blue":
+                _, _, b, _ = image.split()
+                return b
+            if channel == "alpha":
+                _, _, _, a = image.split()
+                return a
+            # Fallback to red channel
+            r, _, _, _ = image.split()
+            return r
+        case "L":
+            # Grayscale image - use directly
+            return image
+        case "LA":
+            if channel == "alpha":
+                _, a = image.split()
+                return a
+            # Use grayscale channel
+            gray, _ = image.split()
+            return gray
+        case _:
+            msg = f"Unsupported {context_name} mode: {image.mode}"
+            raise ValueError(msg)
