@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 
 if TYPE_CHECKING:
-    from griptape_nodes.node_library.library_registry import Library, LibrarySchema, ComponentDefinition
+    from griptape_nodes.node_library.library_registry import (
+        ComponentDefinition,
+        Library,
+        LibrarySchema,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ class GriptapeNodesAdvancedLibrary(AdvancedNodeLibrary):
         for component in library_data.components:
             self._process_component(component, library_data.name)
 
-    def _process_component(self, component: "ComponentDefinition", library_name: str) -> None:
+    def _process_component(self, component: ComponentDefinition, library_name: str) -> None:
         """Process a single custom component.
 
         Args:
