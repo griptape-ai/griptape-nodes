@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +14,12 @@ class CustomComponentManager:
 
     def __init__(self) -> None:
         self.config_manager = GriptapeNodes.ConfigManager()
-        self.static_dir = self._get_static_directory()
-
-    def _get_static_directory(self) -> Path:
-        """Get the static files directory path."""
-        workspace_path = self.config_manager.workspace_path
-        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
-        return workspace_path / static_files_directory
+        self.static_files_manager = StaticFilesManager(
+            config_manager=self.config_manager,
+            secrets_manager=GriptapeNodes.SecretsManager(),
+            event_manager=None
+        )
+        self.static_dir = self.static_files_manager.get_static_directory()
 
     def register_custom_components(self, library_path: Path) -> None:
         """Register custom components from a library by copying them to the static directory.
@@ -44,7 +44,7 @@ class CustomComponentManager:
 
             for component in custom_components:
                 self._register_custom_component(library_path, component)
-            
+
             # Also copy the SDK file if it exists
             self._copy_sdk_file(library_path)
 
@@ -95,7 +95,7 @@ class CustomComponentManager:
         """
         try:
             sdk_file_path = library_path / "griptape_nodes_library/iframe-sdk.js"
-            
+
             if not sdk_file_path.exists():
                 logger.warning("SDK file not found at %s", sdk_file_path)
                 return

@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+from pathlib import Path
 
 import httpx
 from xdg_base_dirs import xdg_config_home
@@ -180,3 +181,13 @@ class StaticFilesManager:
         url = self.storage_driver.create_signed_download_url(file_name)
 
         return url
+
+    def get_static_directory(self) -> Path:
+        """Get the static files directory path.
+        
+        Returns:
+            The path to the static files directory.
+        """
+        workspace_path = self.config_manager.workspace_path
+        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+        return workspace_path / static_files_directory
