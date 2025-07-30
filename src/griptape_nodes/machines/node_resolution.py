@@ -223,9 +223,7 @@ class ExecuteNodeState(State):
                 upstream_node, upstream_parameter = upstream_connection
 
                 # If the upstream node is resolved, collect its output value
-                if (
-                    upstream_parameter.name in upstream_node.parameter_output_values
-                ):
+                if upstream_parameter.name in upstream_node.parameter_output_values:
                     output_value = upstream_node.parameter_output_values[upstream_parameter.name]
 
                     # Pass the value through using the same mechanism as normal resolution
@@ -370,18 +368,6 @@ class ExecuteNodeState(State):
                         ),
                     )
                 )
-                # Pass the value through to the new nodes.
-                # conn_output_nodes = GriptapeNodes.FlowManager().get_connected_output_parameters(current_node, parameter)
-                # for target_node, target_parameter in conn_output_nodes:
-                #     GriptapeNodes.get_instance().handle_request(
-                #         SetParameterValueRequest(
-                #             parameter_name=target_parameter.name,
-                #             node_name=target_node.name,
-                #             value=value,
-                #             data_type=parameter.output_type,
-                #         )
-                #     )
-
             # Output values should already be saved!
         library = LibraryRegistry.get_libraries_with_node_type(current_node.__class__.__name__)
         if len(library) == 1:
