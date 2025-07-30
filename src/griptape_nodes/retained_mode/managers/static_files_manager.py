@@ -184,7 +184,7 @@ class StaticFilesManager:
 
     def get_static_directory(self) -> Path:
         """Get the static files directory path.
-        
+
         Returns:
             The path to the static files directory.
         """

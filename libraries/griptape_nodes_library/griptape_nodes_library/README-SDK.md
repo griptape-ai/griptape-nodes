@@ -155,6 +155,7 @@ See `ColorPickerWithSDK.html` for a more complex example with validation and mul
 The SDK handles these message types automatically:
 
 ### From Parent to Iframe
+
 ```javascript
 {
     type: 'SET_VALUE',
@@ -163,6 +164,7 @@ The SDK handles these message types automatically:
 ```
 
 ### From Iframe to Parent
+
 ```javascript
 {
     type: 'VALUE_UPDATE',
@@ -182,6 +184,7 @@ The SDK handles these message types automatically:
 If you have existing components, here's how to migrate:
 
 ### Before (Manual)
+
 ```javascript
 let currentValue = '';
 let hasReceivedInitialValue = false;
@@ -215,6 +218,7 @@ setTimeout(() => {
 ```
 
 ### After (With SDK)
+
 ```javascript
 const component = new IframeComponent({
     componentName: 'My Component',
@@ -231,15 +235,16 @@ function updateValue() {
 ## Best Practices
 
 1. **Always include loading states** - Use the provided loading spinner
-2. **Handle errors gracefully** - Use the `onError` callback
-3. **Validate inputs** - Add validation before sending values
-4. **Use descriptive component names** - Helps with debugging
-5. **Keep components focused** - One component per file
-6. **Test communication** - Verify parent-iframe communication works
+1. **Handle errors gracefully** - Use the `onError` callback
+1. **Validate inputs** - Add validation before sending values
+1. **Use descriptive component names** - Helps with debugging
+1. **Keep components focused** - One component per file
+1. **Test communication** - Verify parent-iframe communication works
 
 ## Browser Support
 
 The SDK works in all modern browsers that support:
+
 - ES6 classes
 - `window.postMessage`
 - `addEventListener`
@@ -250,13 +255,13 @@ The SDK works in all modern browsers that support:
 ### Common Issues
 
 1. **Messages not received** - Check that the SDK is loaded before creating the component
-2. **Values not updating** - Ensure you call `component.updateValue()` when user changes input
-3. **Loading state stuck** - Verify `UIUtils.showMainContent()` is called in `onValueChange`
-4. **Parent communication fails** - Check browser console for error messages
+1. **Values not updating** - Ensure you call `component.updateValue()` when user changes input
+1. **Loading state stuck** - Verify `UIUtils.showMainContent()` is called in `onValueChange`
+1. **Parent communication fails** - Check browser console for error messages
 
 ### Debug Tips
 
 - Use browser dev tools to inspect iframe messages
 - Check console logs for SDK messages
 - Verify parent window is sending correct message format
-- Test with simple values first, then complex data 
+- Test with simple values first, then complex data

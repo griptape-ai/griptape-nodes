@@ -15,9 +15,7 @@ class CustomComponentManager:
     def __init__(self) -> None:
         self.config_manager = GriptapeNodes.ConfigManager()
         self.static_files_manager = StaticFilesManager(
-            config_manager=self.config_manager,
-            secrets_manager=GriptapeNodes.SecretsManager(),
-            event_manager=None
+            config_manager=self.config_manager, secrets_manager=GriptapeNodes.SecretsManager(), event_manager=None
         )
         self.static_dir = self.static_files_manager.get_static_directory()
 
