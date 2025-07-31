@@ -1594,14 +1594,9 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Print the engine ready message
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
-        if isinstance(engine_version_result, GetEngineVersionResultSuccess):
-            engine_version = (
-                f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
-            )
-        else:
-            engine_version = "<UNKNOWN ENGINE VERSION>"
+        from griptape_nodes.utils.version_utils import get_complete_version_string
+
+        engine_version = get_complete_version_string()
 
         # Get current session ID
         session_id = GriptapeNodes.get_session_id()

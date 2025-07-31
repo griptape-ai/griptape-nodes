@@ -724,12 +724,10 @@ def _sync_libraries() -> None:
 
 def _print_current_version() -> None:
     """Prints the current version of the script."""
-    version = __get_current_version()
-    source, commit_id = __get_install_source()
-    if commit_id is None:
-        console.print(f"[bold green]{version} ({source})[/bold green]")
-    else:
-        console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
+    from griptape_nodes.utils.version_utils import get_complete_version_string
+
+    version_string = get_complete_version_string()
+    console.print(f"[bold green]{version_string}[/bold green]")
 
 
 def _print_user_config() -> None:
