@@ -11,14 +11,25 @@ from typing import Any
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
+
+try:
+    import ollama  # pyright: ignore[reportMissingImports]
+except ImportError as e:
+    logger.warning(f"Ollama not installed: {e}")
+
+
+class OllamaConnectionError(Exception):
+    """Exception raised when unable to connect to Ollama server or retrieve models."""
+
 
 # --- Constants ---
 
 DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"
 DEFAULT_MODEL = "llama3.2"
-
+REFRESH_MODELS_MESSAGE = "🔄 Refresh Models..."
 # Common Ollama models - users can type their own model name as well
 MODEL_CHOICES = [
     "llama3.2",
@@ -89,21 +100,20 @@ class OllamaPrompt(BasePrompt):
             )
         )
 
-    def _get_available_models(self) -> list[str]:
+    def _get_models(self, include_refresh: bool = True, raise_on_error: bool = True) -> list[str]:
         """Get the list of available models from the Ollama server.
 
         Attempts to connect to the Ollama server and retrieve the list of
-        installed models. Falls back to the static MODEL_CHOICES list if
-        the server is not available or if there's any connection error.
+        installed models. Falls back to helpful messages if the server is not available.
 
-        Uses the current base_url and port parameter values to connect.
+        Args:
+            include_refresh: Whether to include the refresh option in the returned list
+            raise_on_error: Whether to raise an exception on connection error (vs silent fallback)
 
         Returns:
             List of available model names.
         """
         try:
-            import ollama  # pyright: ignore[reportMissingImports]
-
             # Get current connection settings (may be different from defaults)
             base_url = self.get_parameter_value("base_url") or DEFAULT_BASE_URL
             port = self.get_parameter_value("port") or DEFAULT_PORT
@@ -122,59 +132,39 @@ class OllamaPrompt(BasePrompt):
             if models:
                 # Sort models alphabetically for better UX
                 models.sort()
-                # Add refresh option at the end
-                models.append("🔄 Refresh Models...")
+                if include_refresh:
+                    models.append(REFRESH_MODELS_MESSAGE)
                 return models
 
-        except Exception:  # noqa: S110
-            # Ollama not available or other error, will fall back to static list
-            # Intentionally silent since this is during initialization and we have a good fallback
-            pass
+        except Exception as e:
+            if raise_on_error:
+                msg = f"{self.name}: Unable to get available models from Ollama: {e}"
+                logger.warning(msg)
+                raise OllamaConnectionError(msg) from e
+            # Silent fallback for internal use
+            return []
 
         # No models found - show helpful message
-        no_models_message = "📝 No models found - Install models with 'ollama pull <model>'"
-        return [no_models_message, "🔄 Refresh Models..."]
+        if include_refresh:
+            no_models_message = "📝 No models found - Install models with 'ollama pull <model>'"
+            return [no_models_message, REFRESH_MODELS_MESSAGE]
+        return []
+
+    def _get_available_models(self) -> list[str]:
+        """Get the list of available models from the Ollama server.
+
+        Returns:
+            List of available model names with refresh option.
+        """
+        return self._get_models(include_refresh=True, raise_on_error=True)
 
     def _get_base_models(self) -> list[str]:
         """Get the list of available models from the Ollama server (without refresh option).
 
-        This is the same as _get_available_models but without the refresh option
-        for internal use when we need to count actual models.
-
         Returns:
             List of available model names (without refresh option).
         """
-        try:
-            import ollama  # pyright: ignore[reportMissingImports]
-
-            # Get current connection settings (may be different from defaults)
-            base_url = self.get_parameter_value("base_url") or DEFAULT_BASE_URL
-            port = self.get_parameter_value("port") or DEFAULT_PORT
-            host = f"{base_url}:{port}"
-
-            # Create client with custom host if different from default
-            if host != f"{DEFAULT_BASE_URL}:{DEFAULT_PORT}":
-                client = ollama.Client(host=host)
-                response = client.list()
-            else:
-                # Use default client
-                response = ollama.list()
-
-            models = [model["model"] for model in response.get("models", [])]
-
-            if models:
-                # Sort models alphabetically for better UX
-                models.sort()
-                return models
-
-        except Exception:  # noqa: S110
-            # Ollama not available or other error, will fall back to static list
-            # Intentionally silent since this is during initialization and we have a good fallback
-            pass
-
-        # No models found or server unavailable - return empty list
-        # This will trigger the helpful message in _get_available_models
-        return []
+        return self._get_models(include_refresh=False, raise_on_error=False)
 
     def _refresh_model_list(self) -> None:
         """Refresh the model list and update the model parameter choices.
@@ -185,7 +175,7 @@ class OllamaPrompt(BasePrompt):
         # Get fresh model list (without refresh option for counting)
         base_models = self._get_base_models()
         available_models = base_models.copy()
-        available_models.append("🔄 Refresh Models...")
+        available_models.append(REFRESH_MODELS_MESSAGE)
 
         # Update the model parameter with new choices
         model_param = self.get_parameter_by_name("model")
@@ -205,7 +195,7 @@ class OllamaPrompt(BasePrompt):
                     (
                         model
                         for model in available_models
-                        if not model.startswith("📝") and model != "🔄 Refresh Models..."
+                        if not model.startswith("📝") and model != "REFRESH_MODELS_MESSAGE"
                     ),
                     None,
                 )
@@ -219,10 +209,10 @@ class OllamaPrompt(BasePrompt):
         """Handle parameter value changes.
 
         Refreshes model list when:
-        - User selects "🔄 Refresh Models..." from the model dropdown
+        - User selects REFRESH_MODELS_MESSAGE from the model dropdown
         - Base URL or port changes (indicating different Ollama server)
         """
-        if parameter.name == "model" and value == "🔄 Refresh Models...":
+        if parameter.name == "model" and value == "REFRESH_MODELS_MESSAGE":
             # User selected refresh option - refresh models and keep refresh option
             self._refresh_model_list()
             # Reset to first available model (not the refresh option)
