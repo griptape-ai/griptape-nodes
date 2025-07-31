@@ -1,4 +1,5 @@
 {
     "python.analysis.typeCheckingMode": "basic",
-    "austin.path": "${workspaceFolder}/.venv/bin/austin"
+    "austin.path": "${workspaceFolder}/.venv/bin/austin",
+    "cursorpyright.analysis.typeCheckingMode": "basic"
 }
