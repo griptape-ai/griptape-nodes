@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.machines.execution_utils import Focus
 
-from griptape_nodes.app.app_sessions import event_queue
+from griptape_nodes.app.app import event_queue
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryRegistry

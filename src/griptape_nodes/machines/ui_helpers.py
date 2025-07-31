@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from griptape_nodes.app.app_sessions import event_queue
+from griptape_nodes.app.app import event_queue
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 

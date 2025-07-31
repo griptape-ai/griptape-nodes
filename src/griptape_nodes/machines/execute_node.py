@@ -7,7 +7,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 from griptape.utils import with_contextvars
 
-from griptape_nodes.app.app_sessions import event_queue
+from griptape_nodes.app.app import event_queue
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, ParameterTypeBuiltin
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.data_helpers import (
