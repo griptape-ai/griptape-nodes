@@ -22,7 +22,7 @@ class EvaluateParameterState(State):
         current_node.initialize_spotlight()
 
         while current_node.current_spotlight_parameter is not None:
-            # Get connections using FlowManaager
+            # Get connections using FlowManager
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             connections = GriptapeNodes.FlowManager().get_connections()
