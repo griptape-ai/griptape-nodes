@@ -686,12 +686,13 @@ def _sync_libraries() -> None:
 
         # Streaming download with a tiny progress bar
         with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
+            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
+            progress.start()
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching libraries: {e}[/red]")
                 return
-            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
                 for chunk in r.iter_bytes():
                     f.write(chunk)
