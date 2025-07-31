@@ -62,6 +62,15 @@ class WorkflowNotAlteredMixin:
     altered_workflow_state: bool = field(default=False, init=False)
 
 
+class SkipTheLineMixin:
+    """Mixin for events that should skip the event queue and be processed immediately.
+
+    Events that implement this mixin will be handled directly without being added
+    to the event queue, allowing for priority processing of critical events like
+    heartbeats or other time-sensitive operations.
+    """
+
+
 # Success result payload abstract base class
 @dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
