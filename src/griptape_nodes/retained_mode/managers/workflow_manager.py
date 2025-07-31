@@ -1065,6 +1065,7 @@ class WorkflowManager:
             or len(serialized_flow_commands.serialized_connections) > 0
             or len(serialized_flow_commands.set_parameter_value_commands) > 0
             or len(serialized_flow_commands.sub_flows_commands) > 0
+            or len(serialized_flow_commands.set_lock_commands_per_node) > 0
         )
 
         if not is_referenced_workflow and has_content_to_serialize:
@@ -1111,7 +1112,7 @@ class WorkflowManager:
             # Now generate all the set parameter value code and add it to the flow context.
             set_parameter_value_asts = self._generate_set_parameter_value_code(
                 set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
-                serialized_flow_commands=serialized_flow_commands,
+                lock_commands=serialized_flow_commands.set_lock_commands_per_node,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
                 unique_values_dict_name="top_level_unique_values_dict",
                 import_recorder=import_recorder,
@@ -2505,7 +2506,7 @@ class WorkflowManager:
         set_parameter_value_commands: dict[
             SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
         ],
-        serialized_flow_commands: SerializedFlowCommands,
+        lock_commands: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest],
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
         unique_values_dict_name: str,
         import_recorder: ImportRecorder,
@@ -2513,14 +2514,7 @@ class WorkflowManager:
         parameter_value_asts = []
         for node_uuid, indirect_set_parameter_value_commands in set_parameter_value_commands.items():
             node_variable_name = node_uuid_to_node_variable_name[node_uuid]
-
-            # Find the corresponding serialized node command to get the lock command
-            lock_node_command = None
-            for serialized_node_command in serialized_flow_commands.serialized_node_commands:
-                if serialized_node_command.node_uuid == node_uuid:
-                    lock_node_command = serialized_node_command.lock_node_command
-                    break
-
+            lock_node_command = lock_commands.get(node_uuid)
             parameter_value_asts.extend(
                 self._generate_set_parameter_value_for_node(
                     node_variable_name,

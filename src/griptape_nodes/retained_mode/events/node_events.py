@@ -329,7 +329,7 @@ class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
         node_name: Name of the node to lock
         lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
 
-    Results: LockNodeResultSuccess (node locked) | LockNodeResultFailure (node not found)
+    Results: SetLockNodeStateResultSuccess (node locked) | SetLockNodeStateResultFailure (node not found)
     """
 
     node_name: str | None
