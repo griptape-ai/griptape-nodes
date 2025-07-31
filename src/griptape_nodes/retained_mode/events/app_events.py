@@ -18,14 +18,8 @@ class AppStartSessionRequest(RequestPayload):
     Use when: Initializing client connections, beginning new workflow sessions,
     setting up isolated execution environments, managing session state.
 
-    Args:
-        session_id: Specific session ID to use (None for auto-generated)
-
     Results: AppStartSessionResultSuccess (with session ID) | AppStartSessionResultFailure (session creation error)
     """
-
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1600
-    session_id: str | None = None
 
 
 @dataclass
