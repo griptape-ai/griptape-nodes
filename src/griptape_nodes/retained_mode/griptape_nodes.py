@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.metadata
 import logging
 import os
 import re
@@ -11,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.utils.version_utils import engine_version
 from griptape_nodes.retained_mode.events.app_events import (
     AppConnectionEstablished,
     AppEndSessionRequest,
@@ -78,7 +78,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-engine_version = importlib.metadata.version("griptape_nodes")
 
 
 @dataclass

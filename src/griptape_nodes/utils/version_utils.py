@@ -6,7 +6,7 @@ import importlib.metadata
 import json
 from typing import Literal
 
-from griptape_nodes.retained_mode.griptape_nodes import engine_version
+engine_version = importlib.metadata.version("griptape_nodes")
 
 
 def get_current_version() -> str:
