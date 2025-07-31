@@ -31,7 +31,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-    from griptape_nodes.utils.version_utils import get_current_version, get_install_source
+    from griptape_nodes.utils.version_utils import get_complete_version_string, get_current_version, get_install_source
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -724,8 +724,6 @@ def _sync_libraries() -> None:
 
 def _print_current_version() -> None:
     """Prints the current version of the script."""
-    from griptape_nodes.utils.version_utils import get_complete_version_string
-
     version_string = get_complete_version_string()
     console.print(f"[bold green]{version_string}[/bold green]")
 

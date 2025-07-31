@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+from griptape_nodes.utils.version_utils import get_complete_version_string
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -1594,8 +1595,6 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Print the engine ready message
-        from griptape_nodes.utils.version_utils import get_complete_version_string
-
         engine_version = get_complete_version_string()
 
         # Get current session ID
