@@ -8,7 +8,7 @@ from griptape.artifacts import ImageUrlArtifact, JsonArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
@@ -83,7 +83,7 @@ class ImageBash(DataNode):
         self.add_parameter(
             ParameterList(
                 name="input_images",
-                default_value=[],
+                default_value=None,
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="The images to use for the image",
@@ -675,18 +675,23 @@ class ImageBash(DataNode):
 
         return super().after_value_set(parameter, value)
 
-    def after_incoming_connection_removed(self, parameter: Parameter) -> None:
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
         """Handle when a connection is removed from a parameter."""
-        if "input_images" in parameter.name:
+        if "input_images" in target_parameter.name:
             # Get current input_images value after the connection removal
-            current_input_images = self.get_parameter_value("input_images") or []
-
-            if len(current_input_images) == 0:
+            current_input_images = self.get_parameter_value("input_images") or None
+            if current_input_images is None or len(current_input_images) == 0:
                 # All images were removed, clean up
                 self._handle_input_images_removed()
             else:
                 # Some images remain, sync metadata
                 self._sync_metadata_with_input_images()
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def _update_output_image(self) -> None:
         bash_image = self.get_parameter_value("bash_image")
