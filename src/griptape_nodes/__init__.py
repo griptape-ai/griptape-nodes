@@ -742,16 +742,11 @@ def _print_user_config(config_path: str | None = None) -> None:
     
     Args:
         config_path: Optional path to specific config value. If None, prints entire config.
-                    Special case: 'workspace' maps to 'workspace_directory' for convenience.
     """
     if config_path is None:
         config = config_manager.merged_config
         sys.stdout.write(json.dumps(config, indent=2))
     else:
-        # Handle special case: 'workspace' -> 'workspace_directory'
-        if config_path == "workspace":
-            config_path = "workspace_directory"
-        
         try:
             value = config_manager.get_config_value(config_path)
             if isinstance(value, (dict, list)):
