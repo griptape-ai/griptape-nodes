@@ -1,4 +1,5 @@
 import logging
+from enum import Enum
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -6,11 +7,19 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterGroup,
+    ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
+
+
+class StatusType(Enum):
+    """Enum for ForEach loop status types."""
+
+    NORMAL = "normal"
+    BREAK = "break"
 
 
 class ForEachStartNode(StartLoopNode):
@@ -28,8 +37,6 @@ class ForEachStartNode(StartLoopNode):
         self.finished = False
         self.current_index = 0
         self._items = None
-
-        # Debug: We'll override set_parameter_value in a method below
 
         # Connection tracking for validation
         self._connected_parameters: set[str] = set()
@@ -110,6 +117,16 @@ class ForEachStartNode(StartLoopNode):
         self.next_control_output: Parameter | None = None
         self._logger = logging.getLogger(f"{__name__}.{self.name}")
 
+        # Status message parameter
+        self.status_message = ParameterMessage(
+            variant="info",
+            value="",
+        )
+        self.add_node_element(self.status_message)
+
+        # Initialize status message
+        self._update_status_message()
+
     def process(self) -> None:
         # Reset state when the node is first processed
         if self._flow is None:
@@ -127,6 +144,7 @@ class ForEachStartNode(StartLoopNode):
                 self._check_completion_and_set_output()
             case self.break_loop_signal:
                 # Break signal from ForEach End - halt loop immediately
+                self._update_status_message(StatusType.BREAK)
                 self._break_loop()
             case _:
                 # Unexpected control entry point - log error for debugging
@@ -189,6 +207,26 @@ class ForEachStartNode(StartLoopNode):
         # Return the control output determined by process()
         return self.next_control_output
 
+    def _update_status_message(self, status_type: StatusType = StatusType.NORMAL) -> None:
+        """Update the status message parameter based on current loop state."""
+        if not self._items or len(self._items) == 0:
+            # Not running or no items
+            status = ""
+        elif status_type == StatusType.BREAK:
+            # Loop was broken early
+            total_items = len(self._items)
+            status = f"Stopped at {self.current_index} (of {total_items}) - Break"
+        elif self.finished:
+            # Loop completed normally
+            total_items = len(self._items)
+            status = f"Completed {total_items} (of {total_items})"
+        else:
+            # Currently running
+            total_items = len(self._items)
+            status = f"Processing {self.current_index} (of {total_items})"
+
+        self.status_message.value = status
+
     def _initialize_loop(self) -> None:
         """Initialize the loop with fresh parameter values."""
         # Reset all state for fresh loop execution
@@ -222,6 +260,7 @@ class ForEachStartNode(StartLoopNode):
         # If empty list or finished all items, complete
         if not self._items or len(self._items) == 0 or self.current_index >= len(self._items):
             self.finished = True
+            self._update_status_message()
             self.next_control_output = self.loop_end_condition_met_signal
             return
 
@@ -239,7 +278,8 @@ class ForEachStartNode(StartLoopNode):
             self.publish_update_to_parameter("current_item", current_item_value)
             self.publish_update_to_parameter("index", self.current_index)
 
-        # Continue with execution
+        # Update status message and continue with execution
+        self._update_status_message()
         self.next_control_output = self.exec_out
 
     def _break_loop(self) -> None:
