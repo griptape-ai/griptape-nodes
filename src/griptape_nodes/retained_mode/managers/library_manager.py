@@ -97,6 +97,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
