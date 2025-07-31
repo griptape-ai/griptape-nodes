@@ -891,6 +891,19 @@
       }
     },
     {
+      "class_name": "OllamaPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/ollama_prompt_driver.py",
+      "metadata": {
+        "category": "agents/prompt_models",
+        "description": "Prompt Models available from Ollama",
+        "display_name": "Ollama Prompt",
+        "icon": {
+          "dark": "logos/ollama.svg",
+          "light": "logos/ollama_dark.svg"
+        }
+      }
+    },
+    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
