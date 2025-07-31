@@ -28,7 +28,7 @@ def get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
 
     direct_url_info = json.loads(direct_url_text)
     url = direct_url_info.get("url")
-    if url.startswith("file://"):
+    if url and url.startswith("file://"):
         return "file", None
     if "vcs_info" in direct_url_info:
         return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
