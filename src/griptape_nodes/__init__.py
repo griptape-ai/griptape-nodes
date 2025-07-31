@@ -330,7 +330,12 @@ def _get_args() -> argparse.Namespace:
         metavar="SUBCOMMAND",
         required=True,
     )
-    config_subparsers.add_parser("show", help="Show configuration values.")
+    config_show_parser = config_subparsers.add_parser("show", help="Show configuration values.")
+    config_show_parser.add_argument(
+        "config_path",
+        nargs="?",
+        help="Optional config path to show specific value (e.g., 'workspace' for workspace directory).",
+    )
     config_subparsers.add_parser("list", help="List configuration values.")
     config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
 
@@ -732,10 +737,30 @@ def _print_current_version() -> None:
         console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
 
 
-def _print_user_config() -> None:
-    """Prints the user configuration from the config file."""
-    config = config_manager.merged_config
-    sys.stdout.write(json.dumps(config, indent=2))
+def _print_user_config(config_path: str | None = None) -> None:
+    """Prints the user configuration from the config file.
+    
+    Args:
+        config_path: Optional path to specific config value. If None, prints entire config.
+                    Special case: 'workspace' maps to 'workspace_directory' for convenience.
+    """
+    if config_path is None:
+        config = config_manager.merged_config
+        sys.stdout.write(json.dumps(config, indent=2))
+    else:
+        # Handle special case: 'workspace' -> 'workspace_directory'
+        if config_path == "workspace":
+            config_path = "workspace_directory"
+        
+        try:
+            value = config_manager.get_config_value(config_path)
+            if isinstance(value, (dict, list)):
+                sys.stdout.write(json.dumps(value, indent=2))
+            else:
+                sys.stdout.write(str(value))
+        except Exception:
+            console.print(f"[bold red]Config path '{config_path}' not found[/bold red]")
+            sys.exit(1)
 
 
 def _list_user_configs() -> None:
@@ -857,7 +882,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
         elif args.subcommand == "reset":
             _reset_user_config()
         elif args.subcommand == "show":
-            _print_user_config()
+            _print_user_config(getattr(args, "config_path", None))
     elif args.command == "self":
         if args.subcommand == "update":
             _update_self()
