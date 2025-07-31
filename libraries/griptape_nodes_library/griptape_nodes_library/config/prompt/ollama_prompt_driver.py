@@ -16,7 +16,10 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 try:
     import ollama  # pyright: ignore[reportMissingImports]
+
+    OLLAMA_INSTALLED = True
 except ImportError as e:
+    OLLAMA_INSTALLED = False
     logger.warning(f"Ollama not installed: {e}")
 
 
@@ -228,6 +231,55 @@ class OllamaPrompt(BasePrompt):
             self._refresh_model_list()
 
         return super().after_value_set(parameter, value)
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Performs pre-run validation checks for the node.
+
+        Checks if Ollama is installed and if the selected model is available.
+
+        Returns:
+            A list of Exception objects if validation fails, otherwise None.
+        """
+        exceptions = []
+
+        # Check if Ollama is installed
+        if not OLLAMA_INSTALLED:
+            msg = f"{self.name}: Ollama is not installed. Please install ollama from https://ollama.com/download"
+            exceptions.append(ValueError(msg))
+            return exceptions
+
+        # Check if the selected model is available
+        try:
+            selected_model = self.get_parameter_value("model")
+            if not selected_model:
+                msg = "No model selected"
+                exceptions.append(ValueError(msg))
+                return exceptions
+
+            # Skip validation for special UI messages
+            if selected_model.startswith("📝") or selected_model == REFRESH_MODELS_MESSAGE:
+                return exceptions if exceptions else None
+
+            # Get available models
+            available_models = self._get_base_models()
+
+            if not available_models:
+                msg = "No models found. Install models with 'ollama pull <model>'"
+                exceptions.append(ValueError(msg))
+                return exceptions
+
+            if selected_model not in available_models:
+                msg = f"Selected model '{selected_model}' is not available. Available models: {', '.join(available_models)}"
+                exceptions.append(ValueError(msg))
+
+        except OllamaConnectionError as e:
+            msg = f"Unable to connect to Ollama server: {e}"
+            exceptions.append(e)
+        except Exception as e:
+            msg = f"Error validating Ollama configuration: {e}"
+            exceptions.append(Exception(msg))
+
+        return exceptions if exceptions else None
 
     def process(self) -> None:
         """Processes the node configuration to create an OllamaPromptDriver.
