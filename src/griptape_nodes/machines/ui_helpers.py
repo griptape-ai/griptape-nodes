@@ -55,17 +55,17 @@ def mark_node_as_finished(current_focus: Focus) -> None:
     )
     lib_name = get_library_name(current_node)
     event_queue.put(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=NodeResolvedEvent(
-                        node_name=current_node.name,
-                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
-                        node_type=current_node.__class__.__name__,
-                        specific_library_name=lib_name,
-                    )
+        ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=NodeResolvedEvent(
+                    node_name=current_node.name,
+                    parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                    node_type=current_node.__class__.__name__,
+                    specific_library_name=lib_name,
                 )
             )
         )
+    )
     current_node.state = NodeResolutionState.RESOLVED
     logger.info("'%s' resolved.", current_node.name)
 
