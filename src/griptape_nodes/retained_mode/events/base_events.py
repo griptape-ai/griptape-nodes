@@ -10,7 +10,7 @@ from griptape.events import BaseEvent as GtBaseEvent
 from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     import builtins
@@ -118,16 +118,15 @@ class BaseEvent(BaseModel, ABC):
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
-    class Config:
-        """Pydantic configuration for the BaseEvent class."""
-
-        arbitrary_types_allowed = True
-        json_encoders: ClassVar[dict] = {
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
             # Use to_dict() methods for Griptape objects
             BaseArtifact: lambda obj: obj.to_dict(),
             BaseTool: lambda obj: obj.to_dict(),
             Structure: lambda obj: obj.to_dict(),
-        }
+        },
+    )
 
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization and add event_type."""
