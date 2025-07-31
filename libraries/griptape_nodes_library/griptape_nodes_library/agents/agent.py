@@ -200,6 +200,26 @@ class Agent(ControlNode):
             )
         )
 
+        self.add_parameter(
+            Parameter(
+                name="color_picker",
+                type="str",
+                default_value="",
+                tooltip="Custom component for color picker integration.",
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/ColorPickerWithSDK.html"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="simple_text_input",
+                type="str",
+                default_value="",
+                tooltip="Custom component for simple text input integration.",
+                ui_options={"custom_src": "http://localhost:8124/static/custom_components/SimpleTextInputWithSDK.html"},
+            )
+        )
+
         # Group for logging information.
         with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")

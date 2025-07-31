@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Library",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.3.0",
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
@@ -1486,5 +1486,18 @@
     "workflows/templates/compare_prompts.py",
     "workflows/templates/photography_team.py"
   ],
+  "custom_components": [
+    {
+      "name": "ColorPickerWithSDK",
+      "file_path": "griptape_nodes_library/ColorPickerWithSDK.html",
+      "description": "A color picker component using the iframe SDK"
+    },
+    {
+      "name": "SimpleTextInputWithSDK",
+      "file_path": "griptape_nodes_library/SimpleTextInputWithSDK.html",
+      "description": "A simple text input component using the iframe SDK"
+    }
+  ],
+  "advanced_library_path": "griptape_nodes_library/advanced_library.py",
   "is_default_library": true
 }

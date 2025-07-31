@@ -736,6 +736,23 @@ class LibraryManager:
                     library_data=library_data,
                     base_dir=base_dir,
                 )
+
+                # Register custom components from this library
+                try:
+                    import importlib.util
+
+                    spec = importlib.util.spec_from_file_location(
+                        "custom_component_manager",
+                        base_dir / "griptape_nodes_library" / "utils" / "custom_component_manager.py",
+                    )
+                    if spec and spec.loader:
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+                        component_manager = module.CustomComponentManager()
+                        component_manager.register_custom_components(base_dir)
+                except (ImportError, FileNotFoundError, AttributeError):
+                    # Custom component manager not available, skip custom component registration
+                    pass
             except Exception as err:
                 self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                     library_path=file_path,
