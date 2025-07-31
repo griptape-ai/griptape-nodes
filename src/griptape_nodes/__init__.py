@@ -334,7 +334,7 @@ def _get_args() -> argparse.Namespace:
     config_show_parser.add_argument(
         "config_path",
         nargs="?",
-        help="Optional config path to show specific value (e.g., 'workspace' for workspace directory).",
+        help="Optional config path to show specific value (e.g., 'workspace_directory').",
     )
     config_subparsers.add_parser("list", help="List configuration values.")
     config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
