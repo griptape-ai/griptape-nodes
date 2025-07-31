@@ -877,7 +877,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
         elif args.subcommand == "reset":
             _reset_user_config()
         elif args.subcommand == "show":
-            _print_user_config(getattr(args, "config_path", None))
+            _print_user_config(args.config_path)
     elif args.command == "self":
         if args.subcommand == "update":
             _update_self()
