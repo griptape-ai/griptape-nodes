@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.metadata
 import logging
 import os
 import re
@@ -46,6 +45,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
+from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -76,9 +76,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
-
-
-engine_version = importlib.metadata.version("griptape_nodes")
 
 
 @dataclass

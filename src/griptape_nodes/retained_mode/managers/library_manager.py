@@ -96,6 +96,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1594,14 +1595,7 @@ class LibraryManager:
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
 
         # Print the engine ready message
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.get_instance().handle_engine_version_request(engine_version_request)
-        if isinstance(engine_version_result, GetEngineVersionResultSuccess):
-            engine_version = (
-                f"v{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
-            )
-        else:
-            engine_version = "<UNKNOWN ENGINE VERSION>"
+        engine_version = get_complete_version_string()
 
         # Get current session ID
         session_id = GriptapeNodes.get_session_id()
