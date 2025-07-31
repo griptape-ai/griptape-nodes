@@ -6,7 +6,6 @@ console = Console()
 
 with console.status("Loading Griptape Nodes...") as status:
     import argparse
-    import importlib.metadata
     import json
     import os
     import shutil
@@ -15,7 +14,7 @@ with console.status("Loading Griptape Nodes...") as status:
     import tempfile
     from dataclasses import dataclass
     from pathlib import Path
-    from typing import Any, Literal
+    from typing import Any
 
     import httpx
     from rich.box import HEAVY_EDGE
@@ -28,10 +27,11 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.app import start_app
     from griptape_nodes.drivers.storage import StorageBackend
     from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, engine_version
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+    from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -609,7 +609,7 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 return f"v{data['info']['version']}"
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return __get_current_version()
+                return get_current_version()
     elif install_source == "git":
         # We only install auto updating from the 'latest' tag
         revision = LATEST_TAG
@@ -624,20 +624,20 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 if "object" in data and "sha" in data["object"]:
                     return data["object"]["sha"][:7]
                 # Should not happen, but if it does, return the current version
-                return __get_current_version()
+                return get_current_version()
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return __get_current_version()
+                return get_current_version()
     else:
         # If the package is installed from a file, just return the current version since the user is likely managing it manually
-        return __get_current_version()
+        return get_current_version()
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     console.print("[bold green]Checking for updates...[/bold green]")
-    source, commit_id = __get_install_source()
-    current_version = __get_current_version()
+    source, commit_id = get_install_source()
+    current_version = get_current_version()
     latest_version = _get_latest_version(PACKAGE_NAME, source)
 
     if source == "git" and commit_id is not None:
@@ -663,10 +663,10 @@ def _update_self() -> None:
 
 def _sync_libraries() -> None:
     """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
-    install_source, _ = __get_install_source()
+    install_source, _ = get_install_source()
     # Unless we're installed from PyPi, grab libraries from the 'latest' tag
     if install_source == "pypi":
-        version = __get_current_version()
+        version = get_current_version()
     else:
         version = LATEST_TAG
 
@@ -869,33 +869,6 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
-
-
-def __get_current_version() -> str:
-    """Returns the current version of the Griptape Nodes package."""
-    return f"v{engine_version}"
-
-
-def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
-    """Determines the install source of the Griptape Nodes package.
-
-    Returns:
-        tuple: A tuple containing the install source and commit ID (if applicable).
-    """
-    dist = importlib.metadata.distribution("griptape_nodes")
-    direct_url_text = dist.read_text("direct_url.json")
-    # installing from pypi doesn't have a direct_url.json file
-    if direct_url_text is None:
-        return "pypi", None
-
-    direct_url_info = json.loads(direct_url_text)
-    url = direct_url_info.get("url")
-    if url.startswith("file://"):
-        return "file", None
-    if "vcs_info" in direct_url_info:
-        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
-    # Fall back to pypi if no other source is found
-    return "pypi", None
 
 
 def __init_system_config() -> None:
