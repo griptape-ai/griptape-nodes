@@ -753,7 +753,7 @@ def _print_user_config(config_path: str | None = None) -> None:
                 sys.stdout.write(json.dumps(value, indent=2))
             else:
                 sys.stdout.write(str(value))
-        except Exception:
+        except (KeyError, AttributeError, ValueError):
             console.print(f"[bold red]Config path '{config_path}' not found[/bold red]")
             sys.exit(1)
 
