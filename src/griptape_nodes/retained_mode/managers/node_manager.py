@@ -2110,7 +2110,6 @@ class NodeManager:
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     logger.error(details)
                     return DeserializeNodeFromCommandsResultFailure()
-
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
@@ -2128,6 +2127,8 @@ class NodeManager:
         connections_to_serialize = []
         # This is also node_uuid to the parameter serialization command.
         parameter_commands = {}
+        # This is node_uuid to lock commands.
+        lock_commands = {}
         # I need to store node names and parameter names to UUID
         unique_uuid_to_values = {}
         # And track how values map into that map.
@@ -2148,6 +2149,7 @@ class NodeManager:
             node_commands[node_name] = result.serialized_node_commands
             node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
             parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+            lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -2183,6 +2185,7 @@ class NodeManager:
             serialized_node_commands=list(node_commands.values()),
             serialized_connection_commands=serialized_connections,
             set_parameter_value_commands=parameter_commands,
+            set_lock_commands_per_node=lock_commands,
         )
         # Set everything in the clipboard!
         GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
@@ -2246,6 +2249,12 @@ class NodeManager:
                         if not set_parameter_result.succeeded():
                             details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
                             logger.warning(details)
+                lock_command = commands.set_lock_commands_per_node[node_command.node_uuid]
+                if lock_command is not None:
+                    lock_node_result = GriptapeNodes.handle_request(lock_command)
+                    if not lock_node_result.succeeded():
+                        details = f"Failed to lock node {lock_command.node_name}"
+                        logger.warning(details)
         # create Connections
         for connection_command in connections:
             connection_request = CreateConnectionRequest(
