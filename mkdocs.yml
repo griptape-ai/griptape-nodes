@@ -98,6 +98,7 @@ nav:
     - Audio:
         - Load Audio: nodes/audio/load_audio.md
         - Microphone: nodes/audio/microphone.md
+        - Save Audio: nodes/audio/save_audio.md
         - Transcribe Audio: nodes/audio/transcribe_audio.md
     - Configs:
         - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
