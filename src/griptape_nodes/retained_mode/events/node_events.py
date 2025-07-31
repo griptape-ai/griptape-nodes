@@ -641,3 +641,20 @@ class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayload
     Common causes: nodes not found, constraints/conflicts,
     insufficient resources, connection duplication failures.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeRequest(WorkflowAlteredMixin, RequestPayload):
+    """Reset a node to default state."""
+    node_name: str | None
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node reset to default state."""
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node reset failed."""
