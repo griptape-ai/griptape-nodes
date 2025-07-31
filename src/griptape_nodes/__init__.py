@@ -739,7 +739,7 @@ def _print_current_version() -> None:
 
 def _print_user_config(config_path: str | None = None) -> None:
     """Prints the user configuration from the config file.
-    
+
     Args:
         config_path: Optional path to specific config value. If None, prints entire config.
     """
