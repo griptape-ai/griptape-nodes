@@ -21,6 +21,7 @@ try:
 except ImportError as e:
     OLLAMA_INSTALLED = False
     logger.warning(f"Ollama not installed: {e}")
+    ollama = None  # type: ignore
 
 
 class OllamaConnectionError(Exception):
@@ -123,12 +124,16 @@ class OllamaPrompt(BasePrompt):
             host = f"{base_url}:{port}"
 
             # Create client with custom host if different from default
-            if host != f"{DEFAULT_BASE_URL}:{DEFAULT_PORT}":
-                client = ollama.Client(host=host)
-                response = client.list()
+            if ollama:
+                if host != f"{DEFAULT_BASE_URL}:{DEFAULT_PORT}":
+                    client = ollama.Client(host=host)
+                    response = client.list()
+                else:
+                    # Use default client
+                    response = ollama.list()
             else:
-                # Use default client
-                response = ollama.list()
+                # This should never happen since we check OLLAMA_INSTALLED first
+                raise OllamaConnectionError("Ollama module not available")
 
             models = [model["model"] for model in response.get("models", [])]
 
