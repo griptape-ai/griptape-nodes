@@ -21,7 +21,7 @@ try:
 except ImportError as e:
     OLLAMA_INSTALLED = False
     logger.warning(f"Ollama not installed: {e}")
-    ollama = None  # type: ignore
+    ollama = None  # type: ignore[assignment]
 
 
 class OllamaConnectionError(Exception):
@@ -104,7 +104,7 @@ class OllamaPrompt(BasePrompt):
             )
         )
 
-    def _get_models(self, include_refresh: bool = True, raise_on_error: bool = True) -> list[str]:
+    def _get_models(self, *, include_refresh: bool = True, raise_on_error: bool = True) -> list[str]:
         """Get the list of available models from the Ollama server.
 
         Attempts to connect to the Ollama server and retrieve the list of
@@ -133,7 +133,8 @@ class OllamaPrompt(BasePrompt):
                     response = ollama.list()
             else:
                 # This should never happen since we check OLLAMA_INSTALLED first
-                raise OllamaConnectionError("Ollama module not available")
+                msg = "Ollama module not available"
+                raise OllamaConnectionError(msg)  # noqa: TRY301
 
             models = [model["model"] for model in response.get("models", [])]
 
