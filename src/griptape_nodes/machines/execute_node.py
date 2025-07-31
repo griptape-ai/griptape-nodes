@@ -144,7 +144,7 @@ class ExecuteNodeState(State):
     def _before_node(current_node: BaseNode) -> None:
         """Prepare a node for execution by clearing/propagating parameter values and performing validation.
 
-        This method is called immediately before a node's ``process`` method is
+        This method is called immediately before a node's process method is
         first invoked.  It ensures that all parameter values are up-to-date and
         publishes their values to the UI.  Validation errors raised here
         propagate up and abort the flow run early.

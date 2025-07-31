@@ -47,12 +47,11 @@ class ControlFlowContext:
             )
             if node_connection is not None:
                 node, entry_parameter = node_connection
-                return NextNodeInfo(node=node, entry_parameter=entry_parameter)
-            # Continue Execution to the next node that needs to be executed using global execution queue
+                return node
             # Get the next node in the execution queue, or None if queue is empty
             node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if node is not None:
-                return NextNodeInfo(node=node, entry_parameter=None)
+                return node
         return None
 
     def reset(self) -> None:
@@ -114,28 +113,16 @@ class NextNodeState(State):
             context.current_node.stop_flow = False
             return CompleteState
         next_output = context.current_node.get_next_control_output()
-        next_node_info = None
-
         if next_output is not None:
             context.selected_output = next_output
             next_node = context.get_next_node(context.selected_output)
         else:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             # Get the next node in the execution queue, or None if queue is empty
             next_node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if next_node is not None:
-                next_node_info = NextNodeInfo(node=next_node, entry_parameter=None)
-
-        # The parameter that will be evaluated next
-        if next_node_info is None:
-            # If no node attached
-            return CompleteState
-
-        # Always set the entry control parameter (None for execution queue nodes)
-        next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
-
-        context.current_node = next_node_info.node
+                return CompleteState
+        context.current_node = next_node
         context.selected_output = None
         if not context.paused:
             return ResolveNodeState
@@ -163,7 +150,6 @@ class CompleteState(State):
                     )
                 )
             )
-
         logger.info("Flow is complete.")
         # Log flow duration if start_time was recorded
         if context.start_time is not None:
