@@ -538,6 +538,11 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
 
     ui_options: dict = field(default_factory=dict)
 
+    def __init__(self, name: str, ui_options: dict | None = None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        if ui_options is not None:
+            self.ui_options = ui_options
+
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
 
