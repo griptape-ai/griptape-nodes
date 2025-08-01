@@ -1435,8 +1435,8 @@ class NodeManager:
             result = SetParameterValueResultFailure()
             return result
 
-        # Validate that parameters can be set at all
-        if not parameter.settable:
+        # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
+        if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure()
