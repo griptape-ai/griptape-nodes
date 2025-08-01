@@ -81,6 +81,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
     SerializeSelectedNodesToCommandsRequest,
     SerializeSelectedNodesToCommandsResultSuccess,
+    SetLockNodeStateRequest,
+    SetLockNodeStateResultFailure,
+    SetLockNodeStateResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -178,6 +181,7 @@ class NodeManager:
             DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
+        event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -781,6 +785,13 @@ class NodeManager:
                 result = AddParameterToNodeResultFailure()
                 return result
 
+        # Check if node is locked
+        if node.lock:
+            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
+
         if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
             if parameter is None:
@@ -923,7 +934,13 @@ class NodeManager:
 
                 result = RemoveParameterFromNodeResultFailure()
                 return result
+        # Check if the node is locked
+        if node.lock:
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
 
+            result = RemoveParameterFromNodeResultFailure()
+            return result
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
         if element is None:
@@ -1246,7 +1263,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1268,6 +1285,12 @@ class NodeManager:
                 logger.error(details)
 
                 return AlterParameterDetailsResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
 
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
@@ -1396,6 +1419,12 @@ class NodeManager:
                 details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
                 logger.error(details)
                 return SetParameterValueResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return SetParameterValueResultFailure()
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1596,6 +1625,7 @@ class NodeManager:
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
+            locked=node.lock,
             connections=list_connections_success,
             element_id_to_value=element_id_to_value,
             root_node_element=element_details,
@@ -1925,12 +1955,17 @@ class NodeManager:
                     set_value_commands.extend(set_param_value_requests)
                 else:
                     create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
-
+        # now check if locked
+        if node.lock:
+            lock_command = SetLockNodeStateRequest(node_name=None, lock=True)
+        else:
+            lock_command = None
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
             node_library_details=library_details,
+            lock_node_command=lock_command,
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
@@ -2075,7 +2110,6 @@ class NodeManager:
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     logger.error(details)
                     return DeserializeNodeFromCommandsResultFailure()
-
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
@@ -2093,6 +2127,8 @@ class NodeManager:
         connections_to_serialize = []
         # This is also node_uuid to the parameter serialization command.
         parameter_commands = {}
+        # This is node_uuid to lock commands.
+        lock_commands = {}
         # I need to store node names and parameter names to UUID
         unique_uuid_to_values = {}
         # And track how values map into that map.
@@ -2113,6 +2149,7 @@ class NodeManager:
             node_commands[node_name] = result.serialized_node_commands
             node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
             parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+            lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -2148,6 +2185,7 @@ class NodeManager:
             serialized_node_commands=list(node_commands.values()),
             serialized_connection_commands=serialized_connections,
             set_parameter_value_commands=parameter_commands,
+            set_lock_commands_per_node=lock_commands,
         )
         # Set everything in the clipboard!
         GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
@@ -2211,6 +2249,12 @@ class NodeManager:
                         if not set_parameter_result.succeeded():
                             details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
                             logger.warning(details)
+                lock_command = commands.set_lock_commands_per_node[node_command.node_uuid]
+                if lock_command is not None:
+                    lock_node_result = GriptapeNodes.handle_request(lock_command)
+                    if not lock_node_result.succeeded():
+                        details = f"Failed to lock node {lock_command.node_name}"
+                        logger.warning(details)
         # create Connections
         for connection_command in connections:
             connection_request = CreateConnectionRequest(
@@ -2391,7 +2435,7 @@ class NodeManager:
                 commands.append(output_command)
         return commands if commands else None
 
-    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
 
         Args:
@@ -2416,6 +2460,12 @@ class NodeManager:
                 details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
                 logger.error(details)
                 return RenameParameterResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node is locked."
+            logger.error(details)
+            return RenameParameterResultFailure()
 
         # Get the parameter
         parameter = node.get_parameter_by_name(request.parameter_name)
@@ -2471,3 +2521,22 @@ class NodeManager:
         return RenameParameterResultSuccess(
             old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
         )
+
+    def on_toggle_lock_node_request(self, request: SetLockNodeStateRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return SetLockNodeStateResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except ValueError as err:
+                details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
+                logger.error(details)
+                return SetLockNodeStateResultFailure()
+        node.lock = request.lock
+        return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)

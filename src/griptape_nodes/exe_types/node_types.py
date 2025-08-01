@@ -68,6 +68,7 @@ class BaseNode(ABC):
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
     )
+    lock: bool = False  # When lock is true, the node is locked and can't be modified. When lock is false, the node is unlocked and can be modified.
 
     @property
     def parameters(self) -> list[Parameter]:

@@ -88,11 +88,12 @@ class ResolveNodeState(State):
             return CompleteState
 
         # Mark the node unresolved, and broadcast an event to the GUI.
-        context.current_node.make_node_unresolved(
-            current_states_to_trigger_change_event=set(
-                {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        if not context.current_node.lock:
+            context.current_node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
             )
-        )
         # Now broadcast that we have a current control node.
         EventBus.publish_event(
             ExecutionGriptapeNodeEvent(
