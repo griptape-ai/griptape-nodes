@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, Self
-
-logger = logging.getLogger("griptape_nodes")
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -469,7 +466,6 @@ class OperationDepthManager:
             request_type = type(request)
             if (request_type.__name__ in self.events_to_echo) or "*" in self.events_to_echo:
                 retained_mode_str = self.retained_mode_code(request)
-                logger.debug("🔄 Echoing retained mode command: %s", retained_mode_str)
                 return retained_mode_str
         return None
 
