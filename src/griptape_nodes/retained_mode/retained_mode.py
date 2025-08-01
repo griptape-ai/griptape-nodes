@@ -349,7 +349,7 @@ class RetainedMode:
         return result
 
     @classmethod
-    def set_lock_node_state(cls, node_name: str | None = None, lock: bool = True) -> ResultPayload:
+    def set_lock_node_state(cls, *, node_name: str | None = None, lock: bool = True) -> ResultPayload:
         """Sets the lock state of a node.
 
         Args:
