@@ -383,9 +383,6 @@ class BaseNode(ABC):
                 # Update the manually set UI options to include the new simple_dropdown
                 if hasattr(parameter, "_ui_options") and parameter._ui_options:
                     parameter._ui_options["simple_dropdown"] = choices
-
-                    # Force the parameter to emit an update event to refresh UI options
-                    parameter._emit_alter_element_event_if_possible()
             else:
                 msg = f"No Options trait found for parameter '{param}'."
                 raise ValueError(msg)
