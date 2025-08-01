@@ -33,6 +33,7 @@ class AppEvents(BaseModel):
             "SingleExecutionStepRequest",
             "SingleNodeStepRequest",
             "ContinueExecutionStepRequest",
+            "SetLockNodeStateRequest",
         ]
     )
 
