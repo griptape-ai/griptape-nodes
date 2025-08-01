@@ -71,6 +71,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     MoveWorkflowResultSuccess,
     PublishWorkflowRequest,
     PublishWorkflowResultFailure,
+    PublishWorkflowResultSuccess,
     RegisterWorkflowRequest,
     RegisterWorkflowResultFailure,
     RegisterWorkflowResultSuccess,
@@ -2962,12 +2963,46 @@ class WorkflowManager:
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
-            return publishing_handler.handler(request)
-
+            result = publishing_handler.handler(request)
+            if isinstance(result, PublishWorkflowResultSuccess):
+                file = Path(result.published_workflow_file_path)
+                self._register_published_workflow_file(file)
+            return result  # noqa: TRY300
         except Exception as e:
             details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e)
+
+    def _register_published_workflow_file(self, workflow_file: Path) -> None:
+        """Register a published workflow file in the workflow registry."""
+        if workflow_file.exists() and workflow_file.is_file():
+            load_workflow_metadata_request = LoadWorkflowMetadata(
+                file_name=workflow_file.name,
+            )
+            load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
+            if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                register_workflow_result = self.on_register_workflow_request(
+                    RegisterWorkflowRequest(
+                        metadata=load_metadata_result.metadata,
+                        file_name=workflow_file.name,
+                    )
+                )
+                if isinstance(register_workflow_result, RegisterWorkflowResultSuccess):
+                    logger.info(
+                        "Successfully registered new workflow with file '%s'.",
+                        workflow_file.name,
+                    )
+                else:
+                    logger.warning(
+                        "Failed to register workflow with file '%s': %s",
+                        workflow_file.name,
+                        cast("RegisterWorkflowResultFailure", register_workflow_result).exception,
+                    )
+            else:
+                logger.warning(
+                    "Failed to load metadata for workflow file '%s'. Not registering workflow.",
+                    workflow_file.name,
+                )
 
     def on_import_workflow_as_referenced_sub_flow_request(
         self, request: ImportWorkflowAsReferencedSubFlowRequest
