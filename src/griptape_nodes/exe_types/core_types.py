@@ -641,7 +641,11 @@ class Parameter(BaseNodeElement):
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
     tooltip_as_output: str | list[dict] | None = None
+
+    # "settable" here means whether it can be assigned to during regular business operation.
+    # During save/load, this value IS still serialized to save its proper state.
     settable: bool = True
+
     user_defined: bool = False
     _allowed_modes: set = field(
         default_factory=lambda: {
