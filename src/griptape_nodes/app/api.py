@@ -13,8 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from griptape_nodes.retained_mode.events.base_events import EventRequest, deserialize_event
-
 if TYPE_CHECKING:
     from queue import Queue
 
@@ -159,6 +157,8 @@ async def _delete_static_file(file_path: str, static_directory: Annotated[Path, 
 
 @app.post("/engines/request")
 async def _create_event(request: Request, queue: Annotated[Queue, Depends(get_event_queue)]) -> None:
+    from .app import _process_api_event
+
     body = await request.json()
     _process_api_event(body, queue)
 
@@ -193,36 +193,3 @@ def start_api(static_directory: Path, queue: Queue) -> None:
     uvicorn.run(
         app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
     )
-
-
-def _process_api_event(event: dict, event_queue: Queue) -> None:
-    """Process API events and send them to the event queue."""
-    payload = event.get("payload", {})
-
-    try:
-        payload["request"]
-    except KeyError:
-        msg = "Error: 'request' was expected but not found."
-        raise RuntimeError(msg) from None
-
-    try:
-        event_type = payload["event_type"]
-        if event_type != "EventRequest":
-            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise RuntimeError(msg) from None
-    except KeyError:
-        msg = "Error: 'event_type' not found in request."
-        raise RuntimeError(msg) from None
-
-    # Now attempt to convert it into an EventRequest.
-    try:
-        request_event = deserialize_event(json_data=payload)
-        if not isinstance(request_event, EventRequest):
-            msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
-            raise TypeError(msg)  # noqa: TRY301
-    except Exception as e:
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
-        raise RuntimeError(msg) from None
-
-    # Add the event to the queue
-    event_queue.put(request_event)
