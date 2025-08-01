@@ -1040,6 +1040,7 @@ class ControlParameter(Parameter, ABC):
         traits: set[Trait.__class__ | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
+        ui_options: dict | None = None,
         *,
         user_defined: bool = False,
     ):
@@ -1059,6 +1060,7 @@ class ControlParameter(Parameter, ABC):
             traits=traits,
             converters=converters,
             validators=validators,
+            ui_options=ui_options,
             user_defined=user_defined,
             element_type=self.__class__.__name__,
         )
@@ -1069,6 +1071,7 @@ class ControlParameterInput(ControlParameter):
         self,
         tooltip: str | list[dict] = "Connection from previous node in the execution chain",
         name: str = "exec_in",
+        display_name: str | None = "Flow In",
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
@@ -1080,6 +1083,11 @@ class ControlParameterInput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.INPUT}
         input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
+
+        if display_name is None:
+            ui_options = None
+        else:
+            ui_options = {"display_name": display_name}
 
         # Call parent with a few explicit tweaks.
         super().__init__(
@@ -1094,6 +1102,7 @@ class ControlParameterInput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            ui_options=ui_options,
             user_defined=user_defined,
         )
 
@@ -1103,6 +1112,7 @@ class ControlParameterOutput(ControlParameter):
         self,
         tooltip: str | list[dict] = "Connection to the next node in the execution chain",
         name: str = "exec_out",
+        display_name: str | None = "Flow Out",
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
@@ -1114,6 +1124,11 @@ class ControlParameterOutput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.OUTPUT}
         output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
+
+        if display_name is None:
+            ui_options = None
+        else:
+            ui_options = {"display_name": display_name}
 
         # Call parent with a few explicit tweaks.
         super().__init__(
@@ -1128,6 +1143,7 @@ class ControlParameterOutput(ControlParameter):
             traits=traits,
             converters=converters,
             validators=validators,
+            ui_options=ui_options,
             user_defined=user_defined,
         )
 
