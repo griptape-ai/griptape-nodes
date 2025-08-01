@@ -31,6 +31,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+    from griptape_nodes.utils.uv_utils import find_uv_bin
     from griptape_nodes.utils.version_utils import get_complete_version_string, get_current_version, get_install_source
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
@@ -808,7 +809,10 @@ def _uninstall_self() -> None:
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
     console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
-    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
+
+    # Remove the tool using UV
+    uv_path = find_uv_bin()
+    os_manager.replace_process([uv_path, "tool", "uninstall", "griptape-nodes"])
 
 
 def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
