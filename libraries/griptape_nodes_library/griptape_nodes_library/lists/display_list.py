@@ -125,5 +125,3 @@ class DisplayList(ControlNode):
         if parameter == self.items_list:
             self._update_display_list()
         return super().after_value_set(parameter, value)
-
-

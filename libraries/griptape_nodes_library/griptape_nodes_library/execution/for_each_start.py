@@ -242,7 +242,9 @@ class ForEachStartNode(StartLoopNode):
         # Always initialize items list with fresh parameter value
         list_values = self.get_parameter_value("items")
         if not isinstance(list_values, list):
-            error_msg = f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            error_msg = (
+                f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            )
             raise TypeError(error_msg)
 
         # Use the list as-is (do not flatten nested lists)
@@ -259,7 +261,9 @@ class ForEachStartNode(StartLoopNode):
         # Refresh items list in case parameter values have changed
         list_values = self.get_parameter_value("items")
         if not isinstance(list_values, list):
-            error_msg = f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            error_msg = (
+                f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            )
             raise TypeError(error_msg)
 
         # Use the list as-is (do not flatten nested lists)
