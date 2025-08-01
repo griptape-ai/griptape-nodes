@@ -1071,7 +1071,7 @@ class ControlParameterInput(ControlParameter):
         self,
         tooltip: str | list[dict] = "Connection from previous node in the execution chain",
         name: str = "exec_in",
-        display_name: str = "Flow In",
+        display_name: str | None = "Flow In",
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
@@ -1083,7 +1083,11 @@ class ControlParameterInput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.INPUT}
         input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
-        ui_options = {"display_name": display_name}
+        
+        if display_name is None:
+            ui_options = None
+        else:
+            ui_options = {"display_name": display_name}
 
         # Call parent with a few explicit tweaks.
         super().__init__(
@@ -1108,7 +1112,7 @@ class ControlParameterOutput(ControlParameter):
         self,
         tooltip: str | list[dict] = "Connection to the next node in the execution chain",
         name: str = "exec_out",
-        display_name: str = "Flow Out",
+        display_name: str | None = "Flow Out",
         tooltip_as_input: str | list[dict] | None = None,
         tooltip_as_property: str | list[dict] | None = None,
         tooltip_as_output: str | list[dict] | None = None,
@@ -1120,7 +1124,11 @@ class ControlParameterOutput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.OUTPUT}
         output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
-        ui_options = {"display_name": display_name}
+        
+        if display_name is None:
+            ui_options = None
+        else:
+            ui_options = {"display_name": display_name}
 
         # Call parent with a few explicit tweaks.
         super().__init__(
