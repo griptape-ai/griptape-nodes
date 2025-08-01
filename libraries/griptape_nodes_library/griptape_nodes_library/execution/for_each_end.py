@@ -165,12 +165,13 @@ class ForEachEndNode(EndLoopNode):
                 # Break - will trigger break signal in get_next_control_output
                 pass
             case self.loop_end_condition_met_signal_input:
-                # Loop has ended naturally, output final results
+                # Loop has ended naturally, output final results as standard parameter
+                # This is the ONLY place where we set the results parameter value
                 self.parameter_output_values["results"] = self._results_list.copy()
                 return
 
-        # Always output the current results list state
-        self.parameter_output_values["results"] = self._results_list.copy()
+        # Do NOT output results during loop iterations - only when loop completes
+        # This prevents premature exposure of intermediate values
 
     def get_next_control_output(self) -> Parameter | None:
         """Return the appropriate signal output based on the control path taken.
@@ -449,5 +450,11 @@ class ForEachEndNode(EndLoopNode):
         return False
 
     def reset_for_workflow_run(self) -> None:
-        """Reset ForEach End state for a fresh workflow run."""
+        """Reset ForEach End state for a fresh workflow run.
+
+        This is the only place where we should clear the results list,
+        ensuring values aren't inadvertently cleared during loop execution.
+        """
         self._results_list = []
+        # Reset results parameter to empty list to start fresh
+        self.set_parameter_value("results", [])
