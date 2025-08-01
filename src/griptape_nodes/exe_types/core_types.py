@@ -536,12 +536,18 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    ui_options: dict = field(default_factory=dict)
-
     def __init__(self, name: str, ui_options: dict | None = None, **kwargs):
         super().__init__(name=name, **kwargs)
-        if ui_options is not None:
-            self.ui_options = ui_options
+        self._ui_options = ui_options or {}
+
+    @property
+    def ui_options(self) -> dict:
+        return self._ui_options
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        self._ui_options = value
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
