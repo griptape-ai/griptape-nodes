@@ -48,6 +48,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetNodeMetadataRequest,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
+    SetLockNodeStateRequest,
     SetNodeMetadataRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import (
@@ -344,6 +345,28 @@ class RetainedMode:
             result = cmd.set_metadata_for_node("my_node", metadata)
         """
         request = SetNodeMetadataRequest(node_name=node_name, metadata=metadata)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def set_lock_node_state(cls, *, node_name: str | None = None, lock: bool = True) -> ResultPayload:
+        """Sets the lock state of a node.
+
+        Args:
+            node_name (str | None): Name of the node to lock/unlock. If None, uses the current context node.
+            lock (bool): Whether to lock (True) or unlock (False) the node.
+
+        Returns:
+            ResultPayload: Contains the result of setting the node lock state.
+
+        Example:
+            # Lock a specific node
+            result = cmd.set_lock_node_state("my_node", lock=True)
+
+            # Unlock the current context node
+            result = cmd.set_lock_node_state(lock=False)
+        """
+        request = SetLockNodeStateRequest(node_name=node_name, lock=lock)
         result = GriptapeNodes().handle_request(request)
         return result
 
