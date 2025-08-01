@@ -26,6 +26,7 @@ class WorkflowMetadata(BaseModel):
     is_template: bool | None = False
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
+    branched_from: str | None = Field(default=None)
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):
@@ -81,6 +82,16 @@ class WorkflowRegistry(metaclass=SingletonMeta):
             raise KeyError(msg)
         return instance._workflows.pop(name)
 
+    @classmethod
+    def get_branches_of_workflow(cls, workflow_name: str) -> list[str]:
+        """Get all workflows that are branches of the specified workflow."""
+        instance = cls()
+        branches = []
+        for name, workflow in instance._workflows.items():
+            if workflow.metadata.branched_from == workflow_name:
+                branches.append(name)
+        return branches
+
 
 class Workflow:
     """A workflow card to be ran."""
@@ -102,6 +113,23 @@ class Workflow:
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
 
+    @property
+    def is_synced(self) -> bool:
+        """Check if this workflow is in the synced workflows directory."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        config_mgr = GriptapeNodes.ConfigManager()
+        synced_directory = config_mgr.get_config_value("synced_workflows_directory")
+
+        # Get the full path to the synced workflows directory
+        synced_path = config_mgr.get_full_path(synced_directory)
+
+        # Get the complete file path for this workflow
+        complete_file_path = WorkflowRegistry.get_complete_file_path(self.file_path)
+
+        # Check if the workflow file is within the synced directory
+        return Path(complete_file_path).is_relative_to(synced_path)
+
     def get_workflow_metadata(self) -> dict:
         # Convert from the Pydantic schema.
         ret_val = {**self.metadata.model_dump()}
@@ -109,4 +137,5 @@ class Workflow:
         # The schema doesn't have the file path in it, because it is baked into the file itself.
         # Customers of this function need that, so let's stuff it in.
         ret_val["file_path"] = self.file_path
+        ret_val["is_synced"] = self.is_synced
         return ret_val

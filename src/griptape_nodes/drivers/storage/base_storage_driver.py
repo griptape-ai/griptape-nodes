@@ -60,6 +60,43 @@ class BaseStorageDriver(ABC):
         """
         ...
 
+    def upload_file(self, file_name: str, file_content: bytes) -> str:
+        """Upload a file to storage.
+
+        Args:
+            file_name: The name of the file to upload.
+            file_content: The file content as bytes.
+
+        Returns:
+            The URL where the file can be accessed.
+
+        Raises:
+            RuntimeError: If file upload fails.
+        """
+        try:
+            # Get signed upload URL
+            upload_response = self.create_signed_upload_url(file_name)
+
+            # Upload the file using the signed URL
+            response = httpx.request(
+                upload_response["method"],
+                upload_response["url"],
+                content=file_content,
+                headers=upload_response["headers"],
+            )
+            response.raise_for_status()
+
+            # Return the download URL
+            return self.create_signed_download_url(file_name)
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to upload file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error uploading file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
     def download_file(self, file_name: str) -> bytes:
         """Download a file from the bucket.
 

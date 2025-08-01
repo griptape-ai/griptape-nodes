@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
 from griptape_nodes.retained_mode.events.base_events import (
@@ -364,3 +365,233 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class PublishWorkflowResultFailure(ResultPayloadFailure):
     """Workflow publish failed. Common causes: workflow not found, publish error, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class BranchWorkflowRequest(RequestPayload):
+    """Create a branch (copy) of an existing workflow with branch tracking.
+
+    Use when: Creating workflow variants, branching workflows for experimentation,
+    creating personal copies of shared workflows, preparing for workflow collaboration.
+
+    Args:
+        workflow_name: Name of the workflow to branch
+        branched_workflow_name: Name for the branched workflow (None for auto-generated)
+
+    Results: BranchWorkflowResultSuccess (with branch name) | BranchWorkflowResultFailure (branch error)
+    """
+
+    workflow_name: str
+    branched_workflow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class BranchWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow branched successfully.
+
+    Args:
+        branched_workflow_name: Name of the created branch
+        original_workflow_name: Name of the original workflow
+    """
+
+    branched_workflow_name: str
+    original_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class BranchWorkflowResultFailure(ResultPayloadFailure):
+    """Workflow branch failed. Common causes: workflow not found, name conflict, save error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowBranchRequest(RequestPayload):
+    """Merge a branch back into its source workflow, removing the branch when complete.
+
+    Use when: Integrating branch changes back into the original workflow, consolidating
+    successful branch experiments, applying approved branch modifications to source.
+
+    Args:
+        workflow_name: Name of the branch workflow to merge back into its source
+
+    Results: MergeWorkflowBranchResultSuccess (with merge details) | MergeWorkflowBranchResultFailure (merge error)
+    """
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Branch merge back to source completed successfully.
+
+    Args:
+        merged_workflow_name: Name of the source workflow after merge
+    """
+
+    merged_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MergeWorkflowBranchResultFailure(ResultPayloadFailure):
+    """Workflow branch merge failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetWorkflowBranchRequest(RequestPayload):
+    """Reset a branch to match its source workflow, discarding branch changes.
+
+    Use when: Discarding branch modifications, reverting branch to source state,
+    abandoning branch experiments, syncing branch with latest source changes.
+
+    Args:
+        workflow_name: Name of the branch workflow to reset to its source
+
+    Results: ResetWorkflowBranchResultSuccess (with reset details) | ResetWorkflowBranchResultFailure (reset error)
+    """
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetWorkflowBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Branch reset to source completed successfully.
+
+    Args:
+        reset_workflow_name: Name of the branch workflow after reset
+    """
+
+    reset_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetWorkflowBranchResultFailure(ResultPayloadFailure):
+    """Workflow branch reset failed. Common causes: workflows not branch-related, reset conflict, save error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsRequest(RequestPayload):
+    """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other.
+
+    Use when: Checking if branched workflows need updates, determining if local changes exist,
+    managing workflow synchronization, preparing for merge operations.
+
+    Args:
+        workflow_name: Name of the workflow to evaluate
+        compare_workflow_name: Name of the workflow to compare against
+
+    Results: CompareWorkflowsResultSuccess (with status details) | CompareWorkflowsResultFailure (evaluation error)
+    """
+
+    workflow_name: str
+    compare_workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow comparison completed successfully.
+
+    Args:
+        workflow_name: Name of the evaluated workflow
+        compare_workflow_name: Name of the workflow being compared against (if any)
+        status: Status relative to source - "up_to_date", "ahead", "behind", "diverged", or "no_source"
+        workflow_last_modified: Last modified timestamp of the workflow
+        source_last_modified: Last modified timestamp of the source (if exists)
+        details: Additional details about the comparison
+    """
+
+    workflow_name: str
+    compare_workflow_name: str | None
+    status: Literal["up_to_date", "ahead", "behind", "diverged", "no_source"]
+    workflow_last_modified: str | None
+    source_last_modified: str | None
+    details: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CompareWorkflowsResultFailure(ResultPayloadFailure):
+    """Workflow comparison failed. Common causes: workflow not found, source not accessible, comparison error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveWorkflowRequest(RequestPayload):
+    """Move a workflow to a different directory in the workspace.
+
+    Use when: Organizing workflows into directories, restructuring workflow hierarchies,
+    moving workflows to categorized folders, cleaning up workspace organization.
+
+    Args:
+        workflow_name: Name of the workflow to move
+        target_directory: Target directory path relative to workspace root
+
+    Results: MoveWorkflowResultSuccess (with new path) | MoveWorkflowResultFailure (move error)
+    """
+
+    workflow_name: str
+    target_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow moved successfully.
+
+    Args:
+        moved_file_path: New file path after the move
+    """
+
+    moved_file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveWorkflowResultFailure(ResultPayloadFailure):
+    """Workflow move failed. Common causes: workflow not found, invalid target directory, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkflowsFromConfigRequest(RequestPayload):
+    """Register workflows from configuration section.
+
+    Use when: Loading workflows from configuration after library initialization,
+    registering workflows from synced directories, batch workflow registration.
+
+    Args:
+        config_section: Configuration section path containing workflow paths to register
+
+    Results: RegisterWorkflowsFromConfigResultSuccess (with count) | RegisterWorkflowsFromConfigResultFailure (registration error)
+    """
+
+    config_section: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkflowsFromConfigResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflows registered from configuration successfully.
+
+    Args:
+        succeeded_workflows: List of workflow names that were successfully registered
+        failed_workflows: List of workflow names that failed to register
+    """
+
+    succeeded_workflows: list[str]
+    failed_workflows: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterWorkflowsFromConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow registration from configuration failed. Common causes: configuration not found, invalid paths, registration errors."""
