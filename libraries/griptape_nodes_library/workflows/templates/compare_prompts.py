@@ -63,7 +63,7 @@ top_level_unique_values_dict = {
         b"\x80\x04\x95\xcf\x01\x00\x00\x00\x00\x00\x00X\xc8\x01\x00\x00Enhance the following prompt for an image generation engine. Return only the image generation prompt.\nInclude unique details that make the subject stand out.\nSpecify a specific depth of field, and time of day.\nUse dust in the air to create a sense of depth.\nUse a slight vignetting on the edges of the image.\nUse a color palette that is complementary to the subject.\nFocus on qualities that will make this the most professional looking photo in the world.\n\x94."
     ),
     "5ed879bb-20cf-4479-815d-c9915fbd262b": pickle.loads(
-        b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c#A capybara eating soup with a spoon\x94."
+        b"\x80\x04\x95\x15\x00\x00\x00\x00\x00\x00\x00\x8c\x11A happy capybara.\x94."
     ),
     "8fcd5bef-f968-40c7-ae47-f48517885ad0": pickle.loads(
         b"\x80\x04\x95\x08\x00\x00\x00\x00\x00\x00\x00\x8c\x04\\n\\n\x94."
