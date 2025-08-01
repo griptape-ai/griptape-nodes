@@ -424,7 +424,7 @@ class PayloadConverter:
     @staticmethod
     def _handle_SetLockNodeStateRequest(payload: SetLockNodeStateRequest) -> str:
         """Handle SetLockNodeStateRequest payloads."""
-        node_name_param = f'node_name="{payload.node_name}"' if payload.node_name is not None else 'node_name=None'
+        node_name_param = f'node_name="{payload.node_name}"' if payload.node_name is not None else "node_name=None"
         return f"""cmd.set_lock_node_state({node_name_param}, lock={payload.lock})"""
 
     # GENERIC HANDLERS FOR PAYLOADS WITHOUT SPECIFIC HANDLERS

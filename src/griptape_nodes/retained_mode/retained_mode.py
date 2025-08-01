@@ -362,7 +362,7 @@ class RetainedMode:
         Example:
             # Lock a specific node
             result = cmd.set_lock_node_state("my_node", lock=True)
-            
+
             # Unlock the current context node
             result = cmd.set_lock_node_state(lock=False)
         """
