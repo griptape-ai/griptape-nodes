@@ -241,13 +241,12 @@ class ForEachStartNode(StartLoopNode):
 
         # Always initialize items list with fresh parameter value
         list_values = self.get_parameter_value("items")
-        # Ensure the list is flattened
-        if isinstance(list_values, list):
-            self._items = [
-                item for sublist in list_values for item in (sublist if isinstance(sublist, list) else [sublist])
-            ]
-        else:
-            self._items = []
+        if not isinstance(list_values, list):
+            error_msg = f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            raise TypeError(error_msg)
+
+        # Use the list as-is (do not flatten nested lists)
+        self._items = list_values
 
         # Unresolve future nodes immediately to ensure first iteration gets fresh values
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -257,6 +256,15 @@ class ForEachStartNode(StartLoopNode):
 
     def _check_completion_and_set_output(self) -> None:
         """Check if loop should end or continue and set appropriate control output."""
+        # Refresh items list in case parameter values have changed
+        list_values = self.get_parameter_value("items")
+        if not isinstance(list_values, list):
+            error_msg = f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
+            raise TypeError(error_msg)
+
+        # Use the list as-is (do not flatten nested lists)
+        self._items = list_values
+
         # If empty list or finished all items, complete
         if not self._items or len(self._items) == 0 or self.current_index >= len(self._items):
             self.finished = True

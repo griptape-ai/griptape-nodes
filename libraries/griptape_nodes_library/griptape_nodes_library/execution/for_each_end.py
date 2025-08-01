@@ -167,7 +167,7 @@ class ForEachEndNode(EndLoopNode):
             case self.loop_end_condition_met_signal_input:
                 # Loop has ended naturally, output final results as standard parameter
                 # This is the ONLY place where we set the results parameter value
-                self.set_parameter_value("results", self._results_list.copy())
+                self.parameter_output_values["results"] = self._results_list.copy()
                 return
 
         # Do NOT output results during loop iterations - only when loop completes
@@ -457,4 +457,4 @@ class ForEachEndNode(EndLoopNode):
         """
         self._results_list = []
         # Reset results parameter to empty list to start fresh
-        self.parameter_output_values["results"] = []
+        self.set_parameter_value("results", [])
