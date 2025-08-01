@@ -1083,7 +1083,7 @@ class ControlParameterInput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.INPUT}
         input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
-        
+
         if display_name is None:
             ui_options = None
         else:
@@ -1124,7 +1124,7 @@ class ControlParameterOutput(ControlParameter):
     ):
         allowed_modes = {ParameterMode.OUTPUT}
         output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
-        
+
         if display_name is None:
             ui_options = None
         else:
