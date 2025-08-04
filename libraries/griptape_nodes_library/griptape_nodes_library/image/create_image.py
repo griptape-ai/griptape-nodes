@@ -221,14 +221,14 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
                 image_size=self.get_parameter_value("image_size"),
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
                 # Don't retry on HTTP errors, we want to fail fast.
-                ignored_exception_types=(requests.exceptions.HTTPError,),
+                #ignored_exception_types=(requests.exceptions.HTTPError,),
             )
         else:
             driver = GriptapeCloudImageGenerationDriver(
                 model=DEFAULT_MODEL,
                 image_size=self.get_parameter_value("image_size"),
                 api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
-                ignored_exception_types=(requests.HTTPError,),
+                #ignored_exception_types=(requests.HTTPError,),
             )
 
         kwargs["image_generation_driver"] = driver
