@@ -13,7 +13,6 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import uv
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -96,6 +95,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
@@ -108,21 +108,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 console = Console()
-
-
-def _find_griptape_uv_bin() -> str:
-    """Find the uv binary, checking dedicated Griptape installation first, then system uv.
-
-    Returns:
-        Path to the uv binary to use
-    """
-    # Check for dedicated Griptape uv installation first
-    dedicated_uv_path = xdg_data_home() / "griptape_nodes" / "bin" / "uv"
-    if dedicated_uv_path.exists():
-        return str(dedicated_uv_path)
-
-    # Fall back to system uv installation
-    return uv.find_uv_bin()
 
 
 class LibraryManager:
@@ -960,10 +945,12 @@ class LibraryManager:
                     )
                     return RegisterLibraryFromRequirementSpecifierResultFailure()
 
+                uv_path = find_uv_bin()
+
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
                 subprocess.run(  # noqa: S603
                     [
-                        _find_griptape_uv_bin(),
+                        uv_path,
                         "pip",
                         "install",
                         request.requirement_specifier,
@@ -1033,9 +1020,10 @@ class LibraryManager:
                 raise RuntimeError(error_message)
 
             try:
+                uv_path = find_uv_bin()
                 logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
                 subprocess.run(  # noqa: S603
-                    [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
+                    [uv_path, "venv", str(library_venv_path), "--python", python_version],
                     check=True,
                     capture_output=True,
                     text=True,
