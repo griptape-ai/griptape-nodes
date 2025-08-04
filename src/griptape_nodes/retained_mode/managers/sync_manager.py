@@ -197,7 +197,7 @@ class SyncManager:
         secrets_manager = GriptapeNodes.SecretsManager()
 
         # Get cloud storage configuration from secrets
-        bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID")
+        bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
         base_url = secrets_manager.get_secret("GT_CLOUD_BASE_URL", should_error_on_not_found=False)
         api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
 

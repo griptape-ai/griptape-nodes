@@ -315,13 +315,7 @@ class WorkflowManager:
         register_request = RegisterWorkflowsFromConfigRequest(config_section=default_workflow_section)
         register_result = GriptapeNodes.handle_request(register_request)
 
-        if isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
-            logger.info(
-                "Registered %d workflows from configuration during library initialization: %s",
-                len(register_result.succeeded_workflows),
-                register_result.succeeded_workflows,
-            )
-        else:
+        if not isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
             logger.warning("Failed to register workflows from configuration during library initialization")
 
         # Print it all out nicely.
@@ -3649,14 +3643,6 @@ class WorkflowManager:
             )
             return RegisterWorkflowsFromConfigResultFailure()
         else:
-            logger.info(
-                "Processed workflows from configuration section '%s': %d registered (%s), %d failed (%s)",
-                request.config_section,
-                len(succeeded),
-                succeeded,
-                len(failed),
-                failed,
-            )
             return RegisterWorkflowsFromConfigResultSuccess(succeeded_workflows=succeeded, failed_workflows=failed)
 
     def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:
