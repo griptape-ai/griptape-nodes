@@ -151,8 +151,7 @@ class ForEachStartNode(StartLoopNode):
                 self._check_completion_and_set_output()
             case self.break_loop_signal:
                 # Break signal from ForEach End - halt loop immediately
-                self._update_status_message(StatusType.BREAK)
-                self._break_loop()
+                self._complete_loop(StatusType.BREAK)
             case _:
                 # Unexpected control entry point - log error for debugging
                 err_str = f"ForEach Start node '{self.name}' received unexpected control parameter: {self._entry_control_parameter}. "
@@ -245,7 +244,7 @@ class ForEachStartNode(StartLoopNode):
         if self.end_node and hasattr(self.end_node, "reset_for_workflow_run"):
             self.end_node.reset_for_workflow_run()  # type: ignore[attr-defined] (better damned well be a corresponding End Node type by this point)
 
-        # Always initialize items list with fresh parameter value
+        # Get the items list once at initialization
         list_values = self.get_parameter_value("items")
         if not isinstance(list_values, list):
             error_msg = (
@@ -255,27 +254,12 @@ class ForEachStartNode(StartLoopNode):
 
         # Use the list as-is (do not flatten nested lists)
         self._items = list_values
-
-        # Note: unresolve_future_nodes() will be called in _check_completion_and_set_output()
-        # if the loop continues, so no need to call it here
 
     def _check_completion_and_set_output(self) -> None:
         """Check if loop should end or continue and set appropriate control output."""
-        # Refresh items list in case parameter values have changed
-        list_values = self.get_parameter_value("items")
-        if not isinstance(list_values, list):
-            error_msg = (
-                f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
-            )
-            raise TypeError(error_msg)
-
-        # Use the list as-is (do not flatten nested lists)
-        self._items = list_values
-
         # If empty list or finished all items, complete
         if self.is_loop_finished():
-            self._update_status_message()
-            self.next_control_output = self.loop_end_condition_met_signal
+            self._complete_loop()
             return
 
         # Continue with current item - unresolve future nodes for fresh evaluation
@@ -296,10 +280,14 @@ class ForEachStartNode(StartLoopNode):
         self._update_status_message()
         self.next_control_output = self.exec_out
 
-    def _break_loop(self) -> None:
-        """Break out of loop immediately."""
+    def _complete_loop(self, status_type: StatusType = StatusType.NORMAL) -> None:
+        """Complete the loop and set final state."""
+        # Clean up loop state - reset for any completion type
         self._items = []
         self.current_index = 0
+
+        # Update status message with appropriate type
+        self._update_status_message(status_type)
         self.next_control_output = self.loop_end_condition_met_signal
 
     def _validate_foreach_connections(self) -> list[Exception]:
