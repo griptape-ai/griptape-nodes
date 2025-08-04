@@ -65,25 +65,52 @@ class ParameterType:
         return ret_val
 
     @staticmethod
+    def _extract_base_type(type_str: str) -> str:
+        """Extract the base type from a potentially generic type string.
+
+        Examples:
+            'list[any]' -> 'list'
+            'dict[str, int]' -> 'dict'
+            'str' -> 'str'
+        """
+        bracket_index = type_str.find("[")
+        if bracket_index == -1:
+            return type_str
+        return type_str[:bracket_index]
+
+    @staticmethod
     def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
         if source_type is None or target_type is None:
             return False
 
-        ret_val = False
         source_type_lower = source_type.lower()
         target_type_lower = target_type.lower()
 
         # If either are None, bail.
         if ParameterTypeBuiltin.NONE.value in (source_type_lower, target_type_lower):
-            ret_val = False
-        elif target_type_lower == ParameterTypeBuiltin.ANY.value:
+            return False
+        if target_type_lower == ParameterTypeBuiltin.ANY.value:
             # If the TARGET accepts Any, we're good. Not always true the other way 'round.
-            ret_val = True
-        else:
-            # Do a compare.
-            ret_val = source_type_lower == target_type_lower
+            return True
 
-        return ret_val
+        # First try exact match
+        if source_type_lower == target_type_lower:
+            return True
+
+        source_base = ParameterType._extract_base_type(source_type_lower)
+        target_base = ParameterType._extract_base_type(target_type_lower)
+
+        # If base types match
+        if source_base == target_base:
+            # Allow any generic to flow to base type (list[any] -> list, list[str] -> list)
+            if target_type_lower == target_base:
+                return True
+
+            # Allow specific types to flow to [any] generic (list[str] -> list[any])
+            if target_type_lower == f"{target_base}[{ParameterTypeBuiltin.ANY.value}]":
+                return True
+
+        return False
 
     @staticmethod
     def parse_kv_type_pair(type_str: str) -> KeyValueTypePair | None:  # noqa: C901
@@ -1333,6 +1360,13 @@ class ParameterList(ParameterContainer):
 
         return param
 
+    def clear_list(self) -> None:
+        """Remove all children that have been added to the list."""
+        children = self.find_elements_by_type(element_type=Parameter)
+        for child in children:
+            if isinstance(child, Parameter):
+                self.remove_child(child)
+                del child
 
 class ParameterKeyValuePair(Parameter):
     def __init__(  # noqa: PLR0913

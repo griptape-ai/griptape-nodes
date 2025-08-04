@@ -1,13 +1,14 @@
+from itertools import filterfalse
 from typing import Any
-
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
+    ParameterList,
     ParameterMode,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape.artifacts import ImageArtifact,ImageUrlArtifact
 
 
 class DisplayList(ControlNode):
@@ -18,19 +19,26 @@ class DisplayList(ControlNode):
     the content of the input list.
     """
 
-    dynamic_params: list[Parameter]
-
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         # Add input list parameter
-        self.items_list = Parameter(
+        self.items = Parameter(
             name="items",
             tooltip="List of items to create output parameters for",
             input_types=["list"],
-            allowed_modes={ParameterMode.INPUT},
+            output_type="list",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
+        )
+        self.add_parameter(self.items)
+        # Spot that will display the list.
+        self.items_list = ParameterList(
+            name="display_list",
+            tooltip="Output list",
+            type=ParameterTypeBuiltin.ANY.value,
+            allowed_modes={ParameterMode.PROPERTY,ParameterMode.OUTPUT},
+            ui_options={"hide":True}
         )
         self.add_parameter(self.items_list)
-        self.dynamic_params = []
         # We'll create output parameters dynamically during processing
 
     def process(self) -> None:
@@ -40,7 +48,7 @@ class DisplayList(ControlNode):
     def _update_display_list(self) -> None:
         """Update the display list parameters based on current input values."""
         # Clear all dynamically-created parameters at the start
-        self._clear_dynamic_parameters()
+        self._clear_list()
 
         # Try to get the list of items from the input parameter
         try:
@@ -49,37 +57,45 @@ class DisplayList(ControlNode):
             # If we can't get the parameter value (e.g., connected node not resolved yet),
             # just clear and return - we'll update again when values are available
             return
-
         if not list_values or not isinstance(list_values, list):
+            items_list_ui_options = self.items_list.ui_options
+            items_list_ui_options["hide"] = True
+            del items_list_ui_options["display"]
+            self.items_list.ui_options = items_list_ui_options
             return
-
         # Regenerate parameters for each item in the list
-        for i, item in enumerate(list_values):
+        if len(list_values) < 1:
+            items_list_ui_options = self.items_list.ui_options
+            items_list_ui_options["hide"] = True
+            self.items_list.ui_options = items_list_ui_options
+            return
+        items_list_ui_options = self.items_list.ui_options
+        items_list_ui_options["hide"] = False
+        self.items_list.ui_options = items_list_ui_options
+        item_type = self._determine_item_type(list_values[0])
+        self.items_list.type = item_type
+        if item_type == "ImageUrlArtifact":
+            items_list_ui_options = self.items_list.ui_options
+            items_list_ui_options["display"] = "grid"
+            self.items_list.ui_options = items_list_ui_options
+        for item in list_values:
             # Determine the type of the item
-            item_type = self._determine_item_type(item)
+            new_child = self.items_list.add_child_parameter()
+            self.set_parameter_value(new_child.name, item)
+            self.parameter_output_values[new_child.name] = item
 
-            # Create a new output parameter with the appropriate type
-            output_param = Parameter(
-                name=f"item_{i}",
-                tooltip=f"Item {i} from the input list",
-                output_type=item_type,
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-            self.add_parameter(output_param)
-            self.dynamic_params.append(output_param)
-
-            # Set the value of the output parameter
-            self.parameter_output_values[f"item_{i}"] = item
-
-    def _clear_dynamic_parameters(self) -> None:
+    def _clear_list(self) -> None:
         """Clear all dynamically-created parameters from the node."""
-        for param in self.dynamic_params:
+        for child in self.items_list.find_elements_by_type(Parameter):
             # Remove the parameter's output value first
-            if param.name in self.parameter_output_values:
-                del self.parameter_output_values[param.name]
-            # Then remove the parameter element
-            self.remove_parameter_element(param)
-        self.dynamic_params.clear()
+            if child.name in self.parameter_output_values:
+                del self.parameter_output_values[child.name]
+            try:
+                self.remove_parameter_value(child.name)
+            except KeyError:
+                pass
+            # Remove the parameter from the list
+        self.items_list.clear_list()
 
     def _determine_item_type(self, item: Any) -> str:
         """Determine the type of an item for parameter type assignment."""
@@ -92,36 +108,12 @@ class DisplayList(ControlNode):
         if isinstance(item, float):
             return ParameterTypeBuiltin.FLOAT.value
         if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            return "ImageArtifact"
+            return "ImageUrlArtifact"
         return ParameterTypeBuiltin.ANY.value
-
-    def after_incoming_connection(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-    ) -> None:
-        """Update display list when an incoming connection is made."""
-        # Only update if the connection is to our items parameter
-        if target_parameter == self.items_list:
-            self._update_display_list()
-        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
-
-    def after_incoming_connection_removed(
-        self,
-        source_node: BaseNode,
-        source_parameter: Parameter,
-        target_parameter: Parameter,
-    ) -> None:
-        """Update display list when an incoming connection is removed."""
-        # Only update if the connection was to our items parameter
-        if target_parameter == self.items_list:
-            self._update_display_list()
-        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update display list when a value is assigned to the items parameter."""
         # Only update if the value was set on our items parameter
-        if parameter == self.items_list:
+        if parameter == self.items:
             self._update_display_list()
         return super().after_value_set(parameter, value)
