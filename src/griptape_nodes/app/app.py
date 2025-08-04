@@ -162,6 +162,72 @@ def _init_event_listeners() -> None:
     )
 
 
+async def _should_process_immediately(event: dict) -> bool:
+    """Check if an event should be processed immediately (skip the line)."""
+    payload = event.get("payload", {})
+
+    # Check if we have a valid request structure
+    if "request" not in payload or "event_type" not in payload:
+        return False
+
+    if payload["event_type"] != "EventRequest":
+        return False
+
+    try:
+        # Attempt to deserialize the event
+        request_event = deserialize_event(json_data=payload)
+        if not isinstance(request_event, EventRequest):
+            return False
+
+        # Check if it implements SkipTheLineMixin
+        return isinstance(request_event.request, SkipTheLineMixin)
+    except Exception:
+        # If deserialization fails, don't process immediately
+        return False
+
+
+async def _process_skip_the_line_event(event: dict) -> None:
+    """Process a SkipTheLineMixin event immediately in the WebSocket thread."""
+    payload = event.get("payload", {})
+
+    try:
+        # Deserialize the event
+        request_event = deserialize_event(json_data=payload)
+        if not isinstance(request_event, EventRequest):
+            logger.warning("Expected EventRequest but got %s", type(request_event))
+            return
+
+        # Handle the event immediately without queuing
+        result_payload = GriptapeNodes.handle_request(
+            cast("RequestPayload", request_event.request),
+            response_topic=request_event.response_topic,
+            request_id=request_event.request_id,
+        )
+
+        # Create the result event and emit response immediately
+        if result_payload.succeeded():
+            result_event = EventResultSuccess(
+                request=cast("RequestPayload", request_event.request),
+                request_id=request_event.request_id,
+                result=result_payload,
+                response_topic=request_event.response_topic,
+            )
+            dest_socket = "success_result"
+        else:
+            result_event = EventResultFailure(
+                request=cast("RequestPayload", request_event.request),
+                request_id=request_event.request_id,
+                result=result_payload,
+                response_topic=request_event.response_topic,
+            )
+            dest_socket = "failure_result"
+
+        # Emit the response immediately
+        await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
+    except Exception:
+        logger.exception("Error processing skip-the-line event")
+
+
 async def _alisten_for_api_requests(api_key: str) -> None:
     """Listen for events from the Nodes API and process them asynchronously."""
     global ws_connection_for_sending, event_loop  # noqa: PLW0603
@@ -186,7 +252,11 @@ async def _alisten_for_api_requests(api_key: str) -> None:
                 try:
                     data = json.loads(message)
 
-                    _process_api_event(data, event_queue)
+                    # Check if this event should skip the line (priority processing)
+                    if await _should_process_immediately(data):
+                        await _process_skip_the_line_event(data)
+                    else:
+                        _process_api_event(data, event_queue)
                 except Exception:
                     logger.exception("Error processing event, skipping.")
         except ConnectionClosed:
@@ -429,36 +499,5 @@ def _process_api_event(event: dict, event_queue: Queue) -> None:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None
 
-    # Check if the event implements SkipTheLineMixin for priority processing
-    if isinstance(request_event.request, SkipTheLineMixin):
-        # Handle the event immediately without queuing
-        # The request is guaranteed to be a RequestPayload since it passed earlier validation
-        result_payload = GriptapeNodes.handle_request(
-            cast("RequestPayload", request_event.request),
-            response_topic=request_event.response_topic,
-            request_id=request_event.request_id,
-        )
-
-        # Create the result event and emit response immediately
-        if result_payload.succeeded():
-            result_event = EventResultSuccess(
-                request=cast("RequestPayload", request_event.request),
-                request_id=request_event.request_id,
-                result=result_payload,
-                response_topic=request_event.response_topic,
-            )
-            dest_socket = "success_result"
-        else:
-            result_event = EventResultFailure(
-                request=cast("RequestPayload", request_event.request),
-                request_id=request_event.request_id,
-                result=result_payload,
-                response_topic=request_event.response_topic,
-            )
-            dest_socket = "failure_result"
-
-        # Emit the response immediately
-        __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
-    else:
-        # Add the event to the queue for normal processing
-        event_queue.put(request_event)
+    # Add the event to the queue for normal processing
+    event_queue.put(request_event)
