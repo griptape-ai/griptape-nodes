@@ -300,11 +300,28 @@ class BaseNodeElement:
             self._node_context._emit_parameter_lifecycle_event(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Remove a child element from the hierarchy.
+
+        This method recursively searches through the element hierarchy to find and remove
+        the specified child. When the child is found in a descendant container (e.g., a
+        ParameterList), it delegates to that container's remove_child() method to ensure
+        proper cleanup and event handling (like marking parent nodes as unresolved).
+
+        Args:
+            child: The child element to remove, either as an object or by name string
+        """
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
-                child._parent = None
-                ui_element._children.remove(child)
+                # Delegate to the actual parent container's remove_child method.
+                # This ensures specialized containers (like ParameterList) can perform
+                # their specific cleanup logic (e.g., marking parent nodes as unresolved).
+                if ui_element is not self:
+                    ui_element.remove_child(child)
+                else:
+                    # We are the direct parent, so handle removal directly
+                    child._parent = None
+                    ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
         if self._node_context is not None and isinstance(child, BaseNodeElement):
@@ -1332,6 +1349,40 @@ class ParameterList(ParameterContainer):
         self.add_child(param)
 
         return param
+
+    def add_child(self, child: BaseNodeElement) -> None:
+        """Override to mark parent node as unresolved when children are added.
+
+        When a ParameterList gains a child parameter, the parent node needs to be
+        marked as unresolved to trigger re-evaluation of the node's state and outputs.
+        """
+        super().add_child(child)
+
+        # Mark the parent node as unresolved since the parameter structure changed
+        if self._node_context is not None:
+            # Import at runtime to avoid circular import
+            from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+            self._node_context.make_node_unresolved(
+                current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+            )
+
+    def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Override to mark parent node as unresolved when children are removed.
+
+        When a ParameterList loses a child parameter, the parent node needs to be
+        marked as unresolved to trigger re-evaluation of the node's state and outputs.
+        """
+        super().remove_child(child)
+
+        # Mark the parent node as unresolved since the parameter structure changed
+        if self._node_context is not None:
+            # Import at runtime to avoid circular import
+            from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+            self._node_context.make_node_unresolved(
+                current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+            )
 
 
 class ParameterKeyValuePair(Parameter):
