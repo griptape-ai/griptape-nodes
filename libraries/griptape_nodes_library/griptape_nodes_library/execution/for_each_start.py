@@ -34,7 +34,6 @@ class ForEachStartNode(StartLoopNode):
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.finished = False
         self.current_index = 0
         self._items = None
 
@@ -127,6 +126,14 @@ class ForEachStartNode(StartLoopNode):
         # Initialize status message
         self._update_status_message()
 
+    def is_loop_finished(self) -> bool:
+        """Return True if the loop has completed all items or has no items to process."""
+        # No items to process (None or empty list)
+        if not self._items or len(self._items) == 0:
+            return True
+        # Finished processing all items
+        return self.current_index >= len(self._items)
+
     def process(self) -> None:
         # Reset state when the node is first processed
         if self._flow is None:
@@ -216,7 +223,7 @@ class ForEachStartNode(StartLoopNode):
             # Loop was broken early
             total_items = len(self._items)
             status = f"Stopped at {self.current_index} (of {total_items}) - Break"
-        elif self.finished:
+        elif self.is_loop_finished():
             # Loop completed normally
             total_items = len(self._items)
             status = f"Completed {total_items} (of {total_items})"
@@ -232,7 +239,6 @@ class ForEachStartNode(StartLoopNode):
         # Reset all state for fresh loop execution
         self.current_index = 0
         self._items = []
-        self.finished = False
         self.next_control_output = None
 
         # Reset the coupled ForEach End node's state for fresh loop runs
@@ -250,11 +256,8 @@ class ForEachStartNode(StartLoopNode):
         # Use the list as-is (do not flatten nested lists)
         self._items = list_values
 
-        # Unresolve future nodes immediately to ensure first iteration gets fresh values
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-        connections.unresolve_future_nodes(self)
+        # Note: unresolve_future_nodes() will be called in _check_completion_and_set_output()
+        # if the loop continues, so no need to call it here
 
     def _check_completion_and_set_output(self) -> None:
         """Check if loop should end or continue and set appropriate control output."""
@@ -270,8 +273,7 @@ class ForEachStartNode(StartLoopNode):
         self._items = list_values
 
         # If empty list or finished all items, complete
-        if not self._items or len(self._items) == 0 or self.current_index >= len(self._items):
-            self.finished = True
+        if self.is_loop_finished():
             self._update_status_message()
             self.next_control_output = self.loop_end_condition_met_signal
             return
@@ -296,7 +298,6 @@ class ForEachStartNode(StartLoopNode):
 
     def _break_loop(self) -> None:
         """Break out of loop immediately."""
-        self.finished = True
         self._items = []
         self.current_index = 0
         self.next_control_output = self.loop_end_condition_met_signal
