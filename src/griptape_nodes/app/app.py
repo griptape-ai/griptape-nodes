@@ -9,7 +9,7 @@ import sys
 import threading
 from pathlib import Path
 from queue import Queue
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urljoin
 
 from griptape.events import (
@@ -24,9 +24,9 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from griptape_nodes.mcp_server.server import main as mcp_server
+from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
-from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
@@ -36,11 +36,14 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
     ProgressEvent,
+    RequestPayload,
+    SkipTheLineMixin,
+    deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-from .api import _process_api_event, start_api
+from .api import start_api
 
 # This is a global event queue that will be used to pass events between threads
 event_queue = Queue()
@@ -395,3 +398,67 @@ def __schedule_async_task(coro: Any) -> None:
         asyncio.run_coroutine_threadsafe(coro, event_loop)
     else:
         logger.warning("Event loop not available for scheduling async task")
+
+
+def _process_api_event(event: dict, event_queue: Queue) -> None:
+    """Process API events and send them to the event queue."""
+    payload = event.get("payload", {})
+
+    try:
+        payload["request"]
+    except KeyError:
+        msg = "Error: 'request' was expected but not found."
+        raise RuntimeError(msg) from None
+
+    try:
+        event_type = payload["event_type"]
+        if event_type != "EventRequest":
+            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
+            raise RuntimeError(msg) from None
+    except KeyError:
+        msg = "Error: 'event_type' not found in request."
+        raise RuntimeError(msg) from None
+
+    # Now attempt to convert it into an EventRequest.
+    try:
+        request_event = deserialize_event(json_data=payload)
+        if not isinstance(request_event, EventRequest):
+            msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
+            raise TypeError(msg)  # noqa: TRY301
+    except Exception as e:
+        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
+        raise RuntimeError(msg) from None
+
+    # Check if the event implements SkipTheLineMixin for priority processing
+    if isinstance(request_event.request, SkipTheLineMixin):
+        # Handle the event immediately without queuing
+        # The request is guaranteed to be a RequestPayload since it passed earlier validation
+        result_payload = GriptapeNodes.handle_request(
+            cast("RequestPayload", request_event.request),
+            response_topic=request_event.response_topic,
+            request_id=request_event.request_id,
+        )
+
+        # Create the result event and emit response immediately
+        if result_payload.succeeded():
+            result_event = EventResultSuccess(
+                request=cast("RequestPayload", request_event.request),
+                request_id=request_event.request_id,
+                result=result_payload,
+                response_topic=request_event.response_topic,
+            )
+            dest_socket = "success_result"
+        else:
+            result_event = EventResultFailure(
+                request=cast("RequestPayload", request_event.request),
+                request_id=request_event.request_id,
+                result=result_payload,
+                response_topic=request_event.response_topic,
+            )
+            dest_socket = "failure_result"
+
+        # Emit the response immediately
+        __schedule_async_task(__emit_message(dest_socket, result_event.json(), topic=result_event.response_topic))
+    else:
+        # Add the event to the queue for normal processing
+        event_queue.put(request_event)

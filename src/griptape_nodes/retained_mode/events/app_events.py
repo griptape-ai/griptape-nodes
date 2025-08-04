@@ -5,6 +5,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -148,7 +149,7 @@ class AppEndSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SessionHeartbeatRequest(RequestPayload):
+class SessionHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use ensure the engine session is still active."""
 
 
@@ -166,7 +167,7 @@ class SessionHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EngineHeartbeatRequest(RequestPayload):
+class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use to discover active engines and their status.
 
     Attributes:
