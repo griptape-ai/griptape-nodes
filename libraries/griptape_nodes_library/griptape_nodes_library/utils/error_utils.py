@@ -5,6 +5,9 @@ import requests
 from griptape.artifacts import BaseArtifact, ErrorArtifact
 
 
+
+SAFETY_CHECK_ERROR = 400
+
 def _parse_griptape_cloud_error_message(error: str) -> str:
     """Griptape Cloud has a quirk where it returns the error message in a format that is not not easily parseable as JSON.
 
@@ -33,6 +36,8 @@ def try_throw_error(agent_output: BaseArtifact) -> None:
     """Throws an error if the agent output is an ErrorArtifact."""
     if isinstance(agent_output, ErrorArtifact):
         if isinstance(agent_output.exception, requests.HTTPError):
+            if agent_output.exception.response.status_code == SAFETY_CHECK_ERROR:
+                error_message = "The system encountered a safety check issue. Please reword your prompt and try again."
             if agent_output.exception.response.text:
                 error_message = _parse_griptape_cloud_error_message(agent_output.exception.response.text)
             else:
