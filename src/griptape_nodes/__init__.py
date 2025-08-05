@@ -154,21 +154,23 @@ def _handle_storage_backend_config(config: InitConfig) -> str | None:
     return storage_backend
 
 
-def _handle_bucket_config(config: InitConfig, storage_backend: str | None) -> str | None:
-    """Handle bucket configuration step (depends on API key and storage backend)."""
-    storage_backend_bucket_id = None
+def _handle_bucket_config(config: InitConfig) -> str | None:
+    """Handle bucket configuration step (depends on API key)."""
+    bucket_id = None
 
-    if storage_backend == StorageBackend.GTC.value:
-        if config.interactive:
-            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
-        elif config.bucket_name is not None:
-            storage_backend_bucket_id = _get_or_create_bucket_id(config.bucket_name)
+    if config.interactive:
+        # First ask if they want to configure a bucket
+        configure_bucket = _prompt_for_bucket_configuration()
+        if configure_bucket:
+            bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
+    elif config.bucket_name is not None:
+        bucket_id = _get_or_create_bucket_id(config.bucket_name)
 
-    if storage_backend_bucket_id is not None:
-        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
-        console.print(f"[bold green]Storage backend bucket ID set to: {storage_backend_bucket_id}[/bold green]")
+    if bucket_id is not None:
+        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", bucket_id)
+        console.print(f"[bold green]Bucket ID set to: {bucket_id}[/bold green]")
 
-    return storage_backend_bucket_id
+    return bucket_id
 
 
 def _handle_advanced_library_config(config: InitConfig) -> bool | None:
@@ -211,9 +213,9 @@ def _run_init_configuration(config: InitConfig) -> None:
 
     _handle_workspace_config(config)
 
-    storage_backend = _handle_storage_backend_config(config)
+    _handle_storage_backend_config(config)
 
-    _handle_bucket_config(config, storage_backend)
+    _handle_bucket_config(config)
 
     _handle_advanced_library_config(config)
 
@@ -475,6 +477,41 @@ def _get_griptape_cloud_buckets_and_display_table() -> tuple[list[str], dict[str
         console.print(f"[red]Error fetching buckets: {e}[/red]")
 
     return bucket_names, name_to_id, table
+
+
+def _prompt_for_bucket_configuration() -> bool:
+    """Prompts the user whether to configure a bucket for multi-machine workflow and asset syncing."""
+    # Check if there's already a bucket configured
+    current_bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
+
+    if current_bucket_id:
+        explainer = f"""[bold cyan]Griptape Cloud Bucket Configuration[/bold cyan]
+    You currently have a bucket configured (ID: {current_bucket_id}).
+
+    Buckets are used for multi-machine workflow and asset syncing, allowing you to:
+    - Share workflows and assets across multiple devices
+    - Sync generated content between different Griptape Nodes instances
+    - Access your work from anywhere
+
+    Would you like to change your selected bucket or keep the current one?"""
+        prompt_text = "Change selected Griptape Cloud bucket?"
+        default_value = False
+    else:
+        explainer = """[bold cyan]Griptape Cloud Bucket Configuration[/bold cyan]
+    Would you like to configure a Griptape Cloud bucket?
+    Buckets are used for multi-machine workflow and asset syncing, allowing you to:
+    - Share workflows and assets across multiple devices
+    - Sync generated content between different Griptape Nodes instances
+    - Access your work from anywhere
+
+    If you do not intend to use Griptape Nodes to collaborate or revision control your workflows, you can skip this step.
+
+    You can always configure a bucket later by running the initialization process again."""
+        prompt_text = "Configure Griptape Cloud bucket?"
+        default_value = False
+
+    console.print(Panel(explainer, expand=False))
+    return Confirm.ask(prompt_text, default=default_value)
 
 
 def _prompt_for_gtc_bucket_name(default_bucket_name: str | None = None) -> str:
