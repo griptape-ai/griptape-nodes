@@ -203,7 +203,23 @@ def extract_image_url(image_item: Any) -> str:
     return str(image_item)
 
 
-def create_grid_layout(
+def load_images_from_list(images: list) -> list[Image.Image]:
+    """Load PIL images from a list of image items, skipping invalid ones."""
+    pil_images = []
+    for img_item in images:
+        try:
+            url = extract_image_url(img_item)
+            pil_img = load_pil_from_url(url)
+            pil_images.append(pil_img)
+        except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
+            # Skip invalid images
+            msg = f"Skipping invalid image: {e}"
+            logger.debug(msg)
+            continue
+    return pil_images
+
+
+def create_grid_layout(  # noqa: PLR0913
     images: list,
     columns: int,
     output_image_width: int,
@@ -219,17 +235,7 @@ def create_grid_layout(
         return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Load and process images
-    pil_images = []
-    for img_item in images:
-        try:
-            url = extract_image_url(img_item)
-            pil_img = load_pil_from_url(url)
-            pil_images.append(pil_img)
-        except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
-            # Skip invalid images
-            msg = f"Skipping invalid image: {e}"
-            logger.debug(msg)
-            continue
+    pil_images = load_images_from_list(images)
 
     if not pil_images:
         return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
@@ -297,17 +303,7 @@ def create_masonry_layout(  # noqa: PLR0913
         return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Load and process images
-    pil_images = []
-    for img_item in images:
-        try:
-            url = extract_image_url(img_item)
-            pil_img = load_pil_from_url(url)
-            pil_images.append(pil_img)
-        except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
-            # Skip invalid images
-            msg = f"Skipping invalid image: {e}"
-            logger.debug(msg)
-            continue
+    pil_images = load_images_from_list(images)
 
     if not pil_images:
         return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
