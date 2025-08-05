@@ -1247,6 +1247,23 @@ class ParameterContainer(Parameter, ABC):
             element_type=element_type,
         )
 
+    def __bool__(self) -> bool:
+        """Parameter containers are always truthy, even when empty.
+
+        This overrides Python's default truthiness behavior for containers with __len__().
+        By default, Python makes objects with __len__() falsy when len() == 0, which
+        caused bugs where empty ParameterList/ParameterDictionary objects would fail
+        'if param' checks and fall back to stale cached values instead of computing
+        fresh empty results.
+
+        Unlike standard Python containers, ParameterContainer objects represent
+        parameter structure/definitions rather than just data, so they remain
+        meaningful even when empty.
+
+        See: https://github.com/griptape-ai/griptape-nodes/issues/1799
+        """
+        return True
+
     @abstractmethod
     def add_child_parameter(self) -> Parameter:
         pass

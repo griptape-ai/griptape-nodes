@@ -590,7 +590,7 @@ class BaseNode(ABC):
         param = self.get_parameter_by_name(param_name)
         if param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
-            if value:
+            if value is not None:
                 return value
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
