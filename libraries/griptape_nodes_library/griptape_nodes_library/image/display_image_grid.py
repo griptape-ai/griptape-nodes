@@ -141,12 +141,10 @@ class DisplayImageGrid(ControlNode):
                 self.hide_parameter_by_name("background_color")
             else:
                 self.show_parameter_by_name("background_color")
-        if parameter.name == "output_format":
-            if value == "jpeg":
-                self.set_parameter_value("transparent_bg", False)
-                self.publish_update_to_parameter("transparent_bg", False)
-                self.show_parameter_by_name("background_color")
-        # self.process()
+        if parameter.name == "output_format" and value == "jpeg":
+            self.set_parameter_value("transparent_bg", False)
+            self.publish_update_to_parameter("transparent_bg", False)
+            self.show_parameter_by_name("background_color")
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
