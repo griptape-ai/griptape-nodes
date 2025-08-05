@@ -171,7 +171,7 @@ def extract_channel_from_image(image: Image.Image, channel: str, context_name: s
 # New functions for DisplayImageGrid
 
 
-def create_placeholder_image(width: int, height: int, background_color: str, transparent_bg: bool) -> Image.Image:
+def create_placeholder_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create a placeholder image with specified dimensions and background."""
     if transparent_bg:
         image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -210,12 +210,13 @@ def create_grid_layout(
     spacing: int,
     background_color: str,
     border_radius: int,
+    *,
     crop_to_fit: bool,
     transparent_bg: bool,
 ) -> Image.Image:
     """Create a uniform grid layout of images."""
     if not images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg)
+        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Load and process images
     pil_images = []
@@ -230,7 +231,7 @@ def create_grid_layout(
             continue
 
     if not pil_images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg)
+        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Calculate grid dimensions
     rows = (len(pil_images) + columns - 1) // columns
@@ -286,12 +287,13 @@ def create_masonry_layout(
     spacing: int,
     background_color: str,
     border_radius: int,
+    *,
     crop_to_fit: bool,  # noqa: ARG001
     transparent_bg: bool,
 ) -> Image.Image:
     """Create a masonry layout with variable height columns."""
     if not images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg)
+        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Load and process images
     pil_images = []
@@ -306,7 +308,7 @@ def create_masonry_layout(
             continue
 
     if not pil_images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg)
+        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
 
     # Calculate column width
     column_width = (output_image_width - spacing * (columns + 1)) // columns

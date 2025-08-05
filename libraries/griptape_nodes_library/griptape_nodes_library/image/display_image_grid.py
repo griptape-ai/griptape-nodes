@@ -163,7 +163,7 @@ class DisplayImageGrid(ControlNode):
             # Validate inputs
             if not images:
                 # Create a placeholder image
-                placeholder_image = create_placeholder_image(400, 300, background_color, transparent_bg)
+                placeholder_image = create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
                 # Save and create URL for placeholder
                 filename = f"{uuid.uuid4()}.{output_format}"
                 static_url = GriptapeNodes.StaticFilesManager().save_static_file(
@@ -183,8 +183,8 @@ class DisplayImageGrid(ControlNode):
                     spacing,
                     background_color,
                     border_radius,
-                    crop_to_fit,
-                    transparent_bg,
+                    crop_to_fit=crop_to_fit,
+                    transparent_bg=transparent_bg,
                 )
             else:  # grid layout
                 grid_image = create_grid_layout(
@@ -194,8 +194,8 @@ class DisplayImageGrid(ControlNode):
                     spacing,
                     background_color,
                     border_radius,
-                    crop_to_fit,
-                    transparent_bg,
+                    crop_to_fit=crop_to_fit,
+                    transparent_bg=transparent_bg,
                 )
 
             # Save the grid image and create URL
