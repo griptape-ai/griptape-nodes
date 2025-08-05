@@ -1,3 +1,5 @@
+from csv import Error
+import time
 import uuid
 from typing import Any
 
@@ -14,6 +16,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from griptape.artifacts import BaseArtifact, ErrorArtifact
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -22,14 +25,18 @@ GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"]
 DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 DEFAULT_SIZE = DALL_E_3_SIZES[0]
+MAX_RETRIES = 2
+RATE_LIMIT_EXCEPTION = 429
 
 
 class GenerateImage(ControlNode):
+    retries: int
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/720
         self._has_connection_to_prompt = False
+        self.retries = 0
 
         self.add_parameter(
             Parameter(
@@ -318,4 +325,15 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
+        if self.retries < MAX_RETRIES and isinstance(agent.output, ErrorArtifact) and isinstance(agent.output.exception, requests.HTTPError) and agent.output.exception.response.status_code == RATE_LIMIT_EXCEPTION:
+            if "Retry-After" in agent.output.exception.response.headers:
+                retry_time = int(agent.output.exception.response.headers["Retry-After"])
+            else:
+                retry_time = 3
+            self.append_value_to_parameter("logs", f"Rate limit reached. Please try again in {retry_time} seconds.\n")
+            time.sleep(retry_time)
+            self.retries += 1
+            self._create_image(agent, prompt)
+            return
+        self.retries = 0
         try_throw_error(agent.output)
