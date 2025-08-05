@@ -277,10 +277,15 @@ class BaseNodeElement:
             self._changes["ui_options"] = complete_dict["ui_options"]
 
         event_data.update(self._changes)
-
         # Publish the event
         event = ExecutionGriptapeNodeEvent(
             wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
+        )
+        # Import logger here to avoid circular dependency
+        from griptape_nodes.retained_mode.griptape_nodes import logger
+
+        logger.info(
+            f"AlterElementEvent: Emitting flushing event for element {self.name} (ID: {self.element_id}) with changes: {self._changes.keys()}"
         )
         EventBus.publish_event(event)
         self._changes.clear()
@@ -1367,6 +1372,7 @@ class ParameterList(ParameterContainer):
             if isinstance(child, Parameter):
                 self.remove_child(child)
                 del child
+
 
 class ParameterKeyValuePair(Parameter):
     def __init__(  # noqa: PLR0913
