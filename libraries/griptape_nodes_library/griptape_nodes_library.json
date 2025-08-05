@@ -923,7 +923,7 @@
         "category": "image",
         "description": "Display an image",
         "display_name": "Display Image",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -933,7 +933,7 @@
         "category": "image",
         "description": "Can be used to compare two images",
         "display_name": "Compare Images",
-        "group": "tasks"
+        "group": "display"
       }
     },
     {
@@ -953,7 +953,7 @@
         "category": "image",
         "description": "Display a mask from an image's alpha channel.",
         "display_name": "Display Mask",
-        "group": "mask"
+        "group": "display"
       }
     },
     {
@@ -963,7 +963,7 @@
         "category": "image",
         "description": "Display a channel from an image's color channels (red, green, blue, or alpha). Defaults to red channel. Outputs to 'output' parameter.",
         "display_name": "Display Channel",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -1027,6 +1027,17 @@
         "display_name": "Merge Images",
         "group": "edit",
         "icon": "squares-unite"
+      }
+    },
+    {
+      "class_name": "DisplayImageGrid",
+      "file_path": "griptape_nodes_library/image/display_image_grid.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display multiple images in a grid or masonry layout with customizable styling options",
+        "display_name": "Display Image Grid",
+        "group": "display",
+        "icon": "grid-3x3"
       }
     },
     {

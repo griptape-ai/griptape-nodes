@@ -162,3 +162,221 @@ def extract_channel_from_image(image: Image.Image, channel: str, context_name: s
         case _:
             msg = f"Unsupported {context_name} mode: {image.mode}"
             raise ValueError(msg)
+
+
+# New functions for DisplayImageGrid
+
+
+def create_placeholder_image(width: int, height: int, background_color: str, transparent_bg: bool) -> Image.Image:
+    """Create a placeholder image with specified dimensions and background."""
+    if transparent_bg:
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    else:
+        # Convert hex color to RGB
+        background_color = background_color.removeprefix("#")
+        rgb_color = tuple(int(background_color[i : i + 2], 16) for i in (0, 2, 4))
+        image = Image.new("RGB", (width, height), rgb_color)
+
+    return image
+
+
+def image_to_bytes(image: Image.Image, output_format: str) -> bytes:
+    """Convert PIL image to bytes in specified format."""
+    buffer = io.BytesIO()
+    image.save(buffer, format=output_format.upper())
+    return buffer.getvalue()
+
+
+def extract_image_url(image_item) -> str:
+    """Extract URL from various image input types."""
+    if isinstance(image_item, ImageUrlArtifact):
+        return image_item.value
+    if isinstance(image_item, dict) and "value" in image_item:
+        return image_item["value"]
+    if isinstance(image_item, str):
+        return image_item
+    # Try to load from URL if it's a string
+    return str(image_item)
+
+
+def create_grid_layout(
+    images: list,
+    columns: int,
+    output_image_width: int,
+    spacing: int,
+    background_color: str,
+    border_radius: int,
+    crop_to_fit: bool,
+    transparent_bg: bool,
+) -> Image.Image:
+    """Create a uniform grid layout of images."""
+    if not images:
+        return create_placeholder_image(400, 300, background_color, transparent_bg)
+
+    # Load and process images
+    pil_images = []
+    for img_item in images:
+        try:
+            url = extract_image_url(img_item)
+            pil_img = load_pil_from_url(url)
+            pil_images.append(pil_img)
+        except Exception:
+            # Skip invalid images
+            continue
+
+    if not pil_images:
+        return create_placeholder_image(400, 300, background_color, transparent_bg)
+
+    # Calculate grid dimensions
+    rows = (len(pil_images) + columns - 1) // columns
+    cell_width = (output_image_width - spacing * (columns + 1)) // columns
+    cell_height = cell_width  # Square cells for grid layout
+
+    # Create background
+    total_width = cell_width * columns + spacing * (columns + 1)
+    total_height = cell_height * rows + spacing * (rows + 1)
+
+    if transparent_bg:
+        grid_image = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
+    else:
+        background_color = background_color.removeprefix("#")
+        rgb_color = tuple(int(background_color[i : i + 2], 16) for i in (0, 2, 4))
+        grid_image = Image.new("RGB", (total_width, total_height), rgb_color)
+
+    # Place images in grid
+    for idx, img in enumerate(pil_images):
+        row = idx // columns
+        col = idx % columns
+
+        # Resize image to fit cell
+        if crop_to_fit:
+            # Crop to square
+            img_resized = img.copy()
+            img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
+
+            # Center the image
+            x_offset = col * cell_width + spacing + (cell_width - img_resized.width) // 2
+            y_offset = row * cell_height + spacing + (cell_height - img_resized.height) // 2
+        else:
+            # Scale to fit
+            img_resized = img.copy()
+            img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
+
+            x_offset = col * cell_width + spacing + (cell_width - img_resized.width) // 2
+            y_offset = row * cell_height + spacing + (cell_height - img_resized.height) // 2
+
+        # Apply border radius if specified
+        if border_radius > 0:
+            img_resized = apply_border_radius(img_resized, border_radius)
+
+        grid_image.paste(img_resized, (x_offset, y_offset), img_resized if img_resized.mode == "RGBA" else None)
+
+    return grid_image
+
+
+def create_masonry_layout(
+    images: list,
+    columns: int,
+    output_image_width: int,
+    spacing: int,
+    background_color: str,
+    border_radius: int,
+    crop_to_fit: bool,
+    transparent_bg: bool,
+) -> Image.Image:
+    """Create a masonry layout with variable height columns."""
+    if not images:
+        return create_placeholder_image(400, 300, background_color, transparent_bg)
+
+    # Load and process images
+    pil_images = []
+    for img_item in images:
+        try:
+            url = extract_image_url(img_item)
+            pil_img = load_pil_from_url(url)
+            pil_images.append(pil_img)
+        except Exception:
+            # Skip invalid images
+            continue
+
+    if not pil_images:
+        return create_placeholder_image(400, 300, background_color, transparent_bg)
+
+    # Calculate column width
+    column_width = (output_image_width - spacing * (columns + 1)) // columns
+
+    # Distribute images across columns
+    columns_content = [[] for _ in range(columns)]
+    column_heights = [0] * columns
+
+    for idx, img in enumerate(pil_images):
+        # Find shortest column
+        shortest_col = column_heights.index(min(column_heights))
+        columns_content[shortest_col].append(img)
+
+        # Calculate height for this image
+        aspect_ratio = img.width / img.height
+        img_height = int(column_width / aspect_ratio)
+        column_heights[shortest_col] += img_height + spacing
+
+    # Create background
+    total_height = max(column_heights) + spacing
+    if transparent_bg:
+        grid_image = Image.new("RGBA", (output_image_width, total_height), (0, 0, 0, 0))
+    else:
+        background_color = background_color.removeprefix("#")
+        rgb_color = tuple(int(background_color[i : i + 2], 16) for i in (0, 2, 4))
+        grid_image = Image.new("RGB", (output_image_width, total_height), rgb_color)
+
+    # Place images in columns
+    for col_idx, column_images in enumerate(columns_content):
+        x_offset = col_idx * column_width + spacing * (col_idx + 1)
+        y_offset = spacing
+
+        for img in column_images:
+            # Resize image to fit column width
+            img_resized = img.copy()
+            aspect_ratio = img.width / img.height
+            img_height = int(column_width / aspect_ratio)
+            img_resized = img_resized.resize((column_width, img_height), Image.Resampling.LANCZOS)
+
+            # Apply border radius if specified
+            if border_radius > 0:
+                img_resized = apply_border_radius(img_resized, border_radius)
+
+            grid_image.paste(img_resized, (x_offset, y_offset), img_resized if img_resized.mode == "RGBA" else None)
+            y_offset += img_height + spacing
+
+    return grid_image
+
+
+def apply_border_radius(image: Image.Image, radius: int) -> Image.Image:
+    """Apply border radius to an image."""
+    if radius <= 0:
+        return image
+
+    # Create a mask with rounded corners
+    mask = Image.new("L", image.size, 0)
+
+    # Draw rounded rectangle mask
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
+
+    # Apply mask
+    if image.mode == "RGBA":
+        result = image.copy()
+        result.putalpha(Image.composite(image.getchannel("A"), Image.new("L", image.size, 0), mask))
+    else:
+        result = image.convert("RGBA")
+        result.putalpha(mask)
+
+    return result
+
+
+def cleanup_temp_files():
+    """Clean up temporary files (placeholder for compatibility)."""
+    # This is a placeholder function for compatibility
+    # In this implementation, we don't need to clean up temp files
+    # as we're using the static file manager
