@@ -227,7 +227,8 @@ def create_grid_layout(
             pil_images.append(pil_img)
         except Exception as e:
             # Skip invalid images
-            logger.debug(f"Skipping invalid image: {e}")
+            msg = f"Skipping invalid image: {e}"
+            logger.debug(msg)
             continue
 
     if not pil_images:
@@ -280,7 +281,7 @@ def create_grid_layout(
     return grid_image
 
 
-def create_masonry_layout(
+def create_masonry_layout(  # noqa: PLR0913
     images: list,
     columns: int,
     output_image_width: int,
@@ -304,7 +305,8 @@ def create_masonry_layout(
             pil_images.append(pil_img)
         except Exception as e:
             # Skip invalid images
-            logger.debug(f"Skipping invalid image: {e}")
+            msg = f"Skipping invalid image: {e}"
+            logger.debug(msg)
             continue
 
     if not pil_images:
