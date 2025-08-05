@@ -31,7 +31,7 @@ class RunWorkflowFromScratchRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromScratchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class RunWorkflowFromScratchResultSuccess(ResultPayloadSuccess):
     """Workflow loaded and started successfully from file."""
 
 
@@ -91,7 +91,7 @@ class RunWorkflowFromRegistryRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RunWorkflowFromRegistryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class RunWorkflowFromRegistryResultSuccess(ResultPayloadSuccess):
     """Workflow from registry started successfully."""
 
 
