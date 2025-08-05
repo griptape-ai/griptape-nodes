@@ -183,6 +183,7 @@ class DisplayImageGrid(ControlNode):
                     spacing,
                     background_color,
                     border_radius,
+                    crop_to_fit,
                     transparent_bg,
                 )
             else:  # grid layout
