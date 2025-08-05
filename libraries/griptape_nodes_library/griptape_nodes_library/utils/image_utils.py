@@ -225,7 +225,7 @@ def create_grid_layout(
             url = extract_image_url(img_item)
             pil_img = load_pil_from_url(url)
             pil_images.append(pil_img)
-        except Exception as e:
+        except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
             # Skip invalid images
             msg = f"Skipping invalid image: {e}"
             logger.debug(msg)
@@ -303,7 +303,7 @@ def create_masonry_layout(  # noqa: PLR0913
             url = extract_image_url(img_item)
             pil_img = load_pil_from_url(url)
             pil_images.append(pil_img)
-        except Exception as e:
+        except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
             # Skip invalid images
             msg = f"Skipping invalid image: {e}"
             logger.debug(msg)

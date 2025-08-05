@@ -146,6 +146,16 @@ class DisplayImageGrid(ControlNode):
             self.show_parameter_by_name("background_color")
         return super().after_value_set(parameter, value)
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions: list[Exception] = []
+        if not self.get_parameter_value("images"):
+            msg = f"{self.name}: Images parameter is required"
+            exceptions.append(ValueError(msg))
+        if not self.get_parameter_value("output_image_width"):
+            msg = f"{self.name}: Output image width parameter is required"
+            exceptions.append(ValueError(msg))
+        return exceptions
+
     def process(self) -> None:
         try:
             # Get parameters
@@ -206,6 +216,9 @@ class DisplayImageGrid(ControlNode):
             url_artifact = ImageUrlArtifact(value=static_url)
             self.publish_update_to_parameter("output", url_artifact)
 
+        except (ValueError, OSError) as e:
+            msg = f"{self.name}: Error creating image grid: {e}"
+            raise ValueError(msg) from e
         finally:
             # Always clean up temporary files
             cleanup_temp_files()
