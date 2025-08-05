@@ -12,7 +12,6 @@ from griptape_nodes_library.utils.image_utils import (
     create_grid_layout,
     create_masonry_layout,
     create_placeholder_image,
-    extract_image_url,
     image_to_bytes,
 )
 
@@ -184,7 +183,6 @@ class DisplayImageGrid(ControlNode):
                     spacing,
                     background_color,
                     border_radius,
-                    crop_to_fit,
                     transparent_bg,
                 )
             else:  # grid layout
@@ -200,8 +198,6 @@ class DisplayImageGrid(ControlNode):
                 )
 
             # Save the grid image and create URL
-            # Extract URLs for filename generation
-            image_urls = [extract_image_url(img) for img in images]
             filename = f"{uuid.uuid4()}.{output_format}"
             static_url = GriptapeNodes.StaticFilesManager().save_static_file(
                 image_to_bytes(grid_image, output_format), filename

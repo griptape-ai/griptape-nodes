@@ -1,7 +1,9 @@
 import base64
 import io
+import logging
 import uuid
 from io import BytesIO
+from typing import Any
 from urllib.error import URLError
 
 import httpx
@@ -11,6 +13,8 @@ from PIL import Image
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+logger = logging.getLogger(__name__)
 
 
 def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
@@ -187,7 +191,7 @@ def image_to_bytes(image: Image.Image, output_format: str) -> bytes:
     return buffer.getvalue()
 
 
-def extract_image_url(image_item) -> str:
+def extract_image_url(image_item: Any) -> str:
     """Extract URL from various image input types."""
     if isinstance(image_item, ImageUrlArtifact):
         return image_item.value
@@ -220,8 +224,9 @@ def create_grid_layout(
             url = extract_image_url(img_item)
             pil_img = load_pil_from_url(url)
             pil_images.append(pil_img)
-        except Exception:
+        except Exception as e:
             # Skip invalid images
+            logger.debug(f"Skipping invalid image: {e}")
             continue
 
     if not pil_images:
@@ -281,7 +286,7 @@ def create_masonry_layout(
     spacing: int,
     background_color: str,
     border_radius: int,
-    crop_to_fit: bool,
+    crop_to_fit: bool,  # noqa: ARG001
     transparent_bg: bool,
 ) -> Image.Image:
     """Create a masonry layout with variable height columns."""
@@ -295,8 +300,9 @@ def create_masonry_layout(
             url = extract_image_url(img_item)
             pil_img = load_pil_from_url(url)
             pil_images.append(pil_img)
-        except Exception:
+        except Exception as e:
             # Skip invalid images
+            logger.debug(f"Skipping invalid image: {e}")
             continue
 
     if not pil_images:
@@ -309,7 +315,7 @@ def create_masonry_layout(
     columns_content = [[] for _ in range(columns)]
     column_heights = [0] * columns
 
-    for idx, img in enumerate(pil_images):
+    for _idx, img in enumerate(pil_images):
         # Find shortest column
         shortest_col = column_heights.index(min(column_heights))
         columns_content[shortest_col].append(img)
@@ -375,7 +381,7 @@ def apply_border_radius(image: Image.Image, radius: int) -> Image.Image:
     return result
 
 
-def cleanup_temp_files():
+def cleanup_temp_files() -> None:
     """Clean up temporary files (placeholder for compatibility)."""
     # This is a placeholder function for compatibility
     # In this implementation, we don't need to clean up temp files
