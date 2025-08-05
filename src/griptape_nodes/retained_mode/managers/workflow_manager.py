@@ -1302,6 +1302,15 @@ class WorkflowManager:
             prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
             # We'll use its creation date.
             creation_date = prior_workflow.metadata.creation_date
+        elif file_name:
+            # If no prior workflow exists for the new name, check if there's a current workflow
+            # context (e.g., during rename operations) to preserve metadata from
+            context_manager = GriptapeNodes.ContextManager()
+            if context_manager.has_current_workflow():
+                current_workflow_name = context_manager.get_current_workflow_name()
+                if current_workflow_name and WorkflowRegistry.has_workflow_with_name(current_workflow_name):
+                    prior_workflow = WorkflowRegistry.get_workflow_by_name(current_workflow_name)
+                    creation_date = prior_workflow.metadata.creation_date
 
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
             # Either a new workflow, or a backcompat situation.
