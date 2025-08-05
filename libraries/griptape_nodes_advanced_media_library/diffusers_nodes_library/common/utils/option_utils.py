@@ -1,5 +1,5 @@
-from griptape_nodes.exe_types.core_types import BaseNode
-from griptape_nodes.exe_types.node_types import Options
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.options import Options
 
 
 def update_option_choices(node: BaseNode, parameter_name: str, choices: list[str], default: str) -> None:
