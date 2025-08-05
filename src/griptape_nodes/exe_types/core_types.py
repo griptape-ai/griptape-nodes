@@ -388,8 +388,23 @@ class BaseNodeElement:
         return event_data
 
 
-@dataclass(kw_only=True)
-class ParameterMessage(BaseNodeElement):
+class UIOptionsMixin:
+    """Mixin providing UI options update functionality for classes with ui_options."""
+
+    def update_ui_options_key(self, key: str, value: Any) -> None:
+        """Update a single UI option key."""
+        ui_options = self.ui_options
+        ui_options[key] = value
+        self.ui_options = ui_options
+
+    def update_ui_options(self, updates: dict[str, Any]) -> None:
+        """Update multiple UI options at once."""
+        ui_options = self.ui_options
+        ui_options.update(updates)
+        self.ui_options = ui_options
+
+
+class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     """Represents a UI message element, such as a warning or informational text."""
 
     # Define default titles as a class-level constant
@@ -535,11 +550,21 @@ class ParameterMessage(BaseNodeElement):
         return event_data
 
 
-@dataclass(kw_only=True)
-class ParameterGroup(BaseNodeElement):
+class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    ui_options: dict = field(default_factory=dict)
+    def __init__(self, name: str, ui_options: dict | None = None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self._ui_options = ui_options or {}
+
+    @property
+    def ui_options(self) -> dict:
+        return self._ui_options
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        self._ui_options = value
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -647,7 +672,7 @@ class ParameterBase(BaseNodeElement, ABC):
         pass
 
 
-class Parameter(BaseNodeElement):
+class Parameter(BaseNodeElement, UIOptionsMixin):
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -858,7 +883,10 @@ class Parameter(BaseNodeElement):
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
         if self._parent is not None and isinstance(self._parent, ParameterGroup):
-            ui_options = ui_options | self._parent.ui_options
+            # Access the field value directly for ParameterGroup
+            parent_ui_options = getattr(self._parent, "ui_options", {})
+            if isinstance(parent_ui_options, dict):
+                ui_options = ui_options | parent_ui_options
         return ui_options
 
     @ui_options.setter
