@@ -7,6 +7,7 @@ from PIL import UnidentifiedImageError
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     DEFAULT_PLACEHOLDER_HEIGHT,
@@ -54,6 +55,7 @@ class DisplayImageGrid(ControlNode):
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"slider": {"min_val": 1, "max_val": 10, "step": 1}},
         )
+        self.columns.add_trait(Clamp(min_val=1, max_val=10))
         self.add_parameter(self.columns)
 
         # Spacing and styling

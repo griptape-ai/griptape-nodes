@@ -55,6 +55,8 @@ def resize_image_for_cell(
         img_resized = img.copy()
         # Validate image dimensions to prevent division by zero
         if img.width <= 0 or img.height <= 0:
+            msg = f"Skipping invalid image: {img.width}x{img.height}"
+            logger.warning(msg)
             return ResizedImageResult(None, 0, 0)  # Skip invalid images
         # Calculate scale to fit the larger dimension
         scale_x = cell_width / img.width
@@ -128,7 +130,12 @@ def load_pil_from_url(url: str) -> Image.Image:
     """Load image from URL using httpx."""
     response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
-    return Image.open(BytesIO(response.content))
+    try:
+        return Image.open(BytesIO(response.content))
+    except Exception as e:
+        msg = f"Failed to load image from URL: {url}\nError: {e}"
+        logger.error(msg)
+        raise ValueError(msg) from e
 
 
 def create_alpha_mask(image: Image.Image) -> Image.Image:
