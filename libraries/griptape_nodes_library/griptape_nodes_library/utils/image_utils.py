@@ -263,18 +263,34 @@ def create_grid_layout(  # noqa: PLR0913
 
         # Resize image to fit cell
         if crop_to_fit:
-            # Crop to square
+            # Crop to square - resize to fit the larger dimension, then crop to square
             img_resized = img.copy()
-            img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
+            # Calculate scale to fit the larger dimension
+            scale_x = cell_width / img.width
+            scale_y = cell_height / img.height
+            scale = max(scale_x, scale_y)  # Use larger scale to ensure coverage
 
-            # Center the image
-            x_offset = col * cell_width + spacing + (cell_width - img_resized.width) // 2
-            y_offset = row * cell_height + spacing + (cell_height - img_resized.height) // 2
+            # Resize to cover the cell
+            new_width = int(img.width * scale)
+            new_height = int(img.height * scale)
+            img_resized = img_resized.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Crop to square from center
+            left = (new_width - cell_width) // 2
+            top = (new_height - cell_height) // 2
+            right = left + cell_width
+            bottom = top + cell_height
+            img_resized = img_resized.crop((left, top, right, bottom))
+
+            # Position at exact cell coordinates
+            x_offset = col * cell_width + spacing
+            y_offset = row * cell_height + spacing
         else:
-            # Scale to fit
+            # Scale to fit - maintain aspect ratio within cell bounds
             img_resized = img.copy()
             img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
 
+            # Center the image within the cell
             x_offset = col * cell_width + spacing + (cell_width - img_resized.width) // 2
             y_offset = row * cell_height + spacing + (cell_height - img_resized.height) // 2
 
