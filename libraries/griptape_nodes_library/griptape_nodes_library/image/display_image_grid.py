@@ -8,6 +8,8 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
+    DEFAULT_PLACEHOLDER_HEIGHT,
+    DEFAULT_PLACEHOLDER_WIDTH,
     cleanup_temp_files,
     create_grid_layout,
     create_masonry_layout,
@@ -173,7 +175,12 @@ class DisplayImageGrid(ControlNode):
             # Validate inputs
             if not images:
                 # Create a placeholder image
-                placeholder_image = create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
+                placeholder_image = create_placeholder_image(
+                    DEFAULT_PLACEHOLDER_WIDTH,
+                    DEFAULT_PLACEHOLDER_HEIGHT,
+                    background_color,
+                    transparent_bg=transparent_bg,
+                )
                 # Save and create URL for placeholder
                 filename = f"{uuid.uuid4()}.{output_format}"
                 static_url = GriptapeNodes.StaticFilesManager().save_static_file(

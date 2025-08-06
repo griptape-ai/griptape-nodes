@@ -9,12 +9,16 @@ from urllib.error import URLError
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from PIL import Image
+from PIL import Image, ImageDraw
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger(__name__)
+
+# Constants for placeholder images
+DEFAULT_PLACEHOLDER_WIDTH = 400
+DEFAULT_PLACEHOLDER_HEIGHT = 300
 
 
 def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
@@ -214,7 +218,7 @@ def load_images_from_list(images: list) -> list[Image.Image]:
         except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
             # Skip invalid images
             msg = f"Skipping invalid image: {e}"
-            logger.debug(msg)
+            logger.warning(msg)
             continue
     return pil_images
 
@@ -232,13 +236,17 @@ def create_grid_layout(  # noqa: PLR0913
 ) -> Image.Image:
     """Create a uniform grid layout of images."""
     if not images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
 
     # Load and process images
     pil_images = load_images_from_list(images)
 
     if not pil_images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
 
     # Calculate grid dimensions
     rows = (len(pil_images) + columns - 1) // columns
@@ -316,7 +324,9 @@ def create_masonry_layout(  # noqa: PLR0913
 ) -> Image.Image:
     """Create a masonry layout with variable height columns."""
     if not images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
 
     # Load and process images
     pil_images = load_images_from_list(images)
@@ -379,9 +389,6 @@ def apply_border_radius(image: Image.Image, radius: int) -> Image.Image:
 
     # Create a mask with rounded corners
     mask = Image.new("L", image.size, 0)
-
-    # Draw rounded rectangle mask
-    from PIL import ImageDraw
 
     draw = ImageDraw.Draw(mask)
     draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
