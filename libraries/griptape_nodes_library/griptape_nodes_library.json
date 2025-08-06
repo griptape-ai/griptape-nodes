@@ -1227,6 +1227,16 @@
       }
     },
     {
+      "class_name": "DisplayTextAsMarkdown",
+      "file_path": "griptape_nodes_library/text/display_text_as_markdown.py",
+      "metadata": {
+        "category": "text",
+        "description": "Displays text as markdown",
+        "display_name": "Display Text As Markdown",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "EvaluateTextResult",
       "file_path": "griptape_nodes_library/text/evaluate_text_result.py",
       "metadata": {
