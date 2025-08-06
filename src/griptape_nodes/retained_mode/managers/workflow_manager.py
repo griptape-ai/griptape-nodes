@@ -959,6 +959,16 @@ class WorkflowManager:
                     status=status,
                 )
             )
+
+        # Check for workflow version-based compatibility issues and add to problems
+        workflow_version_issues = GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(
+            workflow_metadata
+        )
+        for issue in workflow_version_issues:
+            problems.append(issue.message)
+            if issue.severity == WorkflowManager.WorkflowStatus.UNUSABLE:
+                had_critical_error = True
+
         # OK, we have all of our dependencies together. Let's look at the overall scenario.
         if had_critical_error:
             overall_status = WorkflowManager.WorkflowStatus.UNUSABLE

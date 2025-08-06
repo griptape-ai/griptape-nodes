@@ -13,7 +13,7 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.6.2"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.7.0"
 
     name: str
     schema_version: str
