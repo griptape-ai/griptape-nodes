@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import os
 
 import httpx
 from xdg_base_dirs import xdg_config_home
@@ -19,6 +20,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -177,6 +179,7 @@ class StaticFilesManager:
             logger.error(msg)
             raise ValueError(msg) from e
 
-        url = self.storage_driver.create_signed_download_url(file_name)
+        base_url = os.getenv("GRIPTAPE_NODES_API_BASE_URL", "https://api.nodes.griptape.ai")
+        session_id = GriptapeNodes.get_session_id()
 
-        return url
+        return f"{base_url}/api/sessions/{session_id}/static/{file_name}"
