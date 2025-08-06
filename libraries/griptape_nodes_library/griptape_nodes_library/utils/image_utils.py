@@ -214,6 +214,11 @@ def load_images_from_list(images: list) -> list[Image.Image]:
         try:
             url = extract_image_url(img_item)
             pil_img = load_pil_from_url(url)
+            # Validate image dimensions
+            if pil_img.width <= 0 or pil_img.height <= 0:
+                msg = f"Skipping image with invalid dimensions: {pil_img.width}x{pil_img.height}"
+                logger.warning(msg)
+                continue
             pil_images.append(pil_img)
         except (URLError, RequestException, ConnectionError, TimeoutError, OSError) as e:
             # Skip invalid images
@@ -273,6 +278,9 @@ def create_grid_layout(  # noqa: PLR0913
         if crop_to_fit:
             # Crop to square - resize to fit the larger dimension, then crop to square
             img_resized = img.copy()
+            # Validate image dimensions to prevent division by zero
+            if img.width <= 0 or img.height <= 0:
+                continue  # Skip invalid images
             # Calculate scale to fit the larger dimension
             scale_x = cell_width / img.width
             scale_y = cell_height / img.height
@@ -347,6 +355,8 @@ def create_masonry_layout(  # noqa: PLR0913
         columns_content[shortest_col].append(img)
 
         # Calculate height for this image
+        if img.width <= 0 or img.height <= 0:
+            continue  # Skip invalid images
         aspect_ratio = img.width / img.height
         img_height = int(column_width / aspect_ratio)
         column_heights[shortest_col] += img_height + spacing
@@ -368,6 +378,8 @@ def create_masonry_layout(  # noqa: PLR0913
         for img in column_images:
             # Resize image to fit column width
             img_resized = img.copy()
+            if img.width <= 0 or img.height <= 0:
+                continue  # Skip invalid images
             aspect_ratio = img.width / img.height
             img_height = int(column_width / aspect_ratio)
             img_resized = img_resized.resize((column_width, img_height), Image.Resampling.LANCZOS)
