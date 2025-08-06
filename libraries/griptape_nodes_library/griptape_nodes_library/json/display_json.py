@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Any
 
@@ -67,8 +68,6 @@ class DisplayJson(DataNode):
     def _validate_and_parse_json(self, json_str: str) -> Any:
         """Validate and parse JSON string, with repair if needed."""
         try:
-            import json
-
             return json.loads(json_str)
         except json.JSONDecodeError:
             # Try to repair the JSON
