@@ -1,5 +1,6 @@
 import json
 import re
+from enum import StrEnum
 from typing import Any
 
 import yaml
@@ -9,6 +10,16 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+
+KEY_VALUE_PARTS = 2
+
+
+class FormatType(StrEnum):
+    """Supported format types for data parsing."""
+
+    JSON = "json"
+    YAML = "yaml"
+    UNKNOWN = "unknown"
 
 
 class DisplayJson(DataNode):
@@ -48,7 +59,7 @@ class DisplayJson(DataNode):
             return match.group(1).strip()
         return text
 
-    def _detect_format(self, text: str) -> str:
+    def _detect_format(self, text: str) -> FormatType:
         """Detect if the text is JSON, YAML, or plain text."""
         stripped = text.strip()
 
@@ -56,14 +67,34 @@ class DisplayJson(DataNode):
         if (stripped.startswith("{") and stripped.endswith("}")) or (
             stripped.startswith("[") and stripped.endswith("]")
         ):
-            return "json"
+            return FormatType.JSON
 
-        # Check for YAML-like structure (key: value patterns)
-        yaml_indicators = [":", "-", "---"]
-        if any(indicator in stripped for indicator in yaml_indicators):
-            return "yaml"
+        # Check for YAML-like structure - more conservative approach
+        lines = stripped.split("\n")
+        yaml_like_lines = 0
+        total_lines = 0
 
-        return "unknown"
+        for line in lines:
+            stripped_line = line.strip()
+            if not stripped_line or stripped_line.startswith("#"):  # Skip empty lines and comments
+                continue
+            total_lines += 1
+
+            # Look for key: value patterns (but not URLs or other colons)
+            if ":" in stripped_line and not stripped_line.startswith(("http", "#")):
+                # Check if it's a proper key: value pattern
+                parts = stripped_line.split(":", 1)
+                if len(parts) == KEY_VALUE_PARTS and parts[0].strip() and not parts[0].strip().startswith("#"):
+                    yaml_like_lines += 1
+            # Look for list items
+            elif stripped_line.startswith(("- ", "  - ")) or stripped_line in ("---", "..."):
+                yaml_like_lines += 1
+
+        # Only classify as YAML if we have a reasonable number of YAML-like lines
+        if total_lines > 0 and yaml_like_lines >= min(2, total_lines):
+            return FormatType.YAML
+
+        return FormatType.UNKNOWN
 
     def _validate_and_parse_json(self, json_str: str) -> Any:
         """Validate and parse JSON string, with repair if needed."""
@@ -103,9 +134,9 @@ class DisplayJson(DataNode):
             # Detect format and parse accordingly
             format_type = self._detect_format(extracted_content)
 
-            if format_type == "json":
+            if format_type == FormatType.JSON:
                 result = self._validate_and_parse_json(extracted_content)
-            elif format_type == "yaml":
+            elif format_type == FormatType.YAML:
                 result = self._validate_and_parse_yaml(extracted_content)
             else:
                 # Try JSON first, then YAML as fallback
