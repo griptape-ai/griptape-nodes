@@ -1296,6 +1296,27 @@ class ParameterList(ParameterContainer):
         result = f"list[{base_type}]"
         return result
 
+    def _custom_setter_for_property_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.type = value
+        super()._custom_setter_for_property_type(value)
+
+    def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.input_types = value
+        return super()._custom_setter_for_property_input_types(value)
+
+    def _custom_setter_for_property_output_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.output_type = value
+        return super()._custom_setter_for_property_output_type(value)
+
     def _custom_getter_for_property_input_types(self) -> list[str]:
         # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
         # Children still use the input types given to them.

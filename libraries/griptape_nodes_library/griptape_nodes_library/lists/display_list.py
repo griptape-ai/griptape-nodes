@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -66,75 +66,75 @@ class DisplayList(ControlNode):
         self._updating_display_list = True
         logger.info("DisplayList._update_display_list(): Starting display list update for node %s", self.name)
 
+        # Try to get the list of items from the input parameter
         try:
-            # Clear all dynamically-created parameters at the start
+            list_values = self.get_parameter_value("items")
+        except Exception:
             self._clear_list()
-
-            # Try to get the list of items from the input parameter
-            try:
-                list_values = self.get_parameter_value("items")
-            except Exception:
-                # If we can't get the parameter value (e.g., connected node not resolved yet),
-                # just clear and return - we'll update again when values are available
-                return
-
-            # Prepare ui_options update in one go to avoid multiple change events
-            new_ui_options = self.items_list.ui_options.copy()
-
-            if not list_values or not isinstance(list_values, list):
-                new_ui_options["hide"] = True
-                if "display" in new_ui_options:
-                    del new_ui_options["display"]
-                self.items_list.ui_options = new_ui_options
-                return
-
-            # Regenerate parameters for each item in the list
-            if len(list_values) < 1:
-                new_ui_options["hide"] = True
-                self.items_list.ui_options = new_ui_options
-                return
-
-            new_ui_options["hide"] = False
-            item_type = self._determine_item_type(list_values[0])
-
-            if item_type == "ImageUrlArtifact":
-                new_ui_options["display"] = "grid"
-
-            # Apply both changes first
-            self.items_list.type = item_type
-            self.items_list.ui_options = new_ui_options
-
-            # Create child parameters and ensure they're properly tracked
-            for item in list_values:
-                new_child = self.items_list.add_child_parameter()
-                # Set the parameter value without emitting immediate change events
-                self.set_parameter_value(new_child.name, item, emit_change=False)
-                # Ensure the new child parameter is tracked for flush events
-                if hasattr(self, "_tracked_parameters") and new_child not in self._tracked_parameters:
-                    self._tracked_parameters.append(new_child)
-        finally:
+            # If we can't get the parameter value (e.g., connected node not resolved yet),
+            # just clear and return - we'll update again when values are available
             self._updating_display_list = False
-            logger.info("DisplayList._update_display_list(): Completed display list update for node %s", self.name)
+            return
+
+        # Prepare ui_options update in one go to avoid multiple change events
+        new_ui_options = self.items_list.ui_options.copy()
+
+        if not list_values or not isinstance(list_values, list):
+            new_ui_options["hide"] = True
+            if "display" in new_ui_options:
+                del new_ui_options["display"]
+            self.items_list.ui_options = new_ui_options
+            self._updating_display_list = False
+            return
+
+        # Regenerate parameters for each item in the list
+        if len(list_values) < 1:
+            new_ui_options["hide"] = True
+            self.items_list.ui_options = new_ui_options
+            self._updating_display_list = False
+            return
+
+        new_ui_options["hide"] = False
+        item_type = self._determine_item_type(list_values[0])
+
+        if item_type in {"ImageUrlArtifact", "ImageArtifact"}:
+            new_ui_options["display"] = "grid"
+        else:
+            del new_ui_options["display"]
+
+        # Apply both changes first
+        self.items_list.type = item_type
+        self.items_list.ui_options = new_ui_options
+
+        # Create child parameters and ensure they're properly tracked
+        length_of_items_list = len(self.items_list)
+        while length_of_items_list > len(list_values):
+            # Remove the parameter value - this will also handle parameter_output_values
+            with contextlib.suppress(KeyError):
+                self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
+            # Remove the parameter from the list
+            self.items_list.remove_child(self.items_list[length_of_items_list - 1])
+            length_of_items_list = len(self.items_list)
+        for i, item in enumerate(list_values):
+            if i < len(self.items_list):
+                current_parameter = self.items_list[i]
+                self.set_parameter_value(current_parameter.name, item)
+                continue
+            new_child = self.items_list.add_child_parameter()
+            # Set the parameter value without emitting immediate change events
+            self.set_parameter_value(new_child.name, item)
+            # Ensure the new child parameter is tracked for flush events
+        self._updating_display_list = False
+        logger.info("DisplayList._update_display_list(): Completed display list update for node %s", self.name)
 
     def _clear_list(self) -> None:
         """Clear all dynamically-created parameters from the node."""
-        # Clear any tracked parameters to prevent stale tracking between runs
-        if hasattr(self, "_tracked_parameters"):
-            # Remove any child parameters of items_list from tracking
-            for child in self.items_list.find_elements_by_type(Parameter):
-                if child in self._tracked_parameters:
-                    self._tracked_parameters.remove(child)
-
         for child in self.items_list.find_elements_by_type(Parameter):
             # Remove the parameter value - this will also handle parameter_output_values
             with contextlib.suppress(KeyError):
                 self.remove_parameter_value(child.name)
             # Remove the parameter from the list
         self.items_list.clear_list()
-
-        # Also clear the items_list from tracking to ensure clean state
-        if hasattr(self, "_tracked_parameters") and self.items_list in self._tracked_parameters:
-            self._tracked_parameters.remove(self.items_list)
 
     def _determine_item_type(self, item: Any) -> str:
         """Determine the type of an item for parameter type assignment."""
@@ -159,3 +159,9 @@ class DisplayList(ControlNode):
             )
             self._update_display_list()
         return super().after_value_set(parameter, value)
+
+    def after_incoming_connection_removed(
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    ) -> None:
+        self._update_display_list()
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
