@@ -21,6 +21,62 @@ DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 
 
+def parse_hex_color(color: str) -> tuple[int, int, int]:
+    """Parse hex color string to RGB tuple."""
+    color = color.removeprefix("#")
+    return (int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16))
+
+
+def create_background_image(width: int, height: int, background_color: str, transparent_bg: bool) -> Image.Image:
+    """Create background image with specified color and transparency."""
+    if transparent_bg:
+        return Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    rgb_color = parse_hex_color(background_color)
+    return Image.new("RGB", (width, height), rgb_color)
+
+
+def resize_image_for_cell(
+    img: Image.Image, cell_width: int, cell_height: int, crop_to_fit: bool
+) -> tuple[Image.Image | None, int, int]:
+    """Resize image to fit cell and return image with positioning offsets."""
+    if crop_to_fit:
+        # Crop to square - resize to fit the larger dimension, then crop to square
+        img_resized = img.copy()
+        # Validate image dimensions to prevent division by zero
+        if img.width <= 0 or img.height <= 0:
+            return None, 0, 0  # Skip invalid images
+        # Calculate scale to fit the larger dimension
+        scale_x = cell_width / img.width
+        scale_y = cell_height / img.height
+        scale = max(scale_x, scale_y)  # Use larger scale to ensure coverage
+
+        # Resize to cover the cell
+        new_width = int(img.width * scale)
+        new_height = int(img.height * scale)
+        img_resized = img_resized.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Crop to square from center
+        left = (new_width - cell_width) // 2
+        top = (new_height - cell_height) // 2
+        right = left + cell_width
+        bottom = top + cell_height
+        img_resized = img_resized.crop((left, top, right, bottom))
+
+        # Position at exact cell coordinates
+        x_offset = 0
+        y_offset = 0
+    else:
+        # Scale to fit - maintain aspect ratio within cell bounds
+        img_resized = img.copy()
+        img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
+
+        # Center the image within the cell
+        x_offset = (cell_width - img_resized.width) // 2
+        y_offset = (cell_height - img_resized.height) // 2
+
+    return img_resized, x_offset, y_offset
+
+
 def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
     """Convert a dictionary representation of an image to an ImageUrlArtifact."""
     value = image_dict["value"]
@@ -261,13 +317,7 @@ def create_grid_layout(  # noqa: PLR0913
     # Create background
     total_width = cell_width * columns + spacing * (columns + 1)
     total_height = cell_height * rows + spacing * (rows + 1)
-
-    if transparent_bg:
-        grid_image = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
-    else:
-        background_color = background_color.removeprefix("#")
-        rgb_color = tuple(int(background_color[i : i + 2], 16) for i in (0, 2, 4))
-        grid_image = Image.new("RGB", (total_width, total_height), rgb_color)
+    grid_image = create_background_image(total_width, total_height, background_color, transparent_bg)
 
     # Place images in grid
     for idx, img in enumerate(pil_images):
@@ -275,46 +325,18 @@ def create_grid_layout(  # noqa: PLR0913
         col = idx % columns
 
         # Resize image to fit cell
-        if crop_to_fit:
-            # Crop to square - resize to fit the larger dimension, then crop to square
-            img_resized = img.copy()
-            # Validate image dimensions to prevent division by zero
-            if img.width <= 0 or img.height <= 0:
-                continue  # Skip invalid images
-            # Calculate scale to fit the larger dimension
-            scale_x = cell_width / img.width
-            scale_y = cell_height / img.height
-            scale = max(scale_x, scale_y)  # Use larger scale to ensure coverage
-
-            # Resize to cover the cell
-            new_width = int(img.width * scale)
-            new_height = int(img.height * scale)
-            img_resized = img_resized.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-            # Crop to square from center
-            left = (new_width - cell_width) // 2
-            top = (new_height - cell_height) // 2
-            right = left + cell_width
-            bottom = top + cell_height
-            img_resized = img_resized.crop((left, top, right, bottom))
-
-            # Position at exact cell coordinates
-            x_offset = col * cell_width + spacing
-            y_offset = row * cell_height + spacing
-        else:
-            # Scale to fit - maintain aspect ratio within cell bounds
-            img_resized = img.copy()
-            img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
-
-            # Center the image within the cell
-            x_offset = col * cell_width + spacing + (cell_width - img_resized.width) // 2
-            y_offset = row * cell_height + spacing + (cell_height - img_resized.height) // 2
+        img_resized, x_offset, y_offset = resize_image_for_cell(img, cell_width, cell_height, crop_to_fit)
+        if img_resized is None:
+            continue  # Skip invalid images
 
         # Apply border radius if specified
         if border_radius > 0:
             img_resized = apply_border_radius(img_resized, border_radius)
 
-        grid_image.paste(img_resized, (x_offset, y_offset), img_resized if img_resized.mode == "RGBA" else None)
+        # Calculate final position
+        final_x = col * cell_width + spacing + x_offset
+        final_y = row * cell_height + spacing + y_offset
+        grid_image.paste(img_resized, (final_x, final_y), img_resized if img_resized.mode == "RGBA" else None)
 
     return grid_image
 
@@ -363,12 +385,7 @@ def create_masonry_layout(  # noqa: PLR0913
 
     # Create background
     total_height = max(column_heights) + spacing
-    if transparent_bg:
-        grid_image = Image.new("RGBA", (output_image_width, total_height), (0, 0, 0, 0))
-    else:
-        background_color = background_color.removeprefix("#")
-        rgb_color = tuple(int(background_color[i : i + 2], 16) for i in (0, 2, 4))
-        grid_image = Image.new("RGB", (output_image_width, total_height), rgb_color)
+    grid_image = create_background_image(output_image_width, total_height, background_color, transparent_bg)
 
     # Place images in columns
     for col_idx, column_images in enumerate(columns_content):
