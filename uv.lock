@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = "==3.12.*"
 
 [[package]]
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.44.0"
+version = "0.45.0"
 source = { editable = "." }
 dependencies = [
     { name = "binaryornot" },

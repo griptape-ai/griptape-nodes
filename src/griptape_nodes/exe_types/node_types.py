@@ -368,8 +368,10 @@ class BaseNode(ABC):
         """
         parameter = self.get_parameter_by_name(param)
         if parameter is not None:
-            trait = parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
+            # Find the Options trait by type since element_id is a UUID
+            traits = parameter.find_elements_by_type(Options)
+            if traits:
+                trait = traits[0]  # Take the first Options trait
                 trait.choices = choices
 
                 if default in choices:
@@ -378,6 +380,13 @@ class BaseNode(ABC):
                 else:
                     msg = f"Default model '{default}' is not in the provided choices."
                     raise ValueError(msg)
+
+                # Update the manually set UI options to include the new simple_dropdown
+                if hasattr(parameter, "_ui_options") and parameter._ui_options:
+                    parameter._ui_options["simple_dropdown"] = choices
+            else:
+                msg = f"No Options trait found for parameter '{param}'."
+                raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for updating model choices."
             raise ValueError(msg)
@@ -393,9 +402,14 @@ class BaseNode(ABC):
         """
         parameter = self.get_parameter_by_name(param)
         if parameter is not None:
-            trait = parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
+            # Find the Options trait by type since element_id is a UUID
+            traits = parameter.find_elements_by_type(Options)
+            if traits:
+                trait = traits[0]  # Take the first Options trait
                 parameter.remove_trait(trait)
+            else:
+                msg = f"No Options trait found for parameter '{param}'."
+                raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for removing options trait."
             raise ValueError(msg)
@@ -576,7 +590,7 @@ class BaseNode(ABC):
         param = self.get_parameter_by_name(param_name)
         if param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
-            if value:
+            if value is not None:
                 return value
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
