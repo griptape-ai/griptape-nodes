@@ -2,6 +2,7 @@ import base64
 import io
 import logging
 import uuid
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
 from urllib.error import URLError
@@ -22,6 +23,15 @@ DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
 
 
+@dataclass
+class ResizedImageResult:
+    """Result of resizing an image for a cell."""
+
+    image: Image.Image | None
+    x_offset: int
+    y_offset: int
+
+
 def parse_hex_color(color: str) -> tuple[int, int, int]:
     """Parse hex color string to RGB tuple."""
     color = color.removeprefix("#")
@@ -36,16 +46,14 @@ def create_background_image(width: int, height: int, background_color: str, tran
     return Image.new("RGB", (width, height), rgb_color)
 
 
-def resize_image_for_cell(
-    img: Image.Image, cell_width: int, cell_height: int, crop_to_fit: bool
-) -> tuple[Image.Image | None, int, int]:
+def resize_image_for_cell(img: Image.Image, cell_width: int, cell_height: int, crop_to_fit: bool) -> ResizedImageResult:
     """Resize image to fit cell and return image with positioning offsets."""
     if crop_to_fit:
         # Crop to square - resize to fit the larger dimension, then crop to square
         img_resized = img.copy()
         # Validate image dimensions to prevent division by zero
         if img.width <= 0 or img.height <= 0:
-            return None, 0, 0  # Skip invalid images
+            return ResizedImageResult(None, 0, 0)  # Skip invalid images
         # Calculate scale to fit the larger dimension
         scale_x = cell_width / img.width
         scale_y = cell_height / img.height
@@ -75,7 +83,7 @@ def resize_image_for_cell(
         x_offset = (cell_width - img_resized.width) // 2
         y_offset = (cell_height - img_resized.height) // 2
 
-    return img_resized, x_offset, y_offset
+    return ResizedImageResult(img_resized, x_offset, y_offset)
 
 
 def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
@@ -170,7 +178,44 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
     return ImageLoader().parse(image_bytes)
 
 
-def extract_channel_from_image(image: Image.Image, channel: str, context_name: str = "image") -> Image.Image:  # noqa: C901, PLR0911, PLR0912
+def _extract_from_rgb(image: Image.Image, channel: str) -> Image.Image:
+    """Extract channel from RGB image."""
+    red, green, blue = image.split()
+    if channel == "red":
+        return red
+    if channel == "green":
+        return green
+    if channel == "blue":
+        return blue
+    # alpha not available in RGB, use red as fallback
+    return red
+
+
+def _extract_from_rgba(image: Image.Image, channel: str) -> Image.Image:
+    """Extract channel from RGBA image."""
+    red, green, blue, alpha = image.split()
+    if channel == "red":
+        return red
+    if channel == "green":
+        return green
+    if channel == "blue":
+        return blue
+    if channel == "alpha":
+        return alpha
+    # Fallback to red channel
+    return red
+
+
+def _extract_from_la(image: Image.Image, channel: str) -> Image.Image:
+    """Extract channel from LA image."""
+    if channel == "alpha":
+        _, alpha = image.split()
+        return alpha
+    gray, _ = image.split()
+    return gray
+
+
+def extract_channel_from_image(image: Image.Image, channel: str, context_name: str = "image") -> Image.Image:
     """Extract the specified channel from an image.
 
     Args:
@@ -184,49 +229,17 @@ def extract_channel_from_image(image: Image.Image, channel: str, context_name: s
     Raises:
         ValueError: If the image mode is not supported
     """
-    match image.mode:
-        case "RGB":
-            if channel == "red":
-                r, _, _ = image.split()
-                return r
-            if channel == "green":
-                _, g, _ = image.split()
-                return g
-            if channel == "blue":
-                _, _, b = image.split()
-                return b
-            # alpha not available in RGB, use red as fallback
-            r, _, _ = image.split()
-            return r
-        case "RGBA":
-            if channel == "red":
-                r, _, _, _ = image.split()
-                return r
-            if channel == "green":
-                _, g, _, _ = image.split()
-                return g
-            if channel == "blue":
-                _, _, b, _ = image.split()
-                return b
-            if channel == "alpha":
-                _, _, _, a = image.split()
-                return a
-            # Fallback to red channel
-            r, _, _, _ = image.split()
-            return r
-        case "L":
-            # Grayscale image - use directly
-            return image
-        case "LA":
-            if channel == "alpha":
-                _, a = image.split()
-                return a
-            # Use grayscale channel
-            gray, _ = image.split()
-            return gray
-        case _:
-            msg = f"Unsupported {context_name} mode: {image.mode}"
-            raise ValueError(msg)
+    if image.mode == "L":
+        return image
+    if image.mode == "LA":
+        return _extract_from_la(image, channel)
+    if image.mode == "RGB":
+        return _extract_from_rgb(image, channel)
+    if image.mode == "RGBA":
+        return _extract_from_rgba(image, channel)
+
+    msg = f"Unsupported {context_name} mode: {image.mode}"
+    raise ValueError(msg)
 
 
 # New functions for DisplayImageGrid
@@ -326,18 +339,22 @@ def create_grid_layout(  # noqa: PLR0913
         col = idx % columns
 
         # Resize image to fit cell
-        img_resized, x_offset, y_offset = resize_image_for_cell(img, cell_width, cell_height, crop_to_fit)
-        if img_resized is None:
+        resized_result = resize_image_for_cell(img, cell_width, cell_height, crop_to_fit)
+        if resized_result.image is None:
             continue  # Skip invalid images
 
         # Apply border radius if specified
         if border_radius > 0:
-            img_resized = apply_border_radius(img_resized, border_radius)
+            resized_result.image = apply_border_radius(resized_result.image, border_radius)
 
         # Calculate final position
-        final_x = col * cell_width + spacing + x_offset
-        final_y = row * cell_height + spacing + y_offset
-        grid_image.paste(img_resized, (final_x, final_y), img_resized if img_resized.mode == "RGBA" else None)
+        final_x = col * cell_width + spacing + resized_result.x_offset
+        final_y = row * cell_height + spacing + resized_result.y_offset
+        grid_image.paste(
+            resized_result.image,
+            (final_x, final_y),
+            resized_result.image if resized_result.image.mode == "RGBA" else None,
+        )
 
     return grid_image
 
