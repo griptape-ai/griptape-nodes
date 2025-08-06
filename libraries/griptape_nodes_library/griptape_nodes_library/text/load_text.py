@@ -5,6 +5,7 @@ from griptape.loaders import PdfLoader, TextLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 
 class LoadText(ControlNode):
@@ -33,16 +34,38 @@ class LoadText(ControlNode):
         )
 
         # Add output parameters
-        self.add_parameter(
-            Parameter(
-                name="path",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str"],
-                type="str",
-                default_value="",
-                tooltip="The full path to the loaded file.",
+        self.path = Parameter(
+            name="path",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            input_types=["str"],
+            type="str",
+            default_value="",
+            tooltip="The full path to the loaded file.",
+        )
+        self.path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                multiple=False,
+                file_types=[
+                    ".txt",
+                    ".md",
+                    ".pdf",
+                    ".json",
+                    ".yaml",
+                    ".yml",
+                    ".csv",
+                    ".tsv",
+                    ".py",
+                    ".data",
+                    ".env",
+                    ".info",
+                    ".log",
+                ],
             )
         )
+
+        self.add_parameter(self.path)
 
         self.add_parameter(
             Parameter(
