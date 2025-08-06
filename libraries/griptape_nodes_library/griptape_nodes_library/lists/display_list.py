@@ -35,10 +35,10 @@ class DisplayList(ControlNode):
         # Spot that will display the list.
         self.items_list = ParameterList(
             name="display_list",
-            tooltip="Output list",
+            tooltip="Output list. Your values will propagate in these inputs here.",
             type=ParameterTypeBuiltin.ANY.value,
+            output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            ui_options={"hide": True},
         )
         self.add_parameter(self.items_list)
         # Track whether we're already updating to prevent duplicate calls
@@ -99,7 +99,7 @@ class DisplayList(ControlNode):
 
         if item_type in {"ImageUrlArtifact", "ImageArtifact"}:
             new_ui_options["display"] = "grid"
-        else:
+        elif "display" in new_ui_options:
             del new_ui_options["display"]
 
         # Apply both changes first
@@ -112,6 +112,8 @@ class DisplayList(ControlNode):
             # Remove the parameter value - this will also handle parameter_output_values
             with contextlib.suppress(KeyError):
                 self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
+                if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
+                    del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
             # Remove the parameter from the list
             self.items_list.remove_child(self.items_list[length_of_items_list - 1])
             length_of_items_list = len(self.items_list)
@@ -119,13 +121,13 @@ class DisplayList(ControlNode):
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
                 self.set_parameter_value(current_parameter.name, item)
+                self.parameter_output_values[current_parameter.name] = item
                 continue
             new_child = self.items_list.add_child_parameter()
             # Set the parameter value without emitting immediate change events
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
         self._updating_display_list = False
-        logger.info("DisplayList._update_display_list(): Completed display list update for node %s", self.name)
 
     def _clear_list(self) -> None:
         """Clear all dynamically-created parameters from the node."""
