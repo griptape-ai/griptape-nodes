@@ -148,8 +148,15 @@ class ForLoopStartNode(BaseIterativeStartNode):
         if start == end and step != 0:
             # This is informational - loop will execute 0 iterations, which is valid
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.info("%s: Loop will execute 0 iterations since start (%s) equals end (%s). Step value (%s) will be ignored.", self.name, start, end, step)
+            logger.info(
+                "%s: Loop will execute 0 iterations since start (%s) equals end (%s). Step value (%s) will be ignored.",
+                self.name,
+                start,
+                end,
+                step,
+            )
         if start != end and step == 0:
             msg = f"{self.name}: Step value must be non-zero when start ({start}) is not equal to end ({end})"
             exceptions.append(Exception(msg))
@@ -174,7 +181,6 @@ class ForLoopStartNode(BaseIterativeStartNode):
             exceptions.extend(parent_exceptions)
 
         return exceptions if exceptions else None
-
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate before node run with ForLoop-specific checks."""
