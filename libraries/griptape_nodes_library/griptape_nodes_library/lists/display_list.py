@@ -80,7 +80,6 @@ class DisplayList(ControlNode):
         new_ui_options = self.items_list.ui_options.copy()
 
         if not list_values or not isinstance(list_values, list):
-            new_ui_options["hide"] = True
             if "display" in new_ui_options:
                 del new_ui_options["display"]
             self.items_list.ui_options = new_ui_options
@@ -89,7 +88,6 @@ class DisplayList(ControlNode):
 
         # Regenerate parameters for each item in the list
         if len(list_values) < 1:
-            new_ui_options["hide"] = True
             self.items_list.ui_options = new_ui_options
             self._updating_display_list = False
             return
@@ -103,7 +101,10 @@ class DisplayList(ControlNode):
             del new_ui_options["display"]
 
         # Apply both changes first
+        # We have to change all three because parameters are created with all three initialized.
         self.items_list.type = item_type
+        self.items_list.output_type = item_type
+        self.items_list.input_types = [item_type]
         self.items_list.ui_options = new_ui_options
 
         # Create child parameters and ensure they're properly tracked

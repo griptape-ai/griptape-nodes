@@ -225,6 +225,8 @@ class ExecuteNodeState(State):
                 # If the upstream node is resolved, collect its output value
                 if upstream_parameter.name in upstream_node.parameter_output_values:
                     output_value = upstream_node.parameter_output_values[upstream_parameter.name]
+                else:
+                    output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                     # Pass the value through using the same mechanism as normal resolution
                     GriptapeNodes.get_instance().handle_request(
