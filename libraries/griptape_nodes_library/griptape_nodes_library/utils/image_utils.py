@@ -403,7 +403,7 @@ def create_masonry_layout(  # noqa: PLR0913
     columns_content = [[] for _ in range(columns)]
     column_heights = [0] * columns
 
-    for _idx, img in enumerate(pil_images):
+    for img in pil_images:
         # Find shortest column
         shortest_col = column_heights.index(min(column_heights))
         columns_content[shortest_col].append(img)
