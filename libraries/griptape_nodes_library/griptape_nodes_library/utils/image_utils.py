@@ -324,6 +324,11 @@ def create_grid_layout(  # noqa: PLR0913
         )
 
     # Calculate grid dimensions
+    if columns <= 0:
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
+    
     rows = (len(pil_images) + columns - 1) // columns
     cell_width = (output_image_width - spacing * (columns + 1)) // columns
     cell_height = cell_width  # Square cells for grid layout
@@ -385,6 +390,11 @@ def create_masonry_layout(  # noqa: PLR0913
         )
 
     # Calculate column width
+    if columns <= 0:
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
+    
     column_width = (output_image_width - spacing * (columns + 1)) // columns
 
     # Distribute images across columns
@@ -400,6 +410,8 @@ def create_masonry_layout(  # noqa: PLR0913
         if img.width <= 0 or img.height <= 0:
             continue  # Skip invalid images
         aspect_ratio = img.width / img.height
+        if aspect_ratio <= 0:
+            continue  # Skip images with invalid aspect ratio
         img_height = int(column_width / aspect_ratio)
         column_heights[shortest_col] += img_height + spacing
 
@@ -418,6 +430,8 @@ def create_masonry_layout(  # noqa: PLR0913
             if img.width <= 0 or img.height <= 0:
                 continue  # Skip invalid images
             aspect_ratio = img.width / img.height
+            if aspect_ratio <= 0:
+                continue  # Skip images with invalid aspect ratio
             img_height = int(column_width / aspect_ratio)
             img_resized = img_resized.resize((column_width, img_height), Image.Resampling.LANCZOS)
 
