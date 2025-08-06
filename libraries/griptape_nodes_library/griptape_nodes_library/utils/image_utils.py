@@ -312,7 +312,7 @@ def load_images_from_list(images: list) -> list[Image.Image]:
 
 
 def create_grid_layout(  # noqa: PLR0913
-    images: list,
+    images: list[str],
     columns: int,
     output_image_width: int,
     spacing: int,
@@ -353,7 +353,7 @@ def create_grid_layout(  # noqa: PLR0913
         col = idx % columns
 
         # Resize image to fit cell
-        resized_result = resize_image_for_cell(img, cell_width, cell_height, crop_to_fit)
+        resized_result = resize_image_for_cell(img, cell_width, cell_height, crop_to_fit=crop_to_fit)
         if resized_result.image is None:
             continue  # Skip invalid images
 
