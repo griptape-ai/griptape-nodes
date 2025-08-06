@@ -5,11 +5,10 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes_library.execution.for_each_start import ForEachStartNode
+from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode, StatusType
 
 
-class ForLoopStartNode(ForEachStartNode):
+class ForLoopStartNode(BaseIterativeStartNode):
     """For Loop Start Node that runs a connected flow for a specified number of iterations.
 
     This node implements a traditional for loop with start, end, and step parameters.
@@ -19,20 +18,16 @@ class ForLoopStartNode(ForEachStartNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
-        # Set up internal state tracking
-        self._internal_index = 0
-        self._offset = 0
-        self._internal_end = 0
-        self.current_index = 0
-        self.exec_out.ui_options = {"display_name": "For Loop"}
+        # Track the current loop value directly
+        self._current_value = 0
 
-        # Delete existing parameters we don't need
-        self.remove_parameter_element_by_name("index")
-        self.remove_parameter_element_by_name("items")
+        # Adjust exec_out display name
+        self.exec_out.ui_options = {"display_name": "For Loop"}
 
         # Adjust current_item to be an integer
         self.current_item.type = ParameterTypeBuiltin.INT.value
 
+        # Add ForLoop-specific parameters
         self.start_value = Parameter(
             name="start",
             tooltip="Starting value for the loop",
@@ -59,46 +54,58 @@ class ForLoopStartNode(ForEachStartNode):
         self.add_parameter(self.end_value)
         self.add_parameter(self.step_value)
 
-        self.move_element_to_position("For Each Item", position="last")
+        # Move the parameter group to the end
+        self.move_element_to_position("For Loop Item", position="last")
 
-    def process(self) -> None:
-        # Reset state when the node is first processed
-        if self._flow is None or self.finished:
-            return
+    def _get_compatible_end_classes(self) -> set[type]:
+        """Return the set of End node classes that this Start node can connect to."""
+        from griptape_nodes_library.execution.for_loop_end import ForLoopEndNode
 
-        if self._internal_index == 0:
-            # Initialize everything
-            start = self.get_parameter_value("start")
-            end = self.get_parameter_value("end")
-            step = self.get_parameter_value("step")
+        return {ForLoopEndNode}
 
-            # Calculate internal range starting from 0
-            self._offset = start
-            # Calculate how many steps we need to take
-            self._internal_end = abs((end - start) // step)
-            self._internal_index = 0
-            self.current_index = 0  # Start at 0 for proper end node synchronization
+    def _get_parameter_group_name(self) -> str:
+        """Return the name for the parameter group containing iteration data."""
+        return "For Loop Item"
 
-        # Unresolve all future nodes at the start of processing
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+    def _get_iteration_items(self) -> list[Any]:
+        """Get the list of items to iterate over."""
+        # Validate parameters
+        validation_errors = self._validate_parameter_values()
+        if validation_errors:
+            raise validation_errors[0]  # Raise the first validation error
 
-        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(self)
+        # For ForLoop, we don't need to pre-calculate items
+        # We'll use direct value comparison in is_loop_finished
+        # Return a single-item list just to satisfy the base class contract
+        return [True]
 
-        # Get the current value and pass it along
+    def _initialize_iteration_data(self) -> None:
+        """Initialize iteration-specific data and state."""
+        # Set current value to start value
+        start = self.get_parameter_value("start")
+        self._current_value = start
+
+    def _get_current_item_value(self) -> Any:
+        """Get the current iteration value."""
+        if not self.is_loop_finished():
+            return self._current_value
+        return None
+
+    def is_loop_finished(self) -> bool:
+        """Return True if the loop has reached the end condition."""
+        end = self.get_parameter_value("end")
         step = self.get_parameter_value("step")
-        current_value = self._offset + (self._internal_index * step)
-        self.parameter_output_values["current_item"] = current_value  # Pass current value to end node
 
-        self.current_index = self._internal_index + 1  # 1-based for end node compatibility
-        self._internal_index += 1
+        # Check if we've reached or passed the end condition
+        if step > 0:
+            return self._current_value >= end
+        if step < 0:
+            return self._current_value <= end
+        # step == 0, should have been caught in validation
+        return True
 
-        # Check if we've reached the end
-        if self._internal_index > self._internal_end:
-            self.finished = True
-            self._internal_index = 0
-            self.current_index = 0
-
-    def _validate_parameter_values(self) -> list[Exception] | None:
+    def _validate_parameter_values(self) -> list[Exception]:
+        """Validate ForLoop parameter values."""
         exceptions = []
         start = self.get_parameter_value("start")
         end = self.get_parameter_value("end")
@@ -120,43 +127,62 @@ class ForLoopStartNode(ForEachStartNode):
         return exceptions
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
+        """Validate before workflow run with ForLoop-specific checks."""
         exceptions = []
 
+        # Add parameter validation
         if validation_exceptions := self._validate_parameter_values():
             exceptions.extend(validation_exceptions)
 
-        self._internal_index = 0
-        self.current_index = 0
-        self.finished = False
-        if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
-        try:
-            flow = GriptapeNodes.ObjectManager().get_object_by_name(
-                GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-            )
-            if isinstance(flow, ControlFlow):
-                self._flow = flow
-        except Exception as e:
-            exceptions.append(e)
-        return exceptions
+        # Reset loop state
+        self._current_index = 0
+        self._current_value = self.get_parameter_value("start")
+
+        # Call parent validation
+        parent_exceptions = super().validate_before_workflow_run()
+        if parent_exceptions:
+            exceptions.extend(parent_exceptions)
+
+        return exceptions if exceptions else None
+
+    def process(self) -> None:
+        """Override process to handle ForLoop-specific value advancement."""
+        if self._flow is None:
+            return
+
+        # Handle different control entry points with direct logic
+        match self._entry_control_parameter:
+            case self.exec_in | None:
+                # Starting the loop (initialization)
+                self._initialize_loop()
+                self._check_completion_and_set_output()
+            case self.trigger_next_iteration_signal:
+                # Next iteration signal from End - advance to next value
+                step = self.get_parameter_value("step")
+                self._current_value += step
+                self._current_index += 1  # Keep this for status messages
+                self._check_completion_and_set_output()
+            case self.break_loop_signal:
+                # Break signal from End - halt loop immediately
+                self._complete_loop(StatusType.BREAK)
+            case _:
+                # Unexpected control entry point - log error for debugging
+                err_str = f"ForLoop Start node '{self.name}' received unexpected control parameter: {self._entry_control_parameter}. "
+                "Expected: exec_in, trigger_next_iteration_signal, break_loop_signal, or None."
+                self._logger.error(err_str)
+                return
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
+        """Validate before node run with ForLoop-specific checks."""
         exceptions = []
+
+        # Add parameter validation
         if validation_exceptions := self._validate_parameter_values():
             exceptions.extend(validation_exceptions)
 
-        if self.end_node is None:
-            exceptions.append(Exception("End node not found or connected."))
-        try:
-            flow = GriptapeNodes.ObjectManager().get_object_by_name(
-                GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-            )
-            if isinstance(flow, ControlFlow):
-                self._flow = flow
-        except Exception as e:
-            exceptions.append(e)
-        return exceptions
+        # Call parent validation
+        parent_exceptions = super().validate_before_node_run()
+        if parent_exceptions:
+            exceptions.extend(parent_exceptions)
+
+        return exceptions if exceptions else None
