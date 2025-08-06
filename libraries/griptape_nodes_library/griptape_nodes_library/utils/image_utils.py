@@ -328,7 +328,7 @@ def create_grid_layout(  # noqa: PLR0913
         return create_placeholder_image(
             DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
         )
-    
+
     rows = (len(pil_images) + columns - 1) // columns
     cell_width = (output_image_width - spacing * (columns + 1)) // columns
     cell_height = cell_width  # Square cells for grid layout
@@ -394,7 +394,7 @@ def create_masonry_layout(  # noqa: PLR0913
         return create_placeholder_image(
             DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
         )
-    
+
     column_width = (output_image_width - spacing * (columns + 1)) // columns
 
     # Distribute images across columns
