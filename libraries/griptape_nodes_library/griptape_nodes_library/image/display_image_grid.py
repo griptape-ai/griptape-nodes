@@ -147,7 +147,9 @@ class DisplayImageGrid(ControlNode):
                 self.show_parameter_by_name("background_color")
         if parameter.name == "output_format" and value == "jpeg":
             self.set_parameter_value("transparent_bg", False)
-            self.publish_update_to_parameter("transparent_bg", False)
+            self.publish_update_to_parameter(
+                "transparent_bg", False
+            )  # TODO(griptape): Remove this when we know updates are working consistently: https://github.com/griptape-ai/griptape-nodes/issues/1843
             self.show_parameter_by_name("background_color")
         return super().after_value_set(parameter, value)
 
@@ -231,9 +233,9 @@ class DisplayImageGrid(ControlNode):
             url_artifact = ImageUrlArtifact(value=static_url)
             self.publish_update_to_parameter("output", url_artifact)
 
-        except (ValueError, OSError, UnidentifiedImageError) as e:
+        except (RuntimeError, OSError, UnidentifiedImageError) as e:
             msg = f"{self.name}: Error creating image grid: {e}"
-            raise ValueError(msg) from e
+            raise RuntimeError(msg) from e
         finally:
             # Always clean up temporary files
             cleanup_temp_files()
