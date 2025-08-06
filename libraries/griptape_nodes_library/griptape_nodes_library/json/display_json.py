@@ -91,7 +91,8 @@ class DisplayJson(DataNode):
                 yaml_like_lines += 1
 
         # Only classify as YAML if we have a reasonable number of YAML-like lines
-        if total_lines > 0 and yaml_like_lines >= min(2, total_lines):
+        # Be more lenient - if most lines look like YAML, classify as YAML
+        if total_lines > 0 and (yaml_like_lines >= 2 or yaml_like_lines >= total_lines * 0.7):
             return FormatType.YAML
 
         return FormatType.UNKNOWN
@@ -116,7 +117,8 @@ class DisplayJson(DataNode):
             msg = f"DisplayJson: Failed to parse YAML string: {e}. Input: {yaml_str[:200]!r}"
             raise ValueError(msg) from e
 
-    def process(self) -> None:
+    def _process_json_data(self) -> None:
+        """Process the JSON data and update the output."""
         json_data = self.get_parameter_value("json")
 
         # Handle different input types
@@ -157,3 +159,14 @@ class DisplayJson(DataNode):
                 raise ValueError(msg) from e
 
         self.parameter_output_values["json"] = result
+        self.publish_update_to_parameter("json", result)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Process JSON data when the input parameter changes."""
+        if parameter.name == "json":
+            self._process_json_data()
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        """Process the node by parsing and displaying JSON data."""
+        self._process_json_data()
