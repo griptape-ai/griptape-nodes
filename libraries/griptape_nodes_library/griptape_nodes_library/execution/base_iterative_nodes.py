@@ -30,14 +30,16 @@ class BaseIterativeStartNode(StartLoopNode):
     state tracking, and validation logic used by iterative loop start nodes.
     """
 
-    _current_index: int
-    _items: list[Any] | None = None
+    _current_iteration_count: int
+    _total_iterations: int
     _flow: ControlFlow | None = None
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self._current_index = 0
-        self._items = None
+        self._current_iteration_count = 0
+
+        # This is the total number of iterations that WILL be run (calculated during init)
+        self._total_iterations = 0
 
         # Connection tracking for validation
         self._connected_parameters: set[str] = set()
@@ -48,19 +50,21 @@ class BaseIterativeStartNode(StartLoopNode):
         self.add_parameter(self.exec_in)
 
         # On Each Item control output - moved outside group for proper rendering
-        self.exec_out = ControlParameterOutput(tooltip="Execute for each item", name="exec_out")
-        self.exec_out.ui_options = {"display_name": "On Each Item"}
+        self.exec_out = ControlParameterOutput(tooltip=self._get_exec_out_tooltip(), name="exec_out")
+        self.exec_out.ui_options = {"display_name": self._get_exec_out_display_name()}
         self.add_parameter(self.exec_out)
 
         # Create parameter group for iteration data
         with ParameterGroup(name=self._get_parameter_group_name()) as group:
-            # Add current item output parameter
-            self.current_item = Parameter(
-                name="current_item",
-                tooltip="Current item being processed",
-                output_type=ParameterTypeBuiltin.ALL.value,
-                allowed_modes={ParameterMode.OUTPUT},
+            # Add index parameter that all iterative nodes have
+            self.index_count = Parameter(
+                name="index",
+                tooltip="Current index of the iteration",
+                type=ParameterTypeBuiltin.INT.value,
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 settable=False,
+                default_value=0,
+                ui_options={"hide_property": True},
             )
         self.add_node_element(group)
 
@@ -103,8 +107,9 @@ class BaseIterativeStartNode(StartLoopNode):
         self.next_control_output: Parameter | None = None
         self._logger = logging.getLogger(f"{__name__}.{self.name}")
 
-        # Status message parameter
+        # Status message parameter - moved to bottom
         self.status_message = ParameterMessage(
+            name="status_message",
             variant="info",
             value="",
         )
@@ -122,6 +127,14 @@ class BaseIterativeStartNode(StartLoopNode):
         """Return the name for the parameter group containing iteration data."""
 
     @abstractmethod
+    def _get_exec_out_display_name(self) -> str:
+        """Return the display name for the exec_out parameter."""
+
+    @abstractmethod
+    def _get_exec_out_tooltip(self) -> str:
+        """Return the tooltip for the exec_out parameter."""
+
+    @abstractmethod
     def _get_iteration_items(self) -> list[Any]:
         """Get the list of items to iterate over."""
 
@@ -133,11 +146,37 @@ class BaseIterativeStartNode(StartLoopNode):
     def _get_current_item_value(self) -> Any:
         """Get the current iteration value."""
 
+    @abstractmethod
     def is_loop_finished(self) -> bool:
-        """Return True if the loop has completed all items or has no items to process."""
-        if not self._items or len(self._items) == 0:
-            return True
-        return self._current_index >= len(self._items)
+        """Return True if the loop has completed all iterations.
+
+        This method must be implemented by subclasses to define when
+        the loop should terminate.
+        """
+
+    @abstractmethod
+    def _get_total_iterations(self) -> int:
+        """Return the total number of iterations for this loop."""
+
+    @abstractmethod
+    def _get_current_iteration_count(self) -> int:
+        """Return the current iteration count (0-based)."""
+
+    @abstractmethod
+    def get_current_index(self) -> int:
+        """Return the current index value for this iteration type.
+
+        For ForEach: returns array position (0, 1, 2, ...)
+        For ForLoop: returns actual loop value (start, start+step, start+2*step, ...)
+        """
+
+    @abstractmethod
+    def _advance_to_next_iteration(self) -> None:
+        """Advance to the next iteration.
+
+        For ForEach: increment index by 1
+        For ForLoop: increment current value by step, increment index by 1
+        """
 
     def process(self) -> None:
         if self._flow is None:
@@ -150,8 +189,8 @@ class BaseIterativeStartNode(StartLoopNode):
                 self._initialize_loop()
                 self._check_completion_and_set_output()
             case self.trigger_next_iteration_signal:
-                # Next iteration signal from End - advance to next item
-                self._current_index += 1
+                # Next iteration signal from End - advance to next iteration
+                self._advance_to_next_iteration()
                 self._check_completion_and_set_output()
             case self.break_loop_signal:
                 # Break signal from End - halt loop immediately
@@ -262,36 +301,31 @@ class BaseIterativeStartNode(StartLoopNode):
 
     def _update_status_message(self, status_type: StatusType = StatusType.NORMAL) -> None:
         """Update the status message parameter based on current loop state."""
-        if not self._items or len(self._items) == 0:
-            status = ""
+        if self._total_iterations == 0:
+            # Handle the case where loop terminates immediately without iterations
+            status = "Completed 0 (of 0)"
         elif status_type == StatusType.BREAK:
-            total_items = len(self._items)
-            status = f"Stopped at {self._current_index} (of {total_items}) - Break"
+            status = f"Stopped at {self._current_iteration_count} (of {self._total_iterations}) - Break"
         elif self.is_loop_finished():
-            total_items = len(self._items)
-            status = f"Completed {total_items} (of {total_items})"
+            status = f"Completed {self._total_iterations} (of {self._total_iterations})"
         else:
-            total_items = len(self._items)
-            status = f"Processing {self._current_index} (of {total_items})"
+            status = f"Processing {self._current_iteration_count} (of {self._total_iterations})"
 
         self.status_message.value = status
 
     def _initialize_loop(self) -> None:
         """Initialize the loop with fresh parameter values."""
         # Reset all state for fresh loop execution
-        self._current_index = 0
-        self._items = []
+        self._current_iteration_count = 0
         self.next_control_output = None
 
         # Reset the coupled End node's state for fresh loop runs
         if self.end_node and isinstance(self.end_node, BaseIterativeEndNode):
             self.end_node.reset_for_workflow_run()
 
-        # Get iteration items using subclass implementation
-        self._items = self._get_iteration_items()
-
-        # Initialize iteration-specific data
+        # Initialize iteration-specific data and set total iterations
         self._initialize_iteration_data()
+        self._total_iterations = self._get_total_iterations()
 
     def _check_completion_and_set_output(self) -> None:
         """Check if loop should end or continue and set appropriate control output."""
@@ -305,11 +339,16 @@ class BaseIterativeStartNode(StartLoopNode):
         connections = GriptapeNodes.FlowManager().get_connections()
         connections.unresolve_future_nodes(self)
 
-        # Set current item data using subclass implementation
-        if self._items and self._current_index < len(self._items):
-            current_item_value = self._get_current_item_value()
-            self.parameter_output_values["current_item"] = current_item_value
-            self.publish_update_to_parameter("current_item", current_item_value)
+        # Always set the index output in base class
+        current_index = self.get_current_index()
+        self.parameter_output_values["index"] = current_index
+        self.publish_update_to_parameter("index", current_index)
+
+        # Get current item value from subclass (subclasses handle their own logic)
+        current_item_value = self._get_current_item_value()
+        if current_item_value is not None:
+            # Subclasses can handle their own current_item logic
+            pass
 
         # Update status message and continue with execution
         self._update_status_message()
@@ -317,9 +356,9 @@ class BaseIterativeStartNode(StartLoopNode):
 
     def _complete_loop(self, status_type: StatusType = StatusType.NORMAL) -> None:
         """Complete the loop and set final state."""
-        self._items = []
-        self._current_index = 0
         self._update_status_message(status_type)
+        self._current_iteration_count = 0
+        self._total_iterations = 0
         self.next_control_output = self.loop_end_condition_met_signal
 
     def _validate_iterative_connections(self) -> list[Exception]:
@@ -639,7 +678,9 @@ class BaseIterativeEndNode(EndLoopNode):
             try:
                 connections = GriptapeNodes.FlowManager().get_connections()
                 # Check if there's an incoming connection to loop_end_condition_met_signal_input
-                incoming_connections = connections.incoming_index.get(self.name, {}).get("loop_end_condition_met_signal_input", [])
+                incoming_connections = connections.incoming_index.get(self.name, {}).get(
+                    "loop_end_condition_met_signal_input", []
+                )
 
                 if not incoming_connections:
                     node_type = self.__class__.__name__.replace("EndNode", "")

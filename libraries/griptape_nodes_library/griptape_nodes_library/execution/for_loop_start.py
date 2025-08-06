@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode, StatusType
+from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode
 
 
 class ForLoopStartNode(BaseIterativeStartNode):
@@ -18,20 +18,15 @@ class ForLoopStartNode(BaseIterativeStartNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
-        # Track the current loop value directly
-        self._current_value = 0
-
-        # Adjust exec_out display name
-        self.exec_out.ui_options = {"display_name": "For Loop"}
-
-        # Adjust current_item to be an integer
-        self.current_item.type = ParameterTypeBuiltin.INT.value
+        # Track the current loop index directly
+        self._current_index = 0
 
         # Add ForLoop-specific parameters
         self.start_value = Parameter(
             name="start",
             tooltip="Starting value for the loop",
             type=ParameterTypeBuiltin.INT.value,
+            input_types=["int", "float"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=1,
         )
@@ -39,6 +34,7 @@ class ForLoopStartNode(BaseIterativeStartNode):
             name="end",
             tooltip="Ending value for the loop (exclusive)",
             type=ParameterTypeBuiltin.INT.value,
+            input_types=["int", "float"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=10,
         )
@@ -55,7 +51,10 @@ class ForLoopStartNode(BaseIterativeStartNode):
         self.add_parameter(self.step_value)
 
         # Move the parameter group to the end
-        self.move_element_to_position("For Loop Item", position="last")
+        self.move_element_to_position("For Loop", position="last")
+
+        # Move the status message to the very bottom
+        self.move_element_to_position("status_message", position="last")
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
@@ -65,30 +64,32 @@ class ForLoopStartNode(BaseIterativeStartNode):
 
     def _get_parameter_group_name(self) -> str:
         """Return the name for the parameter group containing iteration data."""
-        return "For Loop Item"
+        return "For Loop"
+
+    def _get_exec_out_display_name(self) -> str:
+        """Return the display name for the exec_out parameter."""
+        return "On Each"
+
+    def _get_exec_out_tooltip(self) -> str:
+        """Return the tooltip for the exec_out parameter."""
+        return "Execute for each iteration"
 
     def _get_iteration_items(self) -> list[Any]:
         """Get the list of items to iterate over."""
-        # Validate parameters
-        validation_errors = self._validate_parameter_values()
-        if validation_errors:
-            raise validation_errors[0]  # Raise the first validation error
-
-        # For ForLoop, we don't need to pre-calculate items
-        # We'll use direct value comparison in is_loop_finished
-        # Return a single-item list just to satisfy the base class contract
-        return [True]
+        # ForLoop doesn't use items - this method is not used
+        # We keep it for compatibility but it's not called anymore
+        return []
 
     def _initialize_iteration_data(self) -> None:
         """Initialize iteration-specific data and state."""
-        # Set current value to start value
+        # Set current index to start value
         start = self.get_parameter_value("start")
-        self._current_value = start
+        self._current_index = start
 
     def _get_current_item_value(self) -> Any:
         """Get the current iteration value."""
         if not self.is_loop_finished():
-            return self._current_value
+            return self._current_index
         return None
 
     def is_loop_finished(self) -> bool:
@@ -98,11 +99,38 @@ class ForLoopStartNode(BaseIterativeStartNode):
 
         # Check if we've reached or passed the end condition
         if step > 0:
-            return self._current_value >= end
+            return self._current_index >= end
         if step < 0:
-            return self._current_value <= end
+            return self._current_index <= end
         # step == 0, should have been caught in validation
         return True
+
+    def _get_total_iterations(self) -> int:
+        """Return the total number of iterations for this loop."""
+        start = self.get_parameter_value("start")
+        end = self.get_parameter_value("end")
+        step = self.get_parameter_value("step")
+
+        if step == 0:
+            return 0
+
+        if step > 0:
+            return max(0, (end - start + step - 1) // step)
+        return max(0, (start - end - step - 1) // (-step))
+
+    def _get_current_iteration_count(self) -> int:
+        """Return the current iteration count (0-based)."""
+        return self._current_iteration_count
+
+    def get_current_index(self) -> int:
+        """Return the current loop value (start, start+step, start+2*step, ...)."""
+        return self._current_index
+
+    def _advance_to_next_iteration(self) -> None:
+        """Advance to the next iteration by incrementing current index by step."""
+        step = self.get_parameter_value("step")
+        self._current_index += step
+        self._current_iteration_count += 1
 
     def _validate_parameter_values(self) -> list[Exception]:
         """Validate ForLoop parameter values."""
@@ -118,8 +146,10 @@ class ForLoopStartNode(BaseIterativeStartNode):
             msg = f"{self.name}: Step value must be negative when start ({start}) is greater than end ({end})"
             exceptions.append(Exception(msg))
         if start == end and step != 0:
-            msg = f"{self.name}: Step value must be zero when start ({start}) is equal to end ({end})"
-            exceptions.append(Exception(msg))
+            # This is informational - loop will execute 0 iterations, which is valid
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("%s: Loop will execute 0 iterations since start (%s) equals end (%s). Step value (%s) will be ignored.", self.name, start, end, step)
         if start != end and step == 0:
             msg = f"{self.name}: Step value must be non-zero when start ({start}) is not equal to end ({end})"
             exceptions.append(Exception(msg))
@@ -135,8 +165,8 @@ class ForLoopStartNode(BaseIterativeStartNode):
             exceptions.extend(validation_exceptions)
 
         # Reset loop state
-        self._current_index = 0
-        self._current_value = self.get_parameter_value("start")
+        self._current_iteration_count = 0
+        self._current_index = self.get_parameter_value("start")
 
         # Call parent validation
         parent_exceptions = super().validate_before_workflow_run()
@@ -145,32 +175,6 @@ class ForLoopStartNode(BaseIterativeStartNode):
 
         return exceptions if exceptions else None
 
-    def process(self) -> None:
-        """Override process to handle ForLoop-specific value advancement."""
-        if self._flow is None:
-            return
-
-        # Handle different control entry points with direct logic
-        match self._entry_control_parameter:
-            case self.exec_in | None:
-                # Starting the loop (initialization)
-                self._initialize_loop()
-                self._check_completion_and_set_output()
-            case self.trigger_next_iteration_signal:
-                # Next iteration signal from End - advance to next value
-                step = self.get_parameter_value("step")
-                self._current_value += step
-                self._current_index += 1  # Keep this for status messages
-                self._check_completion_and_set_output()
-            case self.break_loop_signal:
-                # Break signal from End - halt loop immediately
-                self._complete_loop(StatusType.BREAK)
-            case _:
-                # Unexpected control entry point - log error for debugging
-                err_str = f"ForLoop Start node '{self.name}' received unexpected control parameter: {self._entry_control_parameter}. "
-                "Expected: exec_in, trigger_next_iteration_signal, break_loop_signal, or None."
-                self._logger.error(err_str)
-                return
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate before node run with ForLoop-specific checks."""
