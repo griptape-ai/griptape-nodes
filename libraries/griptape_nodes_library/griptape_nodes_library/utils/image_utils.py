@@ -430,9 +430,13 @@ def create_masonry_layout(  # noqa: C901, PLR0913
             # Resize image to fit column width
             img_resized = img.copy()
             if img.width <= 0 or img.height <= 0:
+                msg = f"Skipping image with invalid dimensions: {img.width}x{img.height}"
+                logger.warning(msg)
                 continue  # Skip invalid images
             aspect_ratio = img.width / img.height
             if aspect_ratio <= 0:
+                msg = f"Skipping image with invalid aspect ratio: {img.width}x{img.height}"
+                logger.warning(msg)
                 continue  # Skip images with invalid aspect ratio
             img_height = int(column_width / aspect_ratio)
             img_resized = img_resized.resize((column_width, img_height), Image.Resampling.LANCZOS)
