@@ -32,6 +32,8 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AlterParameterDetailsRequest,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
@@ -1062,6 +1064,125 @@ class StartLoopNode(BaseNode):
 class EndLoopNode(BaseNode):
     start_node: StartLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+
+class ErrorProxyNode(DataNode):
+    """A proxy node that substitutes for nodes that failed to create due to missing dependencies or errors.
+
+    This node maintains the original node type information and allows workflows to continue loading
+    even when some node types are unavailable. It generates parameters dynamically as connections
+    and values are assigned to maintain workflow structure.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        original_node_type: str,
+        original_library_name: str,
+        failure_reason: str,
+        metadata: dict[Any, Any] | None = None,
+    ) -> None:
+        super().__init__(name, metadata)
+
+        self.original_node_type = original_node_type
+        self.original_library_name = original_library_name
+        self.failure_reason = failure_reason
+        self._generated_parameters: set[str] = set()
+
+        # Add error message parameter explaining the failure
+        error_message = ParameterMessage(
+            name="error_proxy_message", variant="error", value=f"Node creation failed: {failure_reason}"
+        )
+        self.add_node_element(error_message)
+
+    def _ensure_parameter_exists(self, param_name: str, param_type: str, mode: ParameterMode) -> None:
+        """Ensures a parameter exists on this node, creating or evolving it as needed.
+
+        Args:
+            param_name: Name of the parameter to ensure exists
+            param_type: The type for the parameter
+            mode: The parameter mode to ensure is allowed (INPUT, OUTPUT, or PROPERTY)
+        """
+        existing_param = self.get_parameter_by_name(param_name)
+
+        if existing_param is None:
+            # Create new parameter with specified type and mode
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            mode_allowed_input = mode == ParameterMode.INPUT
+            mode_allowed_output = mode == ParameterMode.OUTPUT
+            mode_allowed_property = mode == ParameterMode.PROPERTY
+
+            request = AddParameterToNodeRequest(
+                node_name=self.name,
+                parameter_name=param_name,
+                type=param_type,
+                tooltip=f"Generated parameter for Error Proxy (type: {param_type})",
+                mode_allowed_input=mode_allowed_input,
+                mode_allowed_output=mode_allowed_output,
+                mode_allowed_property=mode_allowed_property,
+            )
+            GriptapeNodes.handle_request(request)
+            self._generated_parameters.add(param_name)
+        elif mode not in existing_param.allowed_modes:
+            # Parameter exists, ensure it supports the requested mode
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            current_modes = existing_param.allowed_modes.copy()
+            current_modes.add(mode)
+
+            request = AlterParameterDetailsRequest(
+                parameter_name=param_name,
+                node_name=self.name,
+                mode_allowed_input=ParameterMode.INPUT in current_modes,
+                mode_allowed_output=ParameterMode.OUTPUT in current_modes,
+                mode_allowed_property=ParameterMode.PROPERTY in current_modes,
+            )
+            GriptapeNodes.handle_request(request)
+
+    def allow_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> bool:
+        """Ensure parameter exists before allowing incoming connection."""
+        # Infer type from source parameter's output type
+        inferred_type = source_parameter.output_type or ParameterTypeBuiltin.ANY.value
+
+        # Ensure the target parameter exists and can accept input connections
+        self._ensure_parameter_exists(target_parameter.name, inferred_type, ParameterMode.INPUT)
+        return True
+
+    def allow_outgoing_connection(
+        self,
+        source_parameter: Parameter,
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> bool:
+        """Ensure parameter exists before allowing outgoing connection."""
+        # Infer type from target parameter's input types (pick first one)
+        inferred_type = ParameterTypeBuiltin.ANY.value
+        if target_parameter.input_types and len(target_parameter.input_types) > 0:
+            inferred_type = target_parameter.input_types[0]
+        elif target_parameter.type:
+            inferred_type = target_parameter.type
+
+        # Ensure the source parameter exists and can provide output connections
+        self._ensure_parameter_exists(source_parameter.name, inferred_type, ParameterMode.OUTPUT)
+        return True
+
+    def set_parameter_value(
+        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+    ) -> None:
+        """Override to ensure parameter exists before setting value."""
+        # Ensure parameter exists with PROPERTY mode (will default to ANY type)
+        self._ensure_parameter_exists(param_name, ParameterTypeBuiltin.ANY.value, ParameterMode.PROPERTY)
+        super().set_parameter_value(param_name, value, initial_setup=initial_setup, emit_change=emit_change)
+
+    def process(self) -> Any:
+        """No-op process method. Error Proxy nodes do nothing during execution."""
+        return None
 
 
 class Connection:

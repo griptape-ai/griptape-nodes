@@ -288,7 +288,31 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-            return CreateNodeResultFailure()
+
+            # Check if we should create an Error Proxy node instead of failing
+            if request.create_error_proxy_on_failure:
+                from griptape_nodes.exe_types.node_types import ErrorProxyNode
+
+                try:
+                    # Create ErrorProxyNode directly since it needs special initialization
+                    node = ErrorProxyNode(
+                        name=final_node_name,
+                        original_node_type=request.node_type,
+                        original_library_name=request.specific_library_name or "Unknown",
+                        failure_reason=str(err),
+                        metadata=request.metadata,
+                    )
+
+                    logger.info(
+                        "Created Error Proxy node '%s' to substitute for failed '%s'",
+                        final_node_name,
+                        request.node_type,
+                    )
+                except Exception as proxy_err:
+                    logger.error("Failed to create Error Proxy node: %s", proxy_err)
+                    return CreateNodeResultFailure()
+            else:
+                return CreateNodeResultFailure()
         # Add it to the Flow.
         parent_flow.add_node(node)
 
@@ -1899,11 +1923,21 @@ class NodeManager:
             library_version = library_metadata_result.metadata.library_version
             library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
+            # Handle ErrorProxyNode serialization - serialize as original node type
+            from griptape_nodes.exe_types.node_types import ErrorProxyNode
+
+            if isinstance(node, ErrorProxyNode):
+                serialized_node_type = node.original_node_type
+                serialized_library_name = node.original_library_name
+            else:
+                serialized_node_type = node.__class__.__name__
+                serialized_library_name = library_details.library_name
+
             # Get the creation details.
             create_node_request = CreateNodeRequest(
-                node_type=node.__class__.__name__,
+                node_type=serialized_node_type,
                 node_name=node_name,
-                specific_library_name=library_details.library_name,
+                specific_library_name=serialized_library_name,
                 metadata=copy.deepcopy(node.metadata),
                 # If it is actively resolving, mark as unresolved.
                 resolution=node.state.value,
@@ -1911,14 +1945,18 @@ class NodeManager:
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
-            reference_node = type(node)(name="REFERENCE NODE")
+            # For ErrorProxyNode, we can't create a reference node, so skip comparison
+            if isinstance(node, ErrorProxyNode):
+                reference_node = None
+            else:
+                reference_node = type(node)(name="REFERENCE NODE")
 
             # Now creation or alteration of all of the elements.
             element_modification_commands = []
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
-                if parameter.user_defined:
-                    # Add a user-defined Parameter.
+                if parameter.user_defined or reference_node is None:
+                    # Add a user-defined Parameter, or treat as user-defined if no reference node
                     param_dict = parameter.to_dict()
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
