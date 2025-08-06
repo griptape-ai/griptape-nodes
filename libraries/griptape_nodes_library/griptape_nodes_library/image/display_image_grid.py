@@ -156,6 +156,9 @@ class DisplayImageGrid(ControlNode):
         if not self.get_parameter_value("output_image_width"):
             msg = f"{self.name}: Output image width parameter is required"
             exceptions.append(ValueError(msg))
+        if self.get_parameter_value("output_image_width") <= 0:
+            msg = f"{self.name}: Output image width must be greater than 0"
+            exceptions.append(ValueError(msg))
         return exceptions
 
     def process(self) -> None:
