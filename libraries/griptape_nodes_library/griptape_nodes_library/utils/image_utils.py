@@ -381,7 +381,6 @@ def create_masonry_layout(  # noqa: C901, PLR0913
     background_color: str,
     border_radius: int,
     *,
-    crop_to_fit: bool,  # noqa: ARG001 - crop_to_fit is not used in this function
     transparent_bg: bool,
 ) -> Image.Image:
     """Create a masonry layout with variable height columns."""
