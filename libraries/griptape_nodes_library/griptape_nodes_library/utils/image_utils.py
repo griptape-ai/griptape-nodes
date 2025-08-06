@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Constants for placeholder images
 DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
+DEFAULT_TIMEOUT = 30
 
 
 def parse_hex_color(color: str) -> tuple[int, int, int]:
@@ -115,7 +116,7 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
 
 def load_pil_from_url(url: str) -> Image.Image:
     """Load image from URL using httpx."""
-    response = httpx.get(url, timeout=30)
+    response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     return Image.open(BytesIO(response.content))
 
@@ -362,7 +363,9 @@ def create_masonry_layout(  # noqa: PLR0913
     pil_images = load_images_from_list(images)
 
     if not pil_images:
-        return create_placeholder_image(400, 300, background_color, transparent_bg=transparent_bg)
+        return create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        )
 
     # Calculate column width
     column_width = (output_image_width - spacing * (columns + 1)) // columns
