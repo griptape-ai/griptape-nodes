@@ -258,6 +258,17 @@ def create_placeholder_image(width: int, height: int, background_color: str, *, 
     return image
 
 
+def create_default_placeholder(
+    background_color: str,
+    width: int = DEFAULT_PLACEHOLDER_WIDTH,
+    height: int = DEFAULT_PLACEHOLDER_HEIGHT,
+    *,
+    transparent_bg: bool,
+) -> Image.Image:
+    """Create a default placeholder image with specified or standard dimensions."""
+    return create_placeholder_image(width, height, background_color, transparent_bg=transparent_bg)
+
+
 def image_to_bytes(image: Image.Image, output_format: str) -> bytes:
     """Convert PIL image to bytes in specified format."""
     buffer = io.BytesIO()
@@ -311,23 +322,19 @@ def create_grid_layout(  # noqa: PLR0913
 ) -> Image.Image:
     """Create a uniform grid layout of images."""
     if not images:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
+        return create_default_placeholder(
+            background_color, transparent_bg=transparent_bg, width=output_image_width, height=output_image_width
         )
 
     # Load and process images
     pil_images = load_images_from_list(images)
 
     if not pil_images:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
-        )
+        return create_default_placeholder(background_color, transparent_bg=transparent_bg)
 
     # Calculate grid dimensions
     if columns <= 0:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
-        )
+        return create_default_placeholder(background_color, transparent_bg=transparent_bg)
 
     rows = (len(pil_images) + columns - 1) // columns
     cell_width = (output_image_width - spacing * (columns + 1)) // columns
@@ -377,23 +384,17 @@ def create_masonry_layout(  # noqa: C901, PLR0913
 ) -> Image.Image:
     """Create a masonry layout with variable height columns."""
     if not images:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
-        )
+        return create_default_placeholder(background_color, transparent_bg=transparent_bg)
 
     # Load and process images
     pil_images = load_images_from_list(images)
 
     if not pil_images:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
-        )
+        return create_default_placeholder(background_color, transparent_bg=transparent_bg)
 
     # Calculate column width
     if columns <= 0:
-        return create_placeholder_image(
-            DEFAULT_PLACEHOLDER_WIDTH, DEFAULT_PLACEHOLDER_HEIGHT, background_color, transparent_bg=transparent_bg
-        )
+        return create_default_placeholder(background_color, transparent_bg=transparent_bg)
 
     column_width = (output_image_width - spacing * (columns + 1)) // columns
 
@@ -410,8 +411,6 @@ def create_masonry_layout(  # noqa: C901, PLR0913
         if img.width <= 0 or img.height <= 0:
             continue  # Skip invalid images
         aspect_ratio = img.width / img.height
-        if aspect_ratio <= 0:
-            continue  # Skip images with invalid aspect ratio
         img_height = int(column_width / aspect_ratio)
         column_heights[shortest_col] += img_height + spacing
 

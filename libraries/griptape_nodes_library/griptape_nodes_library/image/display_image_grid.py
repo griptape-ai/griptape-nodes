@@ -2,6 +2,7 @@ import uuid
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
+from PIL import UnidentifiedImageError
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -226,7 +227,7 @@ class DisplayImageGrid(ControlNode):
             url_artifact = ImageUrlArtifact(value=static_url)
             self.publish_update_to_parameter("output", url_artifact)
 
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, UnidentifiedImageError) as e:
             msg = f"{self.name}: Error creating image grid: {e}"
             raise ValueError(msg) from e
         finally:
