@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 
 KEY_VALUE_PARTS = 2
+MIN_YAML_LINES = 2
 
 
 class FormatType(StrEnum):
@@ -92,7 +93,7 @@ class DisplayJson(DataNode):
 
         # Only classify as YAML if we have a reasonable number of YAML-like lines
         # Be more lenient - if most lines look like YAML, classify as YAML
-        if total_lines > 0 and (yaml_like_lines >= 2 or yaml_like_lines >= total_lines * 0.7):
+        if total_lines > 0 and (yaml_like_lines >= MIN_YAML_LINES or yaml_like_lines >= total_lines * 0.7):
             return FormatType.YAML
 
         return FormatType.UNKNOWN
