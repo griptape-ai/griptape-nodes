@@ -46,7 +46,9 @@ def create_background_image(width: int, height: int, background_color: str, *, t
     return Image.new("RGB", (width, height), rgb_color)
 
 
-def resize_image_for_cell(img: Image.Image, cell_width: int, cell_height: int, crop_to_fit: bool) -> ResizedImageResult:
+def resize_image_for_cell(
+    img: Image.Image, cell_width: int, cell_height: int, *, crop_to_fit: bool
+) -> ResizedImageResult:
     """Resize image to fit cell and return image with positioning offsets."""
     if crop_to_fit:
         # Crop to square - resize to fit the larger dimension, then crop to square
