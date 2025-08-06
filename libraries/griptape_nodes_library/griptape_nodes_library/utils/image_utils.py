@@ -38,7 +38,7 @@ def parse_hex_color(color: str) -> tuple[int, int, int]:
     return (int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16))
 
 
-def create_background_image(width: int, height: int, background_color: str, transparent_bg: bool) -> Image.Image:
+def create_background_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create background image with specified color and transparency."""
     if transparent_bg:
         return Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -336,7 +336,7 @@ def create_grid_layout(  # noqa: PLR0913
     # Create background
     total_width = cell_width * columns + spacing * (columns + 1)
     total_height = cell_height * rows + spacing * (rows + 1)
-    grid_image = create_background_image(total_width, total_height, background_color, transparent_bg)
+    grid_image = create_background_image(total_width, total_height, background_color, transparent_bg=transparent_bg)
 
     # Place images in grid
     for idx, img in enumerate(pil_images):
@@ -364,7 +364,7 @@ def create_grid_layout(  # noqa: PLR0913
     return grid_image
 
 
-def create_masonry_layout(  # noqa: PLR0913
+def create_masonry_layout(  # noqa: C901, PLR0913
     images: list,
     columns: int,
     output_image_width: int,
@@ -417,7 +417,9 @@ def create_masonry_layout(  # noqa: PLR0913
 
     # Create background
     total_height = max(column_heights) + spacing
-    grid_image = create_background_image(output_image_width, total_height, background_color, transparent_bg)
+    grid_image = create_background_image(
+        output_image_width, total_height, background_color, transparent_bg=transparent_bg
+    )
 
     # Place images in columns
     for col_idx, column_images in enumerate(columns_content):
