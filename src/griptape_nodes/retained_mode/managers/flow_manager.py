@@ -1615,7 +1615,6 @@ class FlowManager:
         return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name)
 
     def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
-        logger.info("FlushParameterChangesRequest: Starting parameter flush")
         obj_manager = GriptapeNodes.ObjectManager()
         GriptapeNodes.EventManager().clear_flush_in_queue()
         # Get all flows and their nodes
@@ -1624,7 +1623,6 @@ class FlowManager:
             # Only flush if there are actually tracked parameters
             if node._tracked_parameters:
                 node.emit_parameter_changes()
-        logger.info("FlushParameterChangesRequest: Parameter flush completed")
         return FlushParameterChangesResultSuccess()
 
     def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002, ARG002

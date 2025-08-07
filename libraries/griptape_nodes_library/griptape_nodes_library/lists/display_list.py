@@ -52,6 +52,7 @@ class DisplayList(ControlNode):
             "DisplayList.process(): Display list already updated by after_value_set, no additional processing needed for node %s",
             self.name,
         )
+        self._update_display_list()
 
     def _update_display_list(self) -> None:
         """Update the display list parameters based on current input values."""
@@ -103,7 +104,10 @@ class DisplayList(ControlNode):
         # Apply both changes first
         # We have to change all three because parameters are created with all three initialized.
         self.items_list.type = item_type
-        self.items_list.output_type = item_type
+        if item_type == ParameterTypeBuiltin.ANY.value:
+            self.items_list.output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            self.items_list.output_type = item_type
         self.items_list.input_types = [item_type]
         self.items_list.ui_options = new_ui_options
 

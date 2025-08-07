@@ -228,15 +228,15 @@ class ExecuteNodeState(State):
                 else:
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
-                    # Pass the value through using the same mechanism as normal resolution
-                    GriptapeNodes.get_instance().handle_request(
-                        SetParameterValueRequest(
-                            parameter_name=parameter.name,
-                            node_name=current_node.name,
-                            value=output_value,
-                            data_type=upstream_parameter.output_type,
-                        )
+                # Pass the value through using the same mechanism as normal resolution
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=parameter.name,
+                        node_name=current_node.name,
+                        value=output_value,
+                        data_type=upstream_parameter.output_type,
                     )
+                )
 
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
