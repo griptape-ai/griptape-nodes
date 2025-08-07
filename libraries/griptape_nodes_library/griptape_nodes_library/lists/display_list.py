@@ -93,6 +93,8 @@ class DisplayList(ControlNode):
         item_type = self._determine_item_type(list_values[0])
 
         if item_type in {"ImageUrlArtifact", "ImageArtifact"}:
+            # TODO: https://github.com/griptape-ai/griptape-vsl-gui/issues/1148
+            # Right now, images won't display unless in a 'grid' format.
             new_ui_options["display"] = "grid"
         elif "display" in new_ui_options:
             del new_ui_options["display"]
@@ -134,6 +136,8 @@ class DisplayList(ControlNode):
         """Clear all dynamically-created parameters from the node."""
         for child in self.items_list.find_elements_by_type(Parameter):
             # Remove the parameter value - this will also handle parameter_output_values
+            # We are suppressing the error, which will be raised if the parameter is not in parameter_values.
+            # This is ok, because we are just trying to remove the parameter value IF it exists.
             with contextlib.suppress(KeyError):
                 self.remove_parameter_value(child.name)
             if child.name in self.parameter_output_values:
