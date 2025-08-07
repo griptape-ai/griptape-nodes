@@ -15,7 +15,6 @@ def get_current_version() -> str:
 
 
 def get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
-    return ("git", None)
     """Determines the install source of the Griptape Nodes package.
 
     Returns:
