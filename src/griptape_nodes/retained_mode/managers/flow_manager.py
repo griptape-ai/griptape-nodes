@@ -681,6 +681,18 @@ class FlowManager:
 
         # Cross-flow connections are now supported via global connection storage
 
+        # Call before_connection callbacks to allow nodes to prepare parameters
+        source_node.before_outgoing_connection(
+            source_parameter_name=request.source_parameter_name,
+            target_node=target_node,
+            target_parameter_name=request.target_parameter_name,
+        )
+        target_node.before_incoming_connection(
+            source_node=source_node,
+            source_parameter_name=request.source_parameter_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
         if source_param is None:

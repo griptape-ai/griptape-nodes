@@ -1450,6 +1450,9 @@ class NodeManager:
             logger.error(details)
             return SetParameterValueResultFailure()
 
+        # Allow nodes to prepare before parameter lookup (e.g., ErrorProxyNode creates missing parameters)
+        node.prepare_for_set_parameter_value(parameter_name=param_name, value=request.value)
+
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
