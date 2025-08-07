@@ -27,10 +27,16 @@ DEFAULT_TIMEOUT = 30
 
 def is_local(url: str) -> bool:
     """Check if a URL is a local file path."""
-    url_parsed = urlparse(url)
-    if url_parsed.scheme in ("file", ""):  # Possibly a local file
-        return Path(url_parsed.path).exists()
-    return False
+    try:
+        url_parsed = urlparse(url)
+        if url_parsed.scheme in ("file", ""):
+            # Handle file:// URLs by extracting the actual path
+            path = url_parsed.path if url_parsed.scheme == "file" else url
+            return Path(path).exists()
+        else:  # noqa: RET505 (one linter said use else, another said it was unnecessary)
+            return False
+    except (ValueError, OSError):
+        return False
 
 
 @dataclass
