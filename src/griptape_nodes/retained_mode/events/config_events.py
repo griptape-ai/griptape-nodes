@@ -28,6 +28,7 @@ class GetConfigValueRequest(RequestPayload):
     category_and_key: str
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Configuration value retrieved successfully.
@@ -35,24 +36,14 @@ class GetConfigValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess)
     Args:
         value: The configuration value (can be any type)
     """
-    def __init__(self, value: Any, details: ResultDetails | str):
-        self.value = value
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadSuccess.__init__(self, details=details)
 
     value: Any
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Configuration value retrieval failed. Common causes: key not found, invalid category format."""
-    def __init__(self, details: ResultDetails | str):
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass
@@ -101,6 +92,7 @@ class GetConfigCategoryRequest(RequestPayload):
     category: str | None = None
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigCategoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Configuration category retrieved successfully.
@@ -108,24 +100,14 @@ class GetConfigCategoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     Args:
         contents: Dictionary of key-value pairs within the category
     """
-    def __init__(self, contents: dict[str, Any], details: ResultDetails | str):
-        self.contents = contents
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadSuccess.__init__(self, details=details)
 
     contents: dict[str, Any]
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigCategoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Configuration category retrieval failed. Common causes: category not found, invalid category name."""
-    def __init__(self, details: ResultDetails | str):
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass
@@ -169,6 +151,7 @@ class GetConfigPathRequest(RequestPayload):
     """
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Configuration path retrieved successfully.
@@ -176,24 +159,14 @@ class GetConfigPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     Args:
         config_path: Path to the configuration file (None if using default/memory config)
     """
-    def __init__(self, config_path: str | None = None, details: ResultDetails | str = "Success"):
-        self.config_path = config_path
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadSuccess.__init__(self, details=details)
 
     config_path: str | None = None
 
 
+@dataclass
 @PayloadRegistry.register
 class GetConfigPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Configuration path retrieval failed. Common causes: configuration not initialized, access denied."""
-    def __init__(self, details: ResultDetails | str):
-        # Initialize the dataclass mixin first
-        WorkflowNotAlteredMixin.__init__(self)
-        # Then initialize the ResultPayload base class
-        ResultPayloadFailure.__init__(self, details=details)
 
 
 @dataclass

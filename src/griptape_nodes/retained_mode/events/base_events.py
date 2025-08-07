@@ -29,11 +29,11 @@ class ResultDetail:
 class ResultDetails:
     """Container for multiple ResultDetail objects."""
 
-    details: list[ResultDetail]
+    result_details: list[ResultDetail]
 
     def __init__(
         self,
-        *details: ResultDetail,
+        *result_details: ResultDetail,
         message: str | None = None,
         level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
         logger: logging.Logger | str | None = "griptape_nodes",
@@ -41,7 +41,7 @@ class ResultDetails:
         """Initialize with ResultDetail objects or create a single one from message/level.
 
         Args:
-            *details: Variable number of ResultDetail objects
+            *result_details: Variable number of ResultDetail objects
             message: If provided, creates a single ResultDetail with this message
             level: Logging level for the single ResultDetail (required if message is provided)
             logger: Logger to use for auto-logging. String for logger name, Logger object, or None to skip
@@ -51,15 +51,15 @@ class ResultDetails:
             if level is None:
                 err_msg = "level is required when message is provided"
                 raise ValueError(err_msg)
-            if details:
-                err_msg = "Cannot provide both details and message/level"
+            if result_details:
+                err_msg = "Cannot provide both result_details and message/level"
                 raise ValueError(err_msg)
-            self.details = [ResultDetail(level=level, message=message)]
+            self.result_details = [ResultDetail(level=level, message=message)]
         else:
-            if not details:
+            if not result_details:
                 err_msg = "ResultDetails requires at least one ResultDetail or message/level"
                 raise ValueError(err_msg)
-            self.details = list(details)
+            self.result_details = list(result_details)
 
         # Auto-log if logger is provided
         if logger is not None:
@@ -67,7 +67,7 @@ class ResultDetails:
                 if isinstance(logger, str):
                     logger = logging.getLogger(logger)
 
-                for detail in self.details:
+                for detail in self.result_details:
                     numeric_level = getattr(logging, detail.level)
                     logger.log(numeric_level, detail.message)
             except Exception:  # noqa: S110
@@ -91,7 +91,7 @@ class RequestPayload(Payload, ABC):
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
-    details: ResultDetails
+    result_details: ResultDetails | str
     """When set to True, alerts clients that this result made changes to the workflow state.
     Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
     altered_workflow_state: bool = False
@@ -132,14 +132,16 @@ class SkipTheLineMixin:
 
 
 # Success result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
-    def __init__(self, details: ResultDetails | str):
+    result_details: ResultDetails | str = "Success"
+
+    def __post_init__(self):
         """Initialize success result with INFO level default for strings."""
-        if isinstance(details, str):
-            details = ResultDetails(message=details, level="INFO")
-        super().__init__(details=details)
+        if isinstance(self.result_details, str):
+            self.result_details = ResultDetails(message=self.result_details, level="DEBUG")
 
     def succeeded(self) -> bool:
         """Returns True as this is a success result.
@@ -151,15 +153,17 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
 
 # Failure result payload abstract base class
+@dataclass(kw_only=True)
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
-    def __init__(self, details: ResultDetails | str, exception: Exception | None = None):
+    result_details: ResultDetails | str = "Failure"
+    exception: Exception | None = None
+
+    def __post_init__(self):
         """Initialize failure result with ERROR level default for strings."""
-        if isinstance(details, str):
-            details = ResultDetails(message=details, level="ERROR")
-        super().__init__(details=details)
-        self.exception = exception
+        if isinstance(self.result_details, str):
+            self.result_details = ResultDetails(message=self.result_details, level="ERROR")
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
