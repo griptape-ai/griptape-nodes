@@ -39,6 +39,7 @@ class DisplayList(ControlNode):
             type=ParameterTypeBuiltin.ANY.value,
             output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            ui_options={"hide_property": False},
         )
         self.add_parameter(self.items_list)
         # Track whether we're already updating to prevent duplicate calls
@@ -50,7 +51,7 @@ class DisplayList(ControlNode):
         # No need to update it again during process() - this prevents duplicate processing
         pass
 
-    def _update_display_list(self) -> None:  # noqa: C901, PLR0912
+    def _update_display_list(self) -> None:  # noqa: C901
         """Update the display list parameters based on current input values."""
         # Prevent duplicate calls
         if self._updating_display_list:
@@ -91,13 +92,6 @@ class DisplayList(ControlNode):
 
         new_ui_options["hide"] = False
         item_type = self._determine_item_type(list_values[0])
-
-        if item_type in {"ImageUrlArtifact", "ImageArtifact"}:
-            # TODO: https://github.com/griptape-ai/griptape-vsl-gui/issues/1148
-            # Right now, images won't display unless in a 'grid' format.
-            new_ui_options["display"] = "grid"
-        elif "display" in new_ui_options:
-            del new_ui_options["display"]
 
         # Apply both changes first
         # We have to change all three because parameters are created with all three initialized.
