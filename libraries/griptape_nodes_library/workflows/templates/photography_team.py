@@ -204,7 +204,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
     with GriptapeNodes.ContextManager().node(node2_name):
         GriptapeNodes.handle_request(
             AddParameterToNodeRequest(
-                parameter_name="rulesets_ParameterListUniqueParamID_2eadbf6ecaac46a7beb1ad1ae7c4b085",
+                parameter_name="rulesets_ParameterListUniqueParamID_2eadbf6ecaac46a7beb1ad1ae7c4b085",  # ignore
                 default_value=[],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 type="Ruleset",
@@ -387,7 +387,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
     with GriptapeNodes.ContextManager().node(node8_name):
         GriptapeNodes.handle_request(
             AddParameterToNodeRequest(
-                parameter_name="rulesets_ParameterListUniqueParamID_7193b2c58028446ba17c88eb62836380",
+                parameter_name="rulesets_ParameterListUniqueParamID_7193b2c58028446c88eb62836380",
                 default_value=[],
                 tooltip="Rulesets to apply to the agent to control its behavior.",
                 type="Ruleset",
@@ -762,7 +762,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             source_node_name=node16_name,
             source_parameter_name="ruleset",
             target_node_name=node8_name,
-            target_parameter_name="rulesets_ParameterListUniqueParamID_7193b2c58028446ba17c88eb62836380",
+            target_parameter_name="rulesets_ParameterListUniqueParamID_7193b2c58028446c88eb62836380",
             initial_setup=True,
         )
     )
