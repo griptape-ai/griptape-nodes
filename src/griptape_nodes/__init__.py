@@ -660,7 +660,7 @@ def _get_latest_version(package: str, install_source: str) -> str:
     if install_source == "pypi":
         update_url = PYPI_UPDATE_URL.format(package=package)
 
-        with httpx.Client() as client:
+        with httpx.Client(timeout=30.0) as client:
             # First check for connection issues before status issues
             response = _access_update_url(update_url, client)
             if not response:
@@ -668,7 +668,8 @@ def _get_latest_version(package: str, install_source: str) -> str:
             try:
                 response.raise_for_status()
                 data = response.json()
-                version = f"v{data['info']['version']}"
+                if "info" in data and "version" in data["info"]:
+                    version = f"v{data['info']['version']}"
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
     elif install_source == "git":
@@ -676,7 +677,7 @@ def _get_latest_version(package: str, install_source: str) -> str:
         revision = LATEST_TAG
         update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
 
-        with httpx.Client() as client:
+        with httpx.Client(timeout=30.0) as client:
             # First check for connection issues before status issues
             response = _access_update_url(update_url, client)
             if not response:
