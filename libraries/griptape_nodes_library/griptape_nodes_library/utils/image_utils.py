@@ -4,8 +4,10 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -21,6 +23,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
+
+
+def is_local(url: str) -> bool:
+    """Check if a URL is a local file path."""
+    url_parsed = urlparse(url)
+    if url_parsed.scheme in ("file", ""):  # Possibly a local file
+        return Path(url_parsed.path).exists()
+    return False
 
 
 @dataclass
@@ -129,7 +139,7 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
 def load_pil_from_url(url: str) -> Image.Image:
     """Load image from URL or local file path using httpx or PIL."""
     # Check if it's a local file path
-    if url.startswith(("/", "./", "../")):
+    if is_local(url):
         # Local file path - load directly with PIL
         try:
             return Image.open(url)
