@@ -1,12 +1,13 @@
 import re
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, Trait
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
@@ -21,12 +22,96 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 
+@dataclass(eq=False)
+class PathValidator(Trait):
+    """Validator trait for image paths (file paths or URLs)."""
+
+    supported_extensions: set[str] = field(default_factory=set)
+    element_id: str = field(default_factory=lambda: "PathValidatorTrait")
+
+    def __init__(self, supported_extensions: set[str]) -> None:
+        super().__init__()
+        self.supported_extensions = supported_extensions
+
+    @classmethod
+    def get_trait_keys(cls) -> list[str]:
+        return ["path_validator"]
+
+    def ui_options_for_trait(self) -> dict:
+        return {}
+
+    def display_options_for_trait(self) -> dict:
+        return {}
+
+    def converters_for_trait(self) -> list:
+        return []
+
+    def validators_for_trait(self) -> list:
+        def validate_path(param: Parameter, value: Any) -> None:  # noqa: ARG001
+            if not value or not str(value).strip():
+                return  # Empty values are allowed
+
+            path_str = LoadImage._strip_surrounding_quotes(str(value).strip())
+
+            # Check if it's a URL
+            if path_str.startswith(("http://", "https://")):
+                self._validate_url(path_str)
+            else:
+                self._validate_file_path(path_str)
+
+        return [validate_path]
+
+    def _validate_url(self, url: str) -> None:
+        """Validate that the URL is accessible and points to an image."""
+        try:
+            response = httpx.head(url, timeout=10, follow_redirects=True)
+            response.raise_for_status()
+
+            content_type = response.headers.get("content-type", "")
+            if not content_type.startswith("image/"):
+                error_msg = f"URL does not point to an image (content-type: {content_type})"
+                raise ValueError(error_msg)
+        except httpx.RequestError as e:
+            error_msg = f"Failed to access URL: {e}"
+            raise ValueError(error_msg) from e
+        except httpx.HTTPStatusError as e:
+            error_msg = f"URL returned error status {e.response.status_code}"
+            raise ValueError(error_msg) from e
+
+    def _validate_file_path(self, file_path: str) -> None:
+        """Validate that the file path exists and has a supported extension."""
+        path = Path(file_path)
+
+        if not path.exists():
+            error_msg = f"Image file not found: {file_path}"
+            raise FileNotFoundError(error_msg)
+
+        if not path.is_file():
+            error_msg = f"Path is not a file: {file_path}"
+            raise ValueError(error_msg)
+
+        if path.suffix.lower() not in self.supported_extensions:
+            supported = ", ".join(self.supported_extensions)
+            error_msg = f"Unsupported image format: {path.suffix}. Supported formats: {supported}"
+            raise ValueError(error_msg)
+
+
 class LoadImage(DataNode):
     # Supported image file extensions
     SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 
     # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
     SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
+
+    @staticmethod
+    def _strip_surrounding_quotes(path_str: str) -> str:
+        """Strip surrounding quotes only if they match (from 'Copy as Pathname')."""
+        if len(path_str) >= 2 and (  # noqa: PLR2004
+            (path_str.startswith("'") and path_str.endswith("'"))
+            or (path_str.startswith('"') and path_str.endswith('"'))
+        ):
+            return path_str[1:-1]
+        return path_str
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -66,6 +151,8 @@ class LoadImage(DataNode):
             )
         )
 
+        self.path_parameter.add_trait(PathValidator(supported_extensions=self.SUPPORTED_EXTENSIONS))
+
         self.add_parameter(self.path_parameter)
 
     def _to_image_artifact(self, image: Any) -> Any:
@@ -77,27 +164,6 @@ class LoadImage(DataNode):
                 artifact.meta = metadata
             return artifact
         return image
-
-    def _is_valid_image_file(self, file_path: str) -> bool:
-        """Check if file has a valid image extension and exists."""
-        if not file_path.strip():
-            return False
-
-        path = Path(file_path)
-        if not path.exists():
-            error_msg = f"Image file not found: {file_path}"
-            raise FileNotFoundError(error_msg)
-
-        if not path.is_file():
-            error_msg = f"Path is not a file: {file_path}"
-            raise ValueError(error_msg)
-
-        if path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
-            supported = ", ".join(self.SUPPORTED_EXTENSIONS)
-            error_msg = f"Unsupported image format: {path.suffix}. Supported formats: {supported}"
-            raise ValueError(error_msg)
-
-        return True
 
     def _upload_file_to_static_storage(self, file_path: str) -> str:
         """Upload file to static storage and return download URL."""
@@ -253,25 +319,17 @@ class LoadImage(DataNode):
             image_artifact = self._to_image_artifact(value)
             self.parameter_output_values[self.image_parameter.name] = image_artifact
         elif parameter.name == self.path_parameter.name:
-            path_value = str(value).strip() if value else ""
-            # Strip surrounding quotes only if they match (from "Copy as Pathname")
-            if len(path_value) >= 2 and (  # noqa: PLR2004
-                (path_value.startswith("'") and path_value.endswith("'"))
-                or (path_value.startswith('"') and path_value.endswith('"'))
-            ):
-                path_value = path_value[1:-1]
+            path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
 
             # Indicate that we're the controlling parameter so we don't trigger an infinite cascade of set value changes.
             self._updating_from_parameter = parameter
             try:
                 if path_value:
+                    # Validation has already passed by the time we get here
                     if self._is_url(path_value):
                         download_url = self._download_and_upload_url(path_value)
-                    elif self._is_valid_image_file(path_value):
-                        download_url = self._upload_file_to_static_storage(path_value)
                     else:
-                        msg = f"Invalid path or URL: {path_value}"
-                        raise ValueError(msg)  # noqa: TRY301
+                        download_url = self._upload_file_to_static_storage(path_value)
 
                     # Test that artifact creation works before updating the image parameter
                     image_artifact = self._to_image_artifact({"value": download_url, "type": "ImageUrlArtifact"})
