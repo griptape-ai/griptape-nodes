@@ -262,7 +262,9 @@ def _process_event_queue() -> None:
     # Wait for WebSocket connection to be established before processing events
     timed_out = ws_ready_event.wait(timeout=15)
     if not timed_out:
-        console.print("[red] The connection to the websocket timed out. Please check your internet connection and the status of Griptape Nodes API.[/red]")
+        console.print(
+            "[red] The connection to the websocket timed out. Please check your internet connection and the status of Griptape Nodes API.[/red]"
+        )
         sys.exit(1)
     while True:
         event = event_queue.get(block=True)

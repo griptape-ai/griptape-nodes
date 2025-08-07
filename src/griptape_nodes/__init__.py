@@ -1,5 +1,6 @@
 """Griptape Nodes package."""
 
+from httpx import Response
 from rich.console import Console
 
 console = Console()
@@ -22,7 +23,6 @@ with console.status("Loading Griptape Nodes...") as status:
     from rich.progress import Progress
     from rich.prompt import Confirm, Prompt
     from rich.table import Table
-    from rich.traceback import Traceback
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
@@ -81,6 +81,7 @@ class InitConfig:
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 os_manager = OSManager()
+
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
@@ -631,6 +632,20 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     return new_libraries
 
 
+def _access_update_url(update_url: str, client: httpx.Client) -> Response | None:
+    """Small helper to reduce repetitive code for error handling."""
+    try:
+        response = client.get(update_url)
+    except httpx.RequestError as e:
+        console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
+        console.print(
+            f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]"
+        )
+        return None
+    else:
+        return response
+
+
 def _get_latest_version(package: str, install_source: str) -> str:
     """Fetches the latest release tag from PyPI.
 
@@ -641,31 +656,21 @@ def _get_latest_version(package: str, install_source: str) -> str:
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    def _access_update_url(update_url):
-        """Small helper to reduce repetitive code for error handling."""
-        try:
-            response = client.get(update_url)
-            return response
-        except httpx.RequestError as e:
-            console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
-            console.print(f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]")
-            return False
-
+    version = get_current_version()
     if install_source == "pypi":
         update_url = PYPI_UPDATE_URL.format(package=package)
 
         with httpx.Client() as client:
             # First check for connection issues before status issues
-            response = _access_update_url(update_url)
+            response = _access_update_url(update_url, client)
             if not response:
-                return get_current_version()
+                return version
             try:
                 response.raise_for_status()
                 data = response.json()
-                return f"v{data['info']['version']}"
+                version = f"v{data['info']['version']}"
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return get_current_version()
     elif install_source == "git":
         # We only install auto updating from the 'latest' tag
         revision = LATEST_TAG
@@ -673,24 +678,22 @@ def _get_latest_version(package: str, install_source: str) -> str:
 
         with httpx.Client() as client:
             # First check for connection issues before status issues
-            response = _access_update_url(update_url)
+            response = _access_update_url(update_url, client)
             if not response:
-                return get_current_version()
+                return version
 
             try:
                 response.raise_for_status()
                 # Get the latest commit SHA for the tag, this effectively the latest version of the package
                 data = response.json()
                 if "object" in data and "sha" in data["object"]:
-                    return data["object"]["sha"][:7]
-                # Should not happen, but if it does, return the current version
-                return get_current_version()
+                    version = data["object"]["sha"][:7]
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return get_current_version()
     else:
         # If the package is installed from a file, just return the current version since the user is likely managing it manually
-        return get_current_version()
+        return version
+    return version
 
 
 def _auto_update_self() -> None:
