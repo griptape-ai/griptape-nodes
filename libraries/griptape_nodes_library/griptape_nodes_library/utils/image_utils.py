@@ -4,8 +4,10 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -21,6 +23,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
+
+
+def is_local(url: str) -> bool:
+    """Check if a URL is a local file path."""
+    try:
+        url_parsed = urlparse(url)
+        if url_parsed.scheme in ("file", ""):
+            # Handle file:// URLs by extracting the actual path
+            path = url_parsed.path if url_parsed.scheme == "file" else url
+            return Path(path).exists()
+        else:  # noqa: RET505 (one linter said use else, another said it was unnecessary)
+            return False
+    except (ValueError, OSError):
+        return False
 
 
 @dataclass
@@ -127,7 +143,18 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL using httpx."""
+    """Load image from URL or local file path using httpx or PIL."""
+    # Check if it's a local file path
+    if is_local(url):
+        # Local file path - load directly with PIL
+        try:
+            return Image.open(url)
+        except Exception as e:
+            msg = f"Failed to load image from local file: {url}\nError: {e}"
+            logger.error(msg)
+            raise ValueError(msg) from e
+
+    # HTTP/HTTPS URL - use httpx
     response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     try:
