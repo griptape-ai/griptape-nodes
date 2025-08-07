@@ -369,60 +369,59 @@ class LoadImage(DataNode):
 
         return download_result.url
 
+    def _sync_parameter_value(self, target_param_name: str, target_value: Any) -> None:
+        """Helper to sync parameter values bidirectionally without triggering infinite loops."""
+        # Use initial_setup=True to avoid triggering after_value_set() again, preventing infinite recursion
+        self.set_parameter_value(target_param_name, target_value, initial_setup=True)
+        self.publish_update_to_parameter(target_param_name, target_value)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         # Skip if we're already in an update cycle to prevent infinite loops
         if self._updating_from_parameter is not None:
             return super().after_value_set(parameter, value)
 
-        match parameter:
-            case self.image_parameter:
-                image_artifact = self._to_image_artifact(value)
-                self.parameter_output_values[self.image_parameter.name] = image_artifact
+        self._updating_from_parameter = parameter
+        try:
+            match parameter:
+                case self.image_parameter:
+                    image_artifact = self._to_image_artifact(value)
+                    self.parameter_output_values[self.image_parameter.name] = image_artifact
 
-                # Update path parameter with URL from image (bidirectional sync)
-                extracted_url = self._extract_url_from_image_value(value)
-                if extracted_url:
-                    self._updating_from_parameter = parameter
-                    try:
-                        self.publish_update_to_parameter(self.path_parameter.name, extracted_url)
-                    finally:
-                        # Clear the update lock to allow future parameter updates
-                        self._updating_from_parameter = None
-            case self.path_parameter:
-                path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+                    # Update path parameter with URL from image (bidirectional sync)
+                    extracted_url = self._extract_url_from_image_value(value)
+                    if extracted_url:
+                        self._sync_parameter_value(self.path_parameter.name, extracted_url)
 
-                # Indicate that we're the controlling parameter so we don't trigger an infinite cascade of set value changes.
-                self._updating_from_parameter = parameter
-                try:
+                case self.path_parameter:
+                    path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+
                     if path_value:
-                        # Validation has already passed by the time we get here
+                        # Process the path (URL or file)
                         if self._is_url(path_value):
                             download_url = self._download_and_upload_url(path_value)
                         else:
                             download_url = self._upload_file_to_static_storage(path_value)
 
-                        # Test that artifact creation works before updating the image parameter
-                        image_artifact = self._to_image_artifact({"value": download_url, "type": "ImageUrlArtifact"})
-                        # Only update image parameter if artifact creation succeeded
-                        self.publish_update_to_parameter(
-                            self.image_parameter.name, {"value": download_url, "type": "ImageUrlArtifact"}
-                        )
+                        image_dict = {"value": download_url, "type": "ImageUrlArtifact"}
+                        self._sync_parameter_value(self.image_parameter.name, image_dict)
                     else:
-                        # Empty path - reset the image parameter to None
-                        self.publish_update_to_parameter(self.image_parameter.name, None)
-                except Exception as e:
-                    # Re-raise the exception to show error to user
-                    error_msg = f"Failed to process path: {e}"
-                    raise ValueError(error_msg) from e
-                finally:
-                    # Clear the update lock to allow future parameter updates
-                    self._updating_from_parameter = None
-            case _:
-                # Handle any other parameters - just do default processing
-                pass
+                        # Empty path - reset the image parameter
+                        self._sync_parameter_value(self.image_parameter.name, None)
+
+        except Exception as e:
+            error_msg = f"Failed to process {'image' if parameter == self.image_parameter else 'path'}: {e}"
+            raise ValueError(error_msg) from e
+        finally:
+            # Always clear the update lock
+            self._updating_from_parameter = None
+
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
         image = self.get_parameter_value("image")
-        image_artifact = self._to_image_artifact(image)
-        self.parameter_output_values["image"] = image_artifact
+        if image is not None:
+            image_artifact = self._to_image_artifact(image)
+            self.parameter_output_values["image"] = image_artifact
+
+        path = self.get_parameter_value("path")
+        self.parameter_output_values["path"] = path
