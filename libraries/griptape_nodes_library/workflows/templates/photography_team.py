@@ -128,7 +128,9 @@ top_level_unique_values_dict = {
 
 "# Create the Flow, then do work within it as context."
 
-flow0_name = GriptapeNodes.handle_request(CreateFlowRequest(parent_flow_name=None, metadata={})).flow_name
+flow0_name = GriptapeNodes.handle_request(
+    CreateFlowRequest(parent_flow_name=None, set_as_new_context=False, metadata={})
+).flow_name
 
 with GriptapeNodes.ContextManager().flow(flow0_name):
     node0_name = GriptapeNodes.handle_request(
