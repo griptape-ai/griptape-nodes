@@ -79,7 +79,7 @@ class ParameterType:
         return type_str[:bracket_index]
 
     @staticmethod
-    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
+    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:  # noqa: PLR0911
         if source_type is None or target_type is None:
             return False
 

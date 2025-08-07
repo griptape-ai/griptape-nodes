@@ -48,24 +48,19 @@ class DisplayList(ControlNode):
     def process(self) -> None:
         # The display list is already updated by after_value_set when the items parameter changes
         # No need to update it again during process() - this prevents duplicate processing
-        logger.info(
-            "DisplayList.process(): Display list already updated by after_value_set, no additional processing needed for node %s",
-            self.name,
-        )
-        self._update_display_list()
+        pass
 
-    def _update_display_list(self) -> None:
+    def _update_display_list(self) -> None:  # noqa: C901, PLR0912
         """Update the display list parameters based on current input values."""
         # Prevent duplicate calls
         if self._updating_display_list:
-            logger.info(
+            logger.debug(
                 "DisplayList._update_display_list(): Already updating for node %s, skipping duplicate call",
                 self.name,
             )
             return
 
         self._updating_display_list = True
-        logger.info("DisplayList._update_display_list(): Starting display list update for node %s", self.name)
 
         # Try to get the list of items from the input parameter
         try:
@@ -82,13 +77,14 @@ class DisplayList(ControlNode):
 
         if not list_values or not isinstance(list_values, list):
             if "display" in new_ui_options:
+                # Remove display from the ui_options so non-image parameters will properly display.
                 del new_ui_options["display"]
             self.items_list.ui_options = new_ui_options
             self._updating_display_list = False
             return
 
         # Regenerate parameters for each item in the list
-        if len(list_values) < 1:
+        if len(list_values) == 0:
             self.items_list.ui_options = new_ui_options
             self._updating_display_list = False
             return
@@ -140,6 +136,8 @@ class DisplayList(ControlNode):
             # Remove the parameter value - this will also handle parameter_output_values
             with contextlib.suppress(KeyError):
                 self.remove_parameter_value(child.name)
+            if child.name in self.parameter_output_values:
+                del self.parameter_output_values[child.name]
             # Remove the parameter from the list
         self.items_list.clear_list()
 
@@ -161,7 +159,7 @@ class DisplayList(ControlNode):
         """Update display list when a value is assigned to the items parameter."""
         # Only update if the value was set on our items parameter
         if parameter == self.items:
-            logger.info(
+            logger.debug(
                 f"DisplayList.after_value_set(): Items parameter updated for node {self.name}, triggering display list update"
             )
             self._update_display_list()
