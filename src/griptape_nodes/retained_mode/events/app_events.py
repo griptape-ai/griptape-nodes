@@ -5,6 +5,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    SkipTheLineMixin,
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -18,14 +19,8 @@ class AppStartSessionRequest(RequestPayload):
     Use when: Initializing client connections, beginning new workflow sessions,
     setting up isolated execution environments, managing session state.
 
-    Args:
-        session_id: Specific session ID to use (None for auto-generated)
-
     Results: AppStartSessionResultSuccess (with session ID) | AppStartSessionResultFailure (session creation error)
     """
-
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1600
-    session_id: str | None = None
 
 
 @dataclass
@@ -154,7 +149,7 @@ class AppEndSessionResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SessionHeartbeatRequest(RequestPayload):
+class SessionHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use ensure the engine session is still active."""
 
 
@@ -172,7 +167,7 @@ class SessionHeartbeatResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class EngineHeartbeatRequest(RequestPayload):
+class EngineHeartbeatRequest(RequestPayload, SkipTheLineMixin):
     """Request clients can use to discover active engines and their status.
 
     Attributes:
@@ -198,7 +193,6 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         instance_region: Cloud instance region (None if not applicable)
         instance_provider: Cloud provider name (None if not applicable)
         deployment_type: Type of deployment (None if not applicable)
-        public_ip: Public IP address (None if not available)
         current_workflow: Name of active workflow (None if none)
         workflow_file_path: Path to workflow file (None if none)
         has_active_flow: Whether there's an active flow running
@@ -214,7 +208,6 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     instance_region: str | None
     instance_provider: str | None
     deployment_type: str | None
-    public_ip: str | None
     current_workflow: str | None
     workflow_file_path: str | None
     has_active_flow: bool

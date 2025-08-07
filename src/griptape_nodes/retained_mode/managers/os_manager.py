@@ -249,7 +249,7 @@ class OSManager:
             logger.error(msg)
             return OpenAssociatedFileResultFailure()
 
-        # Sanitize and validate the file path
+        # Sanitize and validate the path (file or directory)
         try:
             # Resolve the path (no workspace fallback for open requests)
             path = self._resolve_file_path(file_path_str, workspace_only=False)
@@ -258,12 +258,12 @@ class OSManager:
             logger.info(details)
             return OpenAssociatedFileResultFailure()
 
-        if not path.exists() or not path.is_file():
-            details = f"File does not exist: '{path}'"
+        if not path.exists():
+            details = f"Path does not exist: '{path}'"
             logger.info(details)
             return OpenAssociatedFileResultFailure()
 
-        logger.info("Attempting to open: %s on platform: %s", path, sys.platform)
+        logger.info("Attempting to open path: %s on platform: %s", path, sys.platform)
 
         try:
             platform_name = sys.platform
@@ -271,7 +271,7 @@ class OSManager:
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
                 os.startfile(str(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
-                logger.info("Started file on Windows: %s", path)
+                logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
@@ -280,7 +280,7 @@ class OSManager:
                     capture_output=True,
                     text=True,
                 )
-                logger.info("Started file on macOS: %s", path)
+                logger.info("Opened path on macOS: %s", path)
             elif self.is_linux():
                 # Use full path to xdg-open to satisfy linter
                 # Common locations for xdg-open:
@@ -297,7 +297,7 @@ class OSManager:
                     capture_output=True,
                     text=True,
                 )
-                logger.info("Started file on Linux: %s", path)
+                logger.info("Opened path on Linux: %s", path)
             else:
                 details = f"Unsupported platform: '{platform_name}'"
                 logger.info(details)
@@ -313,8 +313,23 @@ class OSManager:
             )
             return OpenAssociatedFileResultFailure()
         except Exception as e:
-            logger.error("Exception occurred when trying to open file: %s", type(e).__name__)
+            logger.error("Exception occurred when trying to open path: %s", type(e).__name__)
             return OpenAssociatedFileResultFailure()
+
+    def _detect_mime_type(self, file_path: Path) -> str | None:
+        """Detect MIME type for a file. Returns None for directories or if detection fails."""
+        if file_path.is_dir():
+            return None
+
+        try:
+            mime_type, _ = mimetypes.guess_type(str(file_path), strict=True)
+            if mime_type is None:
+                mime_type = "text/plain"
+            return mime_type  # noqa: TRY300
+        except Exception as e:
+            msg = f"MIME type detection failed for {file_path}: {e}"
+            logger.warning(msg)
+            return "text/plain"
 
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Handle a request to list directory contents."""
@@ -359,6 +374,7 @@ class OSManager:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
                         is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
                                 name=entry.name,
@@ -366,6 +382,7 @@ class OSManager:
                                 is_dir=entry.is_dir(),
                                 size=stat.st_size,
                                 modified_time=stat.st_mtime,
+                                mime_type=mime_type,
                             )
                         )
                     except (OSError, PermissionError) as e:

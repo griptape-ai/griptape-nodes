@@ -1338,6 +1338,7 @@ class FlowManager:
 
             serialized_node_commands = []
             set_parameter_value_commands_per_node = {}  # Maps a node UUID to a list of set parameter value commands
+            set_lock_commands_per_node = {}  # Maps a node UUID to a set Lock command, if it exists.
 
             # Now each of the child nodes in the flow.
             node_name_to_uuid = {}
@@ -1379,6 +1380,10 @@ class FlowManager:
                     node_libraries_in_use.add(serialized_node.node_library_details)
                     # Get the list of set value commands for THIS node.
                     set_value_commands_list = serialize_node_result.set_parameter_value_commands
+                    if serialize_node_result.serialized_node_commands.lock_node_command is not None:
+                        set_lock_commands_per_node[serialized_node.node_uuid] = (
+                            serialize_node_result.serialized_node_commands.lock_node_command
+                        )
                     set_parameter_value_commands_per_node[serialized_node.node_uuid] = set_value_commands_list
 
             # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
@@ -1461,6 +1466,7 @@ class FlowManager:
             serialized_connections=create_connection_commands,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
+            set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_libraries_used=node_libraries_in_use,
             referenced_workflows=referenced_workflows_in_use,

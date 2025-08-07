@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Update",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make check"
+          }
+        ]
+      }
+    ]
+  }
+}

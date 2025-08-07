@@ -13,8 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
-from griptape_nodes.retained_mode.events.base_events import EventRequest, deserialize_event
-
 if TYPE_CHECKING:
     from queue import Queue
 
@@ -27,9 +25,11 @@ STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/static")
 # Log level for the static server
-STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "info").lower()
+STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "ERROR").lower()
 
 logger = logging.getLogger("griptape_nodes_api")
+logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
+
 
 # Global event queue - initialized as None and set when starting the API
 event_queue: Queue | None = None
@@ -124,8 +124,41 @@ async def _list_static_files(static_directory: Annotated[Path, Depends(get_stati
         return {"files": file_names}
 
 
+@app.delete("/static-files/{file_path:path}")
+async def _delete_static_file(file_path: str, static_directory: Annotated[Path, Depends(get_static_dir)]) -> dict:
+    """Delete a static file from the static server."""
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise HTTPException(status_code=500, detail=msg)
+
+    file_full_path = Path(static_directory / file_path)
+
+    # Check if file exists
+    if not file_full_path.exists():
+        logger.warning("File not found for deletion: %s", file_path)
+        raise HTTPException(status_code=404, detail=f"File {file_path} not found")
+
+    # Check if it's actually a file (not a directory)
+    if not file_full_path.is_file():
+        msg = f"Path {file_path} is not a file"
+        logger.error(msg)
+        raise HTTPException(status_code=400, detail=msg)
+
+    try:
+        file_full_path.unlink()
+    except (OSError, PermissionError) as e:
+        msg = f"Failed to delete file {file_path}: {e}"
+        logger.error(msg)
+        raise HTTPException(status_code=500, detail=msg) from e
+    else:
+        logger.info("Successfully deleted static file: %s", file_path)
+        return {"message": f"File {file_path} deleted successfully"}
+
+
 @app.post("/engines/request")
 async def _create_event(request: Request, queue: Annotated[Queue, Depends(get_event_queue)]) -> None:
+    from .app import _process_api_event
+
     body = await request.json()
     _process_api_event(body, queue)
 
@@ -135,10 +168,6 @@ def start_api(static_directory: Path, queue: Queue) -> None:
     global event_queue, static_dir  # noqa: PLW0603
     event_queue = queue
     static_dir = static_directory
-
-    logging.getLogger("uvicorn").addHandler(
-        RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)
-    )
 
     if not static_dir.exists():
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -151,7 +180,7 @@ def start_api(static_directory: Path, queue: Queue) -> None:
             "http://localhost:5173",
         ],
         allow_credentials=True,
-        allow_methods=["OPTIONS", "GET", "POST", "PUT"],
+        allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -164,36 +193,3 @@ def start_api(static_directory: Path, queue: Queue) -> None:
     uvicorn.run(
         app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
     )
-
-
-def _process_api_event(event: dict, event_queue: Queue) -> None:
-    """Process API events and send them to the event queue."""
-    payload = event.get("payload", {})
-
-    try:
-        payload["request"]
-    except KeyError:
-        msg = "Error: 'request' was expected but not found."
-        raise RuntimeError(msg) from None
-
-    try:
-        event_type = payload["event_type"]
-        if event_type != "EventRequest":
-            msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
-            raise RuntimeError(msg) from None
-    except KeyError:
-        msg = "Error: 'event_type' not found in request."
-        raise RuntimeError(msg) from None
-
-    # Now attempt to convert it into an EventRequest.
-    try:
-        request_event = deserialize_event(json_data=payload)
-        if not isinstance(request_event, EventRequest):
-            msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
-            raise TypeError(msg)  # noqa: TRY301
-    except Exception as e:
-        msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
-        raise RuntimeError(msg) from None
-
-    # Add the event to the queue
-    event_queue.put(request_event)

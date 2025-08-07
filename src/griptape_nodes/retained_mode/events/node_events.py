@@ -303,6 +303,7 @@ class GetAllNodeInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess)
 
     metadata: dict
     node_resolution_state: str
+    locked: bool
     connections: ListConnectionsForNodeResultSuccess
     element_id_to_value: dict[str, ParameterInfoValue]
     root_node_element: dict[str, Any]
@@ -315,6 +316,39 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
     Common causes: node not found, no current context, partial failure in gathering information components.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
+    """Lock a node.
+
+    Use when: Implementing locking functionality, preventing changes to nodes.
+
+    Args:
+        node_name: Name of the node to lock
+        lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
+
+    Results: SetLockNodeStateResultSuccess (node locked) | SetLockNodeStateResultFailure (node not found)
+    """
+
+    node_name: str | None
+    lock: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class SetLockNodeStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node locked successfully."""
+
+    node_name: str
+    locked: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class SetLockNodeStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node failed to lock."""
 
 
 # A Node's state can be serialized to a sequence of commands that the engine runs.
@@ -354,6 +388,7 @@ class SerializedNodeCommands:
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_library_details: LibraryNameAndVersion
+    lock_node_command: SetLockNodeStateRequest | None = None
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 
@@ -477,6 +512,7 @@ class SerializedSelectedNodesCommands:
     set_parameter_value_commands: dict[
         SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
+    set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
     serialized_connection_commands: list[IndirectConnectionSerialization]
 
 

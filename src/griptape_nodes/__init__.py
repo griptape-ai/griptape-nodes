@@ -6,7 +6,6 @@ console = Console()
 
 with console.status("Loading Griptape Nodes...") as status:
     import argparse
-    import importlib.metadata
     import json
     import os
     import shutil
@@ -15,7 +14,7 @@ with console.status("Loading Griptape Nodes...") as status:
     import tempfile
     from dataclasses import dataclass
     from pathlib import Path
-    from typing import Any, Literal
+    from typing import Any
 
     import httpx
     from rich.box import HEAVY_EDGE
@@ -28,10 +27,12 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.app import start_app
     from griptape_nodes.drivers.storage import StorageBackend
     from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, engine_version
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+    from griptape_nodes.utils.uv_utils import find_uv_bin
+    from griptape_nodes.utils.version_utils import get_complete_version_string, get_current_version, get_install_source
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -153,21 +154,23 @@ def _handle_storage_backend_config(config: InitConfig) -> str | None:
     return storage_backend
 
 
-def _handle_bucket_config(config: InitConfig, storage_backend: str | None) -> str | None:
-    """Handle bucket configuration step (depends on API key and storage backend)."""
-    storage_backend_bucket_id = None
+def _handle_bucket_config(config: InitConfig) -> str | None:
+    """Handle bucket configuration step (depends on API key)."""
+    bucket_id = None
 
-    if storage_backend == StorageBackend.GTC.value:
-        if config.interactive:
-            storage_backend_bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
-        elif config.bucket_name is not None:
-            storage_backend_bucket_id = _get_or_create_bucket_id(config.bucket_name)
+    if config.interactive:
+        # First ask if they want to configure a bucket
+        configure_bucket = _prompt_for_bucket_configuration()
+        if configure_bucket:
+            bucket_id = _prompt_for_gtc_bucket_name(default_bucket_name=config.bucket_name)
+    elif config.bucket_name is not None:
+        bucket_id = _get_or_create_bucket_id(config.bucket_name)
 
-    if storage_backend_bucket_id is not None:
-        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", storage_backend_bucket_id)
-        console.print(f"[bold green]Storage backend bucket ID set to: {storage_backend_bucket_id}[/bold green]")
+    if bucket_id is not None:
+        secrets_manager.set_secret("GT_CLOUD_BUCKET_ID", bucket_id)
+        console.print(f"[bold green]Bucket ID set to: {bucket_id}[/bold green]")
 
-    return storage_backend_bucket_id
+    return bucket_id
 
 
 def _handle_advanced_library_config(config: InitConfig) -> bool | None:
@@ -210,9 +213,9 @@ def _run_init_configuration(config: InitConfig) -> None:
 
     _handle_workspace_config(config)
 
-    storage_backend = _handle_storage_backend_config(config)
+    _handle_storage_backend_config(config)
 
-    _handle_bucket_config(config, storage_backend)
+    _handle_bucket_config(config)
 
     _handle_advanced_library_config(config)
 
@@ -330,7 +333,12 @@ def _get_args() -> argparse.Namespace:
         metavar="SUBCOMMAND",
         required=True,
     )
-    config_subparsers.add_parser("show", help="Show configuration values.")
+    config_show_parser = config_subparsers.add_parser("show", help="Show configuration values.")
+    config_show_parser.add_argument(
+        "config_path",
+        nargs="?",
+        help="Optional config path to show specific value (e.g., 'workspace_directory').",
+    )
     config_subparsers.add_parser("list", help="List configuration values.")
     config_subparsers.add_parser("reset", help="Reset configuration to defaults.")
 
@@ -471,6 +479,41 @@ def _get_griptape_cloud_buckets_and_display_table() -> tuple[list[str], dict[str
     return bucket_names, name_to_id, table
 
 
+def _prompt_for_bucket_configuration() -> bool:
+    """Prompts the user whether to configure a bucket for multi-machine workflow and asset syncing."""
+    # Check if there's already a bucket configured
+    current_bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
+
+    if current_bucket_id:
+        explainer = f"""[bold cyan]Griptape Cloud Bucket Configuration[/bold cyan]
+    You currently have a bucket configured (ID: {current_bucket_id}).
+
+    Buckets are used for multi-machine workflow and asset syncing, allowing you to:
+    - Share workflows and assets across multiple devices
+    - Sync generated content between different Griptape Nodes instances
+    - Access your work from anywhere
+
+    Would you like to change your selected bucket or keep the current one?"""
+        prompt_text = "Change selected Griptape Cloud bucket?"
+        default_value = False
+    else:
+        explainer = """[bold cyan]Griptape Cloud Bucket Configuration[/bold cyan]
+    Would you like to configure a Griptape Cloud bucket?
+    Buckets are used for multi-machine workflow and asset syncing, allowing you to:
+    - Share workflows and assets across multiple devices
+    - Sync generated content between different Griptape Nodes instances
+    - Access your work from anywhere
+
+    If you do not intend to use Griptape Nodes to collaborate or revision control your workflows, you can skip this step.
+
+    You can always configure a bucket later by running the initialization process again."""
+        prompt_text = "Configure Griptape Cloud bucket?"
+        default_value = False
+
+    console.print(Panel(explainer, expand=False))
+    return Confirm.ask(prompt_text, default=default_value)
+
+
 def _prompt_for_gtc_bucket_name(default_bucket_name: str | None = None) -> str:
     """Prompts the user for a GTC bucket and returns the bucket ID."""
     explainer = """[bold cyan]Storage Backend Bucket Selection[/bold cyan]
@@ -609,7 +652,7 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 return f"v{data['info']['version']}"
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return __get_current_version()
+                return get_current_version()
     elif install_source == "git":
         # We only install auto updating from the 'latest' tag
         revision = LATEST_TAG
@@ -624,20 +667,20 @@ def _get_latest_version(package: str, install_source: str) -> str:
                 if "object" in data and "sha" in data["object"]:
                     return data["object"]["sha"][:7]
                 # Should not happen, but if it does, return the current version
-                return __get_current_version()
+                return get_current_version()
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching latest version: {e}[/red]")
-                return __get_current_version()
+                return get_current_version()
     else:
         # If the package is installed from a file, just return the current version since the user is likely managing it manually
-        return __get_current_version()
+        return get_current_version()
 
 
 def _auto_update_self() -> None:
     """Automatically updates the script to the latest version if the user confirms."""
     console.print("[bold green]Checking for updates...[/bold green]")
-    source, commit_id = __get_install_source()
-    current_version = __get_current_version()
+    source, commit_id = get_install_source()
+    current_version = get_current_version()
     latest_version = _get_latest_version(PACKAGE_NAME, source)
 
     if source == "git" and commit_id is not None:
@@ -663,10 +706,10 @@ def _update_self() -> None:
 
 def _sync_libraries() -> None:
     """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
-    install_source, _ = __get_install_source()
+    install_source, _ = get_install_source()
     # Unless we're installed from PyPi, grab libraries from the 'latest' tag
     if install_source == "pypi":
-        version = __get_current_version()
+        version = get_current_version()
     else:
         version = LATEST_TAG
 
@@ -681,12 +724,13 @@ def _sync_libraries() -> None:
 
         # Streaming download with a tiny progress bar
         with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
+            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
+            progress.start()
             try:
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
                 console.print(f"[red]Error fetching libraries: {e}[/red]")
                 return
-            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
             with tar_path.open("wb") as f:
                 for chunk in r.iter_bytes():
                     f.write(chunk)
@@ -724,18 +768,29 @@ def _sync_libraries() -> None:
 
 def _print_current_version() -> None:
     """Prints the current version of the script."""
-    version = __get_current_version()
-    source, commit_id = __get_install_source()
-    if commit_id is None:
-        console.print(f"[bold green]{version} ({source})[/bold green]")
+    version_string = get_complete_version_string()
+    console.print(f"[bold green]{version_string}[/bold green]")
+
+
+def _print_user_config(config_path: str | None = None) -> None:
+    """Prints the user configuration from the config file.
+
+    Args:
+        config_path: Optional path to specific config value. If None, prints entire config.
+    """
+    if config_path is None:
+        config = config_manager.merged_config
+        sys.stdout.write(json.dumps(config, indent=2))
     else:
-        console.print(f"[bold green]{version} ({source} - {commit_id})[/bold green]")
-
-
-def _print_user_config() -> None:
-    """Prints the user configuration from the config file."""
-    config = config_manager.merged_config
-    sys.stdout.write(json.dumps(config, indent=2))
+        try:
+            value = config_manager.get_config_value(config_path)
+            if isinstance(value, (dict, list)):
+                sys.stdout.write(json.dumps(value, indent=2))
+            else:
+                sys.stdout.write(str(value))
+        except (KeyError, AttributeError, ValueError):
+            console.print(f"[bold red]Config path '{config_path}' not found[/bold red]")
+            sys.exit(1)
 
 
 def _list_user_configs() -> None:
@@ -791,7 +846,10 @@ def _uninstall_self() -> None:
     # Remove the executable
     console.print("[bold]Removing the executable...[/bold]")
     console.print("[bold yellow]When done, press Enter to exit.[/bold yellow]")
-    os_manager.replace_process(["uv", "tool", "uninstall", "griptape-nodes"])
+
+    # Remove the tool using UV
+    uv_path = find_uv_bin()
+    os_manager.replace_process([uv_path, "tool", "uninstall", "griptape-nodes"])
 
 
 def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
@@ -857,7 +915,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
         elif args.subcommand == "reset":
             _reset_user_config()
         elif args.subcommand == "show":
-            _print_user_config()
+            _print_user_config(args.config_path)
     elif args.command == "self":
         if args.subcommand == "update":
             _update_self()
@@ -871,33 +929,6 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)
-
-
-def __get_current_version() -> str:
-    """Returns the current version of the Griptape Nodes package."""
-    return f"v{engine_version}"
-
-
-def __get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
-    """Determines the install source of the Griptape Nodes package.
-
-    Returns:
-        tuple: A tuple containing the install source and commit ID (if applicable).
-    """
-    dist = importlib.metadata.distribution("griptape_nodes")
-    direct_url_text = dist.read_text("direct_url.json")
-    # installing from pypi doesn't have a direct_url.json file
-    if direct_url_text is None:
-        return "pypi", None
-
-    direct_url_info = json.loads(direct_url_text)
-    url = direct_url_info.get("url")
-    if url.startswith("file://"):
-        return "file", None
-    if "vcs_info" in direct_url_info:
-        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
-    # Fall back to pypi if no other source is found
-    return "pypi", None
 
 
 def __init_system_config() -> None:

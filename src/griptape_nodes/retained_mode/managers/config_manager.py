@@ -254,7 +254,7 @@ class ConfigManager:
         existing_workflows = self.get_config_value(config_loc)
         if not existing_workflows:
             existing_workflows = []
-        existing_workflows.append(workflow_file_name)
+        existing_workflows.append(workflow_file_name) if workflow_file_name not in existing_workflows else None
         self.set_config_value(config_loc, existing_workflows)
 
     def delete_user_workflow(self, workflow_file_name: str) -> None:

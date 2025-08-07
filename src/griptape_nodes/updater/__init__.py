@@ -11,6 +11,7 @@ import subprocess
 from rich.console import Console
 
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.uv_utils import find_uv_bin
 
 console = Console()
 
@@ -38,8 +39,9 @@ def _download_and_run_installer() -> None:
     """Runs the update commands for the engine."""
     console.print("[bold green]Updating self...[/bold green]")
     try:
-        subprocess.run(
-            ["uv", "tool", "upgrade", "griptape-nodes"],  # noqa: S607
+        uv_path = find_uv_bin()
+        subprocess.run(  # noqa: S603
+            [uv_path, "tool", "upgrade", "griptape-nodes"],
             text=True,
             capture_output=True,
             check=True,

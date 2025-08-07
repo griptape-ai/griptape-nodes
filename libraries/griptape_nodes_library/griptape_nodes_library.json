@@ -12,7 +12,7 @@
     ],
     "dependencies": {
       "pip_dependencies": [
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
         "json-repair>=0.46.1"
       ]
     }
@@ -891,6 +891,19 @@
       }
     },
     {
+      "class_name": "OllamaPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/ollama_prompt_driver.py",
+      "metadata": {
+        "category": "agents/prompt_models",
+        "description": "Prompt Models available from Ollama",
+        "display_name": "Ollama Prompt",
+        "icon": {
+          "dark": "logos/ollama.svg",
+          "light": "logos/ollama_dark.svg"
+        }
+      }
+    },
+    {
       "class_name": "OpenAiPrompt",
       "file_path": "griptape_nodes_library/config/prompt/openai_prompt.py",
       "metadata": {
@@ -910,7 +923,7 @@
         "category": "image",
         "description": "Display an image",
         "display_name": "Display Image",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -920,7 +933,7 @@
         "category": "image",
         "description": "Can be used to compare two images",
         "display_name": "Compare Images",
-        "group": "tasks"
+        "group": "display"
       }
     },
     {
@@ -940,7 +953,7 @@
         "category": "image",
         "description": "Display a mask from an image's alpha channel.",
         "display_name": "Display Mask",
-        "group": "mask"
+        "group": "display"
       }
     },
     {
@@ -950,7 +963,7 @@
         "category": "image",
         "description": "Display a channel from an image's color channels (red, green, blue, or alpha). Defaults to red channel. Outputs to 'output' parameter.",
         "display_name": "Display Channel",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -1014,6 +1027,17 @@
         "display_name": "Merge Images",
         "group": "edit",
         "icon": "squares-unite"
+      }
+    },
+    {
+      "class_name": "DisplayImageGrid",
+      "file_path": "griptape_nodes_library/image/display_image_grid.py",
+      "metadata": {
+        "category": "image",
+        "description": "Display multiple images in a grid or masonry layout with customizable styling options",
+        "display_name": "Display Image Grid",
+        "group": "display",
+        "icon": "grid-3x3"
       }
     },
     {
@@ -1199,6 +1223,16 @@
         "category": "text",
         "description": "DisplayText node",
         "display_name": "Display Text",
+        "group": "general"
+      }
+    },
+    {
+      "class_name": "DisplayTextAsMarkdown",
+      "file_path": "griptape_nodes_library/text/display_text_as_markdown.py",
+      "metadata": {
+        "category": "text",
+        "description": "Displays text as markdown",
+        "display_name": "Display Text As Markdown",
         "group": "general"
       }
     },
