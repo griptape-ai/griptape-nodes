@@ -127,7 +127,18 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL using httpx."""
+    """Load image from URL or local file path using httpx or PIL."""
+    # Check if it's a local file path
+    if url.startswith(("/", "./", "../")):
+        # Local file path - load directly with PIL
+        try:
+            return Image.open(url)
+        except Exception as e:
+            msg = f"Failed to load image from local file: {url}\nError: {e}"
+            logger.error(msg)
+            raise ValueError(msg) from e
+
+    # HTTP/HTTPS URL - use httpx
     response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     try:
