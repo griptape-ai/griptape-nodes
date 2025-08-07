@@ -81,6 +81,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
     SerializeSelectedNodesToCommandsRequest,
     SerializeSelectedNodesToCommandsResultSuccess,
+    SetLockNodeStateRequest,
+    SetLockNodeStateResultFailure,
+    SetLockNodeStateResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
@@ -178,6 +181,7 @@ class NodeManager:
             DeserializeSelectedNodesFromCommandsRequest, self.on_deserialize_selected_nodes_from_commands
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
+        event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -185,23 +189,24 @@ class NodeManager:
         # Get all connections for this node and update them.
         flow_name = self.get_node_parent_flow_by_name(old_name)
         flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        connections = GriptapeNodes.FlowManager().get_connections()
         # Get all incoming and outgoing connections and update them.
-        if old_name in flow.connections.incoming_index:
-            incoming_connections = flow.connections.incoming_index[old_name]
+        if old_name in connections.incoming_index:
+            incoming_connections = connections.incoming_index[old_name]
             for connection_ids in incoming_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     connection.target_node.name = new_name
-            temp = flow.connections.incoming_index.pop(old_name)
-            flow.connections.incoming_index[new_name] = temp
-        if old_name in flow.connections.outgoing_index:
-            outgoing_connections = flow.connections.outgoing_index[old_name]
+            temp = connections.incoming_index.pop(old_name)
+            connections.incoming_index[new_name] = temp
+        if old_name in connections.outgoing_index:
+            outgoing_connections = connections.outgoing_index[old_name]
             for connection_ids in outgoing_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     connection.source_node.name = new_name
-            temp = flow.connections.outgoing_index.pop(old_name)
-            flow.connections.outgoing_index[new_name] = temp
+            temp = connections.outgoing_index.pop(old_name)
+            connections.outgoing_index[new_name] = temp
         # update the node in the flow!
         flow.remove_node(old_name)
         node.name = new_name
@@ -217,7 +222,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -319,6 +324,7 @@ class NodeManager:
 
         logger.log(level=log_level, msg=details)
 
+        # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, StartLoopNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
             # Get the class name of the node
@@ -331,43 +337,42 @@ class NodeManager:
             # Check and see if the class exists
             libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
             if not libraries_with_node_type:
-                msg = f"End class '{end_class_name}' does not exist for start class '{node_class_name}'"
-                logger.error(msg)
-                return CreateNodeResultFailure()
-
-            # Create the EndNode
-            end_loop = GriptapeNodes.handle_request(
-                CreateNodeRequest(
-                    node_type=end_class_name,
-                    metadata={
-                        "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
-                    },
-                    override_parent_flow_name=parent_flow_name,
+                msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
+                logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
+            else:
+                # Create the EndNode
+                end_loop = GriptapeNodes.handle_request(
+                    CreateNodeRequest(
+                        node_type=end_class_name,
+                        metadata={
+                            "position": {"x": node.metadata["position"]["x"] + 650, "y": node.metadata["position"]["y"]}
+                        },
+                        override_parent_flow_name=parent_flow_name,
+                    )
                 )
-            )
-            if not isinstance(end_loop, CreateNodeResultSuccess):
-                msg = f"Failed to create EndLoop node for StartLoop node '{node.name}'"
-                logger.error(msg)
-                return CreateNodeResultFailure()
-
-            # Create Loop between output and input to the start node.
-            GriptapeNodes.handle_request(
-                CreateConnectionRequest(
-                    source_node_name=node.name,
-                    source_parameter_name="loop",
-                    target_node_name=end_loop.node_name,
-                    target_parameter_name="from_start",
-                )
-            )
-            end_node = self.get_node_by_name(end_loop.node_name)
-            if not isinstance(end_node, EndLoopNode):
-                msg = f"End node '{end_loop.node_name}' is not a valid EndLoopNode"
-                logger.error(msg)
-                return CreateNodeResultFailure()
-
-            # create the connection
-            node.end_node = end_node
-            end_node.start_node = node
+                if not isinstance(end_loop, CreateNodeResultSuccess):
+                    msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' failed to get created. The corresponding node will have to be created by hand and attached manually."
+                    logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
+                else:
+                    # Create Loop between output and input to the start node.
+                    GriptapeNodes.handle_request(
+                        CreateConnectionRequest(
+                            source_node_name=node.name,
+                            source_parameter_name="loop",
+                            target_node_name=end_loop.node_name,
+                            target_parameter_name="from_start",
+                        )
+                    )
+                    end_node = self.get_node_by_name(end_loop.node_name)
+                    if not isinstance(end_node, EndLoopNode):
+                        msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired node '{end_loop.node_name}' was not a proper EndLoop instance. The corresponding node will have to be created by hand and attached manually."
+                        logger.error(
+                            msg
+                        )  # while this is bad, it's not unsalvageable, so we'll consider this a success.
+                    else:
+                        # create the connection - only when we've confirmed correct types
+                        node.end_node = end_node
+                        end_node.start_node = node
 
         return CreateNodeResultSuccess(
             node_name=node.name, node_type=node.__class__.__name__, specific_library_name=request.specific_library_name
@@ -395,11 +400,11 @@ class NodeManager:
             This method also clears the flow queue regardless of whether cancellation occurred,
             to ensure the specified node is not processed in the future.
         """
-        if parent_flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_name = parent_flow.flow_state()
+            control_node_name, resolving_node_name = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_name is not None:
@@ -423,11 +428,11 @@ class NodeManager:
                         )
                         logger.error(details)
                         return DeleteNodeResultFailure()
-            # Clear the queue, because we don't want to his this node eventually.
-            parent_flow.clear_flow_queue()
+            # Clear the execution queue, because we don't want to hit this node eventually.
+            parent_flow.clear_execution_queue()
         return None
 
-    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911 (complex logic, lots of edge cases)
+    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic, lots of edge cases)
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -460,41 +465,55 @@ class NodeManager:
             cancel_result = self.cancel_conditionally(parent_flow, parent_flow_name, node)
             if cancel_result is not None:
                 return cancel_result
-            # Remove all connections from this Node.
-            list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-            list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
-            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-                details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
-                logger.error(details)
-                return DeleteNodeResultFailure()
+            # Remove all connections from this Node using a loop to handle cascading deletions
+            any_connections_remain = True
+            while any_connections_remain:
+                # Assume we're done
+                any_connections_remain = False
 
-            # Destroy all the incoming Connections
-            for incoming_connection in list_connections_result.incoming_connections:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=incoming_connection.source_node_name,
-                    source_parameter_name=incoming_connection.source_parameter_name,
-                    target_node_name=node_name,
-                    target_parameter_name=incoming_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, ResultPayloadFailure):
-                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                list_node_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+                list_connections_result = GriptapeNodes.handle_request(request=list_node_connections_request)
+                if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                    details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                     logger.error(details)
                     return DeleteNodeResultFailure()
 
-            # Destroy all the outgoing Connections
-            for outgoing_connection in list_connections_result.outgoing_connections:
-                delete_request = DeleteConnectionRequest(
-                    source_node_name=node_name,
-                    source_parameter_name=outgoing_connection.source_parameter_name,
-                    target_node_name=outgoing_connection.target_node_name,
-                    target_parameter_name=outgoing_connection.target_parameter_name,
-                )
-                delete_result = GriptapeNodes.handle_request(delete_request)
-                if isinstance(delete_result, ResultPayloadFailure):
-                    details = f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
-                    logger.error(details)
-                    return DeleteNodeResultFailure()
+                # Check incoming connections
+                if list_connections_result.incoming_connections:
+                    any_connections_remain = True
+                    connection = list_connections_result.incoming_connections[0]
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=connection.source_node_name,
+                        source_parameter_name=connection.source_parameter_name,
+                        target_node_name=node_name,
+                        target_parameter_name=connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = (
+                            f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
+                    continue  # Refresh connection list after cascading deletions
+
+                # Check outgoing connections
+                if list_connections_result.outgoing_connections:
+                    any_connections_remain = True
+                    connection = list_connections_result.outgoing_connections[0]
+                    delete_request = DeleteConnectionRequest(
+                        source_node_name=node_name,
+                        source_parameter_name=connection.source_parameter_name,
+                        target_node_name=connection.target_node_name,
+                        target_parameter_name=connection.target_parameter_name,
+                    )
+                    delete_result = GriptapeNodes.handle_request(delete_request)
+                    if isinstance(delete_result, ResultPayloadFailure):
+                        details = (
+                            f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
+                        )
+                        logger.error(details)
+                        return DeleteNodeResultFailure()
 
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)
@@ -640,7 +659,7 @@ class NodeManager:
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
         try:
-            parent_flow = GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
+            GriptapeNodes.FlowManager().get_flow_by_name(parent_flow_name)
         except KeyError as err:
             details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
             logger.error(details)
@@ -649,7 +668,7 @@ class NodeManager:
             return result
 
         # Kinda gross, but let's do it
-        connection_mgr = parent_flow.connections
+        connection_mgr = GriptapeNodes.FlowManager().get_connections()
         # get outgoing connections
         outgoing_connections_list = []
         if node_name in connection_mgr.outgoing_index:
@@ -765,6 +784,13 @@ class NodeManager:
 
                 result = AddParameterToNodeResultFailure()
                 return result
+
+        # Check if node is locked
+        if node.lock:
+            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            result = AddParameterToNodeResultFailure()
+            return result
 
         if request.parent_container_name and not request.initial_setup:
             parameter = node.get_parameter_by_name(request.parent_container_name)
@@ -908,7 +934,13 @@ class NodeManager:
 
                 result = RemoveParameterFromNodeResultFailure()
                 return result
+        # Check if the node is locked
+        if node.lock:
+            details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
 
+            result = RemoveParameterFromNodeResultFailure()
+            return result
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
         if element is None:
@@ -1231,7 +1263,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
 
@@ -1253,6 +1285,12 @@ class NodeManager:
                 logger.error(details)
 
                 return AlterParameterDetailsResultFailure()
+
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure()
 
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
@@ -1382,6 +1420,12 @@ class NodeManager:
                 logger.error(details)
                 return SetParameterValueResultFailure()
 
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return SetParameterValueResultFailure()
+
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
@@ -1391,8 +1435,8 @@ class NodeManager:
             result = SetParameterValueResultFailure()
             return result
 
-        # Validate that parameters can be set at all
-        if not parameter.settable:
+        # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
+        if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure()
@@ -1429,18 +1473,14 @@ class NodeManager:
             return SetParameterValueResultFailure()
         if not request.initial_setup and modified:
             try:
-                parent_flow.connections.unresolve_future_nodes(node)
+                GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 logger.error(details)
                 return SetParameterValueResultFailure()
         if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
-            node.make_node_unresolved(
-                current_states_to_trigger_change_event=set(
-                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                )
-            )
+            node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
             # Pass the value through!
             # Optional data_type parameter for internal handling!
@@ -1581,6 +1621,7 @@ class NodeManager:
         result = GetAllNodeInfoResultSuccess(
             metadata=get_metadata_success.metadata,
             node_resolution_state=get_resolution_state_success.state,
+            locked=node.lock,
             connections=list_connections_success,
             element_id_to_value=element_id_to_value,
             root_node_element=element_details,
@@ -1752,12 +1793,12 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}"'
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
-        if flow.check_for_existing_running_flow():
+        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             details = f"Failed to resolve from node '{node_name}'. Flow is already running."
             logger.error(details)
             return ResolveNodeResultFailure(validation_exceptions=[])
         try:
-            flow.connections.unresolve_future_nodes(node)
+            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}": {e}'
             logger.error(details)
@@ -1783,7 +1824,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e])
         try:
-            flow.resolve_singular_node(node, debug_mode)
+            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)
@@ -1822,7 +1863,7 @@ class NodeManager:
             validation_succeeded=(len(all_exceptions) == 0), exceptions=all_exceptions
         )
 
-    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         node_name = request.node_name
         node = None
 
@@ -1908,12 +1949,19 @@ class NodeManager:
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
-
+                else:
+                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
+        # now check if locked
+        if node.lock:
+            lock_command = SetLockNodeStateRequest(node_name=None, lock=True)
+        else:
+            lock_command = None
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
             node_library_details=library_details,
+            lock_node_command=lock_command,
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         logger.debug(details)
@@ -2058,7 +2106,6 @@ class NodeManager:
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     logger.error(details)
                     return DeserializeNodeFromCommandsResultFailure()
-
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
@@ -2076,6 +2123,8 @@ class NodeManager:
         connections_to_serialize = []
         # This is also node_uuid to the parameter serialization command.
         parameter_commands = {}
+        # This is node_uuid to lock commands.
+        lock_commands = {}
         # I need to store node names and parameter names to UUID
         unique_uuid_to_values = {}
         # And track how values map into that map.
@@ -2096,17 +2145,19 @@ class NodeManager:
             node_commands[node_name] = result.serialized_node_commands
             node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
             parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+            lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
-                flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+                GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
             except Exception:
                 details = f"Attempted to serialize a selection of Nodes. Failed to get the flow of node {node_name}. Cannot serialize connections for this node."
                 logger.warning(details)
                 continue
-            if node_name in flow.connections.outgoing_index:
+            connections = GriptapeNodes.FlowManager().get_connections()
+            if node_name in connections.outgoing_index:
                 node_connections = [
-                    flow.connections.connections[connection_id]
-                    for category_dict in flow.connections.outgoing_index[node_name].values()
+                    connections.connections[connection_id]
+                    for category_dict in connections.outgoing_index[node_name].values()
                     for connection_id in category_dict
                 ]
                 for connection in node_connections:
@@ -2130,6 +2181,7 @@ class NodeManager:
             serialized_node_commands=list(node_commands.values()),
             serialized_connection_commands=serialized_connections,
             set_parameter_value_commands=parameter_commands,
+            set_lock_commands_per_node=lock_commands,
         )
         # Set everything in the clipboard!
         GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
@@ -2193,6 +2245,12 @@ class NodeManager:
                         if not set_parameter_result.succeeded():
                             details = f"Failed to set parameter value for {param_request.parameter_name} on node {param_request.node_name}"
                             logger.warning(details)
+                lock_command = commands.set_lock_commands_per_node[node_command.node_uuid]
+                if lock_command is not None:
+                    lock_node_result = GriptapeNodes.handle_request(lock_command)
+                    if not lock_node_result.succeeded():
+                        details = f"Failed to lock node {lock_command.node_name}"
+                        logger.warning(details)
         # create Connections
         for connection_command in connections:
             connection_request = CreateConnectionRequest(
@@ -2353,7 +2411,7 @@ class NodeManager:
                 node_name=node.name,
             )
             if internal_command is None:
-                details = f"Attempted to serialize set value for parameter'{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
                 logger.warning(details)
             else:
                 commands.append(internal_command)
@@ -2367,13 +2425,13 @@ class NodeManager:
                 node_name=node.name,
             )
             if output_command is None:
-                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializaibilty or mark the parameter as not serializable."
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
                 logger.warning(details)
             else:
                 commands.append(output_command)
         return commands if commands else None
 
-    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
 
         Args:
@@ -2399,6 +2457,12 @@ class NodeManager:
                 logger.error(details)
                 return RenameParameterResultFailure()
 
+        # Is the node locked?
+        if node.lock:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node is locked."
+            logger.error(details)
+            return RenameParameterResultFailure()
+
         # Get the parameter
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
@@ -2420,22 +2484,23 @@ class NodeManager:
 
         # Get all connections for this node
         flow_name = self.get_node_parent_flow_by_name(node_name)
-        flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        connections = GriptapeNodes.FlowManager().get_connections()
 
         # Update connections that reference this parameter
-        if node_name in flow.connections.incoming_index:
-            incoming_connections = flow.connections.incoming_index[node_name]
+        if node_name in connections.incoming_index:
+            incoming_connections = connections.incoming_index[node_name]
             for connection_ids in incoming_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     if connection.target_parameter.name == request.parameter_name:
                         connection.target_parameter.name = request.new_parameter_name
 
-        if node_name in flow.connections.outgoing_index:
-            outgoing_connections = flow.connections.outgoing_index[node_name]
+        if node_name in connections.outgoing_index:
+            outgoing_connections = connections.outgoing_index[node_name]
             for connection_ids in outgoing_connections.values():
                 for connection_id in connection_ids:
-                    connection = flow.connections.connections[connection_id]
+                    connection = connections.connections[connection_id]
                     if connection.source_parameter.name == request.parameter_name:
                         connection.source_parameter.name = request.new_parameter_name
 
@@ -2452,3 +2517,22 @@ class NodeManager:
         return RenameParameterResultSuccess(
             old_parameter_name=old_name, new_parameter_name=request.new_parameter_name, node_name=node_name
         )
+
+    def on_toggle_lock_node_request(self, request: SetLockNodeStateRequest) -> ResultPayload:
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
+                logger.error(details)
+                return SetLockNodeStateResultFailure()
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+        else:
+            try:
+                node = self.get_node_by_name(node_name)
+            except ValueError as err:
+                details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
+                logger.error(details)
+                return SetLockNodeStateResultFailure()
+        node.lock = request.lock
+        return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)

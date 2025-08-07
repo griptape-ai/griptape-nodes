@@ -8,6 +8,8 @@ from typing import Any
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
 
+from griptape_nodes.utils.uv_utils import find_uv_bin
+
 
 class ReloadHandler(PatternMatchingEventHandler):
     def __init__(
@@ -30,8 +32,9 @@ class ReloadHandler(PatternMatchingEventHandler):
     def start_process(self) -> None:
         if self.process:
             self.process.terminate()
+        uv_path = find_uv_bin()
         self.process = subprocess.Popen(  # noqa: S603
-            ["uv", "run", "gtn"],  # noqa: S607
+            [uv_path, "run", "gtn"],
             stdout=sys.stdout,
             stderr=sys.stderr,
         )

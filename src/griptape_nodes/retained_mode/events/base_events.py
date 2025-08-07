@@ -4,14 +4,14 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
 from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     import builtins
@@ -122,6 +122,15 @@ class WorkflowNotAlteredMixin:
     altered_workflow_state: bool = field(default=False, init=False)
 
 
+class SkipTheLineMixin:
+    """Mixin for events that should skip the event queue and be processed immediately.
+
+    Events that implement this mixin will be handled directly without being added
+    to the event queue, allowing for priority processing of critical events like
+    heartbeats or other time-sensitive operations.
+    """
+
+
 # Success result payload abstract base class
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
@@ -170,7 +179,7 @@ class AppPayload(Payload):
 
 
 # Type variables for our generic payloads
-P = TypeVar("P", bound=Payload)
+P = TypeVar("P", bound=RequestPayload)
 R = TypeVar("R", bound=ResultPayload)
 E = TypeVar("E", bound=ExecutionPayload)
 A = TypeVar("A", bound=AppPayload)
@@ -187,16 +196,15 @@ class BaseEvent(BaseModel, ABC):
     session_id: str | None = Field(default_factory=lambda: BaseEvent._session_id)
 
     # Custom JSON encoder for the payload
-    class Config:
-        """Pydantic configuration for the BaseEvent class."""
-
-        arbitrary_types_allowed = True
-        json_encoders: ClassVar[dict] = {
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
             # Use to_dict() methods for Griptape objects
             BaseArtifact: lambda obj: obj.to_dict(),
             BaseTool: lambda obj: obj.to_dict(),
             Structure: lambda obj: obj.to_dict(),
-        }
+        },
+    )
 
     def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Override dict to handle payload serialization and add event_type."""
@@ -250,7 +258,7 @@ class BaseEvent(BaseModel, ABC):
         """
 
 
-class EventRequest(BaseEvent, Generic[P]):
+class EventRequest[P: Payload](BaseEvent):
     """Request event."""
 
     request: P
@@ -314,7 +322,7 @@ class EventRequest(BaseEvent, Generic[P]):
         return cls(request=request_payload, **event_data)
 
 
-class EventResult(BaseEvent, Generic[P, R], ABC):
+class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
     """Abstract base class for result events."""
 
     request: P
@@ -498,7 +506,7 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
 
 
 # EXECUTION EVENT BASE (this event type is used for the execution of a Griptape Nodes flow)
-class ExecutionEvent(BaseEvent, Generic[E]):
+class ExecutionEvent[E: ExecutionPayload](BaseEvent):
     payload: E
 
     def __init__(self, **data) -> None:
@@ -559,7 +567,7 @@ class ExecutionEvent(BaseEvent, Generic[E]):
 
 
 # Events sent as part of the lifecycle of the Griptape Nodes application.
-class AppEvent(BaseEvent, Generic[A]):
+class AppEvent[A: AppPayload](BaseEvent):
     payload: A
 
     def __init__(self, **data) -> None:

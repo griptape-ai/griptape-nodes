@@ -77,7 +77,7 @@ When developing, you typically want to run the engine using your local source co
     make test/unit
     ```
 
-    > Other test targets (e.g. `test/integration` and `test/workflow`) require
+    > Other test targets (e.g. `tests/integration` and `tests/workflow`) require
     > a `.env` in the repo root with all keys found in `.env.example` to run.
 
 - **Check Code (Linting & Formatting):**

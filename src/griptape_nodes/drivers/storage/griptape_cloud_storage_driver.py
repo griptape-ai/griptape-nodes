@@ -135,6 +135,37 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         logger.info("Created new Griptape Cloud bucket '%s' with ID: %s", bucket_name, bucket_id)
         return bucket_id
 
+    def list_files(self) -> list[str]:
+        """List all files in storage.
+
+        Returns:
+            A list of file names in storage.
+
+        Raises:
+            RuntimeError: If file listing fails.
+        """
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
+        try:
+            response = httpx.get(url, headers=self.headers, params={"prefix": self.static_files_directory or ""})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to list files in bucket {self.bucket_id}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        response_data = response.json()
+        assets = response_data.get("assets", [])
+
+        file_names = []
+        for asset in assets:
+            name = asset.get("name", "")
+            # Remove the static files directory prefix if it exists
+            if self.static_files_directory and name.startswith(f"{self.static_files_directory}/"):
+                name = name[len(f"{self.static_files_directory}/") :]
+            file_names.append(name)
+
+        return file_names
+
     @staticmethod
     def list_buckets(*, base_url: str, api_key: str) -> list[dict]:
         """List all buckets in Griptape Cloud.
@@ -158,3 +189,20 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             raise RuntimeError(msg) from e
 
         return response.json().get("buckets", [])
+
+    def delete_file(self, file_name: str) -> None:
+        """Delete a file from the bucket.
+
+        Args:
+            file_name: The name of the file to delete.
+        """
+        full_file_path = self._get_full_file_path(file_name)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{full_file_path}")
+
+        try:
+            response = httpx.delete(url, headers=self.headers)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to delete file {file_name}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e

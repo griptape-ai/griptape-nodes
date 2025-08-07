@@ -6,7 +6,7 @@ import PIL.Image
 import spandrel  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import torch.nn.functional  # type: ignore[reportMissingImports]
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from PIL.Image import Image
 
 logger = logging.getLogger("spandrel_nodes_library")

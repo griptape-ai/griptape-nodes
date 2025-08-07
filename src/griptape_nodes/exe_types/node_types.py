@@ -65,6 +65,10 @@ class BaseNode(ABC):
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
     _tracked_parameters: list[BaseNodeElement]
+    _entry_control_parameter: Parameter | None = (
+        None  # The control input parameter used to enter this node during execution
+    )
+    lock: bool = False  # When lock is true, the node is locked and can't be modified. When lock is false, the node is unlocked and can be modified.
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -92,6 +96,7 @@ class BaseNode(ABC):
         self.root_ui_element._node_context = self
         self.process_generator = None
         self._tracked_parameters = []
+        self.set_entry_control_parameter(None)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -106,6 +111,18 @@ class BaseNode(ABC):
                 )
             )
         self.state = NodeResolutionState.UNRESOLVED
+        # NOTE: _entry_control_parameter is NOT cleared here as it represents execution context
+        # that should persist through the resolve/unresolve cycle during a single execution
+
+    def set_entry_control_parameter(self, parameter: Parameter | None) -> None:
+        """Set the control parameter that was used to enter this node.
+
+        This should only be called by the ControlFlowContext during execution.
+
+        Args:
+            parameter: The control input parameter that triggered this node's execution, or None to clear
+        """
+        self._entry_control_parameter = parameter
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:
@@ -351,8 +368,10 @@ class BaseNode(ABC):
         """
         parameter = self.get_parameter_by_name(param)
         if parameter is not None:
-            trait = parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
+            # Find the Options trait by type since element_id is a UUID
+            traits = parameter.find_elements_by_type(Options)
+            if traits:
+                trait = traits[0]  # Take the first Options trait
                 trait.choices = choices
 
                 if default in choices:
@@ -361,6 +380,13 @@ class BaseNode(ABC):
                 else:
                     msg = f"Default model '{default}' is not in the provided choices."
                     raise ValueError(msg)
+
+                # Update the manually set UI options to include the new simple_dropdown
+                if hasattr(parameter, "_ui_options") and parameter._ui_options:
+                    parameter._ui_options["simple_dropdown"] = choices
+            else:
+                msg = f"No Options trait found for parameter '{param}'."
+                raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for updating model choices."
             raise ValueError(msg)
@@ -376,9 +402,14 @@ class BaseNode(ABC):
         """
         parameter = self.get_parameter_by_name(param)
         if parameter is not None:
-            trait = parameter.find_element_by_id("Options")
-            if trait and isinstance(trait, Options):
+            # Find the Options trait by type since element_id is a UUID
+            traits = parameter.find_elements_by_type(Options)
+            if traits:
+                trait = traits[0]  # Take the first Options trait
                 parameter.remove_trait(trait)
+            else:
+                msg = f"No Options trait found for parameter '{param}'."
+                raise ValueError(msg)
         else:
             msg = f"Parameter '{param}' not found for removing options trait."
             raise ValueError(msg)
@@ -559,7 +590,7 @@ class BaseNode(ABC):
         param = self.get_parameter_by_name(param_name)
         if param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
-            if value:
+            if value is not None:
                 return value
         if param_name in self.parameter_values:
             return self.parameter_values[param_name]
@@ -577,7 +608,7 @@ class BaseNode(ABC):
 
         def _flatten(items: Iterable[Any]) -> Generator[Any, None, None]:
             for item in items:
-                if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+                if isinstance(item, Iterable) and not isinstance(item, (str, bytes, dict)):
                     yield from _flatten(item)
                 elif item:
                     yield item

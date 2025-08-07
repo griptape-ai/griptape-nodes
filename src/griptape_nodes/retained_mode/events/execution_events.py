@@ -17,6 +17,18 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 @dataclass
 @PayloadRegistry.register
 class ResolveNodeRequest(RequestPayload):
+    """Resolve (execute) a specific node.
+
+    Use when: Running individual nodes, testing node execution, debugging workflows,
+    stepping through execution manually. Validates inputs and runs node logic.
+
+    Args:
+        node_name: Name of the node to resolve/execute
+        debug_mode: Whether to run in debug mode (default: False)
+
+    Results: ResolveNodeResultSuccess | ResolveNodeResultFailure (with validation exceptions)
+    """
+
     node_name: str
     debug_mode: bool = False
 
@@ -24,19 +36,39 @@ class ResolveNodeRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class ResolveNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Node resolved successfully. Node execution completed and outputs are available."""
 
 
 @dataclass
 @PayloadRegistry.register
 class ResolveNodeResultFailure(ResultPayloadFailure):
+    """Node resolution failed. Contains validation errors that prevented execution.
+
+    Args:
+        validation_exceptions: List of validation errors that occurred
+    """
+
     validation_exceptions: list[Exception]
 
 
 @dataclass
 @PayloadRegistry.register
 class StartFlowRequest(RequestPayload):
-    flow_name: str
+    """Start executing a flow.
+
+    Use when: Running workflows, beginning automated execution, testing complete flows.
+    Validates all nodes and begins execution from resolved nodes.
+
+    Args:
+        flow_name: Name of the flow to start (deprecated, use flow_node_name)
+        flow_node_name: Name of the flow node to start
+        debug_mode: Whether to run in debug mode (default: False)
+
+    Results: StartFlowResultSuccess | StartFlowResultFailure (with validation exceptions)
+    """
+
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
 
@@ -44,37 +76,56 @@ class StartFlowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class StartFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Flow started successfully. Execution is now running."""
 
 
 @dataclass
 @PayloadRegistry.register
 class StartFlowResultFailure(ResultPayloadFailure):
+    """Flow start failed. Contains validation errors that prevented execution.
+
+    Args:
+        validation_exceptions: List of validation errors that occurred
+    """
+
     validation_exceptions: list[Exception]
 
 
 @dataclass
 @PayloadRegistry.register
 class CancelFlowRequest(RequestPayload):
-    flow_name: str
+    """Cancel a running flow execution.
+
+    Use when: Stopping long-running workflows, handling user cancellation,
+    stopping execution due to errors or changes. Cleanly terminates execution.
+
+    Args:
+        flow_name: Name of the flow to cancel (deprecated)
+
+    Results: CancelFlowResultSuccess | CancelFlowResultFailure (cancellation error)
+    """
+
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class CancelFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    """Flow cancelled successfully. Execution has been terminated."""
 
 
 @dataclass
 @PayloadRegistry.register
 class CancelFlowResultFailure(ResultPayloadFailure):
-    pass
+    """Flow cancellation failed. Common causes: flow not running, cancellation error."""
 
 
 @dataclass
 @PayloadRegistry.register
 class UnresolveFlowRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -96,7 +147,8 @@ class UnresolveFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class SingleExecutionStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -114,7 +166,8 @@ class SingleExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SingleNodeStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -133,7 +186,8 @@ class SingleNodeStepResultFailure(ResolveNodeResultFailure):
 @dataclass
 @PayloadRegistry.register
 class ContinueExecutionStepRequest(RequestPayload):
-    flow_name: str
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
@@ -151,12 +205,28 @@ class ContinueExecutionStepResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateRequest(RequestPayload):
-    flow_name: str
+    """Get the current execution state of a flow.
+
+    Use when: Monitoring execution progress, debugging workflow state,
+    implementing execution UIs, checking which nodes are active.
+
+    Results: GetFlowStateResultSuccess (with control/resolving nodes) | GetFlowStateResultFailure (flow not found)
+    """
+
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow execution state retrieved successfully.
+
+    Args:
+        control_node: Name of the current control node (if any)
+        resolving_node: Name of the node currently being resolved (if any)
+    """
+
     control_node: str | None
     resolving_node: str | None
 
@@ -164,25 +234,40 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class GetFlowStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Flow state retrieval failed. Common causes: flow not found, no current context."""
 
 
 @dataclass
 @PayloadRegistry.register
 class GetIsFlowRunningRequest(RequestPayload):
-    flow_name: str
+    """Check if a flow is currently running.
+
+    Use when: Monitoring execution status, preventing concurrent execution,
+    implementing execution controls, checking if flow can be modified.
+
+    Results: GetIsFlowRunningResultSuccess (with running status) | GetIsFlowRunningResultFailure (flow not found)
+    """
+
+    # Maintaining flow_name for backwards compatibility. Will be removed in https://github.com/griptape-ai/griptape-nodes/issues/1663
+    flow_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class GetIsFlowRunningResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow running status retrieved successfully.
+
+    Args:
+        is_running: Whether the flow is currently executing
+    """
+
     is_running: bool
 
 
 @dataclass
 @PayloadRegistry.register
 class GetIsFlowRunningResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
+    """Flow running status retrieval failed. Common causes: flow not found, no current context."""
 
 
 # Execution Events! These are sent FROM the EE to the User/GUI. HOW MANY DO WE NEED?

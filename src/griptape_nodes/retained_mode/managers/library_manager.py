@@ -9,14 +9,13 @@ import subprocess
 import sys
 import sysconfig
 from dataclasses import dataclass, field
-from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import uv
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
+from rich.align import Align
 from rich.box import HEAVY_EDGE
 from rich.console import Console
 from rich.panel import Panel
@@ -90,7 +89,14 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
+    LibraryProvenanceLocalFile,
+)
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.uv_utils import find_uv_bin
+from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -101,33 +107,11 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
-
-
-def _find_griptape_uv_bin() -> str:
-    """Find the uv binary, checking dedicated Griptape installation first, then system uv.
-
-    Returns:
-        Path to the uv binary to use
-    """
-    # Check for dedicated Griptape uv installation first
-    dedicated_uv_path = xdg_data_home() / "griptape_nodes" / "bin" / "uv"
-    if dedicated_uv_path.exists():
-        return str(dedicated_uv_path)
-
-    # Fall back to system uv installation
-    return uv.find_uv_bin()
+console = Console()
 
 
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
-
-    class LibraryStatus(StrEnum):
-        """Status of the library that was attempted to be loaded."""
-
-        GOOD = "GOOD"  # No errors detected during loading. Registered.
-        FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
-        UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
-        MISSING = "MISSING"  # File not found. Not registered.
 
     @dataclass
     class LibraryInfo:
@@ -136,7 +120,7 @@ class LibraryManager:
         Includes the status of the library, the file path, and any problems encountered during loading.
         """
 
-        status: LibraryManager.LibraryStatus
+        status: LibraryStatus
         library_path: str
         library_name: str | None = None
         library_version: str | None = None
@@ -176,6 +160,8 @@ class LibraryManager:
         self._stable_to_dynamic_module_mapping = {}
         self._library_to_stable_modules = {}
         self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
+        # LibraryDirectory owns the FSMs and manages library lifecycle
+        self._library_directory = LibraryDirectory()
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -254,10 +240,10 @@ class LibraryManager:
 
         # Status emojis mapping
         status_emoji = {
-            LibraryManager.LibraryStatus.GOOD: "✅",
-            LibraryManager.LibraryStatus.FLAWED: "🟡",
-            LibraryManager.LibraryStatus.UNUSABLE: "❌",
-            LibraryManager.LibraryStatus.MISSING: "❓",
+            LibraryStatus.GOOD: "✅",
+            LibraryStatus.FLAWED: "🟡",
+            LibraryStatus.UNUSABLE: "❌",
+            LibraryStatus.MISSING: "❓",
         }
 
         # Add rows for each library info
@@ -408,7 +394,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=[
                     "Library could not be found at the file path specified. It will be removed from the configuration."
                 ],
@@ -424,7 +410,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=["Library file not formatted as proper JSON."],
             )
         except Exception as err:
@@ -433,7 +419,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Exception occurred when attempting to load the library: {err}."],
             )
 
@@ -457,7 +443,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=problems,
             )
         except Exception as err:
@@ -466,7 +452,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Library file did not match the library schema specified due to: {err}"],
             )
 
@@ -540,7 +526,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=["Sandbox directory does not exist."],
             )
 
@@ -595,7 +581,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=["Could not get engine version for sandbox library generation."],
             )
 
@@ -679,7 +665,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryManager.LibraryStatus.MISSING,
+                status=LibraryStatus.MISSING,
                 problems=[
                     "Library could not be found at the file path specified. It will be removed from the configuration."
                 ],
@@ -713,7 +699,7 @@ class LibraryManager:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                 library_path=file_path,
                 library_name=library_data.name,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     f"Library's version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
                 ],
@@ -740,7 +726,7 @@ class LibraryManager:
                     library_path=file_path,
                     library_name=library_data.name,
                     library_version=library_version,
-                    status=LibraryManager.LibraryStatus.UNUSABLE,
+                    status=LibraryStatus.UNUSABLE,
                     problems=[
                         f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}"
                     ],
@@ -764,7 +750,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
                 ],
@@ -793,7 +779,7 @@ class LibraryManager:
                         library_path=file_path,
                         library_name=library_data.name,
                         library_version=library_version,
-                        status=LibraryManager.LibraryStatus.UNUSABLE,
+                        status=LibraryStatus.UNUSABLE,
                         problems=[str(e)],
                     )
                     details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
@@ -815,7 +801,7 @@ class LibraryManager:
                             library_path=file_path,
                             library_name=library_data.name,
                             library_version=library_version,
-                            status=LibraryManager.LibraryStatus.UNUSABLE,
+                            status=LibraryStatus.UNUSABLE,
                             problems=[
                                 f"Insufficient disk space for dependencies (requires {min_space_gb} GB): {error_msg}"
                             ],
@@ -856,7 +842,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[f"Dependency installation failed: {error_details}"],
             )
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
@@ -888,7 +874,9 @@ class LibraryManager:
                 else:
                     # We had an existing category. Union our changes into it (not replacing anything that matched).
                     existing_category_contents = get_category_result.contents
-                    existing_category_contents.update(library_data_setting.contents)
+                    existing_category_contents |= {
+                        k: v for k, v in library_data_setting.contents.items() if k not in existing_category_contents
+                    }
                     set_category_request = SetConfigCategoryRequest(
                         category=library_data_setting.category, contents=existing_category_contents
                     )
@@ -911,15 +899,15 @@ class LibraryManager:
         self._library_file_path_to_info[file_path] = library_load_results
 
         match library_load_results.status:
-            case LibraryManager.LibraryStatus.GOOD:
+            case LibraryStatus.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
                 logger.info(details)
                 return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
-            case LibraryManager.LibraryStatus.FLAWED:
+            case LibraryStatus.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
                 logger.warning(details)
                 return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
-            case LibraryManager.LibraryStatus.UNUSABLE:
+            case LibraryStatus.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure()
@@ -957,10 +945,12 @@ class LibraryManager:
                     )
                     return RegisterLibraryFromRequirementSpecifierResultFailure()
 
+                uv_path = find_uv_bin()
+
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
                 subprocess.run(  # noqa: S603
                     [
-                        _find_griptape_uv_bin(),
+                        uv_path,
                         "pip",
                         "install",
                         request.requirement_specifier,
@@ -1030,9 +1020,10 @@ class LibraryManager:
                 raise RuntimeError(error_message)
 
             try:
+                uv_path = find_uv_bin()
                 logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
                 subprocess.run(  # noqa: S603
-                    [sys.executable, "-m", "uv", "venv", str(library_venv_path), "--python", python_version],
+                    [uv_path, "venv", str(library_venv_path), "--python", python_version],
                     check=True,
                     capture_output=True,
                     text=True,
@@ -1501,6 +1492,8 @@ class LibraryManager:
         return node_class
 
     def load_all_libraries_from_config(self) -> None:
+        # Comment out lines 1503-1545 and call the _load libraries from provenance system to test the other functionality.
+
         # Load metadata for all libraries to determine which ones can be safely loaded
         metadata_request = LoadMetadataForAllLibrariesRequest()
         metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
@@ -1548,8 +1541,8 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        GriptapeNodes.SessionManager().get_saved_session_id()
         GriptapeNodes.EngineIdentityManager().initialize_engine_id()
+        GriptapeNodes.SessionManager().get_saved_session_id()
 
         # App just got init'd. See if there are library JSONs to load!
         self.load_all_libraries_from_config()
@@ -1588,6 +1581,100 @@ class LibraryManager:
 
         # Go tell the Workflow Manager that it's turn is now.
         GriptapeNodes.WorkflowManager().on_libraries_initialization_complete()
+
+        # Print the engine ready message
+        engine_version = get_complete_version_string()
+
+        # Get current session ID
+        session_id = GriptapeNodes.get_session_id()
+        session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
+
+        nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
+        message = Panel(
+            Align.center(
+                f"[bold green]Engine is ready to receive events[/bold green]\n"
+                f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
+                vertical="middle",
+            ),
+            title="🚀 Griptape Nodes Engine Started",
+            subtitle=f"[green]{engine_version}{session_info}[/green]",
+            border_style="green",
+            padding=(1, 4),
+        )
+        console.print(message)
+
+    def _load_libraries_from_provenance_system(self) -> None:
+        """Load libraries using the new provenance-based system with FSM.
+
+        This method converts libraries_to_register entries into LibraryProvenanceLocalFile
+        objects and processes them through the LibraryDirectory and LibraryLifecycleFSM systems.
+        """
+        # Get config manager
+        config_mgr = GriptapeNodes.ConfigManager()
+
+        # Get the current libraries_to_register list
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
+
+        if not libraries_to_register:
+            logger.info("No libraries to register from config")
+            return
+
+        # Convert string paths to LibraryProvenanceLocalFile objects
+        for library_path in libraries_to_register:
+            # Skip non-JSON files for now (requirement specifiers will need different handling)
+            if not library_path.endswith(".json"):
+                logger.debug("Skipping non-JSON library path: %s", library_path)
+                continue
+
+            # Create provenance object
+            provenance = LibraryProvenanceLocalFile(file_path=library_path)
+
+            # Add to directory as user candidate (defaults to active=True)
+            # This automatically creates FSM and runs evaluation
+            self._library_directory.add_user_candidate(provenance)
+
+            logger.debug("Added library provenance: %s", provenance.get_display_name())
+
+        # Get all candidates for evaluation
+        all_candidates = self._library_directory.get_all_candidates()
+
+        logger.info("Evaluated %d library candidates through FSM lifecycle", len(all_candidates))
+
+        # Report on conflicts found
+        self._report_library_name_conflicts()
+
+        # Get candidates that are ready for installation
+        installable_candidates = self._library_directory.get_installable_candidates()
+
+        # Log any skipped libraries
+        active_candidates = self._library_directory.get_active_candidates()
+        for candidate in active_candidates:
+            if candidate not in installable_candidates:
+                blockers = self._library_directory.get_installation_blockers(candidate.provenance)
+                if blockers:
+                    blocker_messages = [blocker.message for blocker in blockers]
+                    combined_message = "; ".join(blocker_messages)
+                    logger.info("Skipping library '%s' - %s", candidate.provenance.get_display_name(), combined_message)
+
+        logger.info("Installing and loading %d installable library candidates", len(installable_candidates))
+
+        # Process installable candidates through installation and loading
+        for candidate in installable_candidates:
+            if self._library_directory.install_library(candidate.provenance):
+                self._library_directory.load_library(candidate.provenance)
+
+    def _report_library_name_conflicts(self) -> None:
+        """Report on library name conflicts found during evaluation."""
+        conflicting_names = self._library_directory.get_all_conflicting_library_names()
+        for library_name in conflicting_names:
+            conflicting_provenances = self._library_directory.get_conflicting_provenances(library_name)
+            logger.warning(
+                "Library name conflict detected for '%s' across %d libraries: %s",
+                library_name,
+                len(conflicting_provenances),
+                [p.get_display_name() for p in conflicting_provenances],
+            )
 
     def _load_advanced_library_module(
         self,
@@ -1671,7 +1758,7 @@ class LibraryManager:
         has_disqualifying_issues = False
         for issue in version_issues:
             problems.append(issue.message)
-            if issue.severity == LibraryManager.LibraryStatus.UNUSABLE:
+            if issue.severity == LibraryStatus.UNUSABLE:
                 has_disqualifying_issues = True
 
         # Early exit if any version issues are disqualifying
@@ -1680,7 +1767,7 @@ class LibraryManager:
                 library_path=library_file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=problems,
             )
 
@@ -1747,13 +1834,13 @@ class LibraryManager:
 
         # Create a LibraryInfo object based on load successes and problem count.
         if not any_nodes_loaded_successfully:
-            status = LibraryManager.LibraryStatus.UNUSABLE
+            status = LibraryStatus.UNUSABLE
         elif problems:
             # Success, but errors.
-            status = LibraryManager.LibraryStatus.FLAWED
+            status = LibraryStatus.FLAWED
         else:
             # Flawless victory.
-            status = LibraryManager.LibraryStatus.GOOD
+            status = LibraryStatus.GOOD
 
         # Create a LibraryInfo object based on load successes and problem count.
         return LibraryManager.LibraryInfo(
@@ -1845,7 +1932,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
                 library_version=library_data.metadata.library_version,
-                status=LibraryManager.LibraryStatus.UNUSABLE,
+                status=LibraryStatus.UNUSABLE,
                 problems=[
                     "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
                 ],
@@ -1900,7 +1987,7 @@ class LibraryManager:
 
         paths_to_remove = set()
         for library_path, library_info in self._library_file_path_to_info.items():
-            if library_info.status == LibraryManager.LibraryStatus.MISSING:
+            if library_info.status == LibraryStatus.MISSING:
                 # Remove this file path from the config.
                 paths_to_remove.add(library_path.lower())
 

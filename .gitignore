@@ -194,3 +194,4 @@ profiles/
 .idea/
 
 .vscode/settings.json
+.vscode/griptape-nodes.code-workspace

@@ -1,6 +1,6 @@
 from typing import Literal, get_args
 
-from anthropic.types.model_param import ModelParam
+from anthropic.types.model_param import ModelParam  # pyright: ignore[reportMissingImports]
 
 # Define the valid model types as a Literal
 ModelTypes = Literal["ModelParam"]
