@@ -55,7 +55,7 @@ class ObjectManager:
         if source_obj is None:
             details = f"Attempted to rename object '{request.object_name}', but no object of that name could be found."
             logger.error(details)
-            return RenameObjectResultFailure(next_available_name=None)
+            return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Is there a collision?
         requested_name_obj = self.attempt_get_object_by_name(request.requested_name)
@@ -73,7 +73,7 @@ class ObjectManager:
                 # Fail it but be nice and offer the next name that WOULD HAVE been available.
                 details = f"Attempted to rename object '{request.object_name}' to '{request.requested_name}'. Failed because another object of that name exists. Next available name would have been '{next_name}'."
                 logger.error(details)
-                return RenameObjectResultFailure(next_available_name=next_name)
+                return RenameObjectResultFailure(next_available_name=next_name, result_details=details)
             # We'll use the next available name.
             final_name = next_name
 
@@ -86,7 +86,7 @@ class ObjectManager:
             case _:
                 details = f"Attempted to rename an object named '{request.object_name}', but that object wasn't of a type supported for rename."
                 logger.error(details)
-                return RenameObjectResultFailure(next_available_name=None)
+                return RenameObjectResultFailure(next_available_name=None, result_details=details)
 
         # Update the object table.
         self._name_to_objects[final_name] = source_obj
@@ -102,10 +102,9 @@ class ObjectManager:
 
     def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
         if not request.i_know_what_im_doing:
-            logger.warning(
-                "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
-            )
-            return ClearAllObjectStateResultFailure()
+            details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
+            logger.warning(details)
+            return ClearAllObjectStateResultFailure(result_details=details)
         # Let's try and clear it all.
         # Cancel any running flows.
         flows = self.get_filtered_subset(type=ControlFlow)
@@ -115,7 +114,7 @@ class ObjectManager:
                 if not result.succeeded():
                     details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)
-                    return ClearAllObjectStateResultFailure()
+                    return ClearAllObjectStateResultFailure(result_details=details)
 
         try:
             # Reset global execution state first to eliminate all references before deletion
@@ -123,7 +122,7 @@ class ObjectManager:
         except Exception as e:
             details = f"Attempted to reset global execution state. Failed with exception: {e}"
             logger.error(details)
-            return ClearAllObjectStateResultFailure()
+            return ClearAllObjectStateResultFailure(result_details=details)
 
         try:
             # Delete the existing flows, which will clear all nodes and connections.
@@ -131,7 +130,7 @@ class ObjectManager:
         except Exception as e:
             details = f"Attempted to clear all object state and delete everything. Failed with exception: {e}"
             logger.error(details)
-            return ClearAllObjectStateResultFailure()
+            return ClearAllObjectStateResultFailure(result_details=details)
 
         # Clear the current context.
         context_mgr = GriptapeNodes.ContextManager()

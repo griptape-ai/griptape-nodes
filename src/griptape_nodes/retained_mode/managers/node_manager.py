@@ -233,7 +233,7 @@ class NodeManager:
                     "Attempted to create Node in the Current Context. Failed because the Current Context was empty."
                 )
                 logger.error(details)
-                return CreateNodeResultFailure()
+                return CreateNodeResultFailure(result_details=details)
             parent_flow = GriptapeNodes.ContextManager().get_current_flow()
             parent_flow_name = parent_flow.name
 
@@ -245,7 +245,7 @@ class NodeManager:
             except KeyError as err:
                 details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the parent Flow. Error: {err}"
                 logger.error(details)
-                return CreateNodeResultFailure()
+                return CreateNodeResultFailure(result_details=details)
 
         # Now ensure that we're giving a valid name.
         requested_node_name = request.node_name
@@ -258,7 +258,7 @@ class NodeManager:
             except KeyError as err:
                 details = f"Attempted to create Node of type '{request.node_type}'. Failed when attempting to find the library this node type was in. Error: {err}"
                 logger.error(details)
-                return CreateNodeResultFailure()
+                return CreateNodeResultFailure(result_details=details)
 
             node_metadata = dest_library.get_node_metadata(request.node_type)
             requested_node_name = node_metadata.display_name
@@ -288,7 +288,7 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-            return CreateNodeResultFailure()
+            return CreateNodeResultFailure(result_details=details)
         # Add it to the Flow.
         parent_flow.add_node(node)
 
@@ -417,7 +417,7 @@ class NodeManager:
                             f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                         )
                         logger.error(details)
-                        return DeleteNodeResultFailure()
+                        return DeleteNodeResultFailure(result_details=details)
             if resolving_node_name is not None and not cancelled:
                 resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
                 if resolving_node in connected_nodes:
@@ -427,7 +427,7 @@ class NodeManager:
                             f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                         )
                         logger.error(details)
-                        return DeleteNodeResultFailure()
+                        return DeleteNodeResultFailure(result_details=details)
             # Clear the execution queue, because we don't want to hit this node eventually.
             parent_flow.clear_execution_queue()
         return None
@@ -442,7 +442,7 @@ class NodeManager:
                     "Attempted to delete a Node from the Current Context. Failed because the Current Context is empty."
                 )
                 logger.error(details)
-                return DeleteNodeResultFailure()
+                return DeleteNodeResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -451,7 +451,7 @@ class NodeManager:
         if node is None:
             details = f"Attempted to delete a Node '{node_name}', but no such Node was found."
             logger.error(details)
-            return DeleteNodeResultFailure()
+            return DeleteNodeResultFailure(result_details=details)
 
         with GriptapeNodes.ContextManager().node(node=node):
             parent_flow_name = self._name_to_parent_flow_name[node_name]
@@ -460,7 +460,7 @@ class NodeManager:
             except KeyError as err:
                 details = f"Attempted to delete a Node '{node_name}'. Error: {err}"
                 logger.error(details)
-                return DeleteNodeResultFailure()
+                return DeleteNodeResultFailure(result_details=details)
 
             cancel_result = self.cancel_conditionally(parent_flow, parent_flow_name, node)
             if cancel_result is not None:
@@ -476,7 +476,7 @@ class NodeManager:
                 if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
                     details = f"Attempted to delete a Node '{node_name}'. Failed because it could not gather Connections to the Node."
                     logger.error(details)
-                    return DeleteNodeResultFailure()
+                    return DeleteNodeResultFailure(result_details=details)
 
                 # Check incoming connections
                 if list_connections_result.incoming_connections:
@@ -494,7 +494,7 @@ class NodeManager:
                             f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
                         )
                         logger.error(details)
-                        return DeleteNodeResultFailure()
+                        return DeleteNodeResultFailure(result_details=details)
                     continue  # Refresh connection list after cascading deletions
 
                 # Check outgoing connections
@@ -513,7 +513,7 @@ class NodeManager:
                             f"Attempted to delete a Node '{node_name}'. Failed when attempting to delete Connection."
                         )
                         logger.error(details)
-                        return DeleteNodeResultFailure()
+                        return DeleteNodeResultFailure(result_details=details)
 
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)
@@ -539,7 +539,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get resolution state for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return GetNodeResolutionStateResultFailure()
+                return GetNodeResolutionStateResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -551,7 +551,7 @@ class NodeManager:
             if node is None:
                 details = f"Attempted to get resolution state for a Node '{node_name}', but no such Node was found."
                 logger.error(details)
-                result = GetNodeResolutionStateResultFailure()
+                result = GetNodeResolutionStateResultFailure(result_details=details)
                 return result
 
         node_state = node.state
@@ -572,7 +572,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get metadata for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return GetNodeMetadataResultFailure()
+                return GetNodeMetadataResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -586,7 +586,7 @@ class NodeManager:
                 details = f"Attempted to get metadata for a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = GetNodeMetadataResultFailure()
+                result = GetNodeMetadataResultFailure(result_details=details)
                 return result
 
         metadata = node.metadata
@@ -606,7 +606,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to set metadata for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return SetNodeMetadataResultFailure()
+                return SetNodeMetadataResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -620,7 +620,7 @@ class NodeManager:
                 details = f"Attempted to set metadata for a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = SetNodeMetadataResultFailure()
+                result = SetNodeMetadataResultFailure(result_details=details)
                 return result
 
         # We can't completely overwrite metadata.
@@ -640,7 +640,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to list Connections for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return ListConnectionsForNodeResultFailure()
+                return ListConnectionsForNodeResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -654,7 +654,7 @@ class NodeManager:
                 details = f"Attempted to list Connections for a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = ListConnectionsForNodeResultFailure()
+                result = ListConnectionsForNodeResultFailure(result_details=details)
                 return result
 
         parent_flow_name = self._name_to_parent_flow_name[node_name]
@@ -664,7 +664,7 @@ class NodeManager:
             details = f"Attempted to list Connections for a Node '{node_name}'. Error: {err}"
             logger.error(details)
 
-            result = ListConnectionsForNodeResultFailure()
+            result = ListConnectionsForNodeResultFailure(result_details=details)
             return result
 
         # Kinda gross, but let's do it
@@ -716,7 +716,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to list Parameters for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return ListParametersOnNodeResultFailure()
+                return ListParametersOnNodeResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -729,7 +729,7 @@ class NodeManager:
                 details = f"Attempted to list Parameters for a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = ListParametersOnNodeResultFailure()
+                result = ListParametersOnNodeResultFailure(result_details=details)
                 return result
 
         ret_list = [param.name for param in node.parameters]
@@ -769,7 +769,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to add Parameter to a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return AddParameterToNodeResultFailure()
+                return AddParameterToNodeResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -782,14 +782,14 @@ class NodeManager:
                 details = f"Attempted to add Parameter '{request.parameter_name}' to a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = AddParameterToNodeResultFailure()
+                result = AddParameterToNodeResultFailure(result_details=details)
                 return result
 
         # Check if node is locked
         if node.lock:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because the Node was locked."
             logger.error(details)
-            result = AddParameterToNodeResultFailure()
+            result = AddParameterToNodeResultFailure(result_details=details)
             return result
 
         if request.parent_container_name and not request.initial_setup:
@@ -797,19 +797,19 @@ class NodeManager:
             if parameter is None:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{node_name}'. Failed because parameter didn't exist."
                 logger.error(details)
-                result = AddParameterToNodeResultFailure()
+                result = AddParameterToNodeResultFailure(result_details=details)
                 return result
             if not isinstance(parameter, ParameterContainer):
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{node_name}'. Failed because parameter wasn't a container."
                 logger.error(details)
-                result = AddParameterToNodeResultFailure()
+                result = AddParameterToNodeResultFailure(result_details=details)
                 return result
             try:
                 new_param = parameter.add_child_parameter()
             except Exception as e:
                 details = f"Attempted to add Parameter to Container Parameter '{request.parent_container_name}' in node '{node_name}'. Failed: {e}."
                 logger.exception(details)
-                result = AddParameterToNodeResultFailure()
+                result = AddParameterToNodeResultFailure(result_details=details)
                 return result
 
             return AddParameterToNodeResultSuccess(
@@ -818,7 +818,7 @@ class NodeManager:
         if request.parameter_name is None or request.tooltip is None:
             details = f"Attempted to add Parameter to node '{node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             logger.error(details)
-            result = AddParameterToNodeResultFailure()
+            result = AddParameterToNodeResultFailure(result_details=details)
             return result
 
         # Generate a unique parameter name if needed
@@ -855,7 +855,7 @@ class NodeManager:
             details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because it had 'ParameterControlType' AND at least one other non-control type. If a Parameter is intended for control, it must only accept that type."
             logger.error(details)
 
-            result = AddParameterToNodeResultFailure()
+            result = AddParameterToNodeResultFailure(result_details=details)
             return result
 
         allowed_modes = set()
@@ -893,7 +893,7 @@ class NodeManager:
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
             logger.error(details)
-            return AddParameterToNodeResultFailure()
+            return AddParameterToNodeResultFailure(result_details=details)
 
         details = f"Successfully added Parameter '{final_param_name}' to Node '{node_name}'."
         log_level = logging.DEBUG
@@ -918,7 +918,7 @@ class NodeManager:
                 details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node, but no Current Context was found."
                 logger.error(details)
 
-                result = RemoveParameterFromNodeResultFailure()
+                result = RemoveParameterFromNodeResultFailure(result_details=details)
                 return result
 
             node = GriptapeNodes.ContextManager().get_current_node()
@@ -932,14 +932,14 @@ class NodeManager:
                 details = f"Attempted to remove Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = RemoveParameterFromNodeResultFailure()
+                result = RemoveParameterFromNodeResultFailure(result_details=details)
                 return result
         # Check if the node is locked
         if node.lock:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
             logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
+            result = RemoveParameterFromNodeResultFailure(result_details=details)
             return result
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
@@ -947,7 +947,7 @@ class NodeManager:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
+            result = RemoveParameterFromNodeResultFailure(result_details=details)
             return result
 
         # If it's a ParameterGroup, we need to remove all the Parameters inside it.
@@ -964,7 +964,7 @@ class NodeManager:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be removed from a Node."
             logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
+            result = RemoveParameterFromNodeResultFailure(result_details=details)
             return result
 
         # Get all the connections to/from this Parameter.
@@ -975,7 +975,7 @@ class NodeManager:
                 details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to get a list of Connections for the Parameter's Node."
                 logger.error(details)
 
-                result = RemoveParameterFromNodeResultFailure()
+                result = RemoveParameterFromNodeResultFailure(result_details=details)
                 return result
 
             # We have a list of all connections to the NODE. Sift down to just those that are about this PARAMETER.
@@ -994,7 +994,7 @@ class NodeManager:
                         details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
                         logger.error(details)
 
-                        result = RemoveParameterFromNodeResultFailure()
+                        result = RemoveParameterFromNodeResultFailure(result_details=details)
 
             # Destroy all the outgoing Connections from this PARAMETER
             for outgoing_connection in list_connections_result.outgoing_connections:
@@ -1010,7 +1010,7 @@ class NodeManager:
                         details = f"Attempted to remove Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because we were unable to delete a Connection for that Parameter."
                         logger.error(details)
 
-                        result = RemoveParameterFromNodeResultFailure()
+                        result = RemoveParameterFromNodeResultFailure(result_details=details)
 
         # Delete the Element itself.
         if element is not None:
@@ -1019,7 +1019,7 @@ class NodeManager:
             details = f"Attempted to remove Element '{request.parameter_name}' from Node '{node_name}'. Failed because element didn't exist."
             logger.error(details)
 
-            result = RemoveParameterFromNodeResultFailure()
+            result = RemoveParameterFromNodeResultFailure(result_details=details)
 
         details = f"Successfully removed Element '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
@@ -1036,7 +1036,7 @@ class NodeManager:
                 details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node, but no Current Context was found."
                 logger.error(details)
 
-                result = GetParameterDetailsResultFailure()
+                result = GetParameterDetailsResultFailure(result_details=details)
                 return result
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -1049,7 +1049,7 @@ class NodeManager:
                 details = f"Attempted to get details for Parameter '{request.parameter_name}' from a Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                result = GetParameterDetailsResultFailure()
+                result = GetParameterDetailsResultFailure(result_details=details)
                 return result
 
         # Does the Element actually exist on the Node?
@@ -1058,7 +1058,7 @@ class NodeManager:
         if element is None:
             details = f"Attempted to get details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
-            return GetParameterDetailsResultFailure()
+            return GetParameterDetailsResultFailure(result_details=details)
 
         # Let's bundle up the details.
         allows_input = False
@@ -1101,7 +1101,7 @@ class NodeManager:
                 details = f"Attempted to get element details for element '{request.specific_element_id}` from a Node, but no Current Context was found."
                 logger.error(details)
 
-                return GetNodeElementDetailsResultFailure()
+                return GetNodeElementDetailsResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1113,7 +1113,7 @@ class NodeManager:
                 details = f"Attempted to get element details for Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                return GetNodeElementDetailsResultFailure()
+                return GetNodeElementDetailsResultFailure(result_details=details)
 
         # Did they ask for a specific element ID?
         if request.specific_element_id is None:
@@ -1125,7 +1125,7 @@ class NodeManager:
                 details = f"Attempted to get element details for element '{request.specific_element_id}' from Node '{node_name}'. Failed because it didn't have an element with that ID on it."
                 logger.error(details)
 
-                return GetNodeElementDetailsResultFailure()
+                return GetNodeElementDetailsResultFailure(result_details=details)
 
         element_details = element.to_dict()
         # We need to get element values from here
@@ -1240,7 +1240,7 @@ class NodeManager:
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = f"Failed to delete incompatible incoming connection from {conn.source_node_name}.{conn.source_parameter_name} to {node_name}.{request.parameter_name}: {delete_result}"
                         logger.error(details)
-                        return AlterParameterDetailsResultFailure()
+                        return AlterParameterDetailsResultFailure(result_details=details)
 
         # Check and break invalid outgoing connections
         for conn in list_connections_result.outgoing_connections:
@@ -1259,7 +1259,7 @@ class NodeManager:
                     if isinstance(delete_result, ResultPayloadFailure):
                         details = f"Failed to delete incompatible outgoing connection from {node_name}.{request.parameter_name} to {conn.target_node_name}.{conn.target_parameter_name}: {delete_result}"
                         logger.error(details)
-                        return AlterParameterDetailsResultFailure()
+                        return AlterParameterDetailsResultFailure(result_details=details)
 
         return None
 
@@ -1272,7 +1272,7 @@ class NodeManager:
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
 
-                return AlterParameterDetailsResultFailure()
+                return AlterParameterDetailsResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1284,20 +1284,20 @@ class NodeManager:
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}', but no such Node was found."
                 logger.error(details)
 
-                return AlterParameterDetailsResultFailure()
+                return AlterParameterDetailsResultFailure(result_details=details)
 
         # Is the node locked?
         if node.lock:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
             logger.error(details)
-            return AlterParameterDetailsResultFailure()
+            return AlterParameterDetailsResultFailure(result_details=details)
 
         # Does the Element actually exist on the Node?
         element = node.get_element_by_name_and_type(request.parameter_name)
         if element is None:
             details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Failed because it didn't have an Element with that name on it."
             logger.error(details)
-            return AlterParameterDetailsResultFailure()
+            return AlterParameterDetailsResultFailure(result_details=details)
         if request.ui_options is not None:
             element.ui_options = request.ui_options  # type: ignore[attr-defined]
 
@@ -1343,7 +1343,7 @@ class NodeManager:
                 details = f"Attempted to get value for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
                 logger.error(details)
 
-                return GetParameterValueResultFailure()
+                return GetParameterValueResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1357,14 +1357,14 @@ class NodeManager:
             if node is None:
                 details = f'"{node_name}" not found'
                 logger.error(details)
-                return GetParameterValueResultFailure()
+                return GetParameterValueResultFailure(result_details=details)
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
             details = f'"{node_name}.{param_name}" not found'
             logger.error(details)
-            return GetParameterValueResultFailure()
+            return GetParameterValueResultFailure(result_details=details)
 
         # Values are actually stored on the NODE, so let's ask them.
         if param_name not in node.parameter_values:
@@ -1404,7 +1404,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to set parameter '{request.parameter_name}' value. Failed because no Node was found in the Current Context."
                 logger.error(details)
-                return SetParameterValueResultFailure()
+                return SetParameterValueResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1418,13 +1418,13 @@ class NodeManager:
             if node is None:
                 details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because no such Node could be found."
                 logger.error(details)
-                return SetParameterValueResultFailure()
+                return SetParameterValueResultFailure(result_details=details)
 
         # Is the node locked?
         if node.lock:
             details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because the Node was locked."
             logger.error(details)
-            return SetParameterValueResultFailure()
+            return SetParameterValueResultFailure(result_details=details)
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1432,14 +1432,14 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{param_name}'. Failed because no parameter with that name could be found."
             logger.error(details)
 
-            result = SetParameterValueResultFailure()
+            result = SetParameterValueResultFailure(result_details=details)
             return result
 
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
         if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
-            result = SetParameterValueResultFailure()
+            result = SetParameterValueResultFailure(result_details=details)
             return result
 
         # Well this seems kind of stupid
@@ -1449,7 +1449,7 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
             logger.error(details)
 
-            result = SetParameterValueResultFailure()
+            result = SetParameterValueResultFailure(result_details=details)
             return result
 
         try:
@@ -1457,27 +1457,27 @@ class NodeManager:
         except KeyError:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
-            return SetParameterValueResultFailure()
+            return SetParameterValueResultFailure(result_details=details)
 
         obj_mgr = GriptapeNodes.ObjectManager()
         parent_flow = obj_mgr.attempt_get_object_by_name_as_type(parent_flow_name, ControlFlow)
         if not parent_flow:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             logger.error(details)
-            return SetParameterValueResultFailure()
+            return SetParameterValueResultFailure(result_details=details)
         try:
             finalized_value, modified = self._set_and_pass_through_values(request, node)
         except Exception as err:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             logger.error(details)
-            return SetParameterValueResultFailure()
+            return SetParameterValueResultFailure(result_details=details)
         if not request.initial_setup and modified:
             try:
                 GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
             except Exception as err:
                 details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
                 logger.error(details)
-                return SetParameterValueResultFailure()
+                return SetParameterValueResultFailure(result_details=details)
         if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
@@ -1540,7 +1540,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get all info for a Node from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return GetAllNodeInfoResultFailure()
+                return GetAllNodeInfoResultFailure(result_details=details)
 
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
@@ -1552,18 +1552,14 @@ class NodeManager:
             if node is None:
                 details = f"Attempted to get all info for Node named '{node_name}', but no such Node was found."
                 logger.error(details)
-
-                result = GetAllNodeInfoResultFailure()
-                return result
+                return GetAllNodeInfoResultFailure(result_details=details)
 
         get_metadata_request = GetNodeMetadataRequest(node_name=node_name)
         get_metadata_result = self.on_get_node_metadata_request(get_metadata_request)
         if not get_metadata_result.succeeded():
             details = f"Attempted to get all info for Node named '{node_name}', but failed getting the metadata."
             logger.error(details)
-
-            result = GetAllNodeInfoResultFailure()
-            return GetAllNodeInfoResultFailure()
+            return GetAllNodeInfoResultFailure(result_details=details)
 
         get_resolution_state_request = GetNodeResolutionStateRequest(node_name=node_name)
         get_resolution_state_result = self.on_get_node_resolution_state_request(get_resolution_state_request)
@@ -1572,8 +1568,7 @@ class NodeManager:
                 f"Attempted to get all info for Node named '{node_name}', but failed getting the resolution state."
             )
             logger.error(details)
-
-            return GetAllNodeInfoResultFailure()
+            return GetAllNodeInfoResultFailure(result_details=details)
 
         list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
         list_connections_result = self.on_list_connections_for_node_request(list_connections_request)
@@ -1583,7 +1578,7 @@ class NodeManager:
             )
             logger.error(details)
 
-            return GetAllNodeInfoResultFailure()
+            return GetAllNodeInfoResultFailure(result_details=details)
         # Cast everything to get the linter off our back.
         try:
             get_metadata_success = cast("GetNodeMetadataResultSuccess", get_metadata_result)
@@ -1593,7 +1588,7 @@ class NodeManager:
             details = f"Attempted to get all info for Node named '{node_name}'. Failed due to error: {err}."
             logger.error(details)
 
-            return GetAllNodeInfoResultFailure()
+            return GetAllNodeInfoResultFailure(result_details=details)
         get_node_elements_request = GetNodeElementDetailsRequest(node_name=node_name)
         get_node_elements_result = self.on_get_node_element_details_request(get_node_elements_request)
         if not get_node_elements_result.succeeded():
@@ -1601,13 +1596,13 @@ class NodeManager:
                 f"Attempted to get all info for Node named '{node_name}', but failed getting details for elements."
             )
             logger.error(details)
-            return GetAllNodeInfoResultFailure()
+            return GetAllNodeInfoResultFailure(result_details=details)
         try:
             get_element_details_success = cast("GetNodeElementDetailsResultSuccess", get_node_elements_result)
         except Exception as err:
             details = f"Attempted to get all info for Node named '{node_name}'. Failed due to error: {err}."
-            logger.exception(details)
-            return GetAllNodeInfoResultFailure()
+            logger.error(details)
+            return GetAllNodeInfoResultFailure(result_details=details)
 
         # this will return the node element and the value
         element_details = get_element_details_success.element_details
@@ -1636,7 +1631,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to get compatible parameters for node, but no current node was found."
                 logger.error(details)
-                return GetCompatibleParametersResultFailure()
+                return GetCompatibleParametersResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1649,14 +1644,14 @@ class NodeManager:
                     f"Attempted to get compatible parameters for node '{node_name}', but that node does not exist."
                 )
                 logger.error(details)
-                return GetCompatibleParametersResultFailure()
+                return GetCompatibleParametersResultFailure(result_details=details)
 
         # Vet the parameter.
         request_param = node.get_parameter_by_name(request.parameter_name)
         if request_param is None:
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}', but that no Parameter with that name could not be found."
             logger.error(details)
-            return GetCompatibleParametersResultFailure()
+            return GetCompatibleParametersResultFailure(result_details=details)
 
         # Figure out the mode we're going for, and if this parameter supports the mode.
         request_mode = ParameterMode.OUTPUT if request.is_output else ParameterMode.INPUT
@@ -1664,7 +1659,7 @@ class NodeManager:
         if request_mode not in request_param.allowed_modes:
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}' as '{request_mode}', but the Parameter didn't support that type of input/output."
             logger.error(details)
-            return GetCompatibleParametersResultFailure()
+            return GetCompatibleParametersResultFailure(result_details=details)
 
         # Get the parent flows.
         try:
@@ -1672,7 +1667,7 @@ class NodeManager:
         except KeyError as err:
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}', but the node's parent flow could not be found: {err}"
             logger.error(details)
-            return GetCompatibleParametersResultFailure()
+            return GetCompatibleParametersResultFailure(result_details=details)
 
         # Iterate through all nodes in this Flow (yes, this restriction still sucks)
         list_nodes_in_flow_request = ListNodesInFlowRequest(flow_name=flow_name)
@@ -1682,14 +1677,14 @@ class NodeManager:
         if not list_nodes_in_flow_result.succeeded():
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}'. Failed due to inability to list nodes in parent flow '{flow_name}'."
             logger.error(details)
-            return GetCompatibleParametersResultFailure()
+            return GetCompatibleParametersResultFailure(result_details=details)
 
         try:
             list_nodes_in_flow_success = cast("ListNodesInFlowResultSuccess", list_nodes_in_flow_result)
         except Exception as err:
             details = f"Attempted to get compatible parameters for '{node_name}.{request.parameter_name}'. Failed due to {err}"
             logger.error(details)
-            return GetCompatibleParametersResultFailure()
+            return GetCompatibleParametersResultFailure(result_details=details)
 
         # Walk through all nodes that are NOT us to find compatible Parameters.
         valid_parameters_by_node = {}
@@ -1701,7 +1696,7 @@ class NodeManager:
                 except ValueError as err:
                     details = f"Attempted to get compatible parameters for node '{node_name}', and sought to test against {test_node_name}, but that node does not exist. Error: {err}."
                     logger.error(details)
-                    return GetCompatibleParametersResultFailure()
+                    return GetCompatibleParametersResultFailure(result_details=details)
 
                 # Get Parameters from Node
                 for test_param in test_node.parameters:
@@ -1764,14 +1759,14 @@ class NodeManager:
             details = "No Node name was provided. Failed to resolve node."
             logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
         try:
             node = self.get_node_by_name(node_name)
         except ValueError as e:
             details = f'Resolve failure. "{node_name}" does not exist. {e}'
             logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         # try to get the flow parent of this node
         try:
             flow_name = self._name_to_parent_flow_name[node_name]
@@ -1779,7 +1774,7 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}": {e}'
             logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         try:
             obj_mgr = GriptapeNodes.ObjectManager()
             flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
@@ -1787,29 +1782,29 @@ class NodeManager:
             details = f'Failed to fetch parent flow for "{node_name}": {e}'
             logger.error(details)
 
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
 
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
             logger.error(details)
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
         if GriptapeNodes.FlowManager().check_for_existing_running_flow():
             details = f"Failed to resolve from node '{node_name}'. Flow is already running."
             logger.error(details)
-            return ResolveNodeResultFailure(validation_exceptions=[])
+            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
         try:
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:
             details = f'Failed to mark future nodes dirty. Unable to kick off flow from "{node_name}": {e}'
             logger.error(details)
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         # Validate here.
         result = self.on_validate_node_dependencies_request(ValidateNodeDependenciesRequest(node_name=node_name))
         try:
             if not result.succeeded():
                 details = f"Failed to resolve node '{node_name}'. Flow Validation Failed"
                 logger.error(details)
-                return StartFlowResultFailure(validation_exceptions=[])
+                return StartFlowResultFailure(validation_exceptions=[], result_details=details)
             result = cast("ValidateNodeDependenciesResultSuccess", result)
 
             if not result.validation_succeeded:
@@ -1818,17 +1813,17 @@ class NodeManager:
                     for exception in result.exceptions:
                         details = f"{details}\n\t{exception}"
                 logger.error(details)
-                return StartFlowResultFailure(validation_exceptions=result.exceptions)
+                return StartFlowResultFailure(validation_exceptions=result.exceptions, result_details=details)
         except Exception as e:
             details = f"Failed to resolve node '{node_name}'. Flow Validation Failed. Error: {e}"
             logger.error(details)
-            return StartFlowResultFailure(validation_exceptions=[e])
+            return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
             GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)
-            return ResolveNodeResultFailure(validation_exceptions=[e])
+            return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)
         details = f'Starting to resolve "{node_name}" in "{flow_name}"'
         logger.debug(details)
         return ResolveNodeResultSuccess()
@@ -1840,18 +1835,18 @@ class NodeManager:
         if node is None:
             details = f'Failed to validate node dependencies. Node with "{node_name}" does not exist.'
             logger.error(details)
-            return ValidateNodeDependenciesResultFailure()
+            return ValidateNodeDependenciesResultFailure(result_details=details)
         try:
             flow_name = self.get_node_parent_flow_by_name(node_name)
         except Exception as e:
             details = f'Failed to validate node dependencies. Node with "{node_name}" has no parent flow. Error: {e}'
             logger.error(details)
-            return ValidateNodeDependenciesResultFailure()
+            return ValidateNodeDependenciesResultFailure(result_details=details)
         flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(flow_name, ControlFlow)
         if not flow:
             details = f'Failed to validate node dependencies. Flow with "{flow_name}" does not exist.'
             logger.error(details)
-            return ValidateNodeDependenciesResultFailure()
+            return ValidateNodeDependenciesResultFailure(result_details=details)
         # Gets all dependent nodes
         nodes = flow.get_node_dependencies(node)
         all_exceptions = []
@@ -1871,7 +1866,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to serialize a Node to commands from the Current Context. Failed because the Current Context is empty."
                 logger.error(details)
-                return SerializeNodeToCommandsResultFailure()
+                return SerializeNodeToCommandsResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
 
@@ -1882,7 +1877,7 @@ class NodeManager:
             if node is None:
                 details = f"Attempted to serialize Node '{node_name}' to commands. Failed because no Node with that name could be found."
                 logger.error(details)
-                return SerializeNodeToCommandsResultFailure()
+                return SerializeNodeToCommandsResultFailure(result_details=details)
 
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
@@ -1894,7 +1889,7 @@ class NodeManager:
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
                 details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
                 logger.error(details)
-                return SerializeNodeToCommandsResultFailure()
+                return SerializeNodeToCommandsResultFailure(result_details=details)
 
             library_version = library_metadata_result.metadata.library_version
             library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
@@ -2086,7 +2081,7 @@ class NodeManager:
         if not isinstance(create_node_result, CreateNodeResultSuccess):
             details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{create_node_request.node_name}'."
             logger.error(details)
-            return DeserializeNodeFromCommandsResultFailure()
+            return DeserializeNodeFromCommandsResultFailure(result_details=details)
 
         # Adopt the newly-created node as our current context.
         node_name = create_node_result.node_name
@@ -2094,7 +2089,7 @@ class NodeManager:
         if node is None:
             details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to get node '{node_name}'."
             logger.error(details)
-            return DeserializeNodeFromCommandsResultFailure()
+            return DeserializeNodeFromCommandsResultFailure(result_details=details)
         with GriptapeNodes.ContextManager().node(node=node):
             for element_command in request.serialized_node_commands.element_modification_commands:
                 if isinstance(
@@ -2105,7 +2100,7 @@ class NodeManager:
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
                     logger.error(details)
-                    return DeserializeNodeFromCommandsResultFailure()
+                    return DeserializeNodeFromCommandsResultFailure(result_details=details)
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         logger.debug(details)
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name)
@@ -2141,7 +2136,7 @@ class NodeManager:
             if not isinstance(result, SerializeNodeToCommandsResultSuccess):
                 details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
                 logger.error(details)
-                return SerializeNodeToCommandsResultFailure()
+                return SerializeNodeToCommandsResultFailure(result_details=details)
             node_commands[node_name] = result.serialized_node_commands
             node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
             parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
@@ -2194,7 +2189,7 @@ class NodeManager:
     ) -> ResultPayload:
         commands = GriptapeNodes.ContextManager()._clipboard.node_commands
         if commands is None:
-            return DeserializeSelectedNodesFromCommandsResultFailure()
+            return DeserializeSelectedNodesFromCommandsResultFailure(result_details="No Node Commands Found")
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
         # Enumerate because positions is in the same order as the node commands.
@@ -2215,13 +2210,15 @@ class NodeManager:
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
             if not isinstance(result, DeserializeNodeFromCommandsResultSuccess):
-                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
-                return DeserializeSelectedNodesFromCommandsResultFailure()
+                details = "Attempted to deserialize node but ran into an error on node serialization."
+                logger.error(details)
+                return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
             node_uuid_to_name[node_command.node_uuid] = result.node_name
             node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(result.node_name, BaseNode)
             if node is None:
-                logger.error("Attempted to deserialize node but ran into an error on node serialization.")
-                return DeserializeSelectedNodesFromCommandsResultFailure()
+                details = "Attempted to deserialize node but ran into an error on node serialization."
+                logger.error(details)
+                return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
             with GriptapeNodes.ContextManager().node(node=node):
                 parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
                 for parameter_command in parameter_commands:
@@ -2272,12 +2269,12 @@ class NodeManager:
         if not result.succeeded():
             details = "Failed to serialized selected nodes."
             logger.error(details)
-            return DuplicateSelectedNodesResultFailure()
+            return DuplicateSelectedNodesResultFailure(result_details=details)
         result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=request.positions))
         if not isinstance(result, DeserializeSelectedNodesFromCommandsResultSuccess):
             details = "Failed to deserialize selected nodes."
             logger.error(details)
-            return DuplicateSelectedNodesResultFailure()
+            return DuplicateSelectedNodesResultFailure(result_details=details)
 
         # Remake duplicate connections of node
         # request.nodes_to_duplicate is in this format: ['nodes_to_duplicate1', 'time'], ['nodes_to_duplicate2', 'time']
@@ -2446,7 +2443,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to rename Parameter in the Current Context. Failed because the Current Context was empty."
                 logger.error(details)
-                return RenameParameterResultFailure()
+                return RenameParameterResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
         else:
@@ -2455,32 +2452,32 @@ class NodeManager:
             except KeyError as err:
                 details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node could not be found. Error: {err}"
                 logger.error(details)
-                return RenameParameterResultFailure()
+                return RenameParameterResultFailure(result_details=details)
 
         # Is the node locked?
         if node.lock:
             details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Node is locked."
             logger.error(details)
-            return RenameParameterResultFailure()
+            return RenameParameterResultFailure(result_details=details)
 
         # Get the parameter
         parameter = node.get_parameter_by_name(request.parameter_name)
         if parameter is None:
             details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Parameter could not be found."
             logger.error(details)
-            return RenameParameterResultFailure()
+            return RenameParameterResultFailure(result_details=details)
 
         # Validate the new parameter name
         if any(char.isspace() for char in request.new_parameter_name):
             details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. Parameter names cannot contain any whitespace characters."
             logger.error(details)
-            return RenameParameterResultFailure()
+            return RenameParameterResultFailure(result_details=details)
 
         # Check for duplicate names
         if node.does_name_exist(request.new_parameter_name):
             details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. A Parameter with that name already exists."
             logger.error(details)
-            return RenameParameterResultFailure()
+            return RenameParameterResultFailure(result_details=details)
 
         # Get all connections for this node
         flow_name = self.get_node_parent_flow_by_name(node_name)
@@ -2524,7 +2521,7 @@ class NodeManager:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
                 logger.error(details)
-                return SetLockNodeStateResultFailure()
+                return SetLockNodeStateResultFailure(result_details=details)
             node = GriptapeNodes.ContextManager().get_current_node()
             node_name = node.name
         else:
@@ -2533,6 +2530,6 @@ class NodeManager:
             except ValueError as err:
                 details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
                 logger.error(details)
-                return SetLockNodeStateResultFailure()
+                return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
         return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)

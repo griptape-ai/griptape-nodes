@@ -204,16 +204,18 @@ class AgentManager:
                         pass  # Ignore incomplete JSON
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
-                    return RunAgentResultFailure(last_event.task_output.to_dict())
+                    return RunAgentResultFailure(
+                        error=last_event.task_output.to_dict(), result_details=last_event.task_output.to_json()
+                    )
                 if isinstance(last_event.task_output, JsonArtifact):
                     return RunAgentResultSuccess(last_event.task_output.to_dict())
             err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
-            return RunAgentResultFailure(ErrorArtifact(last_event).to_dict())
+            return RunAgentResultFailure(error=ErrorArtifact(last_event).to_dict(), result_details=err_msg)
         except Exception as e:
             err_msg = f"Error running agent: {e}"
             logger.error(err_msg)
-            return RunAgentResultFailure(ErrorArtifact(e).to_dict())
+            return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
         try:
@@ -224,7 +226,7 @@ class AgentManager:
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
-            return ConfigureAgentResultFailure()
+            return ConfigureAgentResultFailure(result_details=details)
         return ConfigureAgentResultSuccess()
 
     def on_handle_reset_agent_conversation_memory_request(
@@ -235,7 +237,7 @@ class AgentManager:
         except Exception as e:
             details = f"Error resetting agent conversation memory: {e}"
             logger.error(details)
-            return ResetAgentConversationMemoryResultFailure()
+            return ResetAgentConversationMemoryResultFailure(result_details=details)
         return ResetAgentConversationMemoryResultSuccess()
 
     def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
@@ -244,5 +246,5 @@ class AgentManager:
         except Exception as e:
             details = f"Error getting conversation memory: {e}"
             logger.error(details)
-            return GetConversationMemoryResultFailure()
+            return GetConversationMemoryResultFailure(result_details=details)
         return GetConversationMemoryResultSuccess(runs=conversation_memory)
