@@ -64,11 +64,21 @@ class ForEachStartNode(BaseIterativeStartNode):
     def _get_iteration_items(self) -> list[Any]:
         """Get the list of items to iterate over."""
         list_values = self.get_parameter_value("items")
+
+        # Handle case where items parameter is not connected or has no value
+        if list_values is None:
+            self._logger.info("ForEach Start '%s': No items provided, skipping loop execution", self.name)
+            return []
+
         if not isinstance(list_values, list):
             error_msg = (
                 f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
             )
             raise TypeError(error_msg)
+
+        if len(list_values) == 0:
+            self._logger.info("ForEach Start '%s': Empty list provided, skipping loop execution", self.name)
+
         return list_values
 
     def _initialize_iteration_data(self) -> None:
@@ -111,15 +121,6 @@ class ForEachStartNode(BaseIterativeStartNode):
     def _validate_iterative_connections(self) -> list[Exception]:
         """Validate ForEach-specific connections in addition to base validation."""
         errors = super()._validate_iterative_connections()
-
-        # Check if items parameter has input connection
-        if "items" not in self._connected_parameters:
-            errors.append(
-                Exception(
-                    f"{self.name}: Missing required 'items' connection. "
-                    "REQUIRED ACTION: Connect a data source (like Create List.output) to the ForEach Start 'items' input. "
-                    "The ForEach Start needs a list of items to iterate through."
-                )
-            )
-
+        # Removed validation for 'items' parameter connection to allow workflow execution
+        # when no items are provided - the loop will simply skip execution gracefully
         return errors

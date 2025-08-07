@@ -5,6 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode
 
 
@@ -32,7 +33,7 @@ class ForLoopStartNode(BaseIterativeStartNode):
         )
         self.end_value = Parameter(
             name="end",
-            tooltip="Ending value for the loop (exclusive)",
+            tooltip="Ending value for the loop",
             type=ParameterTypeBuiltin.INT.value,
             input_types=["int", "float"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -40,15 +41,24 @@ class ForLoopStartNode(BaseIterativeStartNode):
         )
         self.step_value = Parameter(
             name="step",
-            tooltip="Step value for each iteration",
+            tooltip="Step size for each iteration (always positive)",
             type=ParameterTypeBuiltin.INT.value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=1,
+        )
+        self.step_value.add_trait(Clamp(min_val=1, max_val=1000))
+        self.end_inclusive = Parameter(
+            name="end_inclusive",
+            tooltip="Include the end value in the loop (True) or exclude it (False)",
+            type=ParameterTypeBuiltin.BOOL.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=True,
         )
 
         self.add_parameter(self.start_value)
         self.add_parameter(self.end_value)
         self.add_parameter(self.step_value)
+        self.add_parameter(self.end_inclusive)
 
         # Move the parameter group to the end
         self.move_element_to_position("For Loop", position="last")
@@ -94,29 +104,42 @@ class ForLoopStartNode(BaseIterativeStartNode):
 
     def is_loop_finished(self) -> bool:
         """Return True if the loop has reached the end condition."""
+        start = self.get_parameter_value("start")
         end = self.get_parameter_value("end")
-        step = self.get_parameter_value("step")
+        end_inclusive = self.get_parameter_value("end_inclusive")
+
+        # Determine direction based on start and end values
+        ascending = start <= end
 
         # Check if we've reached or passed the end condition
-        if step > 0:
+        if ascending:
+            if end_inclusive:
+                return self._current_index > end
             return self._current_index >= end
-        if step < 0:
-            return self._current_index <= end
-        # step == 0, should have been caught in validation
-        return True
+        # descending
+        if end_inclusive:
+            return self._current_index < end
+        return self._current_index <= end
 
     def _get_total_iterations(self) -> int:
         """Return the total number of iterations for this loop."""
         start = self.get_parameter_value("start")
         end = self.get_parameter_value("end")
         step = self.get_parameter_value("step")
+        end_inclusive = self.get_parameter_value("end_inclusive")
 
-        if step == 0:
+        if step <= 0:
             return 0
 
-        if step > 0:
+        # Determine direction and calculate iterations
+        if start <= end:  # ascending
+            if end_inclusive:
+                return max(0, (end - start) // step + 1)
             return max(0, (end - start + step - 1) // step)
-        return max(0, (start - end - step - 1) // (-step))
+        # descending
+        if end_inclusive:
+            return max(0, (start - end) // step + 1)
+        return max(0, (start - end + step - 1) // step)
 
     def _get_current_iteration_count(self) -> int:
         """Return the current iteration count (0-based)."""
@@ -127,9 +150,16 @@ class ForLoopStartNode(BaseIterativeStartNode):
         return self._current_index
 
     def _advance_to_next_iteration(self) -> None:
-        """Advance to the next iteration by incrementing current index by step."""
+        """Advance to the next iteration by step amount in the appropriate direction."""
+        start = self.get_parameter_value("start")
+        end = self.get_parameter_value("end")
         step = self.get_parameter_value("step")
-        self._current_index += step
+
+        # Determine direction and apply step accordingly
+        if start <= end:  # ascending
+            self._current_index += step
+        else:  # descending
+            self._current_index -= step
         self._current_iteration_count += 1
 
     def _validate_parameter_values(self) -> list[Exception]:
@@ -138,28 +168,31 @@ class ForLoopStartNode(BaseIterativeStartNode):
         start = self.get_parameter_value("start")
         end = self.get_parameter_value("end")
         step = self.get_parameter_value("step")
+        end_inclusive = self.get_parameter_value("end_inclusive")
 
-        if start < end and step <= 0:
-            msg = f"{self.name}: Step value must be positive when start ({start}) is less than end ({end})"
+        # Step must always be positive (>= 1)
+        if step < 1:
+            msg = f"{self.name}: Step value must be positive (>= 1), got {step}"
             exceptions.append(Exception(msg))
-        if start > end and step >= 0:
-            msg = f"{self.name}: Step value must be negative when start ({start}) is greater than end ({end})"
-            exceptions.append(Exception(msg))
-        if start == end and step != 0:
-            # This is informational - loop will execute 0 iterations, which is valid
-            import logging
 
-            logger = logging.getLogger(__name__)
-            logger.info(
-                "%s: Loop will execute 0 iterations since start (%s) equals end (%s). Step value (%s) will be ignored.",
-                self.name,
-                start,
-                end,
-                step,
-            )
-        if start != end and step == 0:
-            msg = f"{self.name}: Step value must be non-zero when start ({start}) is not equal to end ({end})"
-            exceptions.append(Exception(msg))
+        # Informational logging for edge cases
+        if start == end:
+            if end_inclusive:
+                # With end_inclusive=True and start==end, we execute exactly 1 iteration
+                self._logger.info(
+                    "%s: Loop will execute 1 iteration since start (%s) equals end (%s) and end_inclusive is True.",
+                    self.name,
+                    start,
+                    end,
+                )
+            else:
+                # With end_inclusive=False and start==end, we execute 0 iterations
+                self._logger.info(
+                    "%s: Loop will execute 0 iterations since start (%s) equals end (%s) and end_inclusive is False.",
+                    self.name,
+                    start,
+                    end,
+                )
 
         return exceptions
 
