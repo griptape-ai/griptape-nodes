@@ -65,25 +65,52 @@ class ParameterType:
         return ret_val
 
     @staticmethod
-    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
+    def _extract_base_type(type_str: str) -> str:
+        """Extract the base type from a potentially generic type string.
+
+        Examples:
+            'list[any]' -> 'list'
+            'dict[str, int]' -> 'dict'
+            'str' -> 'str'
+        """
+        bracket_index = type_str.find("[")
+        if bracket_index == -1:
+            return type_str
+        return type_str[:bracket_index]
+
+    @staticmethod
+    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:  # noqa: PLR0911
         if source_type is None or target_type is None:
             return False
 
-        ret_val = False
         source_type_lower = source_type.lower()
         target_type_lower = target_type.lower()
 
         # If either are None, bail.
         if ParameterTypeBuiltin.NONE.value in (source_type_lower, target_type_lower):
-            ret_val = False
-        elif target_type_lower == ParameterTypeBuiltin.ANY.value:
+            return False
+        if target_type_lower == ParameterTypeBuiltin.ANY.value:
             # If the TARGET accepts Any, we're good. Not always true the other way 'round.
-            ret_val = True
-        else:
-            # Do a compare.
-            ret_val = source_type_lower == target_type_lower
+            return True
 
-        return ret_val
+        # First try exact match
+        if source_type_lower == target_type_lower:
+            return True
+
+        source_base = ParameterType._extract_base_type(source_type_lower)
+        target_base = ParameterType._extract_base_type(target_type_lower)
+
+        # If base types match
+        if source_base == target_base:
+            # Allow any generic to flow to base type (list[any] -> list, list[str] -> list)
+            if target_type_lower == target_base:
+                return True
+
+            # Allow specific types to flow to [any] generic (list[str] -> list[any])
+            if target_type_lower == f"{target_base}[{ParameterTypeBuiltin.ANY.value}]":
+                return True
+
+        return False
 
     @staticmethod
     def parse_kv_type_pair(type_str: str) -> KeyValueTypePair | None:  # noqa: C901
@@ -250,7 +277,6 @@ class BaseNodeElement:
             self._changes["ui_options"] = complete_dict["ui_options"]
 
         event_data.update(self._changes)
-
         # Publish the event
         event = ExecutionGriptapeNodeEvent(
             wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
@@ -1326,6 +1352,27 @@ class ParameterList(ParameterContainer):
         result = f"list[{base_type}]"
         return result
 
+    def _custom_setter_for_property_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.type = value
+        super()._custom_setter_for_property_type(value)
+
+    def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.input_types = value
+        return super()._custom_setter_for_property_input_types(value)
+
+    def _custom_setter_for_property_output_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.output_type = value
+        return super()._custom_setter_for_property_output_type(value)
+
     def _custom_getter_for_property_input_types(self) -> list[str]:
         # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
         # Children still use the input types given to them.
@@ -1394,6 +1441,14 @@ class ParameterList(ParameterContainer):
         self.add_child(param)
 
         return param
+
+    def clear_list(self) -> None:
+        """Remove all children that have been added to the list."""
+        children = self.find_elements_by_type(element_type=Parameter)
+        for child in children:
+            if isinstance(child, Parameter):
+                self.remove_child(child)
+                del child
 
     def add_child(self, child: BaseNodeElement) -> None:
         """Override to mark parent node as unresolved when children are added.
