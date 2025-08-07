@@ -93,14 +93,14 @@ class StaticFilesManager:
         except (binascii.Error, ValueError) as e:
             msg = f"Failed to decode base64 content for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
+            return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         try:
             url = self.save_static_file(content_bytes, file_name)
         except ValueError as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
+            return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileResultSuccess(url=url)
 
@@ -122,7 +122,7 @@ class StaticFilesManager:
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileUploadUrlResultFailure(error=msg)
+            return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileUploadUrlResultSuccess(
             url=response["url"], headers=response["headers"], method=response["method"]
@@ -146,7 +146,7 @@ class StaticFilesManager:
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileDownloadUrlResultFailure(error=msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(url=url)
 
