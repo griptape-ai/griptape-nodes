@@ -701,7 +701,7 @@ class WorkflowManager:
             # Create target directory if it doesn't exist
             target_dir_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            details = f"Failed to create target directory '{target_dir_path}': {str(e)}"
+            details = f"Failed to create target directory '{target_dir_path}': {e!s}"
             logger.error(details)
             return MoveWorkflowResultFailure(result_details=details)
 
@@ -730,7 +730,7 @@ class WorkflowManager:
             config_manager.save_user_workflow_json(str(new_absolute_path))
 
         except OSError as e:
-            details = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {str(e)}"
+            details = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {e!s}"
             logger.error(details)
 
             # Attempt to rollback if file was moved but registry update failed
@@ -745,7 +745,7 @@ class WorkflowManager:
 
             return MoveWorkflowResultFailure(result_details=details)
         except Exception as e:
-            details = f"Failed to move workflow '{request.workflow_name}': {str(e)}"
+            details = f"Failed to move workflow '{request.workflow_name}': {e!s}"
             logger.error(details)
             return MoveWorkflowResultFailure(result_details=details)
         else:
@@ -3305,7 +3305,7 @@ class WorkflowManager:
             )
 
         except Exception as e:
-            details = f"Failed to branch workflow '{request.workflow_name}': {str(e)}"
+            details = f"Failed to branch workflow '{request.workflow_name}': {e!s}"
             logger.error(details)
             import traceback
 
@@ -3318,7 +3318,7 @@ class WorkflowManager:
             # Validate branch workflow exists
             branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError as e:
-            details = f"Failed to merge workflow branch because it does not exist: {str(e)}"
+            details = f"Failed to merge workflow branch because it does not exist: {e!s}"
             logger.error(details)
             return MergeWorkflowBranchResultFailure(result_details=details)
 
@@ -3395,7 +3395,7 @@ class WorkflowManager:
             return MergeWorkflowBranchResultSuccess(merged_workflow_name=source_workflow_name)
 
         except Exception as e:
-            details = f"Failed to merge branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}': {str(e)}"
+            details = f"Failed to merge branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}': {e!s}"
             logger.error(details)
             return MergeWorkflowBranchResultFailure(result_details=details)
 
@@ -3405,7 +3405,7 @@ class WorkflowManager:
             # Validate branch workflow exists
             branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError as e:
-            details = f"Failed to reset workflow branch because it does not exist: {str(e)}"
+            details = f"Failed to reset workflow branch because it does not exist: {e!s}"
             logger.error(details)
             return ResetWorkflowBranchResultFailure(result_details=details)
 
@@ -3462,7 +3462,7 @@ class WorkflowManager:
             branch_workflow.metadata = reset_metadata
 
         except Exception as e:
-            details = f"Failed to reset branch workflow '{request.workflow_name}' to source workflow '{source_workflow_name}': {str(e)}"
+            details = f"Failed to reset branch workflow '{request.workflow_name}' to source workflow '{source_workflow_name}': {e!s}"
             logger.error(details)
             return ResetWorkflowBranchResultFailure(result_details=details)
         else:
@@ -3706,7 +3706,7 @@ class WorkflowManager:
             succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
 
         except Exception as e:
-            details = f"Failed to register workflows from configuration section '{request.config_section}': {str(e)}"
+            details = f"Failed to register workflows from configuration section '{request.config_section}': {e!s}"
             logger.error(details)
             return RegisterWorkflowsFromConfigResultFailure(result_details=details)
         else:

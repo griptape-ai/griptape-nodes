@@ -218,7 +218,7 @@ class OSManager:
             sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
             os.execvp(args[0], args)  # noqa: S606
 
-    def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Validate that exactly one of path_to_file or file_entry is provided
         if request.path_to_file is None and request.file_entry is None:
             msg = "Either path_to_file or file_entry must be provided"

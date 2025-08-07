@@ -138,7 +138,7 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 
     result_details: ResultDetails | str = "Success"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize success result with INFO level default for strings."""
         if isinstance(self.result_details, str):
             self.result_details = ResultDetails(message=self.result_details, level="DEBUG")
@@ -160,7 +160,7 @@ class ResultPayloadFailure(ResultPayload, ABC):
     result_details: ResultDetails | str = "Failure"
     exception: Exception | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize failure result with ERROR level default for strings."""
         if isinstance(self.result_details, str):
             self.result_details = ResultDetails(message=self.result_details, level="ERROR")

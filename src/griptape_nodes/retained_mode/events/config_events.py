@@ -3,7 +3,6 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowNotAlteredMixin,
