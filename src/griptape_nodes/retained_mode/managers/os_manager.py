@@ -223,12 +223,12 @@ class OSManager:
         if request.path_to_file is None and request.file_entry is None:
             msg = "Either path_to_file or file_entry must be provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=msg)
 
         if request.path_to_file is not None and request.file_entry is not None:
             msg = "Only one of path_to_file or file_entry should be provided, not both"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=msg)
 
         # Get the file path to open
         if request.file_entry is not None:
@@ -241,13 +241,13 @@ class OSManager:
             # This should never happen due to validation above, but type checker needs it
             msg = "No valid file path provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=msg)
 
         # At this point, file_path_str is guaranteed to be a string
         if file_path_str is None:
             msg = "No valid file path provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=msg)
 
         # Sanitize and validate the path (file or directory)
         try:
@@ -256,12 +256,12 @@ class OSManager:
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{file_path_str}'"
             logger.info(details)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=details)
 
         if not path.exists():
             details = f"Path does not exist: '{path}'"
             logger.info(details)
-            return OpenAssociatedFileResultFailure()
+            return OpenAssociatedFileResultFailure(result_details=details)
 
         logger.info("Attempting to open path: %s on platform: %s", path, sys.platform)
 
@@ -288,8 +288,9 @@ class OSManager:
 
                 xdg_path = next((p for p in xdg_paths if Path(p).exists()), None)
                 if not xdg_path:
-                    logger.info("xdg-open not found in standard locations")
-                    return OpenAssociatedFileResultFailure()
+                    details = "xdg-open not found in standard locations"
+                    logger.info(details)
+                    return OpenAssociatedFileResultFailure(result_details=details)
 
                 subprocess.run(  # noqa: S603
                     [xdg_path, str(path)],
@@ -301,20 +302,19 @@ class OSManager:
             else:
                 details = f"Unsupported platform: '{platform_name}'"
                 logger.info(details)
-                return OpenAssociatedFileResultFailure()
+                return OpenAssociatedFileResultFailure(result_details=details)
 
             return OpenAssociatedFileResultSuccess()
         except subprocess.CalledProcessError as e:
-            logger.error(
-                "Process error when opening file: return code=%s, stdout=%s, stderr=%s",
-                e.returncode,
-                e.stdout,
-                e.stderr,
+            details = (
+                f"Process error when opening file: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             )
-            return OpenAssociatedFileResultFailure()
+            logger.error(details)
+            return OpenAssociatedFileResultFailure(result_details=details)
         except Exception as e:
-            logger.error("Exception occurred when trying to open path: %s", type(e).__name__)
-            return OpenAssociatedFileResultFailure()
+            details = f"Exception occurred when trying to open path: {e}"
+            logger.error(details)
+            return OpenAssociatedFileResultFailure(result_details=details)
 
     def _detect_mime_type(self, file_path: Path) -> str | None:
         """Detect MIME type for a file. Returns None for directories or if detection fails."""
@@ -349,18 +349,18 @@ class OSManager:
             if not directory.exists():
                 msg = f"Directory does not exist: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure()
+                return ListDirectoryResultFailure(result_details=msg)
             if not directory.is_dir():
                 msg = f"Directory is not a directory: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure()
+                return ListDirectoryResultFailure(result_details=msg)
 
             # Check workspace constraints
             is_workspace_path, relative_or_abs_path = self._validate_workspace_path(directory)
             if request.workspace_only and not is_workspace_path:
                 msg = f"Directory is outside workspace: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure()
+                return ListDirectoryResultFailure(result_details=msg)
 
             entries = []
             try:
@@ -393,7 +393,7 @@ class OSManager:
             except (OSError, PermissionError) as e:
                 msg = f"Error listing directory {directory}: {e}"
                 logger.error(msg)
-                return ListDirectoryResultFailure()
+                return ListDirectoryResultFailure(result_details=msg)
 
             # Return appropriate path format based on mode
             if request.workspace_only:
@@ -409,7 +409,7 @@ class OSManager:
         except Exception as e:
             msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
             logger.error(msg)
-            return ListDirectoryResultFailure()
+            return ListDirectoryResultFailure(result_details=msg)
 
     def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection."""
@@ -436,7 +436,7 @@ class OSManager:
             file_info = f" for file: {file_path}" if file_path is not None else ""
             msg = f"Validation error in read_file{file_info}: {e}"
             logger.error(msg)
-            return ReadFileResultFailure()
+            return ReadFileResultFailure(result_details=msg)
         except Exception as e:
             # Try to include file path in error message if available
             path_info = ""
@@ -447,7 +447,7 @@ class OSManager:
 
             msg = f"Unexpected error in read_file{path_info}: {type(e).__name__}: {e}"
             logger.error(msg)
-            return ReadFileResultFailure()
+            return ReadFileResultFailure(result_details=msg)
 
     def _read_file_content(
         self, file_path: Path, request: ReadFileRequest
@@ -748,7 +748,7 @@ class OSManager:
             if request.workspace_only and is_absolute:
                 msg = f"Absolute path is outside workspace: {full_path_str}"
                 logger.error(msg)
-                return CreateFileResultFailure()
+                return CreateFileResultFailure(result_details=msg)
 
             # Resolve path - if absolute, use as-is; if relative, align to workspace
             if is_absolute:
@@ -783,7 +783,7 @@ class OSManager:
             path_info = request.get_full_path() if hasattr(request, "get_full_path") else str(request.path)
             msg = f"Failed to create {'directory' if request.is_directory else 'file'} at {path_info}: {e}"
             logger.error(msg)
-            return CreateFileResultFailure()
+            return CreateFileResultFailure(result_details=msg)
 
     def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:
         """Handle a request to rename a file or directory."""
@@ -798,13 +798,13 @@ class OSManager:
             if not old_path.exists():
                 msg = f"Source path does not exist: {old_path}"
                 logger.error(msg)
-                return RenameFileResultFailure()
+                return RenameFileResultFailure(result_details=msg)
 
             # Check if new path already exists
             if new_path.exists():
                 msg = f"Destination path already exists: {new_path}"
                 logger.error(msg)
-                return RenameFileResultFailure()
+                return RenameFileResultFailure(result_details=msg)
 
             # Check workspace constraints for both paths
             is_old_in_workspace, _ = self._validate_workspace_path(old_path)
@@ -813,7 +813,7 @@ class OSManager:
             if request.workspace_only and (not is_old_in_workspace or not is_new_in_workspace):
                 msg = f"One or both paths are outside workspace: {old_path} -> {new_path}"
                 logger.error(msg)
-                return RenameFileResultFailure()
+                return RenameFileResultFailure(result_details=msg)
 
             # Create parent directories for new path if needed
             new_path.parent.mkdir(parents=True, exist_ok=True)
@@ -827,4 +827,4 @@ class OSManager:
         except Exception as e:
             msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
             logger.error(msg)
-            return RenameFileResultFailure()
+            return RenameFileResultFailure(result_details=msg)

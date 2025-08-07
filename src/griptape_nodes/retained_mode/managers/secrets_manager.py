@@ -58,7 +58,7 @@ class SecretsManager:
         if secret_value is None:
             details = f"Secret '{secret_key}' not found."
             logger.error(details)
-            return GetSecretValueResultFailure()
+            return GetSecretValueResultFailure(result_details=details)
 
         return GetSecretValueResultSuccess(value=secret_value)
 
@@ -90,12 +90,12 @@ class SecretsManager:
         if not ENV_VAR_PATH.exists():
             details = f"Secret file does not exist: '{ENV_VAR_PATH}'"
             logger.error(details)
-            return DeleteSecretValueResultFailure()
+            return DeleteSecretValueResultFailure(result_details=details)
 
         if get_key(ENV_VAR_PATH, secret_name) is None:
             details = f"Secret {secret_name} not found in {ENV_VAR_PATH}"
             logger.error(details)
-            return DeleteSecretValueResultFailure()
+            return DeleteSecretValueResultFailure(result_details=details)
 
         unset_key(ENV_VAR_PATH, secret_name)
 
