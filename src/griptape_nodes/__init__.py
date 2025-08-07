@@ -22,6 +22,7 @@ with console.status("Loading Griptape Nodes...") as status:
     from rich.progress import Progress
     from rich.prompt import Confirm, Prompt
     from rich.table import Table
+    from rich.traceback import Traceback
     from xdg_base_dirs import xdg_config_home, xdg_data_home
 
     from griptape_nodes.app import start_app
@@ -80,7 +81,6 @@ class InitConfig:
 config_manager = ConfigManager()
 secrets_manager = SecretsManager(config_manager)
 os_manager = OSManager()
-
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
@@ -641,11 +641,24 @@ def _get_latest_version(package: str, install_source: str) -> str:
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
+    def _access_update_url(update_url):
+        """Small helper to reduce repetitive code for error handling."""
+        try:
+            response = client.get(update_url)
+            return response
+        except httpx.RequestError as e:
+            console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
+            console.print(f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]")
+            return False
+
     if install_source == "pypi":
         update_url = PYPI_UPDATE_URL.format(package=package)
 
         with httpx.Client() as client:
-            response = client.get(update_url)
+            # First check for connection issues before status issues
+            response = _access_update_url(update_url)
+            if not response:
+                return get_current_version()
             try:
                 response.raise_for_status()
                 data = response.json()
@@ -659,7 +672,11 @@ def _get_latest_version(package: str, install_source: str) -> str:
         update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
 
         with httpx.Client() as client:
-            response = client.get(update_url)
+            # First check for connection issues before status issues
+            response = _access_update_url(update_url)
+            if not response:
+                return get_current_version()
+
             try:
                 response.raise_for_status()
                 # Get the latest commit SHA for the tag, this effectively the latest version of the package

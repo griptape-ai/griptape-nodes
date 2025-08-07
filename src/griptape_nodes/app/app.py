@@ -92,7 +92,6 @@ def start_app() -> None:
     Starts the event loop and listens for events from the Nodes API.
     """
     _init_event_listeners()
-
     # Listen for any signals to exit the app
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: sys.exit(0))
@@ -100,11 +99,9 @@ def start_app() -> None:
     api_key = _ensure_api_key()
     threading.Thread(target=mcp_server, args=(api_key,), daemon=True).start()
     threading.Thread(target=_listen_for_api_events, args=(api_key,), daemon=True).start()
-
     if STATIC_SERVER_ENABLED:
         static_dir = _build_static_dir()
         threading.Thread(target=start_api, args=(static_dir, event_queue), daemon=True).start()
-
     _process_event_queue()
 
 
@@ -263,8 +260,10 @@ def _process_event_queue() -> None:
     Event queue will be populated by background threads listening for events from the Nodes API.
     """
     # Wait for WebSocket connection to be established before processing events
-    ws_ready_event.wait()
-
+    timed_out = ws_ready_event.wait(timeout=15)
+    if not timed_out:
+        console.print("[red] The connection to the websocket timed out. Please check your internet connection and the status of Griptape Nodes API.[/red]")
+        sys.exit(1)
     while True:
         event = event_queue.get(block=True)
         if isinstance(event, EventRequest):
