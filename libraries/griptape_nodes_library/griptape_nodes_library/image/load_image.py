@@ -1,7 +1,7 @@
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -17,10 +17,17 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 
 class LoadImage(DataNode):
+    # Supported image file extensions
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+
+    # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
+    SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -38,7 +45,7 @@ class LoadImage(DataNode):
             output_type="ImageUrlArtifact",
             default_value=None,
             ui_options={"clickable_file_browser": True, "expander": True, "edit_mask": True},
-            tooltip="The image that has been generated.",
+            tooltip="The loaded image.",
         )
         self.add_parameter(self.image_parameter)
 
@@ -48,7 +55,17 @@ class LoadImage(DataNode):
             type="str",
             default_value="",
             tooltip="Path to a local image file or URL to an image",
+            ui_options={"display_name": "File Path or URL"},
         )
+
+        self.path_parameter.add_trait(
+            FileSystemPicker(
+                allow_directories=False,
+                allow_files=True,
+                file_types=list(self.SUPPORTED_EXTENSIONS),
+            )
+        )
+
         self.add_parameter(self.path_parameter)
 
     def _to_image_artifact(self, image: Any) -> Any:
@@ -75,9 +92,8 @@ class LoadImage(DataNode):
             error_msg = f"Path is not a file: {file_path}"
             raise ValueError(error_msg)
 
-        valid_extensions = {".png", ".jpg", ".jpeg", ".webp"}
-        if path.suffix.lower() not in valid_extensions:
-            supported = ", ".join(valid_extensions)
+        if path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+            supported = ", ".join(self.SUPPORTED_EXTENSIONS)
             error_msg = f"Unsupported image format: {path.suffix}. Supported formats: {supported}"
             raise ValueError(error_msg)
 
@@ -152,7 +168,7 @@ class LoadImage(DataNode):
                     # Remove query parameters and fragments
                     filename = filename.split("?")[0].split("#")[0]
                     # Keep only alphanumeric, dots, hyphens, underscores
-                    filename = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
+                    filename = re.sub(self.SAFE_FILENAME_PATTERN, "_", filename)
                     # Ensure it has an extension
                     if "." in filename:
                         return filename
@@ -162,7 +178,7 @@ class LoadImage(DataNode):
 
         # If no good filename, create one from domain + uuid
         domain = parsed.netloc.replace("www.", "")
-        domain = re.sub(r"[^a-zA-Z0-9.-]", "_", domain)
+        domain = re.sub(self.SAFE_FILENAME_PATTERN, "_", domain)
         unique_id = str(uuid.uuid4())[:8]
         return f"{domain}_{unique_id}.png"
 
@@ -185,9 +201,8 @@ class LoadImage(DataNode):
         filename = self._generate_filename_from_url(url)
 
         # Validate file extension
-        extension = filename.split(".")[-1].lower()
-        valid_extensions = {"png", "jpg", "jpeg", "webp"}
-        if extension not in valid_extensions:
+        extension = f".{filename.split('.')[-1].lower()}"
+        if extension not in self.SUPPORTED_EXTENSIONS:
             filename = f"{filename.rsplit('.', 1)[0]}.png"
 
         # Upload to static storage
