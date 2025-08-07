@@ -25,7 +25,23 @@ from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 @dataclass(eq=False)
 class PathValidator(Trait):
-    """Validator trait for image paths (file paths or URLs)."""
+    """Validator trait for image paths (file paths or URLs).
+
+    This trait validates user input before parameter values are set, ensuring
+    that file paths exist and have supported extensions, and URLs are accessible
+    and point to valid image content.
+
+    Usage example:
+        parameter.add_trait(PathValidator(supported_extensions={".png", ".jpg"}))
+
+    Validation rules:
+    - File paths: Must exist, be readable files, and have supported extensions
+    - URLs: Must be accessible via HTTP/HTTPS and return image content-type
+    - Empty values: Always allowed (validation skipped)
+
+    Args:
+        supported_extensions: Set of allowed file extensions (e.g., {".png", ".jpg"})
+    """
 
     supported_extensions: set[str] = field(default_factory=set)
     element_id: str = field(default_factory=lambda: "PathValidatorTrait")
@@ -63,9 +79,13 @@ class PathValidator(Trait):
         return [validate_path]
 
     def _validate_url(self, url: str) -> None:
-        """Validate that the URL is accessible and points to an image."""
+        """Validate that the URL is accessible and points to an image.
+
+        Uses HEAD request for efficiency while still validating content-type.
+        The actual download will use GET later, but content-type is unlikely to change.
+        """
         try:
-            response = httpx.head(url, timeout=10, follow_redirects=True)
+            response = httpx.head(url, timeout=LoadImage.URL_VALIDATION_TIMEOUT, follow_redirects=True)
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "")
@@ -103,6 +123,10 @@ class LoadImage(DataNode):
 
     # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
     SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
+
+    # Timeout constants for HTTP requests
+    URL_VALIDATION_TIMEOUT: ClassVar[int] = 10  # seconds
+    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 30  # seconds
 
     @staticmethod
     def _strip_surrounding_quotes(path_str: str) -> str:
@@ -281,7 +305,7 @@ class LoadImage(DataNode):
     def _download_and_upload_url(self, url: str) -> str:
         """Download image from URL and upload to static storage, return download URL."""
         try:
-            response = httpx.get(url, timeout=30)
+            response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
             response.raise_for_status()
         except Exception as e:
             error_msg = f"Failed to download image from URL {url}: {e}"
@@ -296,10 +320,15 @@ class LoadImage(DataNode):
         # Generate filename from URL
         filename = self._generate_filename_from_url(url)
 
-        # Validate file extension
-        extension = f".{filename.split('.')[-1].lower()}"
-        if extension not in self.SUPPORTED_EXTENSIONS:
-            filename = f"{filename.rsplit('.', 1)[0]}.png"
+        # Validate and fix file extension
+        if "." in filename and filename.count(".") > 0:
+            extension = f".{filename.split('.')[-1].lower()}"
+            if extension not in self.SUPPORTED_EXTENSIONS:
+                # Replace with .png if extension is unsupported
+                filename = f"{filename.rsplit('.', 1)[0]}.png"
+        else:
+            # No extension found, add .png
+            filename = f"{filename}.png"
 
         # Upload to static storage
         upload_request = CreateStaticFileUploadUrlRequest(file_name=filename)
