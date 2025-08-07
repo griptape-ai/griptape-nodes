@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
+from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, Trait
 from griptape_nodes.exe_types.node_types import DataNode
@@ -112,6 +113,35 @@ class LoadImage(DataNode):
         ):
             return path_str[1:-1]
         return path_str
+
+    @staticmethod
+    def _extract_url_from_image_value(image_value: Any) -> str | None:
+        """Extract URL from image parameter value and strip query parameters."""
+        if not image_value:
+            return None
+
+        match image_value:
+            # Handle dictionary format (most common)
+            case dict():
+                url = image_value.get("value")
+            # Handle ImageUrlArtifact objects
+            case ImageUrlArtifact():
+                url = image_value.value
+            # Handle raw strings
+            case str():
+                url = image_value
+            case _:
+                error_msg = f"Unsupported image value type: {type(image_value)}"
+                raise ValueError(error_msg)
+
+        if not url:
+            return None
+
+        # Strip query parameters (like ?t=123456 cache busters)
+        if "?" in url:
+            url = url.split("?")[0]
+
+        return url
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -311,42 +341,56 @@ class LoadImage(DataNode):
         return download_result.url
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Skip if we're already updating from this parameter to prevent infinite loops
-        if self._updating_from_parameter == parameter:
+        # Skip if we're already in an update cycle to prevent infinite loops
+        if self._updating_from_parameter is not None:
             return super().after_value_set(parameter, value)
 
-        if parameter.name == self.image_parameter.name:
-            image_artifact = self._to_image_artifact(value)
-            self.parameter_output_values[self.image_parameter.name] = image_artifact
-        elif parameter.name == self.path_parameter.name:
-            path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+        match parameter:
+            case self.image_parameter:
+                image_artifact = self._to_image_artifact(value)
+                self.parameter_output_values[self.image_parameter.name] = image_artifact
 
-            # Indicate that we're the controlling parameter so we don't trigger an infinite cascade of set value changes.
-            self._updating_from_parameter = parameter
-            try:
-                if path_value:
-                    # Validation has already passed by the time we get here
-                    if self._is_url(path_value):
-                        download_url = self._download_and_upload_url(path_value)
+                # Update path parameter with URL from image (bidirectional sync)
+                extracted_url = self._extract_url_from_image_value(value)
+                if extracted_url:
+                    self._updating_from_parameter = parameter
+                    try:
+                        self.publish_update_to_parameter(self.path_parameter.name, extracted_url)
+                    finally:
+                        # Clear the update lock to allow future parameter updates
+                        self._updating_from_parameter = None
+            case self.path_parameter:
+                path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+
+                # Indicate that we're the controlling parameter so we don't trigger an infinite cascade of set value changes.
+                self._updating_from_parameter = parameter
+                try:
+                    if path_value:
+                        # Validation has already passed by the time we get here
+                        if self._is_url(path_value):
+                            download_url = self._download_and_upload_url(path_value)
+                        else:
+                            download_url = self._upload_file_to_static_storage(path_value)
+
+                        # Test that artifact creation works before updating the image parameter
+                        image_artifact = self._to_image_artifact({"value": download_url, "type": "ImageUrlArtifact"})
+                        # Only update image parameter if artifact creation succeeded
+                        self.publish_update_to_parameter(
+                            self.image_parameter.name, {"value": download_url, "type": "ImageUrlArtifact"}
+                        )
                     else:
-                        download_url = self._upload_file_to_static_storage(path_value)
-
-                    # Test that artifact creation works before updating the image parameter
-                    image_artifact = self._to_image_artifact({"value": download_url, "type": "ImageUrlArtifact"})
-                    # Only update image parameter if artifact creation succeeded
-                    self.set_parameter_value(
-                        self.image_parameter.name, {"value": download_url, "type": "ImageUrlArtifact"}
-                    )
-                else:
-                    # Empty path - reset the image parameter to None
-                    self.set_parameter_value(self.image_parameter.name, None)
-            except Exception as e:
-                # Re-raise the exception to show error to user
-                error_msg = f"Failed to process path: {e}"
-                raise ValueError(error_msg) from e
-            finally:
-                # Clear the update lock to allow future parameter updates
-                self._updating_from_parameter = None
+                        # Empty path - reset the image parameter to None
+                        self.publish_update_to_parameter(self.image_parameter.name, None)
+                except Exception as e:
+                    # Re-raise the exception to show error to user
+                    error_msg = f"Failed to process path: {e}"
+                    raise ValueError(error_msg) from e
+                finally:
+                    # Clear the update lock to allow future parameter updates
+                    self._updating_from_parameter = None
+            case _:
+                # Handle any other parameters - just do default processing
+                pass
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
