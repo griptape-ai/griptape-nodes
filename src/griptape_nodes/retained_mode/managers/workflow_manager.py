@@ -959,6 +959,16 @@ class WorkflowManager:
                     status=status,
                 )
             )
+
+        # Check for workflow version-based compatibility issues and add to problems
+        workflow_version_issues = GriptapeNodes.VersionCompatibilityManager().check_workflow_version_compatibility(
+            workflow_metadata
+        )
+        for issue in workflow_version_issues:
+            problems.append(issue.message)
+            if issue.severity == WorkflowManager.WorkflowStatus.UNUSABLE:
+                had_critical_error = True
+
         # OK, we have all of our dependencies together. Let's look at the overall scenario.
         if had_critical_error:
             overall_status = WorkflowManager.WorkflowStatus.UNUSABLE
@@ -1490,6 +1500,7 @@ class WorkflowManager:
 
         # === imports ===
         import_recorder.add_import("argparse")
+        import_recorder.add_import("json")
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
         )
@@ -1629,6 +1640,29 @@ class WorkflowManager:
             )
         )
 
+        # Add json input argument
+        add_arg_calls.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parser", ctx=ast.Load()),
+                        attr="add_argument",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant("--json-input")],
+                    keywords=[
+                        ast.keyword(arg="default", value=ast.Constant(None)),
+                        ast.keyword(
+                            arg="help",
+                            value=ast.Constant(
+                                "JSON string containing parameter values. Takes precedence over individual parameter arguments if provided."
+                            ),
+                        ),
+                    ],
+                )
+            )
+        )
+
         # Generate individual arguments for each parameter in workflow_shape["input"]
         if "input" in workflow_shape:
             for node_name, node_params in workflow_shape["input"].items():
@@ -1670,13 +1704,47 @@ class WorkflowManager:
             ),
         )
 
-        # Build flow_input dictionary from individual CLI arguments
+        # Build flow_input dictionary from JSON input or individual CLI arguments
         flow_input_init = ast.Assign(
             targets=[ast.Name(id="flow_input", ctx=ast.Store())],
             value=ast.Dict(keys=[], values=[]),
         )
 
-        # Build the flow_input dict structure from individual arguments
+        # Check if json_input is provided and parse it
+        json_input_if = ast.If(
+            test=ast.Compare(
+                left=ast.Attribute(
+                    value=ast.Name(id="args", ctx=ast.Load()),
+                    attr="json_input",
+                    ctx=ast.Load(),
+                ),
+                ops=[ast.IsNot()],
+                comparators=[ast.Constant(value=None)],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[ast.Name(id="flow_input", ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="json", ctx=ast.Load()),
+                            attr="loads",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Attribute(
+                                value=ast.Name(id="args", ctx=ast.Load()),
+                                attr="json_input",
+                                ctx=ast.Load(),
+                            )
+                        ],
+                        keywords=[],
+                    ),
+                )
+            ],
+            orelse=[],
+        )
+
+        # Build the flow_input dict structure from individual arguments (fallback when no JSON input)
         build_flow_input_stmts = []
 
         # For each node, ensure it exists in flow_input
@@ -1747,6 +1815,21 @@ class WorkflowManager:
             ]
         )
 
+        # Wrap the individual argument processing in an else clause
+        individual_args_else = ast.If(
+            test=ast.Compare(
+                left=ast.Attribute(
+                    value=ast.Name(id="args", ctx=ast.Load()),
+                    attr="json_input",
+                    ctx=ast.Load(),
+                ),
+                ops=[ast.Is()],
+                comparators=[ast.Constant(value=None)],
+            ),
+            body=build_flow_input_stmts,
+            orelse=[],
+        )
+
         workflow_output = ast.Assign(
             targets=[ast.Name(id="workflow_output", ctx=ast.Store())],
             value=ast.Call(
@@ -1780,7 +1863,8 @@ class WorkflowManager:
                 *add_arg_calls,
                 parse_args,
                 flow_input_init,
-                *build_flow_input_stmts,
+                json_input_if,
+                individual_args_else,
                 workflow_output,
                 print_output,
             ],

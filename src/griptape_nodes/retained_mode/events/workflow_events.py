@@ -347,6 +347,8 @@ class PublishWorkflowRequest(RequestPayload):
 
     workflow_name: str
     publisher_name: str
+    execute_on_publish: bool = False
+    published_workflow_file_name: str | None = None
 
 
 @dataclass
