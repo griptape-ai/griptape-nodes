@@ -64,11 +64,13 @@ class SetConfigValueRequest(RequestPayload):
     value: Any
 
 
+@dataclass
 @PayloadRegistry.register
 class SetConfigValueResultSuccess(ResultPayloadSuccess):
     """Configuration value set successfully."""
 
 
+@dataclass
 @PayloadRegistry.register
 class SetConfigValueResultFailure(ResultPayloadFailure):
     """Configuration value setting failed. Common causes: invalid key format, value validation error."""
@@ -128,11 +130,13 @@ class SetConfigCategoryRequest(RequestPayload):
     category: str | None = None
 
 
+@dataclass
 @PayloadRegistry.register
 class SetConfigCategoryResultSuccess(ResultPayloadSuccess):
     """Configuration category updated successfully."""
 
 
+@dataclass
 @PayloadRegistry.register
 class SetConfigCategoryResultFailure(ResultPayloadFailure):
     """Configuration category update failed. Common causes: invalid category name, value validation errors."""
@@ -180,11 +184,13 @@ class ResetConfigRequest(RequestPayload):
     """
 
 
+@dataclass
 @PayloadRegistry.register
 class ResetConfigResultSuccess(ResultPayloadSuccess):
     """Configuration reset successfully to default values."""
 
 
+@dataclass
 @PayloadRegistry.register
 class ResetConfigResultFailure(ResultPayloadFailure):
     """Configuration reset failed. Common causes: file system errors, permission issues, initialization errors."""
