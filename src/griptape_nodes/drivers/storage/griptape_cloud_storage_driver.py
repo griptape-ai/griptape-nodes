@@ -76,7 +76,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return {"url": response_data["url"], "headers": response_data.get("headers", {}), "method": "PUT"}
 
     def create_signed_download_url(self, file_name: str) -> str:
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{file_name}")
+        full_file_path = self._get_full_file_path(file_name)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{full_file_path}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
             response.raise_for_status()

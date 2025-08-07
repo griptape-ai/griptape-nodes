@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.static_files_manager import (
         StaticFilesManager,
     )
+    from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
     from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
         VersionCompatibilityManager,
     )
@@ -138,6 +139,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
+    _sync_manager: SyncManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -161,6 +163,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.static_files_manager import (
             StaticFilesManager,
         )
+        from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
         from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
             VersionCompatibilityManager,
         )
@@ -189,6 +192,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
             self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
+            self._sync_manager = SyncManager(self._event_manager, self._config_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -325,6 +329,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
         return GriptapeNodes.get_instance()._engine_identity_manager
+
+    @classmethod
+    def SyncManager(cls) -> SyncManager:
+        return GriptapeNodes.get_instance()._sync_manager
 
     @classmethod
     def clear_data(cls) -> None:

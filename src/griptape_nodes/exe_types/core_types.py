@@ -326,11 +326,28 @@ class BaseNodeElement:
             self._node_context._emit_parameter_lifecycle_event(child)
 
     def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Remove a child element from the hierarchy.
+
+        This method recursively searches through the element hierarchy to find and remove
+        the specified child. When the child is found in a descendant container (e.g., a
+        ParameterList), it delegates to that container's remove_child() method to ensure
+        proper cleanup and event handling (like marking parent nodes as unresolved).
+
+        Args:
+            child: The child element to remove, either as an object or by name string
+        """
         ui_elements: list[BaseNodeElement] = [self]
         for ui_element in ui_elements:
             if child in ui_element._children:
-                child._parent = None
-                ui_element._children.remove(child)
+                # Delegate to the actual parent container's remove_child method.
+                # This ensures specialized containers (like ParameterList) can perform
+                # their specific cleanup logic (e.g., marking parent nodes as unresolved).
+                if ui_element is not self:
+                    ui_element.remove_child(child)
+                else:
+                    # We are the direct parent, so handle removal directly
+                    child._parent = None
+                    ui_element._children.remove(child)
                 break
             ui_elements.extend(ui_element._children)
         if self._node_context is not None and isinstance(child, BaseNodeElement):
@@ -397,8 +414,23 @@ class BaseNodeElement:
         return event_data
 
 
-@dataclass(kw_only=True)
-class ParameterMessage(BaseNodeElement):
+class UIOptionsMixin:
+    """Mixin providing UI options update functionality for classes with ui_options."""
+
+    def update_ui_options_key(self, key: str, value: Any) -> None:
+        """Update a single UI option key."""
+        ui_options = self.ui_options
+        ui_options[key] = value
+        self.ui_options = ui_options
+
+    def update_ui_options(self, updates: dict[str, Any]) -> None:
+        """Update multiple UI options at once."""
+        ui_options = self.ui_options
+        ui_options.update(updates)
+        self.ui_options = ui_options
+
+
+class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     """Represents a UI message element, such as a warning or informational text."""
 
     # Define default titles as a class-level constant
@@ -544,11 +576,21 @@ class ParameterMessage(BaseNodeElement):
         return event_data
 
 
-@dataclass(kw_only=True)
-class ParameterGroup(BaseNodeElement):
+class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    ui_options: dict = field(default_factory=dict)
+    def __init__(self, name: str, ui_options: dict | None = None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self._ui_options = ui_options or {}
+
+    @property
+    def ui_options(self) -> dict:
+        return self._ui_options
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        self._ui_options = value
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.
@@ -656,7 +698,7 @@ class ParameterBase(BaseNodeElement, ABC):
         pass
 
 
-class Parameter(BaseNodeElement):
+class Parameter(BaseNodeElement, UIOptionsMixin):
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -867,7 +909,10 @@ class Parameter(BaseNodeElement):
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
         if self._parent is not None and isinstance(self._parent, ParameterGroup):
-            ui_options = ui_options | self._parent.ui_options
+            # Access the field value directly for ParameterGroup
+            parent_ui_options = getattr(self._parent, "ui_options", {})
+            if isinstance(parent_ui_options, dict):
+                ui_options = ui_options | parent_ui_options
         return ui_options
 
     @ui_options.setter
@@ -1228,6 +1273,23 @@ class ParameterContainer(Parameter, ABC):
             element_type=element_type,
         )
 
+    def __bool__(self) -> bool:
+        """Parameter containers are always truthy, even when empty.
+
+        This overrides Python's default truthiness behavior for containers with __len__().
+        By default, Python makes objects with __len__() falsy when len() == 0, which
+        caused bugs where empty ParameterList/ParameterDictionary objects would fail
+        'if param' checks and fall back to stale cached values instead of computing
+        fresh empty results.
+
+        Unlike standard Python containers, ParameterContainer objects represent
+        parameter structure/definitions rather than just data, so they remain
+        meaningful even when empty.
+
+        See: https://github.com/griptape-ai/griptape-nodes/issues/1799
+        """
+        return True
+
     @abstractmethod
     def add_child_parameter(self) -> Parameter:
         pass
@@ -1387,6 +1449,40 @@ class ParameterList(ParameterContainer):
             if isinstance(child, Parameter):
                 self.remove_child(child)
                 del child
+
+    def add_child(self, child: BaseNodeElement) -> None:
+        """Override to mark parent node as unresolved when children are added.
+
+        When a ParameterList gains a child parameter, the parent node needs to be
+        marked as unresolved to trigger re-evaluation of the node's state and outputs.
+        """
+        super().add_child(child)
+
+        # Mark the parent node as unresolved since the parameter structure changed
+        if self._node_context is not None:
+            # Import at runtime to avoid circular import
+            from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+            self._node_context.make_node_unresolved(
+                current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+            )
+
+    def remove_child(self, child: BaseNodeElement | str) -> None:
+        """Override to mark parent node as unresolved when children are removed.
+
+        When a ParameterList loses a child parameter, the parent node needs to be
+        marked as unresolved to trigger re-evaluation of the node's state and outputs.
+        """
+        super().remove_child(child)
+
+        # Mark the parent node as unresolved since the parameter structure changed
+        if self._node_context is not None:
+            # Import at runtime to avoid circular import
+            from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+            self._node_context.make_node_unresolved(
+                current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+            )
 
 
 class ParameterKeyValuePair(Parameter):

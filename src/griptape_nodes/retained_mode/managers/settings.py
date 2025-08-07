@@ -96,3 +96,7 @@ class Settings(BaseModel):
     minimum_disk_space_gb_workflows: float = Field(
         default=1.0, description="Minimum disk space in GB required for saving workflows"
     )
+    synced_workflows_directory: str = Field(
+        default="synced_workflows",
+        description="Path to the synced workflows directory, relative to the workspace directory.",
+    )

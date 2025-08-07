@@ -1480,11 +1480,7 @@ class NodeManager:
                 return SetParameterValueResultFailure()
         if request.initial_setup is False and not request.is_output and modified:
             # Mark node as unresolved, broadcast an event
-            node.make_node_unresolved(
-                current_states_to_trigger_change_event=set(
-                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-                )
-            )
+            node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
             # Pass the value through!
             # Optional data_type parameter for internal handling!
