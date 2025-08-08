@@ -55,7 +55,6 @@ class SplitText(ControlNode):
         self.output = Parameter(
             name="output",
             tooltip="List of text items",
-            type="list",
             output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
         )
@@ -98,10 +97,11 @@ class SplitText(ControlNode):
         # Split the text by the delimiter
         try:
             if include_delimiter:
-                # Split and keep the delimiter using regex (delimiters are predefined and safe)
-                # All delimiters are simple characters that don't need escaping, but we escape for safety
-                escaped_delimiter = re.escape(actual_delimiter)
-                split_result = re.split(f"({escaped_delimiter})", text)
+                # Split and append delimiters to preceding elements
+                split_result = text.split(actual_delimiter)
+                # Append delimiter to each element except the last one
+                for i in range(len(split_result) - 1):
+                    split_result[i] += actual_delimiter
             else:
                 # Standard split without including delimiter
                 split_result = text.split(actual_delimiter)
