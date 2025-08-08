@@ -1063,10 +1063,16 @@ class EndNode(BaseNode):
 
 
 class StartLoopNode(BaseNode):
-    finished: bool
-    current_index: int
     end_node: EndLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+    @abstractmethod
+    def is_loop_finished(self) -> bool:
+        """Return True if the loop has finished executing.
+
+        This method must be implemented by subclasses to define when
+        the loop should terminate.
+        """
 
 
 class EndLoopNode(BaseNode):
