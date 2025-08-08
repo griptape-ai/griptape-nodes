@@ -40,10 +40,6 @@ class LoadImage(DataNode):
         if not url:
             return None
 
-        # Strip query parameters (like ?t=123456 cache busters)
-        if "?" in url:
-            url = url.split("?")[0]
-
         return url
 
     def __init__(self, **kwargs) -> None:
