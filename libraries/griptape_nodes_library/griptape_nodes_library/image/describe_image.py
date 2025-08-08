@@ -82,6 +82,15 @@ class DescribeImage(ControlNode):
 
         self.add_parameter(
             Parameter(
+                name="description_only",
+                input_types=["bool"],
+                type="bool",
+                tooltip="Only return the description of the image, no conversation",
+                default_value=True,
+            )
+        )
+        self.add_parameter(
+            Parameter(
                 name="output",
                 output_type="str",
                 type="str",
@@ -191,6 +200,11 @@ class DescribeImage(ControlNode):
         prompt = params.get("prompt", "")
         if prompt == "":
             prompt = "Describe the image"
+
+        get_description_only = self.get_parameter_value("description_only")
+        if get_description_only:
+            prompt += "\n\nOutput image description only."
+
         image_artifact = params.get("image", None)
 
         if isinstance(image_artifact, ImageUrlArtifact):
