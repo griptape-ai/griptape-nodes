@@ -2,8 +2,11 @@ import base64
 import mimetypes
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -867,25 +870,22 @@ class OSManager:
 
     def _terminate_gracefully(self) -> None:
         """Attempt graceful termination with cleanup, fallback to immediate if needed."""
-        import signal
-        import time
-        import threading
 
-        def graceful_shutdown():
+        def graceful_shutdown() -> None:
             """Graceful shutdown in separate thread."""
             try:
                 logger.info("Starting graceful shutdown sequence...")
-                
+
                 # Give a brief moment for the response to be sent
                 time.sleep(0.1)
-                
+
                 # Send SIGTERM to self for graceful shutdown
-                if hasattr(signal, 'SIGTERM'):
+                if hasattr(signal, "SIGTERM"):
                     os.kill(os.getpid(), signal.SIGTERM)
                 else:
                     # Windows fallback
                     sys.exit(0)
-                    
+
             except Exception as e:
                 logger.error("Graceful shutdown failed: %s", e)
                 logger.info("Falling back to immediate termination...")
@@ -897,29 +897,26 @@ class OSManager:
 
     def _terminate_immediately(self) -> None:
         """Terminate the process immediately."""
-        import signal
-        import time
-        import threading
 
-        def immediate_shutdown():
+        def immediate_shutdown() -> None:
             """Immediate shutdown in separate thread."""
             try:
                 logger.info("Performing immediate termination...")
-                
+
                 # Give a brief moment for the response to be sent
                 time.sleep(0.1)
-                
+
                 # Force immediate exit
-                if hasattr(signal, 'SIGKILL'):
+                if hasattr(signal, "SIGKILL"):
                     os.kill(os.getpid(), signal.SIGKILL)
                 else:
                     # Fallback for platforms without SIGKILL
-                    os._exit(1)  # noqa: SLF001
-                    
+                    os._exit(1)
+
             except Exception as e:
                 logger.error("Immediate termination failed: %s", e)
                 # Last resort
-                os._exit(1)  # noqa: SLF001
+                os._exit(1)
 
         # Start immediate shutdown in background thread
         shutdown_thread = threading.Thread(target=immediate_shutdown, daemon=True)
