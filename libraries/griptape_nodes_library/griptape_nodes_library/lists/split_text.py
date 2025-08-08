@@ -6,6 +6,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 
 
@@ -133,8 +134,16 @@ class SplitText(ControlNode):
 
             self.parameter_output_values["output"] = split_result
             self.publish_update_to_parameter("output", split_result)
-        except (re.error, TypeError, ValueError):
-            # If splitting fails, return empty list
+        except re.error as e:
+            # Handle regex-specific errors
+            msg = f"{self.name}: Regex error while splitting text: {e}"
+            logger.error(msg)
+            self.parameter_output_values["output"] = []
+            self.publish_update_to_parameter("output", [])
+        except (TypeError, ValueError) as e:
+            # Handle type or value errors
+            msg = f"{self.name}: Error splitting text: {e}"
+            logger.error(msg)
             self.parameter_output_values["output"] = []
             self.publish_update_to_parameter("output", [])
 
