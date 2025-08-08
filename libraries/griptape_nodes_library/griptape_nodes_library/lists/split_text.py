@@ -77,7 +77,7 @@ class SplitText(ControlNode):
     def _process_text(self) -> None:
         """Process the text input and split it according to the selected delimiter."""
         # Get the text and delimiter type from input parameters
-        text = self.get_parameter_value("text")
+        text = self.get_parameter_value("text")  # If empty, it fales in `validate_before_node_run`
         delimiter_type = self.get_parameter_value("delimiter_type")
         include_delimiter = self.get_parameter_value("include_delimiter")
 
