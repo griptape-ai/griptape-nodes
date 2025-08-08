@@ -69,3 +69,32 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
     url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
 
     return VideoUrlArtifact(url)
+
+
+def _extract_url_from_video_value(video_value: Any) -> str | None:
+    """Extract URL from video parameter value and strip query parameters."""
+    if not video_value:
+        return None
+
+    match video_value:
+        # Handle dictionary format (most common)
+        case dict():
+            url = video_value.get("value")
+        # Handle VideoUrlArtifact objects
+        case VideoUrlArtifact():
+            url = video_value.value
+        # Handle raw strings
+        case str():
+            url = video_value
+        case _:
+            error_msg = f"Unsupported video value type: {type(video_value)}"
+            raise ValueError(error_msg)
+
+    if not url:
+        return None
+
+    # Strip query parameters (like ?t=123456 cache busters)
+    if "?" in url:
+        url = url.split("?")[0]
+
+    return url
