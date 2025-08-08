@@ -39,6 +39,14 @@ class ForLoopStartNode(BaseIterativeStartNode):
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=10,
         )
+        self.end_inclusive = Parameter(
+            name="end_inclusive",
+            tooltip="Include the end value in the loop (True) or exclude it (False)",
+            type=ParameterTypeBuiltin.BOOL.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=True,
+            ui_options={"display_name": "Include end value"},
+        )
         self.step_value = Parameter(
             name="step",
             tooltip="Step size for each iteration (always positive)",
@@ -47,18 +55,12 @@ class ForLoopStartNode(BaseIterativeStartNode):
             default_value=1,
         )
         self.step_value.add_trait(Clamp(min_val=1, max_val=1000))
-        self.end_inclusive = Parameter(
-            name="end_inclusive",
-            tooltip="Include the end value in the loop (True) or exclude it (False)",
-            type=ParameterTypeBuiltin.BOOL.value,
-            allowed_modes={ParameterMode.PROPERTY},
-            default_value=True,
-        )
 
+        # Order the Parameters
         self.add_parameter(self.start_value)
         self.add_parameter(self.end_value)
-        self.add_parameter(self.step_value)
         self.add_parameter(self.end_inclusive)
+        self.add_parameter(self.step_value)
 
         # Move the parameter group to the end
         self.move_element_to_position("For Loop", position="last")

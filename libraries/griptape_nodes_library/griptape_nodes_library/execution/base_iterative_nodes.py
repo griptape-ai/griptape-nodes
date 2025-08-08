@@ -363,7 +363,24 @@ class BaseIterativeStartNode(StartLoopNode):
 
     def _validate_iterative_connections(self) -> list[Exception]:
         """Validate that all required iterative connections are properly established."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         errors = []
+
+        # Check if exec_out has outgoing connections
+        connections = GriptapeNodes.FlowManager().get_connections()
+        exec_out_connections = connections.outgoing_index.get(self.name, {}).get(self.exec_out.name, [])
+
+        if not exec_out_connections:
+            exec_out_display_name = self._get_exec_out_display_name()
+            node_type = self.__class__.__name__.replace("StartNode", "")
+            errors.append(
+                Exception(
+                    f"{self.name}: Missing required connection from '{exec_out_display_name}'. "
+                    f"REQUIRED ACTION: Connect {node_type} Start '{exec_out_display_name}' to interior loop nodes. "
+                    "The start node must connect to other nodes to execute the loop body."
+                )
+            )
 
         # Check if loop has outgoing connection to End
         if self.end_node is None:
@@ -379,7 +396,7 @@ class BaseIterativeStartNode(StartLoopNode):
         # Check if all hidden signal connections exist (only if end_node is connected)
         if self.end_node:
             node_type = self.__class__.__name__.replace("StartNode", "")
-            if "trigger_next_iteration_signal" not in self._connected_parameters:
+            if self.trigger_next_iteration_signal.name not in self._connected_parameters:
                 errors.append(
                     Exception(
                         f"{self.name}: Missing hidden signal connection. "
@@ -388,7 +405,7 @@ class BaseIterativeStartNode(StartLoopNode):
                     )
                 )
 
-            if "break_loop_signal" not in self._connected_parameters:
+            if self.break_loop_signal.name not in self._connected_parameters:
                 errors.append(
                     Exception(
                         f"{self.name}: Missing hidden signal connection. "
@@ -583,8 +600,8 @@ class BaseIterativeEndNode(EndLoopNode):
                 # Skip - don't add anything to output, just continue loop
                 pass
             case self.break_control:
-                # Break - will trigger break signal in get_next_control_output
-                pass
+                # Break - emit current results and trigger break signal in get_next_control_output
+                self.parameter_output_values["results"] = self._results_list.copy()
             case self.loop_end_condition_met_signal_input:
                 # Loop has ended naturally, output final results as standard parameter
                 self.parameter_output_values["results"] = self._results_list.copy()
