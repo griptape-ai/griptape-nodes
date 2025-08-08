@@ -77,7 +77,7 @@ class SplitText(ControlNode):
             else:
                 self.hide_parameter_by_name("custom_delimiter")
 
-        if parameter.name != "output":
+        if parameter.name in ["text", "delimiter_type", "custom_delimiter", "include_delimiter"]:
             self._process_text()
         return super().after_value_set(parameter, value)
 
@@ -91,7 +91,7 @@ class SplitText(ControlNode):
         delimiter_type = self.get_parameter_value("delimiter_type")
         if delimiter_type == "custom":
             delimiter = self.get_parameter_value("custom_delimiter")
-            if delimiter is None:
+            if not delimiter:
                 exceptions.append(Exception(f"{self.name}: Custom delimiter is required when delimiter type is custom"))
             elif not isinstance(delimiter, str):
                 msg = f"{self.name}: Delimiter must be a string"
@@ -111,20 +111,15 @@ class SplitText(ControlNode):
         delimiter_type = self.get_parameter_value("delimiter_type")
         custom_delimiter = self.get_parameter_value("custom_delimiter")
         include_delimiter = self.get_parameter_value("include_delimiter")
-        keep_empty = self.metadata.get("keep_empty", False)
 
         # Determine the actual delimiter based on type
-        if delimiter_type == "newlines":
-            actual_delimiter = "\n"
-        elif delimiter_type == "space":
-            actual_delimiter = " "
-        elif delimiter_type == "comma":
-            actual_delimiter = ","
-        elif delimiter_type == "custom":
-            # For custom delimiter, use the custom_delimiter value
-            actual_delimiter = custom_delimiter if custom_delimiter is not None else " "
-        else:
-            actual_delimiter = "\n"  # default to newlines
+        delimiter_map = {
+            "newlines": "\n",
+            "space": " ",
+            "comma": ",",
+            "custom": custom_delimiter if custom_delimiter is not None else " ",
+        }
+        actual_delimiter = delimiter_map.get(delimiter_type, "\n")  # default to newlines
 
         # Split the text by the delimiter
         try:
@@ -135,10 +130,6 @@ class SplitText(ControlNode):
             else:
                 # Standard split without including delimiter
                 split_result = text.split(actual_delimiter)
-
-            # Optionally keep empty results; default behavior is to drop empties
-            if not keep_empty:
-                split_result = [item for item in split_result if item != ""]
 
             self.parameter_output_values["output"] = split_result
             self.publish_update_to_parameter("output", split_result)
