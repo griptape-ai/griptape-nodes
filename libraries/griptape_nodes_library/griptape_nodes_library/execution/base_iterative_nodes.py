@@ -203,7 +203,8 @@ class BaseIterativeStartNode(StartLoopNode):
                 self._logger.error(err_str)
                 return
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
+    def _validate_start_node(self) -> list[Exception] | None:
+        """Common validation logic for both workflow and node run validation."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         exceptions = []
@@ -228,28 +229,11 @@ class BaseIterativeStartNode(StartLoopNode):
             exceptions.append(e)
         return exceptions
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        return self._validate_start_node()
+
     def validate_before_node_run(self) -> list[Exception] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        exceptions = []
-        if self.end_node is None:
-            msg = f"{self.name}: End node not found or connected."
-            exceptions.append(Exception(msg))
-
-        # Validate all required connections exist
-        validation_errors = self._validate_iterative_connections()
-        if validation_errors:
-            exceptions.extend(validation_errors)
-
-        try:
-            flow = GriptapeNodes.ObjectManager().get_object_by_name(
-                GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
-            )
-            if isinstance(flow, ControlFlow):
-                self._flow = flow
-        except Exception as e:
-            exceptions.append(e)
-        return exceptions
+        return self._validate_start_node()
 
     def get_next_control_output(self) -> Parameter | None:
         return self.next_control_output
@@ -570,7 +554,8 @@ class BaseIterativeEndNode(EndLoopNode):
         """
         self.parameter_output_values["results"] = copy.deepcopy(self._results_list)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
+    def _validate_end_node(self) -> list[Exception] | None:
+        """Common validation logic for both workflow and node run validation."""
         exceptions = []
         if self.start_node is None:
             exceptions.append(Exception("Start node is not set on End Node."))
@@ -583,20 +568,12 @@ class BaseIterativeEndNode(EndLoopNode):
         if exceptions:
             return exceptions
         return super().validate_before_node_run()
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return self._validate_end_node()
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
-        exceptions = []
-        if self.start_node is None:
-            exceptions.append(Exception("Start node is not set on End Node."))
-
-        # Validate all required connections exist
-        validation_errors = self._validate_iterative_connections()
-        if validation_errors:
-            exceptions.extend(validation_errors)
-
-        if exceptions:
-            return exceptions
-        return super().validate_before_node_run()
+        return self._validate_end_node()
 
     def process(self) -> None:
         """Process the end node based on the control path taken."""
