@@ -29,6 +29,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileRequest,
     RenameFileResultFailure,
     RenameFileResultSuccess,
+    TerminateEngineRequest,
+    TerminateEngineResultFailure,
+    TerminateEngineResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -71,6 +74,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=RenameFileRequest, callback=self.on_rename_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=TerminateEngineRequest, callback=self.on_terminate_engine_request
             )
 
     def _get_workspace_path(self) -> Path:
@@ -828,3 +835,92 @@ class OSManager:
             msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
             logger.error(msg)
             return RenameFileResultFailure(result_details=msg)
+
+    def on_terminate_engine_request(self, request: TerminateEngineRequest) -> ResultPayload:
+        """Handle a request to terminate the engine process gracefully."""
+        # Check if user confirmed they know what they're doing
+        if not request.i_know_what_im_doing:
+            msg = "Engine termination requires confirmation. Set i_know_what_im_doing=True to proceed."
+            logger.warning(msg)
+            return TerminateEngineResultFailure(result_details=msg)
+
+        logger.info("Engine termination requested. Reason: %s", request.reason)
+        logger.info("Graceful termination: %s", request.attempt_graceful_termination_first)
+
+        try:
+            if request.attempt_graceful_termination_first:
+                # Attempt graceful shutdown first
+                logger.info("Attempting graceful engine termination...")
+                self._terminate_gracefully()
+            else:
+                # Immediate termination
+                logger.info("Performing immediate engine termination...")
+                self._terminate_immediately()
+
+            # If we reach here, termination was initiated successfully
+            return TerminateEngineResultSuccess()
+
+        except Exception as e:
+            msg = f"Engine termination failed: {e}"
+            logger.error(msg)
+            return TerminateEngineResultFailure(result_details=msg)
+
+    def _terminate_gracefully(self) -> None:
+        """Attempt graceful termination with cleanup, fallback to immediate if needed."""
+        import signal
+        import time
+        import threading
+
+        def graceful_shutdown():
+            """Graceful shutdown in separate thread."""
+            try:
+                logger.info("Starting graceful shutdown sequence...")
+                
+                # Give a brief moment for the response to be sent
+                time.sleep(0.1)
+                
+                # Send SIGTERM to self for graceful shutdown
+                if hasattr(signal, 'SIGTERM'):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                else:
+                    # Windows fallback
+                    sys.exit(0)
+                    
+            except Exception as e:
+                logger.error("Graceful shutdown failed: %s", e)
+                logger.info("Falling back to immediate termination...")
+                self._terminate_immediately()
+
+        # Start graceful shutdown in background thread
+        shutdown_thread = threading.Thread(target=graceful_shutdown, daemon=True)
+        shutdown_thread.start()
+
+    def _terminate_immediately(self) -> None:
+        """Terminate the process immediately."""
+        import signal
+        import time
+        import threading
+
+        def immediate_shutdown():
+            """Immediate shutdown in separate thread."""
+            try:
+                logger.info("Performing immediate termination...")
+                
+                # Give a brief moment for the response to be sent
+                time.sleep(0.1)
+                
+                # Force immediate exit
+                if hasattr(signal, 'SIGKILL'):
+                    os.kill(os.getpid(), signal.SIGKILL)
+                else:
+                    # Fallback for platforms without SIGKILL
+                    os._exit(1)  # noqa: SLF001
+                    
+            except Exception as e:
+                logger.error("Immediate termination failed: %s", e)
+                # Last resort
+                os._exit(1)  # noqa: SLF001
+
+        # Start immediate shutdown in background thread
+        shutdown_thread = threading.Thread(target=immediate_shutdown, daemon=True)
+        shutdown_thread.start()

@@ -230,3 +230,36 @@ class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File/directory rename failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class TerminateEngineRequest(RequestPayload):
+    """Gracefully terminate the current engine process.
+
+    Use when: Shutting down the engine, implementing emergency stop functionality,
+    cleaning up resources before exit, responding to system shutdown signals.
+
+    Args:
+        reason: Reason for termination (for logging purposes)
+        attempt_graceful_termination_first: Whether to attempt graceful shutdown first, fallback to immediate if fails
+        i_know_what_im_doing: Confirmation flag that must be set to True to proceed
+
+    Results: TerminateEngineResultSuccess (process will terminate) | TerminateEngineResultFailure (termination error)
+    """
+
+    reason: str
+    attempt_graceful_termination_first: bool = True
+    i_know_what_im_doing: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class TerminateEngineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine termination initiated successfully. Process will terminate shortly."""
+
+
+@dataclass
+@PayloadRegistry.register
+class TerminateEngineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine termination failed. Common causes: insufficient permissions, system error."""
