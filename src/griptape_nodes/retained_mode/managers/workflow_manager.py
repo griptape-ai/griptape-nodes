@@ -886,7 +886,12 @@ class WorkflowManager:
             # See how our desired version compares against the actual library we (may) have.
             # See if the library exists.
             library_metadata_request = GetLibraryMetadataRequest(library=library_name)
-            library_metadata_result = GriptapeNodes.handle_request(library_metadata_request)
+            # NOTE: Per https://github.com/griptape-ai/griptape-vsl-gui/issues/1123, we
+            # generate a FLOOD of error messages here that can swamp the GUI. We'll call
+            # directly instead of the usual handle_request() path so we don't generate those.
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
                 # Metadata failed to be found.
                 had_critical_error = True
