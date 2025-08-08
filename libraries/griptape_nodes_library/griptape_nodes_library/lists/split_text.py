@@ -74,6 +74,19 @@ class SplitText(ControlNode):
         exceptions = []
         if self.get_parameter_value("text") is None:
             exceptions.append(Exception(f"{self.name}: Text is required to split"))
+        delimiter_type = self.get_parameter_value("delimiter_type")
+        if delimiter_type == "custom":
+            delimiter = self.get_parameter_value("custom_delimiter")
+            if delimiter is None:
+                exceptions.append(Exception(f"{self.name}: Custom delimiter is required when delimiter type is custom"))
+            elif not isinstance(delimiter, str):
+                msg = f"{self.name}: Delimiter must be a string"
+                exceptions.append(Exception(msg))
+            else:
+                escaped_delimiter = re.escape(delimiter)
+                if len(escaped_delimiter) > 1000:
+                    msg = f"{self.name}: Delimiter is too long"
+                    exceptions.append(Exception(msg))
         return exceptions
 
     def _process_text(self) -> None:
@@ -83,10 +96,6 @@ class SplitText(ControlNode):
         delimiter_type = self.get_parameter_value("delimiter_type")
         custom_delimiter = self.get_parameter_value("custom_delimiter")
         include_delimiter = self.get_parameter_value("include_delimiter")
-
-        # Validate inputs
-        if text is None or not isinstance(text, str):
-            return
 
         # Determine the actual delimiter based on type
         if delimiter_type == "newlines":
