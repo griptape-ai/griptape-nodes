@@ -32,7 +32,7 @@ jobs:
             - Code quality and best practices
             - Potential bugs or issues
 
-            You do not need to provide an overview of feedback, just focus on the specific code changes.
+            Do not provide feedback on what is done well, only comment on areas for improvement.
             Be concise and actionable in your comments.
 
           # Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
