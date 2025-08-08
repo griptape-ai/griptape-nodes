@@ -36,18 +36,9 @@ class SplitText(ControlNode):
             default_value="newlines",
         )
         self.add_parameter(self.delimiter_type)
-        self.delimiter_type.add_trait(Options(choices=["newlines", "space", "comma", "custom"]))
-
-        # Add custom delimiter parameter
-        self.custom_delimiter = Parameter(
-            name="custom_delimiter",
-            tooltip="Custom delimiter to split the text by",
-            type="str",
-            input_types=["str"],
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            default_value=" ",
+        self.delimiter_type.add_trait(
+            Options(choices=["newlines", "space", "comma", "semicolon", "tab", "pipe", "dash", "underscore"])
         )
-        self.add_parameter(self.custom_delimiter)
 
         # Add include delimiter option
         self.include_delimiter = Parameter(
@@ -71,14 +62,7 @@ class SplitText(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Keep UI behavior consistent with other nodes: show custom delimiter only when selected
-        if parameter.name == "delimiter_type":
-            if value == "custom":
-                self.show_parameter_by_name("custom_delimiter")
-            else:
-                self.hide_parameter_by_name("custom_delimiter")
-
-        if parameter.name in ["text", "delimiter_type", "custom_delimiter", "include_delimiter"]:
+        if parameter.name in ["text", "delimiter_type", "include_delimiter"]:
             self._process_text()
         return super().after_value_set(parameter, value)
 
@@ -89,20 +73,6 @@ class SplitText(ControlNode):
             exceptions.append(Exception(f"{self.name}: Text is required to split"))
         elif not isinstance(text, str):
             exceptions.append(Exception(f"{self.name}: Text must be a string"))
-        delimiter_type = self.get_parameter_value("delimiter_type")
-        if delimiter_type == "custom":
-            delimiter = self.get_parameter_value("custom_delimiter")
-            if not delimiter:
-                exceptions.append(Exception(f"{self.name}: Custom delimiter is required when delimiter type is custom"))
-            elif not isinstance(delimiter, str):
-                msg = f"{self.name}: Delimiter must be a string"
-                exceptions.append(Exception(msg))
-            else:
-                # Enforce a reasonable maximum on the raw delimiter length
-                max_delimiter_length = 1000
-                if len(delimiter) > max_delimiter_length:
-                    msg = f"{self.name}: Delimiter is too long"
-                    exceptions.append(Exception(msg))
         return exceptions
 
     def _process_text(self) -> None:
@@ -110,7 +80,6 @@ class SplitText(ControlNode):
         # Get the text and delimiter type from input parameters
         text = self.get_parameter_value("text")
         delimiter_type = self.get_parameter_value("delimiter_type")
-        custom_delimiter = self.get_parameter_value("custom_delimiter")
         include_delimiter = self.get_parameter_value("include_delimiter")
 
         # Determine the actual delimiter based on type
@@ -118,14 +87,18 @@ class SplitText(ControlNode):
             "newlines": "\n",
             "space": " ",
             "comma": ",",
-            "custom": custom_delimiter if custom_delimiter is not None else " ",
+            "semicolon": ";",
+            "tab": "\t",
+            "pipe": "|",
+            "dash": "-",
+            "underscore": "_",
         }
         actual_delimiter = delimiter_map.get(delimiter_type, "\n")  # default to newlines
 
         # Split the text by the delimiter
         try:
             if include_delimiter:
-                # Split and keep the delimiter (escape to avoid regex injection)
+                # Split and keep the delimiter (escape to prevent regex injection)
                 escaped_delimiter = re.escape(actual_delimiter)
                 split_result = re.split(f"({escaped_delimiter})", text)
             else:
