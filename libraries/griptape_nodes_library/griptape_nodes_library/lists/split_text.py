@@ -18,7 +18,7 @@ class SplitText(ControlNode):
         self.text_input = Parameter(
             name="text",
             tooltip="Text string to split",
-            input_types=["str"],
+            type="str",
             allowed_modes={ParameterMode.INPUT},
             ui_options={"multiline": True},
         )
@@ -28,7 +28,7 @@ class SplitText(ControlNode):
         self.delimiter_type = Parameter(
             name="delimiter_type",
             tooltip="Type of delimiter to use for splitting",
-            input_types=["str"],
+            type="str",
             allowed_modes={ParameterMode.PROPERTY},
             default_value="newlines",
         )
@@ -39,7 +39,7 @@ class SplitText(ControlNode):
         self.custom_delimiter = Parameter(
             name="custom_delimiter",
             tooltip="Custom delimiter to split the text by",
-            input_types=["str"],
+            type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=" ",
             ui_options={"hide": False},
@@ -50,7 +50,7 @@ class SplitText(ControlNode):
         self.include_delimiter = Parameter(
             name="include_delimiter",
             tooltip="Whether to include the delimiter in the split results",
-            input_types=["bool"],
+            type="bool",
             allowed_modes={ParameterMode.PROPERTY},
             default_value=False,
         )
@@ -60,6 +60,7 @@ class SplitText(ControlNode):
         self.output = Parameter(
             name="output",
             tooltip="List of text items",
+            type="list",
             output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
         )
