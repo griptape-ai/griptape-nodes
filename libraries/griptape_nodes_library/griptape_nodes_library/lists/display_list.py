@@ -76,7 +76,8 @@ class DisplayList(ControlNode):
         # Prepare ui_options update in one go to avoid multiple change events
         new_ui_options = self.items_list.ui_options.copy()
 
-        if not list_values or not isinstance(list_values, list):
+        # If it's None or not a list...
+        if not isinstance(list_values, list):
             if "display" in new_ui_options:
                 # Remove display from the ui_options so non-image parameters will properly display.
                 del new_ui_options["display"]
@@ -86,6 +87,8 @@ class DisplayList(ControlNode):
 
         # Regenerate parameters for each item in the list
         if len(list_values) == 0:
+            # If we're empty, be empty.
+            self._clear_list()
             self.items_list.ui_options = new_ui_options
             self._updating_display_list = False
             return
