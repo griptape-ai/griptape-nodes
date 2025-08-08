@@ -93,8 +93,4 @@ def _extract_url_from_video_value(video_value: Any) -> str | None:
     if not url:
         return None
 
-    # Strip query parameters (like ?t=123456 cache busters)
-    if "?" in url:
-        url = url.split("?")[0]
-
     return url
