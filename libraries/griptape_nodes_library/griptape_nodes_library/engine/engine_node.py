@@ -94,10 +94,13 @@ class EngineNode(DataNode):
 
     def _find_result_classes(self, request_name: str, registry: dict) -> tuple[type | None, type | None]:
         """Find corresponding Success and Failure result classes for a request."""
-        if not request_name.endswith("Request"):
-            return None, None
-
-        base_name = request_name[:-7]  # Remove "Request"
+        # Determine the base name for pattern matching
+        request_suffix = "Request"
+        if request_name.endswith(request_suffix):
+            base_name = request_name[:-len(request_suffix)]  # Remove "Request"
+        else:
+            # For classes like LoadWorkflowMetadata, use the full name
+            base_name = request_name
 
         # Try different patterns for success/failure class names
         success_patterns = [
