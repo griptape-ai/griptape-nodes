@@ -1,6 +1,5 @@
 """Griptape Nodes package."""
 
-from httpx import Response
 from rich.console import Console
 
 console = Console()
@@ -33,7 +32,13 @@ with console.status("Loading Griptape Nodes...") as status:
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.utils.uv_utils import find_uv_bin
-    from griptape_nodes.utils.version_utils import get_complete_version_string, get_current_version, get_install_source
+    from griptape_nodes.utils.version_utils import (
+        get_complete_version_string,
+        get_current_version,
+        get_install_source,
+        get_latest_version_git,
+        get_latest_version_pypi,
+    )
 
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"
 DATA_DIR = xdg_data_home() / "griptape_nodes"
@@ -632,20 +637,6 @@ def __build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     return new_libraries
 
 
-def _access_update_url(update_url: str, client: httpx.Client) -> Response | None:
-    """Small helper to reduce repetitive code for error handling."""
-    try:
-        response = client.get(update_url)
-    except httpx.RequestError as e:
-        console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
-        console.print(
-            f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]"
-        )
-        return None
-    else:
-        return response
-
-
 def _get_latest_version(package: str, install_source: str) -> str:
     """Fetches the latest release tag from PyPI.
 
@@ -656,45 +647,12 @@ def _get_latest_version(package: str, install_source: str) -> str:
     Returns:
         str: Latest release tag (e.g., "v0.31.4")
     """
-    version = get_current_version()
     if install_source == "pypi":
-        update_url = PYPI_UPDATE_URL.format(package=package)
-
-        with httpx.Client(timeout=30.0) as client:
-            # First check for connection issues before status issues
-            response = _access_update_url(update_url, client)
-            if not response:
-                return version
-            try:
-                response.raise_for_status()
-                data = response.json()
-                if "info" in data and "version" in data["info"]:
-                    version = f"v{data['info']['version']}"
-            except httpx.HTTPStatusError as e:
-                console.print(f"[red]Error fetching latest version: {e}[/red]")
-    elif install_source == "git":
-        # We only install auto updating from the 'latest' tag
-        revision = LATEST_TAG
-        update_url = GITHUB_UPDATE_URL.format(package=package, revision=revision)
-
-        with httpx.Client(timeout=30.0) as client:
-            # First check for connection issues before status issues
-            response = _access_update_url(update_url, client)
-            if not response:
-                return version
-
-            try:
-                response.raise_for_status()
-                # Get the latest commit SHA for the tag, this effectively the latest version of the package
-                data = response.json()
-                if "object" in data and "sha" in data["object"]:
-                    version = data["object"]["sha"][:7]
-            except httpx.HTTPStatusError as e:
-                console.print(f"[red]Error fetching latest version: {e}[/red]")
-    else:
-        # If the package is installed from a file, just return the current version since the user is likely managing it manually
-        return version
-    return version
+        return get_latest_version_pypi(package, PYPI_UPDATE_URL)
+    if install_source == "git":
+        return get_latest_version_git(package, GITHUB_UPDATE_URL, LATEST_TAG)
+    # If the package is installed from a file, just return the current version since the user is likely managing it manually
+    return get_current_version()
 
 
 def _auto_update_self() -> None:
