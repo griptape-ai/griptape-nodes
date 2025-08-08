@@ -19,6 +19,7 @@ class SplitText(ControlNode):
             name="text",
             tooltip="Text string to split",
             type="str",
+            input_types=["str"],
             allowed_modes={ParameterMode.INPUT},
             ui_options={"multiline": True},
         )
@@ -29,6 +30,7 @@ class SplitText(ControlNode):
             name="delimiter_type",
             tooltip="Type of delimiter to use for splitting",
             type="str",
+            input_types=["str"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value="newlines",
         )
@@ -40,9 +42,9 @@ class SplitText(ControlNode):
             name="custom_delimiter",
             tooltip="Custom delimiter to split the text by",
             type="str",
+            input_types=["str"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=" ",
-            ui_options={"hide": False},
         )
         self.add_parameter(self.custom_delimiter)
 
@@ -51,6 +53,7 @@ class SplitText(ControlNode):
             name="include_delimiter",
             tooltip="Whether to include the delimiter in the split results",
             type="bool",
+            input_types=["bool"],
             allowed_modes={ParameterMode.PROPERTY},
             default_value=False,
         )
@@ -78,7 +81,7 @@ class SplitText(ControlNode):
             self._process_text()
         return super().after_value_set(parameter, value)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
+    def validate_before_node_run(self) -> list[Exception]:
         exceptions = []
         text = self.get_parameter_value("text")
         if text is None:
