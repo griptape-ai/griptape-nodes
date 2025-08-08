@@ -53,9 +53,9 @@ class SecretsManager:
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = SecretsManager._apply_secret_name_compliance(request.key)
-        secret_value = self.get_secret(secret_key)
+        secret_value = self.get_secret(secret_key, should_error_on_not_found=request.should_error_on_not_found)
 
-        if secret_value is None:
+        if secret_value is None and request.should_error_on_not_found:
             details = f"Secret '{secret_key}' not found."
             logger.error(details)
             return GetSecretValueResultFailure(result_details=details)
