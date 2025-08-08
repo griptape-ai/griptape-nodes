@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -5,7 +6,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 
 
@@ -105,24 +105,21 @@ class SplitText(ControlNode):
         try:
             if include_delimiter:
                 # Use a more complex approach to include delimiters
-                import re
-
                 # Escape special regex characters in the delimiter
                 escaped_delimiter = re.escape(actual_delimiter)
                 # Split and keep the delimiter
                 split_result = re.split(f"({escaped_delimiter})", text)
-                # Remove empty strings
+                # Remove empty strings from the result
                 split_result = [item for item in split_result if item]
             else:
                 # Standard split without including delimiter
                 split_result = text.split(actual_delimiter)
-                # Remove empty strings if they occur at the beginning or end
+                # Remove empty strings from the result
                 split_result = [item for item in split_result if item]
 
             self.parameter_output_values["output"] = split_result
             self.publish_update_to_parameter("output", split_result)
-        except Exception as e:
-            logger.error(f"{self.name}: Error splitting text: {e}")
+        except Exception:
             # If splitting fails, return empty list
             self.parameter_output_values["output"] = []
             self.publish_update_to_parameter("output", [])
