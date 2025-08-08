@@ -1,3 +1,4 @@
+import copy
 import logging
 from abc import abstractmethod
 from enum import Enum
@@ -561,6 +562,14 @@ class BaseIterativeEndNode(EndLoopNode):
     def _get_compatible_start_classes(self) -> set[type]:
         """Return the set of Start node classes that this End node can connect to."""
 
+    def _output_results_list(self) -> None:
+        """Output the current results list to the results parameter.
+
+        Uses deep copy to ensure nested objects (like dictionaries) are properly copied
+        and won't have unintended side effects if modified later.
+        """
+        self.parameter_output_values["results"] = copy.deepcopy(self._results_list)
+
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
         if self.start_node is None:
@@ -601,10 +610,10 @@ class BaseIterativeEndNode(EndLoopNode):
                 pass
             case self.break_control:
                 # Break - emit current results and trigger break signal in get_next_control_output
-                self.parameter_output_values["results"] = self._results_list.copy()
+                self._output_results_list()
             case self.loop_end_condition_met_signal_input:
                 # Loop has ended naturally, output final results as standard parameter
-                self.parameter_output_values["results"] = self._results_list.copy()
+                self._output_results_list()
                 return
 
     def get_next_control_output(self) -> Parameter | None:
@@ -765,7 +774,7 @@ class BaseIterativeEndNode(EndLoopNode):
     def reset_for_workflow_run(self) -> None:
         """Reset End state for a fresh workflow run."""
         self._results_list = []
-        self.set_parameter_value("results", [])
+        self._output_results_list()
 
     def after_incoming_connection(
         self,
