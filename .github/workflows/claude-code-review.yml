@@ -31,8 +31,9 @@ jobs:
             Please review this pull request and provide feedback on:
             - Code quality and best practices
             - Potential bugs or issues
-            
-            Be constructive, helpful, and concise in your feedback.
+
+            You do not need to provide an overview of feedback, just focus on the specific code changes.
+            Be concise and actionable in your comments.
 
           # Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
           use_sticky_comment: true
