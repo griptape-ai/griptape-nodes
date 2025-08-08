@@ -62,7 +62,7 @@ class SplitText(ControlNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["text", "delimiter_type", "include_delimiter"]:
-            self._process_text()
+            self._process_text()  # Claude - I want it to update when values change. It also has to work during `process`
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception]:
