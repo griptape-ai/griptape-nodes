@@ -66,14 +66,24 @@ class SplitText(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        # Keep UI behavior consistent with other nodes: show custom delimiter only when selected
+        if parameter.name == "delimiter_type":
+            if value == "custom":
+                self.show_parameter_by_name("custom_delimiter")
+            else:
+                self.hide_parameter_by_name("custom_delimiter")
+
         if parameter.name != "output":
             self._process_text()
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
-        if self.get_parameter_value("text") is None:
+        text = self.get_parameter_value("text")
+        if text is None:
             exceptions.append(Exception(f"{self.name}: Text is required to split"))
+        elif not isinstance(text, str):
+            exceptions.append(Exception(f"{self.name}: Text must be a string"))
         delimiter_type = self.get_parameter_value("delimiter_type")
         if delimiter_type == "custom":
             delimiter = self.get_parameter_value("custom_delimiter")
@@ -83,8 +93,9 @@ class SplitText(ControlNode):
                 msg = f"{self.name}: Delimiter must be a string"
                 exceptions.append(Exception(msg))
             else:
-                escaped_delimiter = re.escape(delimiter)
-                if len(escaped_delimiter) > 1000:
+                # Enforce a reasonable maximum on the raw delimiter length
+                max_delimiter_length = 1000
+                if len(delimiter) > max_delimiter_length:
                     msg = f"{self.name}: Delimiter is too long"
                     exceptions.append(Exception(msg))
         return exceptions
@@ -96,6 +107,7 @@ class SplitText(ControlNode):
         delimiter_type = self.get_parameter_value("delimiter_type")
         custom_delimiter = self.get_parameter_value("custom_delimiter")
         include_delimiter = self.get_parameter_value("include_delimiter")
+        keep_empty = self.metadata.get("keep_empty", False)
 
         # Determine the actual delimiter based on type
         if delimiter_type == "newlines":
@@ -113,22 +125,20 @@ class SplitText(ControlNode):
         # Split the text by the delimiter
         try:
             if include_delimiter:
-                # Use a more complex approach to include delimiters
-                # Escape special regex characters in the delimiter
+                # Split and keep the delimiter (escape to avoid regex injection)
                 escaped_delimiter = re.escape(actual_delimiter)
-                # Split and keep the delimiter
                 split_result = re.split(f"({escaped_delimiter})", text)
-                # Remove empty strings from the result
-                split_result = [item for item in split_result if item]
             else:
                 # Standard split without including delimiter
                 split_result = text.split(actual_delimiter)
-                # Remove empty strings from the result
-                split_result = [item for item in split_result if item]
+
+            # Optionally keep empty results; default behavior is to drop empties
+            if not keep_empty:
+                split_result = [item for item in split_result if item != ""]
 
             self.parameter_output_values["output"] = split_result
             self.publish_update_to_parameter("output", split_result)
-        except Exception:
+        except (re.error, TypeError, ValueError):
             # If splitting fails, return empty list
             self.parameter_output_values["output"] = []
             self.publish_update_to_parameter("output", [])
