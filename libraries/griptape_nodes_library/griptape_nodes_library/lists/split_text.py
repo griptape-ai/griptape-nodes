@@ -90,7 +90,12 @@ class SplitText(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in [self.text_input.name, self.delimiter_type.name, self.include_delimiter.name, self.trim_whitespace.name]:
+        if parameter.name in [
+            self.text_input.name,
+            self.delimiter_type.name,
+            self.include_delimiter.name,
+            self.trim_whitespace.name,
+        ]:
             self._process_text()
         return super().after_value_set(parameter, value)
 
