@@ -98,7 +98,8 @@ class SplitText(ControlNode):
         # Split the text by the delimiter
         try:
             if include_delimiter:
-                # Split and keep the delimiter (escape to prevent regex injection)
+                # Split and keep the delimiter using regex (delimiters are predefined and safe)
+                # All delimiters are simple characters that don't need escaping, but we escape for safety
                 escaped_delimiter = re.escape(actual_delimiter)
                 split_result = re.split(f"({escaped_delimiter})", text)
             else:
@@ -108,7 +109,7 @@ class SplitText(ControlNode):
             self.parameter_output_values["output"] = split_result
             self.publish_update_to_parameter("output", split_result)
         except re.error as e:
-            # Handle regex-specific errors
+            # Handle regex-specific errors (shouldn't occur with predefined delimiters)
             msg = f"{self.name}: Regex error while splitting text: {e}"
             logger.error(msg)
             self.parameter_output_values["output"] = []
