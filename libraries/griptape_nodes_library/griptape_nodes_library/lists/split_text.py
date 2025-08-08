@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -11,6 +11,27 @@ from griptape_nodes.traits.options import Options
 
 class SplitText(ControlNode):
     """SplitText Node that takes a text string and splits it into a list based on a specified delimiter."""
+
+    # Central definition of delimiter choices and their mappings
+    DELIMITER_MAP: ClassVar[dict[str, str]] = {
+        "newlines": "\n",
+        "double_newline": "\n\n",
+        "space": " ",
+        "comma": ",",
+        "semicolon": ";",
+        "colon": ":",
+        "tab": "\t",
+        "pipe": "|",
+        "dash": "-",
+        "underscore": "_",
+        "period": ".",
+        "slash": "/",
+        "backslash": "\\",
+        "at": "@",
+        "hash": "#",
+        "ampersand": "&",
+        "equals": "=",
+    }
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -35,9 +56,7 @@ class SplitText(ControlNode):
             default_value="newlines",
         )
         self.add_parameter(self.delimiter_type)
-        self.delimiter_type.add_trait(
-            Options(choices=["newlines", "space", "comma", "semicolon", "tab", "pipe", "dash", "underscore"])
-        )
+        self.delimiter_type.add_trait(Options(choices=list(self.DELIMITER_MAP.keys())))
 
         # Add include delimiter option
         self.include_delimiter = Parameter(
@@ -50,6 +69,17 @@ class SplitText(ControlNode):
         )
         self.add_parameter(self.include_delimiter)
 
+        # Add trim whitespace option
+        self.trim_whitespace = Parameter(
+            name="trim_whitespace",
+            tooltip="Whether to trim leading whitespace after the delimiter",
+            type="bool",
+            input_types=["bool"],
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=False,
+        )
+        self.add_parameter(self.trim_whitespace)
+
         # Add output parameter
         self.output = Parameter(
             name="output",
@@ -60,13 +90,13 @@ class SplitText(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in ["text", "delimiter_type", "include_delimiter"]:
-            self._process_text()  # Claude - I want it to update when values change. It also has to work during `process`
+        if parameter.name in [self.text_input.name, self.delimiter_type.name, self.include_delimiter.name, self.trim_whitespace.name]:
+            self._process_text()
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception]:
         exceptions = []
-        text = self.get_parameter_value("text")
+        text = self.get_parameter_value(self.text_input.name)
         if text is None:
             exceptions.append(Exception(f"{self.name}: Text is required to split"))
         elif not isinstance(text, str):
@@ -76,22 +106,13 @@ class SplitText(ControlNode):
     def _process_text(self) -> None:
         """Process the text input and split it according to the selected delimiter."""
         # Get the text and delimiter type from input parameters
-        text = self.get_parameter_value("text")  # If empty, it fales in `validate_before_node_run`
-        delimiter_type = self.get_parameter_value("delimiter_type")
-        include_delimiter = self.get_parameter_value("include_delimiter")
+        text = self.get_parameter_value(self.text_input.name)
+        delimiter_type = self.get_parameter_value(self.delimiter_type.name)
+        include_delimiter = self.get_parameter_value(self.include_delimiter.name)
+        trim_whitespace = self.get_parameter_value(self.trim_whitespace.name)
 
         # Determine the actual delimiter based on type
-        delimiter_map = {
-            "newlines": "\n",
-            "space": " ",
-            "comma": ",",
-            "semicolon": ";",
-            "tab": "\t",
-            "pipe": "|",
-            "dash": "-",
-            "underscore": "_",
-        }
-        actual_delimiter = delimiter_map.get(delimiter_type, "\n")  # default to newlines
+        actual_delimiter = self.DELIMITER_MAP.get(delimiter_type, "\n")  # default to newlines
 
         # Split the text by the delimiter
         try:
@@ -105,14 +126,18 @@ class SplitText(ControlNode):
                 # Standard split without including delimiter
                 split_result = text.split(actual_delimiter)
 
-            self.parameter_output_values["output"] = split_result
-            self.publish_update_to_parameter("output", split_result)
+            # Apply whitespace trimming if requested
+            if trim_whitespace:
+                split_result = [item.lstrip() for item in split_result]
+
+            self.parameter_output_values[self.output.name] = split_result
+            self.publish_update_to_parameter(self.output.name, split_result)
         except (TypeError, ValueError) as e:
             # Handle type or value errors
             msg = f"{self.name}: Error splitting text: {e}"
             logger.error(msg)
-            self.parameter_output_values["output"] = []
-            self.publish_update_to_parameter("output", [])
+            self.parameter_output_values[self.output.name] = []
+            self.publish_update_to_parameter(self.output.name, [])
 
     def process(self) -> None:
         self._process_text()
