@@ -491,6 +491,16 @@
       }
     },
     {
+      "class_name": "SplitText",
+      "file_path": "griptape_nodes_library/lists/split_text.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a text string and splits it into a list based on a specified delimiter.",
+        "display_name": "Split Text",
+        "icon": "scissors"
+      }
+    },
+    {
       "class_name": "DisplayList",
       "file_path": "griptape_nodes_library/lists/display_list.py",
       "metadata": {
