@@ -1,6 +1,6 @@
 import dataclasses
 import inspect
-from typing import Any, get_origin
+from typing import Any, Union, get_origin
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
@@ -97,7 +97,7 @@ class EngineNode(DataNode):
         # Determine the base name for pattern matching
         request_suffix = "Request"
         if request_name.endswith(request_suffix):
-            base_name = request_name[:-len(request_suffix)]  # Remove "Request"
+            base_name = request_name[: -len(request_suffix)]  # Remove "Request"
         else:
             # For classes like LoadWorkflowMetadata, use the full name
             base_name = request_name
@@ -284,10 +284,27 @@ class EngineNode(DataNode):
         """Convert Python type annotation to parameter type string."""
         # Handle typing module types
         origin = get_origin(python_type)
+
+        if origin is Union:
+            return self._handle_union_type(python_type)
         if origin is not None:
             return self._handle_generic_type(origin)
 
         return self._handle_basic_type(python_type)
+
+    def _handle_union_type(self, python_type: Any) -> str:
+        """Handle Union types, especially Optional[T]."""
+        args = python_type.__args__
+
+        # Check if this is Optional[T] (Union[T, None])
+        optional_args_count = 2
+        if len(args) == optional_args_count and type(None) in args:
+            # Extract the non-None type
+            non_none_type = args[0] if args[1] is type(None) else args[1]
+            return self._python_type_to_param_type(non_none_type)
+
+        # For other unions, use the first type
+        return self._python_type_to_param_type(args[0]) if args else "any"
 
     def _handle_generic_type(self, origin: type) -> str:
         """Handle generic types like list, dict, etc."""
@@ -347,10 +364,31 @@ class EngineNode(DataNode):
             param_name = f"input_{field.name}"
             if param_name in [p.name for p in self.parameters]:
                 value = self.get_parameter_value(param_name)
-                if value is not None:
-                    request_kwargs[field.name] = value
+
+                # Apply conversion based on field metadata
+                converted_value = self._convert_value_for_field(value, field)
+
+                if converted_value is not None:
+                    request_kwargs[field.name] = converted_value
 
         return request_kwargs
+
+    def _convert_value_for_field(self, value: Any, field: Any) -> Any:
+        """Convert value based on field type."""
+        if value == "" and self._is_optional_type(field.type):
+            return None  # Convert empty string to None for optional fields
+
+        return value
+
+    def _is_optional_type(self, python_type: Any) -> bool:
+        """Check if a type is Optional[T] (Union[T, None])."""
+        origin = get_origin(python_type)
+        if origin is Union:
+            args = python_type.__args__
+            # Optional[T] is Union[T, None] which has exactly 2 args with None as one of them
+            optional_args_count = 2
+            return len(args) == optional_args_count and type(None) in args
+        return False
 
     def _execute_request(self, request_class: type, request_kwargs: dict) -> None:
         """Execute the request and handle the result."""
