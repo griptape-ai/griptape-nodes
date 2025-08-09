@@ -276,6 +276,9 @@ class ArtifactPathTethering:
         artifact = self._to_artifact(value)
         self.node.parameter_output_values[self.artifact_parameter.name] = artifact
 
+        # Publish the artifact parameter update to the UI
+        self.node.publish_update_to_parameter(self.artifact_parameter.name, artifact)
+
         # Update path parameter with URL from artifact (bidirectional sync)
         extracted_url = self.config.extract_url_func(value)
         if extracted_url:
