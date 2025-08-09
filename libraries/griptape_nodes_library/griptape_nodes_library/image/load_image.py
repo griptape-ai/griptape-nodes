@@ -9,6 +9,7 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactPathValidator,
     ArtifactTetheringConfig,
+    default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
@@ -20,27 +21,7 @@ class LoadImage(DataNode):
     @staticmethod
     def _extract_url_from_image_value(image_value: Any) -> str | None:
         """Extract URL from image parameter value and strip query parameters."""
-        if not image_value:
-            return None
-
-        match image_value:
-            # Handle dictionary format (most common)
-            case dict():
-                url = image_value.get("value")
-            # Handle ImageUrlArtifact objects
-            case ImageUrlArtifact():
-                url = image_value.value
-            # Handle raw strings
-            case str():
-                url = image_value
-            case _:
-                error_msg = f"Unsupported image value type: {type(image_value)}"
-                raise ValueError(error_msg)
-
-        if not url:
-            return None
-
-        return url
+        return default_extract_url_from_artifact_value(artifact_value=image_value, artifact_classes=ImageUrlArtifact)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
