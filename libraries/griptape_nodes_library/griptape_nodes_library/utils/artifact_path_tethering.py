@@ -201,7 +201,7 @@ class ArtifactPathTethering:
 
     # Timeout constants - shared across all artifact types
     URL_VALIDATION_TIMEOUT: ClassVar[int] = 10  # seconds
-    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 30  # seconds
+    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 90  # seconds
 
     # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
     SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
