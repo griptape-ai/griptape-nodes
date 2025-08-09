@@ -7,8 +7,10 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactPathValidator,
     ArtifactTetheringConfig,
+    default_extract_url_from_artifact_value,
 )
-from griptape_nodes_library.utils.video_utils import _extract_url_from_video_value, dict_to_video_url_artifact
+from griptape_nodes_library.utils.video_utils import dict_to_video_url_artifact
+from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 class LoadVideo(DataNode):
@@ -21,7 +23,9 @@ class LoadVideo(DataNode):
         # Configuration for artifact tethering
         self._tethering_config = ArtifactTetheringConfig(
             dict_to_artifact_func=dict_to_video_url_artifact,
-            extract_url_func=_extract_url_from_video_value,
+            extract_url_func=lambda value: default_extract_url_from_artifact_value(
+                artifact_value=value, artifact_classes=VideoUrlArtifact
+            ),
             supported_extensions=self.SUPPORTED_EXTENSIONS,
             default_extension="mp4",
             url_content_type_prefix="video/",
