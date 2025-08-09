@@ -712,7 +712,7 @@ class ImageBash(DataNode):
                 self._sync_metadata_with_input_images()
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
-    def _process_output_image(self) -> None:
+    def _process_output_image(self) -> None:  # noqa: C901, PLR0912, PLR0915
         # Composite the image based on the bash_image meta information
         bash_image = self.get_parameter_value("bash_image")
         if bash_image is None:
@@ -725,8 +725,12 @@ class ImageBash(DataNode):
             meta = getattr(bash_image, "meta", {}) or {}
 
         canvas_meta = meta.get("canvas_size", {}) or {}
-        canvas_width = int(canvas_meta.get("width") or self.get_parameter_value("width") or 1920)
-        canvas_height = int(canvas_meta.get("height") or self.get_parameter_value("height") or 1080)
+        canvas_width = canvas_meta.get("width") or self.get_parameter_value("width") or 1920
+        canvas_height = canvas_meta.get("height") or self.get_parameter_value("height") or 1080
+        if not isinstance(canvas_width, int):
+            canvas_width = int(canvas_width)
+        if not isinstance(canvas_height, int):
+            canvas_height = int(canvas_height)
         background_hex = meta.get("canvas_background_color", "#ffffff")
 
         # Create base canvas
@@ -764,12 +768,12 @@ class ImageBash(DataNode):
                 layer_img = layer_img.convert("RGBA")
 
             # Apply scale and base dimensions
-            base_w = int(layer.get("width", layer_img.width) or layer_img.width)
-            base_h = int(layer.get("height", layer_img.height) or layer_img.height)
+            base_w = layer.get("width", layer_img.width) or layer_img.width
+            base_h = layer.get("height", layer_img.height) or layer_img.height
             scale_x = float(layer.get("scaleX", 1.0) or 1.0)
             scale_y = float(layer.get("scaleY", 1.0) or 1.0)
-            target_w = max(1, int(round(base_w * scale_x)))
-            target_h = max(1, int(round(base_h * scale_y)))
+            target_w = max(1, round(base_w * scale_x))
+            target_h = max(1, round(base_h * scale_y))
             if layer_img.size != (target_w, target_h):
                 layer_img = layer_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
@@ -792,8 +796,8 @@ class ImageBash(DataNode):
             # Position: Konva x/y represent center
             x = float(layer.get("x", canvas_width / 2))
             y = float(layer.get("y", canvas_height / 2))
-            paste_x = int(round(x - layer_img.width / 2))
-            paste_y = int(round(y - layer_img.height / 2))
+            paste_x = round(x - layer_img.width / 2)
+            paste_y = round(y - layer_img.height / 2)
 
             # Paste with alpha mask
             canvas.paste(layer_img, (paste_x, paste_y), layer_img)
