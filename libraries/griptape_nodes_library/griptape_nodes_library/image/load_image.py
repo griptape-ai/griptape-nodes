@@ -56,7 +56,7 @@ class LoadImage(DataNode):
         self.image_parameter = Parameter(
             name="image",
             input_types=["ImageArtifact", "ImageUrlArtifact"],
-            type="ImageArtifact",
+            type="ImageUrlArtifact",
             output_type="ImageUrlArtifact",
             default_value=None,
             ui_options={"clickable_file_browser": True, "expander": True, "edit_mask": True},
