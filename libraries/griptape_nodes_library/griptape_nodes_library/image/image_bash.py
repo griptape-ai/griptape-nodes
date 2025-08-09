@@ -137,10 +137,13 @@ class ImageBash(DataNode):
 
         self.add_parameter(
             Parameter(
-                name="quick_comp",
+                name="comp_on_run",
                 type="bool",
                 default_value=True,
-                tooltip="Quick composite the image",
+                tooltip=(
+                    "If enabled, this node recomposes layers from Image Bash metadata when processing. "
+                    "If disabled, it outputs the current image from the Image Bash editor."
+                ),
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -817,10 +820,16 @@ class ImageBash(DataNode):
                 self.publish_update_to_parameter("output_image", ImageUrlArtifact(image_value))
 
     def process(self) -> None:
-        quick = bool(self.get_parameter_value("quick_comp"))
-        if quick:
-            self._update_output_image()
-        else:
+        # comp_on_run: True = compose from metadata; False = pass through editor output
+        comp_on_run = self.get_parameter_value("comp_on_run")
+        if comp_on_run is None:
+            # Backward compatibility: if legacy quick_comp exists, invert its meaning
+            legacy_quick = self.get_parameter_value("quick_comp")
+            comp_on_run = False if legacy_quick is None else (not bool(legacy_quick))
+
+        if bool(comp_on_run):
             # Ensure bash_image.meta reflects current input_images before composing
             self._sync_metadata_with_input_images()
             self._process_output_image()
+        else:
+            self._update_output_image()
