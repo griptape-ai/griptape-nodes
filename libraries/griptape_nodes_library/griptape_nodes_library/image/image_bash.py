@@ -798,7 +798,7 @@ class ImageBash(DataNode):
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact
         self.publish_update_to_parameter("output_image", output_artifact)
-        logger.info(f"Output image saved to {output_artifact.value}")
+        logger.debug(f"Output image saved to {output_artifact.value}")
 
     def _update_output_image(self) -> None:
         bash_image = self.get_parameter_value("bash_image")
