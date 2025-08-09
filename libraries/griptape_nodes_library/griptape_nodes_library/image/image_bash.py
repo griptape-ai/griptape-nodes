@@ -755,7 +755,9 @@ class ImageBash(DataNode):
             # Load image
             try:
                 layer_img = load_pil_from_url(src)
-            except Exception:
+            except Exception as e:
+                msg = f"{self.name}: Error loading image from {src}: {e}"
+                logger.warning(msg)
                 continue
 
             if layer_img.mode != "RGBA":
