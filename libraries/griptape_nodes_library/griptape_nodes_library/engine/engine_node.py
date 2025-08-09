@@ -193,7 +193,8 @@ class EngineNode(DataNode):
 
     def _create_input_parameter_for_field(self, field: Any) -> Parameter:
         """Create an input parameter for a dataclass field."""
-        param_type = self._python_type_to_param_type(field.type)
+        # Get input types for Union types, or single type for simple types
+        input_types = self._get_input_types_for_field(field.type)
 
         # Determine default value
         default_value = self._get_field_default_value(field)
@@ -205,7 +206,7 @@ class EngineNode(DataNode):
         return Parameter(
             name=f"input_{field.name}",
             tooltip=tooltip,
-            type=param_type,
+            input_types=input_types,
             default_value=default_value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"display_name": field.name},
@@ -221,6 +222,36 @@ class EngineNode(DataNode):
             except Exception:
                 return None
         return None
+
+    def _get_input_types_for_field(self, python_type: Any) -> list[str]:
+        """Convert Python type annotation to list of input types for Parameter."""
+        origin = get_origin(python_type)
+
+        if origin is Union:
+            # For Union types, convert each type to a string
+            input_types = []
+            for arg in python_type.__args__:
+                if arg is type(None):
+                    input_types.append("none")
+                else:
+                    input_types.append(self._python_type_to_param_type(arg))
+            return input_types
+        # For single types, return a list with one element
+        return [self._python_type_to_param_type(python_type)]
+
+    def _get_output_type_for_field(self, python_type: Any) -> str:
+        """Convert Python type annotation to single output type for Parameter."""
+        origin = get_origin(python_type)
+
+        if origin is Union:
+            # For Union types on outputs, we need to pick one type
+            # For Optional[T], return T; for other unions, return first non-None type
+            for arg in python_type.__args__:
+                if arg is not type(None):
+                    return self._python_type_to_param_type(arg)
+            return "none"  # If somehow all types are None
+        # For single types
+        return self._python_type_to_param_type(python_type)
 
     def _create_result_parameters(self, request_info: dict) -> None:
         """Create Success and Failure output parameters."""
@@ -266,7 +297,8 @@ class EngineNode(DataNode):
 
     def _create_output_parameter_for_field(self, field: Any, prefix: str) -> Parameter:
         """Create an output parameter for a dataclass field."""
-        param_type = self._python_type_to_param_type(field.type)
+        # For output parameters, we need a single output type
+        output_type = self._get_output_type_for_field(field.type)
 
         tooltip = f"Output from {prefix} result: {field.name}"
         if hasattr(field, "metadata") and field.metadata.get("description"):
@@ -275,7 +307,7 @@ class EngineNode(DataNode):
         return Parameter(
             name=f"output_{prefix}_{field.name}",
             tooltip=tooltip,
-            type=param_type,
+            output_type=output_type,
             allowed_modes={ParameterMode.OUTPUT},
             ui_options={"display_name": field.name},
         )
@@ -285,26 +317,10 @@ class EngineNode(DataNode):
         # Handle typing module types
         origin = get_origin(python_type)
 
-        if origin is Union:
-            return self._handle_union_type(python_type)
         if origin is not None:
             return self._handle_generic_type(origin)
 
         return self._handle_basic_type(python_type)
-
-    def _handle_union_type(self, python_type: Any) -> str:
-        """Handle Union types, especially Optional[T]."""
-        args = python_type.__args__
-
-        # Check if this is Optional[T] (Union[T, None])
-        optional_args_count = 2
-        if len(args) == optional_args_count and type(None) in args:
-            # Extract the non-None type
-            non_none_type = args[0] if args[1] is type(None) else args[1]
-            return self._python_type_to_param_type(non_none_type)
-
-        # For other unions, use the first type
-        return self._python_type_to_param_type(args[0]) if args else "any"
 
     def _handle_generic_type(self, origin: type) -> str:
         """Handle generic types like list, dict, etc."""
