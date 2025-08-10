@@ -2,10 +2,8 @@ from typing import Any, ClassVar
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
-    ArtifactPathValidator,
     ArtifactTetheringConfig,
     default_extract_url_from_artifact_value,
 )
@@ -33,39 +31,26 @@ class LoadVideo(DataNode):
 
         self.video_parameter = Parameter(
             name="video",
-            input_types=["VideoArtifact", "VideoUrlArtifact"],
+            input_types=["VideoArtifact", "VideoUrlArtifact", "str"],
             type="VideoArtifact",
             output_type="VideoUrlArtifact",
             default_value=None,
-            ui_options={"clickable_file_browser": True, "expander": True},
+            ui_options={
+                "clickable_file_browser": True,
+                "expander": True,
+                "display_name": "Video or Path to Video",
+            },
             tooltip="The loaded video.",
         )
         self.add_parameter(self.video_parameter)
 
-        self.path_parameter = Parameter(
+        # Use the tethering utility to create the properly configured path parameter
+        self.path_parameter = ArtifactPathTethering.create_path_parameter(
             name="path",
-            input_types=["str"],
-            type="str",
-            default_value="",
+            config=self._tethering_config,
+            display_name="File Path or URL",
             tooltip="Path to a local video file or URL to a video",
-            ui_options={"display_name": "File Path or URL"},
         )
-
-        self.path_parameter.add_trait(
-            FileSystemPicker(
-                allow_directories=False,
-                allow_files=True,
-                file_types=list(self.SUPPORTED_EXTENSIONS),
-            )
-        )
-
-        self.path_parameter.add_trait(
-            ArtifactPathValidator(
-                supported_extensions=self.SUPPORTED_EXTENSIONS,
-                url_content_type_prefix="video/",
-            )
-        )
-
         self.add_parameter(self.path_parameter)
 
         # Tethering helper: keeps video and path parameters in sync bidirectionally
@@ -83,9 +68,9 @@ class LoadVideo(DataNode):
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        # Get outputs from tethering helper
-        video_artifact = self._tethering.get_artifact_output()
-        if video_artifact is not None:
-            self.parameter_output_values["video"] = video_artifact
+        # Get parameter values and assign to outputs
+        video_artifact = self.get_parameter_value("video")
+        self.parameter_output_values["video"] = video_artifact
 
-        self.parameter_output_values["path"] = self._tethering.get_path_output()
+        path_value = self.get_parameter_value("path")
+        self.parameter_output_values["path"] = path_value

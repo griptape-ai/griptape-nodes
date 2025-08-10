@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from griptape_nodes.exe_types.core_types import Parameter, Trait
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
@@ -262,24 +262,68 @@ class ArtifactPathTethering:
 
     def get_artifact_output(self) -> Any:
         """Get the processed artifact for node output."""
-        artifact_value = self.node.get_parameter_value(self.artifact_parameter.name)
-        if artifact_value is not None:
-            return self._to_artifact(artifact_value)
-        return None
+        return self.node.get_parameter_value(self.artifact_parameter.name)
 
     def get_path_output(self) -> str:
         """Get the path value for node output."""
-        return self.node.get_parameter_value(self.path_parameter.name) or ""
+        result = self.node.get_parameter_value(self.path_parameter.name) or ""
+        return result
 
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter."""
-        artifact = self._to_artifact(value)
-        self.node.parameter_output_values[self.artifact_parameter.name] = artifact
+        if isinstance(value, str):
+            # String input - route to path parameter logic
+            self._handle_string_input_to_artifact(value)
+        else:
+            # Artifact input - handle as normal
+            self._handle_artifact_input(value)
 
-        # Update path parameter with URL from artifact (bidirectional sync)
-        extracted_url = self.config.extract_url_func(value)
-        if extracted_url:
-            self._sync_parameter_value(self.path_parameter.name, extracted_url)
+    def _handle_string_input_to_artifact(self, path_value: str) -> None:
+        """Handle string input to artifact parameter by processing it as a path."""
+        path_value = self._strip_surrounding_quotes(path_value.strip()) if path_value else ""
+
+        if path_value:
+            try:
+                # Process the path (URL or file) - reuse existing path logic
+                if self._is_url(path_value):
+                    download_url = self._download_and_upload_url(path_value)
+                else:
+                    download_url = self._upload_file_to_static_storage(path_value)
+
+                # Create artifact dict and convert to artifact
+                artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
+                artifact = self._to_artifact(artifact_dict)
+
+                # Store artifact using sync helper (sets parameter value and publishes update)
+                self._sync_parameter_value(self.artifact_parameter.name, artifact)
+
+                # Update path parameter
+                self._sync_parameter_value(self.path_parameter.name, download_url)
+            except Exception:
+                # If processing fails, treat as invalid input - reset parameters
+                self._sync_parameter_value(self.artifact_parameter.name, None)
+                self._sync_parameter_value(self.path_parameter.name, "")
+                # Don't re-raise - let the node continue with None value
+        else:
+            # Empty string - reset both parameters
+            self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
+
+    def _handle_artifact_input(self, value: Any) -> None:
+        """Handle artifact input to artifact parameter."""
+        if value:
+            # Convert to artifact and update artifact parameter
+            artifact = self._to_artifact(value)
+            self._sync_parameter_value(self.artifact_parameter.name, artifact)
+
+            # Extract URL and update path parameter
+            extracted_url = self.config.extract_url_func(value)
+            if extracted_url:
+                self._sync_parameter_value(self.path_parameter.name, extracted_url)
+        else:
+            # No value - reset both parameters
+            self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
@@ -292,11 +336,15 @@ class ArtifactPathTethering:
             else:
                 download_url = self._upload_file_to_static_storage(path_value)
 
+            # Update both parameters with the processed URL
             artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
-            self._sync_parameter_value(self.artifact_parameter.name, artifact_dict)
+            artifact = self._to_artifact(artifact_dict)
+            self._sync_parameter_value(self.artifact_parameter.name, artifact)
+            self._sync_parameter_value(self.path_parameter.name, download_url)
         else:
-            # Empty path - reset the artifact parameter
+            # Empty path - reset both parameters
             self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
 
     def _sync_parameter_value(self, target_param_name: str, target_value: Any) -> None:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
@@ -305,6 +353,8 @@ class ArtifactPathTethering:
         # that would call after_value_set() and potentially create an infinite loop
         self.node.set_parameter_value(target_param_name, target_value, initial_setup=True)
         self.node.publish_update_to_parameter(target_param_name, target_value)
+        # Also update output values so they're ready for process()
+        self.node.parameter_output_values[target_param_name] = target_value
 
     def _to_artifact(self, value: Any) -> Any:
         """Convert value to appropriate artifact type."""
@@ -505,11 +555,11 @@ class ArtifactPathTethering:
 
         path_parameter = Parameter(
             name=name,
-            input_types=["str"],
             type="str",
             default_value="",
             tooltip=tooltip,
             ui_options={"display_name": display_name},
+            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
         )
 
         # Add file system picker trait
