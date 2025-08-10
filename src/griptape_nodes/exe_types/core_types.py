@@ -1491,8 +1491,7 @@ class ParameterList(ParameterContainer):
             desired_count = int(desired_count)
         except Exception:
             desired_count = 0
-        if desired_count < 0:
-            desired_count = 0
+        desired_count = max(desired_count, 0)
 
         current_children = self.get_child_parameters()
         current_len = len(current_children)
