@@ -27,7 +27,7 @@ class DisplayImage(DataNode):
             Parameter(
                 name="image",
                 default_value=value,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 output_type="ImageUrlArtifact",
                 type="ImageUrlArtifact",
                 tooltip="The image to display",
