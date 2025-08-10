@@ -28,8 +28,8 @@ class DisplayImage(DataNode):
                 name="image",
                 default_value=value,
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
                 tooltip="The image to display",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
