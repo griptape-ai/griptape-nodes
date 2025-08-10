@@ -24,7 +24,7 @@ class CreateImageList(ControlNode):
         self.output = Parameter(
             name="output",
             tooltip="Output list",
-            output_type="list[ImageUrlArtifact]",
+            output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.output)
