@@ -934,7 +934,7 @@ class BaseIterativeEndNode(EndLoopNode):
     ) -> None:
         if source_parameter == self.results:
             # Update value on each iteration
-            self.results_output = NodeParameterPair(target_node, target_parameter)
+            self.results_output = NodeParameterPair(node=target_node, parameter=target_parameter)
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
 
     def after_outgoing_connection_removed(

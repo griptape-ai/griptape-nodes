@@ -127,11 +127,12 @@ class DisplayList(ControlNode):
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
                 self.set_parameter_value(current_parameter.name, item)
+                # Using to ensure updates are being propagated
                 self.publish_update_to_parameter(current_parameter.name, item)
                 self.parameter_output_values[current_parameter.name] = item
                 continue
             new_child = self.items_list.add_child_parameter()
-            # Set the parameter value without emitting immediate change events
+            # Set the parameter value
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
         self._updating_display_list = False
