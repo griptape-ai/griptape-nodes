@@ -2,7 +2,7 @@ import copy
 import logging
 from abc import abstractmethod
 from enum import Enum
-from typing import Any
+from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
@@ -22,6 +22,18 @@ class StatusType(Enum):
 
     NORMAL = "normal"
     BREAK = "break"
+
+
+class NodeParameterPair(NamedTuple):
+    """A named tuple for storing a pair of node and parameters for connections.
+
+    Fields:
+        node: The node the parameter lives on
+        parameter: The parameter connected
+    """
+
+    node: BaseNode
+    parameter: Parameter
 
 
 class BaseIterativeStartNode(StartLoopNode):
@@ -922,8 +934,7 @@ class BaseIterativeEndNode(EndLoopNode):
     ) -> None:
         if source_parameter == self.results:
             # Update value on each iteration
-            # A TUPLE!
-            self.results_output = (target_node, target_parameter)
+            self.results_output = NodeParameterPair(target_node, target_parameter)
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
 
     def after_outgoing_connection_removed(
