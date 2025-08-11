@@ -332,7 +332,9 @@ class AlterParameterDetailsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AlterParameterDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    pass
+    node_name: str
+    element_id: str
+    updated_element: dict
 
 
 @dataclass

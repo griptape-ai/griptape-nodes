@@ -1266,7 +1266,7 @@ class NodeManager:
     def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
         node_name = request.node_name
         node = None
-
+        logger.error(f"AlterParameterDetailsRequest: {request}")
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():
                 details = f"Attempted to alter details for Parameter '{request.parameter_name}' from node in the Current Context. Failed because there was no such Node."
@@ -1319,7 +1319,7 @@ class NodeManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
                 details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
                 logger.warning(details)
-                return AlterParameterDetailsResultSuccess()
+                return AlterParameterDetailsResultSuccess(node_name=node_name, element_id=element.element_id, updated_element=element.to_event(node=node))
             self.modify_key_parameter_fields(request, element)
 
         # This field requires the node as well
@@ -1330,7 +1330,7 @@ class NodeManager:
         details = f"Successfully altered details for Element '{request.parameter_name}' from Node '{node_name}'."
         logger.debug(details)
 
-        result = AlterParameterDetailsResultSuccess()
+        result = AlterParameterDetailsResultSuccess(node_name=node_name, element_id=element.element_id, updated_element=element.to_event(node=node))
         return result
 
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
