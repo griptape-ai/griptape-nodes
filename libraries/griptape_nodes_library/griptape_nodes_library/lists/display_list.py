@@ -49,7 +49,7 @@ class DisplayList(ControlNode):
         # During process, we want to clean up parameters if the list is too long
         self._update_display_list(delete_excess_parameters=True)
 
-    def _update_display_list(self, *, delete_excess_parameters: bool = False) -> None:  # noqa: C901
+    def _update_display_list(self, *, delete_excess_parameters: bool = False) -> None:
         """Update the display list parameters based on current input values.
 
         Args:
@@ -108,20 +108,9 @@ class DisplayList(ControlNode):
             self.items_list.output_type = item_type
         self.items_list.input_types = [item_type]
         self.items_list.ui_options = new_ui_options
-
-        # Create child parameters and ensure they're properly tracked
-        length_of_items_list = len(self.items_list)
         # Only delete excess parameters if explicitly requested (e.g., during process())
         if delete_excess_parameters:
-            while length_of_items_list > len(list_values):
-                # Remove the parameter value - this will also handle parameter_output_values
-                if self.items_list[length_of_items_list - 1].name in self.parameter_values:
-                    self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
-                if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
-                    del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
-                # Remove the parameter from the list
-                self.items_list.remove_child(self.items_list[length_of_items_list - 1])
-                length_of_items_list = len(self.items_list)
+            self.delete_excess_parameters(list_values)
         for i, item in enumerate(list_values):
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
@@ -135,6 +124,19 @@ class DisplayList(ControlNode):
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
         self._updating_display_list = False
+
+    def delete_excess_parameters(self, list_values: list) -> None:
+        """Delete parameters when list is shorter than parameter count."""
+        length_of_items_list = len(self.items_list)
+        while length_of_items_list > len(list_values):
+            # Remove the parameter value - this will also handle parameter_output_values
+            if self.items_list[length_of_items_list - 1].name in self.parameter_values:
+                self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
+            if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
+                del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
+            # Remove the parameter from the list
+            self.items_list.remove_child(self.items_list[length_of_items_list - 1])
+            length_of_items_list = len(self.items_list)
 
     def _clear_list(self) -> None:
         """Clear all dynamically-created parameters from the node."""
