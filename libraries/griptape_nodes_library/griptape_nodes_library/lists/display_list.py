@@ -1,4 +1,3 @@
-import contextlib
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -116,10 +115,10 @@ class DisplayList(ControlNode):
         if delete_excess_parameters:
             while length_of_items_list > len(list_values):
                 # Remove the parameter value - this will also handle parameter_output_values
-                with contextlib.suppress(KeyError):
+                if self.items_list[length_of_items_list - 1].name in self.parameter_values:
                     self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
-                    if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
-                        del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
+                if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
+                    del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
                 # Remove the parameter from the list
                 self.items_list.remove_child(self.items_list[length_of_items_list - 1])
                 length_of_items_list = len(self.items_list)
@@ -143,7 +142,7 @@ class DisplayList(ControlNode):
             # Remove the parameter value - this will also handle parameter_output_values
             # We are suppressing the error, which will be raised if the parameter is not in parameter_values.
             # This is ok, because we are just trying to remove the parameter value IF it exists.
-            with contextlib.suppress(KeyError):
+            if child.name in self.parameter_values:
                 self.remove_parameter_value(child.name)
             if child.name in self.parameter_output_values:
                 del self.parameter_output_values[child.name]
