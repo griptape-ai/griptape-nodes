@@ -125,10 +125,10 @@ def command_arg_handler(node_param_split_func: Callable) -> Callable:
                     instance_or_cls,
                     node=node,
                     param=param,
-                    *args_to_process,
+                    *args_to_process,  # noqa: B026
                     **cleaned_kwargs,
                 )
-            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)
+            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)  # noqa: B026
 
         return wrapper
 
