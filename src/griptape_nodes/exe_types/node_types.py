@@ -849,21 +849,11 @@ class BaseNode(ABC):
         # Create event data using the parameter's to_event method
         if remove:
             # Import logger here to avoid circular dependency
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
-            logger.info(
-                f"RemoveElementEvent: Emitting parameter lifecycle event for element {parameter.name} on node {self.name}"
-            )
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
             )
         else:
             event_data = parameter.to_event(self)
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
-            logger.info(
-                f"AlterElementEvent: Emitting parameter lifecycle eventfor element {parameter.name} on node {self.name}"
-            )
             # Publish the event
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
