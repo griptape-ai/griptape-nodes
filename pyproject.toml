@@ -1,6 +1,6 @@
 [project]
 name = "griptape-nodes"
-version = "0.43.1"
+version = "0.47.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -23,6 +23,7 @@ dependencies = [
   "mcp[ws]>=1.10.1",
   "binaryornot>=0.4.4",
   "pillow>=11.3.0",
+  "watchfiles>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -76,7 +77,6 @@ ignore = [
   "E501",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
   "D100",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
   "BLE001",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
-  "B026",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/836 
   "SLF001",  # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
   "SIM108",  # Intentional
   "SIM110",  # Intentional

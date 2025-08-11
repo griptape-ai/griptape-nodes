@@ -62,6 +62,7 @@ MODEL_CHOICES_ARGS = [
     {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-5", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
@@ -72,7 +73,7 @@ DEFAULT_MODEL = MODEL_CHOICES[8]
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 
-# Current models available in the API as of 5/27/2025
+# Current models available in the API as of 8/9/2025
 # but not all of them work.
 #     "gpt-4.1",
 #     "claude-3-5-haiku",
@@ -85,6 +86,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 #     "gpt-4o",
 #     "gpt-4o-mini-transcribe",
 #     "gpt-4o-transcribe",
+#     "gpt-5",
 #     "llama3-1-70b-instruct-v1",
 #     "llama3-3-70b-instruct-v1",
 #     "o1",

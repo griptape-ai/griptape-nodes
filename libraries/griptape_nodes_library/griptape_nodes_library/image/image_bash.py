@@ -5,12 +5,18 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact, JsonArtifact
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
+from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
+    load_pil_from_url,
+    parse_hex_color,
+    save_pil_image_to_static_file,
+)
 
 CANVAS_DIMENSIONS = {
     "2K Full": {"width": 2048, "height": 1080},
@@ -126,6 +132,19 @@ class ImageBash(DataNode):
                     "modal": "ImageBashModal",
                 },
                 allowed_modes={ParameterMode.PROPERTY},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="comp_on_run",
+                type="bool",
+                default_value=True,
+                tooltip=(
+                    "If enabled, this node recomposes layers from Image Bash metadata when processing. "
+                    "If disabled, it outputs the current image from the Image Bash editor."
+                ),
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
@@ -693,6 +712,103 @@ class ImageBash(DataNode):
                 self._sync_metadata_with_input_images()
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
+    def _process_output_image(self) -> None:  # noqa: C901, PLR0912, PLR0915
+        # Composite the image based on the bash_image meta information
+        bash_image = self.get_parameter_value("bash_image")
+        if bash_image is None:
+            return
+
+        # Extract metadata
+        if isinstance(bash_image, dict):
+            meta = bash_image.get("meta", {})
+        else:
+            meta = getattr(bash_image, "meta", {}) or {}
+
+        canvas_meta = meta.get("canvas_size", {}) or {}
+        canvas_width = canvas_meta.get("width") or self.get_parameter_value("width") or 1920
+        canvas_height = canvas_meta.get("height") or self.get_parameter_value("height") or 1080
+        if not isinstance(canvas_width, int):
+            canvas_width = int(canvas_width)
+        if not isinstance(canvas_height, int):
+            canvas_height = int(canvas_height)
+        background_hex = meta.get("canvas_background_color", "#ffffff")
+
+        # Create base canvas
+        r, g, b = parse_hex_color(background_hex)
+        canvas = Image.new("RGBA", (canvas_width, canvas_height), (r, g, b, 255))
+
+        # Prepare layer sources
+        konva_json = meta.get("konva_json", {}) or {}
+        konva_images = konva_json.get("images", []) or []
+        input_images = meta.get("input_images", []) or []
+        source_id_to_url = {img.get("id"): img.get("url") for img in input_images if isinstance(img, dict)}
+
+        # Sort layers by explicit order, fallback to original order
+        indexed_layers = list(enumerate(konva_images))
+        indexed_layers.sort(key=lambda pair: pair[1].get("order", pair[0]))
+
+        for _, layer in indexed_layers:
+            if not layer.get("visible", True):
+                continue
+
+            # Determine source URL: prefer latest mapping from input_images (source_id), fallback to layer src
+            src = source_id_to_url.get(layer.get("source_id")) or layer.get("src")
+            if not src:
+                continue
+
+            # Load image
+            try:
+                layer_img = load_pil_from_url(src)
+            except Exception as e:
+                msg = f"{self.name}: Error loading image from {src}: {e}"
+                logger.warning(msg)
+                continue
+
+            if layer_img.mode != "RGBA":
+                layer_img = layer_img.convert("RGBA")
+
+            # Apply scale and base dimensions
+            base_w = layer.get("width", layer_img.width) or layer_img.width
+            base_h = layer.get("height", layer_img.height) or layer_img.height
+            scale_x = float(layer.get("scaleX", 1.0) or 1.0)
+            scale_y = float(layer.get("scaleY", 1.0) or 1.0)
+            target_w = max(1, round(base_w * scale_x))
+            target_h = max(1, round(base_h * scale_y))
+            if layer_img.size != (target_w, target_h):
+                layer_img = layer_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+            # Apply rotation (Konva uses degrees; rotate around center)
+            rotation = float(layer.get("rotation", 0) or 0)
+            if rotation != 0:
+                # PIL rotates counter-clockwise for positive angles; negate if needed for Konva's clockwise
+                layer_img = layer_img.rotate(-rotation, expand=True, resample=Image.Resampling.BICUBIC)
+
+            # Apply opacity
+            try:
+                opacity = float(layer.get("opacity", 1) or 1)
+            except Exception:
+                opacity = 1.0
+            if opacity < 1.0:
+                alpha = layer_img.getchannel("A")
+                alpha = ImageEnhance.Brightness(alpha).enhance(opacity)
+                layer_img.putalpha(alpha)
+
+            # Position: Konva x/y represent center
+            x = float(layer.get("x", canvas_width / 2))
+            y = float(layer.get("y", canvas_height / 2))
+            paste_x = round(x - layer_img.width / 2)
+            paste_y = round(y - layer_img.height / 2)
+
+            # Paste with alpha mask
+            canvas.paste(layer_img, (paste_x, paste_y), layer_img)
+
+        # Save composed image and publish
+        output_artifact = save_pil_image_to_static_file(canvas, image_format="PNG")
+        self.set_parameter_value("output_image", output_artifact)
+        self.parameter_output_values["output_image"] = output_artifact
+        self.publish_update_to_parameter("output_image", output_artifact)
+        logger.debug(f"Output image saved to {output_artifact.value}")
+
     def _update_output_image(self) -> None:
         bash_image = self.get_parameter_value("bash_image")
 
@@ -710,4 +826,16 @@ class ImageBash(DataNode):
                 self.publish_update_to_parameter("output_image", ImageUrlArtifact(image_value))
 
     def process(self) -> None:
-        self._update_output_image()
+        # comp_on_run: True = compose from metadata; False = pass through editor output
+        comp_on_run = self.get_parameter_value("comp_on_run")
+        if comp_on_run is None:
+            # Backward compatibility: if legacy quick_comp exists, invert its meaning
+            legacy_quick = self.get_parameter_value("quick_comp")
+            comp_on_run = False if legacy_quick is None else (not bool(legacy_quick))
+
+        if bool(comp_on_run):
+            # Ensure bash_image.meta reflects current input_images before composing
+            self._sync_metadata_with_input_images()
+            self._process_output_image()
+        else:
+            self._update_output_image()

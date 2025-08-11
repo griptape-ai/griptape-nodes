@@ -30,4 +30,4 @@ class DisplayText(DataNode):
 
     def process(self) -> None:
         # Simply output the default value or any updated property value
-        self.parameter_output_values["text"] = self.parameter_values["text"]
+        self.parameter_output_values["text"] = self.get_parameter_value("text")

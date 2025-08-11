@@ -27,7 +27,7 @@ class ScrapeWeb(BaseTask):
                 type="str",
                 default_value="gpt-4.1-mini",
                 tooltip="The model to use for the task.",
-                traits={Options(choices=["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"])},
+                traits={Options(choices=["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5"])},
                 ui_options={"hide": True},
             )
         )

@@ -50,21 +50,22 @@ class StaticFilesManager:
 
         match storage_backend:
             case StorageBackend.GTC:
-                bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID")
+                bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
 
                 if not bucket_id:
-                    msg = "GT_CLOUD_BUCKET_ID secret is required for gtc storage backend"
-                    logger.error(msg)
-                    raise ValueError(msg)
-
-                static_files_directory = config_manager.get_config_value(
-                    "static_files_directory", default="staticfiles"
-                )
-                self.storage_driver = GriptapeCloudStorageDriver(
-                    bucket_id=bucket_id,
-                    api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
-                    static_files_directory=static_files_directory,
-                )
+                    logger.warning(
+                        "GT_CLOUD_BUCKET_ID secret is not available, falling back to local storage. Run `gtn init` to set it up."
+                    )
+                    self.storage_driver = LocalStorageDriver()
+                else:
+                    static_files_directory = config_manager.get_config_value(
+                        "static_files_directory", default="staticfiles"
+                    )
+                    self.storage_driver = GriptapeCloudStorageDriver(
+                        bucket_id=bucket_id,
+                        api_key=secrets_manager.get_secret("GT_CLOUD_API_KEY"),
+                        static_files_directory=static_files_directory,
+                    )
             case StorageBackend.LOCAL:
                 self.storage_driver = LocalStorageDriver()
             case _:
@@ -93,14 +94,14 @@ class StaticFilesManager:
         except (binascii.Error, ValueError) as e:
             msg = f"Failed to decode base64 content for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
+            return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         try:
             url = self.save_static_file(content_bytes, file_name)
         except ValueError as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileResultFailure(error=msg)
+            return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileResultSuccess(url=url)
 
@@ -122,7 +123,7 @@ class StaticFilesManager:
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileUploadUrlResultFailure(error=msg)
+            return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileUploadUrlResultSuccess(
             url=response["url"], headers=response["headers"], method=response["method"]
@@ -146,7 +147,7 @@ class StaticFilesManager:
         except ValueError as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
-            return CreateStaticFileDownloadUrlResultFailure(error=msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(url=url)
 
@@ -166,10 +167,7 @@ class StaticFilesManager:
 
         try:
             response = httpx.request(
-                response["method"],
-                response["url"],
-                content=data,
-                headers=response["headers"],
+                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:

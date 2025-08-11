@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         GetNodeMetadataRequest,
         GetNodeResolutionStateRequest,
         ListParametersOnNodeRequest,
+        SetLockNodeStateRequest,
         SetNodeMetadataRequest,
     )
     from griptape_nodes.retained_mode.events.parameter_events import (
@@ -416,6 +417,12 @@ class PayloadConverter:
     def _handle_RenameParameterRequest(payload: RenameParameterRequest) -> str:
         """Handle RenameParameterRequest payloads."""
         return f"""cmd.rename_param(node_name="{payload.node_name}",parameter_name="{payload.parameter_name}",new_parameter_name="{payload.new_parameter_name}")"""
+
+    @staticmethod
+    def _handle_SetLockNodeStateRequest(payload: SetLockNodeStateRequest) -> str:
+        """Handle SetLockNodeStateRequest payloads."""
+        node_name_param = f'node_name="{payload.node_name}"' if payload.node_name is not None else "node_name=None"
+        return f"""cmd.set_lock_node_state({node_name_param}, lock={payload.lock})"""
 
     # GENERIC HANDLERS FOR PAYLOADS WITHOUT SPECIFIC HANDLERS
 

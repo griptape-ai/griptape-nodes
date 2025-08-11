@@ -1,3 +1,4 @@
+import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,8 @@ def clear_state_before_each_test() -> Generator[None, Any, None]:
     # Clean up after test
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
     GriptapeNodes.handle_request(clear_request)
+    # Wait 5 seconds between tests to prevent rate limiting.
+    time.sleep(5)
 
 
 @pytest.mark.parametrize("workflow_path", get_workflows())
