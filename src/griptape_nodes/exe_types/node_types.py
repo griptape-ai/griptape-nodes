@@ -1155,6 +1155,7 @@ class ErrorProxyNode(DataNode):
                 mode_allowed_input=ParameterMode.INPUT in modes,
                 mode_allowed_output=ParameterMode.OUTPUT in modes,
                 mode_allowed_property=ParameterMode.PROPERTY in modes,
+                initial_setup=True,  # Allows setting non-settable parameters and prevents resolution cascades during workflow loading
             )
             GriptapeNodes.handle_request(request)
             self._generated_parameters.add(param_name)

@@ -13,7 +13,13 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, NodeResolutionState, StartLoopNode
+from griptape_nodes.exe_types.node_types import (
+    BaseNode,
+    EndLoopNode,
+    ErrorProxyNode,
+    NodeResolutionState,
+    StartLoopNode,
+)
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -291,8 +297,6 @@ class NodeManager:
 
             # Check if we should create an Error Proxy node instead of failing
             if request.create_error_proxy_on_failure:
-                from griptape_nodes.exe_types.node_types import ErrorProxyNode
-
                 try:
                     # Create ErrorProxyNode directly since it needs special initialization
                     node = ErrorProxyNode(
@@ -1913,16 +1917,24 @@ class NodeManager:
             # Get the library metadata so we can get the version.
             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
             library_metadata_result = GriptapeNodes().handle_request(library_metadata_request)
-            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                logger.error(details)
-                return SerializeNodeToCommandsResultFailure(result_details=details)
 
-            library_version = library_metadata_result.metadata.library_version
-            library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                if isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, use descriptive message when original library unavailable
+                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
+                    library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                    logger.warning(details)
+                else:
+                    # For regular nodes, this is still an error
+                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                    logger.error(details)
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+            else:
+                library_version = library_metadata_result.metadata.library_version
+                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Handle ErrorProxyNode serialization - serialize as original node type
-            from griptape_nodes.exe_types.node_types import ErrorProxyNode
 
             if isinstance(node, ErrorProxyNode):
                 serialized_node_type = node.original_node_type
