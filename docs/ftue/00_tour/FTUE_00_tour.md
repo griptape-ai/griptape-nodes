@@ -95,11 +95,11 @@ There are three interactive methods to creating nodes (and even more in [Retaine
   </div>
 
 <div style="flex: 1;">
-    <p><strong>Spacebar</strong>: Pressing spacebar brings up a search field.  You can type to find the node you want, and enter to create it.</p>
+    <p><strong>Shift+A or Double-Click</strong>: Pressing Shift+A or double-clicking on the flow editor brings up a search field. You can type to find the node you want, and enter to create it.</p>
     <p align="center">
-      <img src="../assets/create_node_spacebar.gif" alt="Spacebar">
+      <img src="../assets/create_node_spacebar.gif" alt="Shift+A or Double-Click">
     </p>
-    <h4 align="center">Spacebar Search</h4>
+    <h4 align="center">Shift+A or Double-Click Search</h4>
   </div>
 </div>
 

@@ -2,7 +2,7 @@ import copy
 import logging
 from abc import abstractmethod
 from enum import Enum
-from typing import Any
+from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterInput,
@@ -22,6 +22,18 @@ class StatusType(Enum):
 
     NORMAL = "normal"
     BREAK = "break"
+
+
+class NodeParameterPair(NamedTuple):
+    """A named tuple for storing a pair of node and parameters for connections.
+
+    Fields:
+        node: The node the parameter lives on
+        parameter: The parameter connected
+    """
+
+    node: BaseNode
+    parameter: Parameter
 
 
 class BaseIterativeStartNode(StartLoopNode):
@@ -526,6 +538,9 @@ class BaseIterativeEndNode(EndLoopNode):
         self.break_loop_signal_output.ui_options = {"hide": True, "display_name": "Break Loop Signal Output"}
         self.break_loop_signal_output.settable = False
 
+        # Output to iteratively update results
+        self.results_output = None
+
         # Add main workflow parameters first
         self.add_parameter(self.add_item_control)
         self.add_parameter(self.new_item_to_add)
@@ -582,6 +597,10 @@ class BaseIterativeEndNode(EndLoopNode):
                 # Only evaluate new_item_to_add parameter when adding to output
                 new_item_value = self.get_parameter_value("new_item_to_add")
                 self._results_list.append(new_item_value)
+                if self.results_output is not None:
+                    node, param = self.results_output
+                    # Set the parameter value on the node. This should trigger after_value_set.
+                    node.set_parameter_value(param.name, self._results_list)
             case self.skip_control:
                 # Skip - don't add anything to output, just continue loop
                 pass
@@ -909,3 +928,19 @@ class BaseIterativeEndNode(EndLoopNode):
                     target_parameter_name="break_loop_signal",
                 )
             )
+
+    def after_outgoing_connection(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
+        if source_parameter == self.results:
+            # Update value on each iteration
+            self.results_output = NodeParameterPair(node=target_node, parameter=target_parameter)
+        return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
+
+    def after_outgoing_connection_removed(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
+        if source_parameter == self.results:
+            # Update value on each iteration
+            self.results_output = None
+        return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
