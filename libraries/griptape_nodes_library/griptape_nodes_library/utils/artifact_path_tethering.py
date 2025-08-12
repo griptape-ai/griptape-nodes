@@ -144,13 +144,13 @@ class ArtifactPathValidator(Trait):
 
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(self.url_content_type_prefix):
-                error_msg = f"URL does not point to expected artifact type (content-type: {content_type})"
+                error_msg = f"URL validation failed for '{url}': Expected content-type starting with '{self.url_content_type_prefix}', got '{content_type}'"
                 raise ValueError(error_msg)
         except httpx.RequestError as e:
-            error_msg = f"Failed to access URL: {e}"
+            error_msg = f"Failed to access URL '{url}': {e}"
             raise ValueError(error_msg) from e
         except httpx.HTTPStatusError as e:
-            error_msg = f"URL returned error status {e.response.status_code}"
+            error_msg = f"URL '{url}' returned HTTP {e.response.status_code} error"
             raise ValueError(error_msg) from e
 
     def _validate_file_path(self, file_path: str) -> None:
@@ -158,16 +158,17 @@ class ArtifactPathValidator(Trait):
         path = Path(file_path)
 
         if not path.exists():
-            error_msg = f"File not found: {file_path}"
+            error_msg = f"File not found: '{file_path}'"
             raise FileNotFoundError(error_msg)
 
         if not path.is_file():
-            error_msg = f"Path is not a file: {file_path}"
+            path_type = "directory" if path.is_dir() else "special file" if path.exists() else "unknown"
+            error_msg = f"Path exists but is not a file: '{file_path}' (found: {path_type})"
             raise ValueError(error_msg)
 
         if path.suffix.lower() not in self.supported_extensions:
             supported = ", ".join(self.supported_extensions)
-            error_msg = f"Unsupported file format: {path.suffix}. Supported formats: {supported}"
+            error_msg = f"Unsupported file format '{path.suffix}' for file '{file_path}'. Supported: {supported}"
             raise ValueError(error_msg)
 
 
@@ -252,8 +253,22 @@ class ArtifactPathTethering:
             elif parameter == self.path_parameter:
                 self._handle_path_change(value)
         except Exception as e:
-            param_type = "artifact" if parameter == self.artifact_parameter else "path"
-            error_msg = f"Failed to process {param_type}: {e}"
+            # Defensive parameter type detection
+            match parameter:
+                case self.artifact_parameter:
+                    param_type_for_error_str = "artifact"
+                case self.path_parameter:
+                    param_type_for_error_str = "path"
+                case _:
+                    param_type_for_error_str = "<UNKNOWN PARAMETER>"
+
+            # Include input value for forensics
+            if isinstance(value, str):
+                value_info = f" Input: '{value}'"
+            else:
+                value_info = f" Input: <{type(value).__name__}> (not human readable)"
+
+            error_msg = f"Failed to process {param_type_for_error_str} parameter '{parameter.name}' in node '{self.node.__class__.__name__}': {e}{value_info}"
             raise ValueError(error_msg) from e
         finally:
             # Always clear the update lock - critical for allowing future updates
@@ -392,18 +407,19 @@ class ArtifactPathTethering:
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL: {upload_result.error}"
+            error_msg = f"Failed to create upload URL for file '{file_name}': {upload_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Unexpected upload URL result type: {type(upload_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name}')"
             raise TypeError(error_msg)
 
         # Read and upload file
         try:
             file_data = path.read_bytes()
+            file_size = len(file_data)
         except Exception as e:
-            error_msg = f"Failed to read file {file_path}: {e}"
+            error_msg = f"Failed to read file '{file_path}': {e}"
             raise ValueError(error_msg) from e
 
         try:
@@ -415,7 +431,7 @@ class ArtifactPathTethering:
             )
             response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to upload file: {e}"
+            error_msg = f"Failed to upload file '{file_path}' to static storage (method: {upload_result.method}, size: {file_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Get download URL
@@ -423,11 +439,11 @@ class ArtifactPathTethering:
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL: {download_result.error}"
+            error_msg = f"Failed to create download URL for file '{file_name}': {download_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Unexpected download URL result type: {type(download_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name}')"
             raise TypeError(error_msg)
 
         return download_result.url
@@ -467,13 +483,14 @@ class ArtifactPathTethering:
             response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
             response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to download artifact from URL {url}: {e}"
+            error_msg = f"Failed to download artifact from URL '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e
 
         # Validate content type
         content_type = response.headers.get("content-type", "")
         if not content_type.startswith(self.config.url_content_type_prefix):
-            error_msg = f"URL does not point to expected artifact type (content-type: {content_type})"
+            artifact_type = self.config.url_content_type_prefix.rstrip("/")
+            error_msg = f"URL '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
             raise ValueError(error_msg)
 
         # Generate filename from URL
@@ -494,11 +511,11 @@ class ArtifactPathTethering:
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL: {upload_result.error}"
+            error_msg = f"Failed to create upload URL for file '{filename}': {upload_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Unexpected upload URL result type: {type(upload_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{filename}')"
             raise TypeError(error_msg)
 
         # Upload the downloaded artifact data
@@ -511,7 +528,8 @@ class ArtifactPathTethering:
             )
             upload_response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to upload downloaded artifact: {e}"
+            content_size = len(response.content)
+            error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Get download URL
@@ -519,11 +537,11 @@ class ArtifactPathTethering:
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL: {download_result.error}"
+            error_msg = f"Failed to create download URL for file '{filename}': {download_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Unexpected download URL result type: {type(download_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{filename}')"
             raise TypeError(error_msg)
 
         return download_result.url
