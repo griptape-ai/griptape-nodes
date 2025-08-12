@@ -125,10 +125,10 @@ def command_arg_handler(node_param_split_func: Callable) -> Callable:
                     instance_or_cls,
                     node=node,
                     param=param,
-                    *args_to_process,
+                    *args_to_process,  # noqa: B026
                     **cleaned_kwargs,
                 )
-            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)
+            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)  # noqa: B026
 
         return wrapper
 
@@ -703,13 +703,13 @@ class RetainedMode:
                 except ValueError:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it wasn't an int as expected."
                     logger.error(error_msg)
-                    return GetParameterValueResultFailure()
+                    return GetParameterValueResultFailure(result_details=error_msg)
 
                 # Handle negative indices
                 if idx < 0:
                     error_msg = f"Failed on key/index '{idx_or_key}' because it was less than zero."
                     logger.error(error_msg)
-                    return GetParameterValueResultFailure()
+                    return GetParameterValueResultFailure(result_details=error_msg)
 
                 # Extend the list if needed
                 while len(curr) <= idx:
@@ -724,7 +724,7 @@ class RetainedMode:
             else:
                 error_msg = f"Failed on key/index '{idx_or_key}' because it was a type that was not expected."
                 logger.error(error_msg)
-                return GetParameterValueResultFailure()
+                return GetParameterValueResultFailure(result_details=error_msg)
 
         # Update the container
         set_request = SetParameterValueRequest(
@@ -784,31 +784,19 @@ class RetainedMode:
                 if isinstance(curr_pos_value, list):
                     # Index better be an int.
                     if not isinstance(idx_or_key, int):
-                        logger.error(
-                            "get_value failed for %s.%s on key/index %s only ints allowed.",
-                            node,
-                            param,
-                            idx_or_key,
-                        )
-                        return GetParameterValueResultFailure()
+                        error_msg = f"get_value failed for {node}.{param} on key/index {idx_or_key} only ints allowed."
+                        logger.error(error_msg)
+                        return GetParameterValueResultFailure(result_details=error_msg)
                     # Is the index in range?
                     if (idx_or_key < 0) or (idx_or_key >= len(curr_pos_value)):
-                        logger.error(
-                            "get_value failed for %s.%s on key/index %s out of range.",
-                            node,
-                            param,
-                            idx_or_key,
-                        )
-                        return GetParameterValueResultFailure()
+                        error_msg = f"get_value failed for {node}.{param} on key/index {idx_or_key} out of range."
+                        logger.error(error_msg)
+                        return GetParameterValueResultFailure(result_details=error_msg)
                     curr_pos_value = curr_pos_value[idx_or_key]
                 else:
-                    logger.error(
-                        "get_value failed for %s.%s on key/index %s because it was a type that was not expected.",
-                        node,
-                        param,
-                        idx_or_key,
-                    )
-                    return GetParameterValueResultFailure()
+                    error_msg = f"get_value failed for {node}.{param} on key/index {idx_or_key} because it was a type that was not expected."
+                    logger.error(error_msg)
+                    return GetParameterValueResultFailure(result_details=error_msg)
             # All done
             return curr_pos_value
         return result
@@ -905,22 +893,16 @@ class RetainedMode:
                     try:
                         idx_or_key_as_int = int(idx_or_key)
                     except ValueError:
-                        logger.exception(
-                            'set_value for "%s.%s", failed on key/index "%s". Requires an int.',
-                            node,
-                            param,
-                            idx_or_key,
+                        error_msg = (
+                            f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}". Requires an int.'
                         )
-                        return GetParameterValueResultFailure()
+                        logger.exception(error_msg)
+                        return GetParameterValueResultFailure(result_details=error_msg)
                     # Is the index in range?
                     if idx_or_key_as_int < 0:
-                        logger.error(
-                            'set_value for "%s.%s", failed on key/index "%s" because it was less than zero.',
-                            node,
-                            param,
-                            idx_or_key,
-                        )
-                        return GetParameterValueResultFailure()
+                        error_msg = f'set_value for "{node}.{param}", failed on key/index "{idx_or_key}" because it was less than zero.'
+                        logger.error(error_msg)
+                        return GetParameterValueResultFailure(result_details=error_msg)
                     # Extend the list if needed to accommodate the index.
                     while len(curr_pos_value) <= idx_or_key_as_int:
                         curr_pos_value.append(None)
@@ -940,13 +922,9 @@ class RetainedMode:
                     # Advance.
                     curr_pos_value = curr_pos_value[idx_or_key_as_int]
                 else:
-                    logger.error(
-                        'set_value on "%s.%s" failed on key/index "%s" because it was a type that was not expected.',
-                        node,
-                        param,
-                        idx_or_key,
-                    )
-                    return GetParameterValueResultFailure()
+                    error_msg = f'set_value on "{node}.{param}" failed on key/index "{idx_or_key}" because it was a type that was not expected.'
+                    logger.error(error_msg)
+                    return GetParameterValueResultFailure(result_details=error_msg)
             # All done
         return result
 

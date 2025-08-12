@@ -65,25 +65,52 @@ class ParameterType:
         return ret_val
 
     @staticmethod
-    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:
+    def _extract_base_type(type_str: str) -> str:
+        """Extract the base type from a potentially generic type string.
+
+        Examples:
+            'list[any]' -> 'list'
+            'dict[str, int]' -> 'dict'
+            'str' -> 'str'
+        """
+        bracket_index = type_str.find("[")
+        if bracket_index == -1:
+            return type_str
+        return type_str[:bracket_index]
+
+    @staticmethod
+    def are_types_compatible(source_type: str | None, target_type: str | None) -> bool:  # noqa: PLR0911
         if source_type is None or target_type is None:
             return False
 
-        ret_val = False
         source_type_lower = source_type.lower()
         target_type_lower = target_type.lower()
 
         # If either are None, bail.
         if ParameterTypeBuiltin.NONE.value in (source_type_lower, target_type_lower):
-            ret_val = False
-        elif target_type_lower == ParameterTypeBuiltin.ANY.value:
+            return False
+        if target_type_lower == ParameterTypeBuiltin.ANY.value:
             # If the TARGET accepts Any, we're good. Not always true the other way 'round.
-            ret_val = True
-        else:
-            # Do a compare.
-            ret_val = source_type_lower == target_type_lower
+            return True
 
-        return ret_val
+        # First try exact match
+        if source_type_lower == target_type_lower:
+            return True
+
+        source_base = ParameterType._extract_base_type(source_type_lower)
+        target_base = ParameterType._extract_base_type(target_type_lower)
+
+        # If base types match
+        if source_base == target_base:
+            # Allow any generic to flow to base type (list[any] -> list, list[str] -> list)
+            if target_type_lower == target_base:
+                return True
+
+            # Allow specific types to flow to [any] generic (list[str] -> list[any])
+            if target_type_lower == f"{target_base}[{ParameterTypeBuiltin.ANY.value}]":
+                return True
+
+        return False
 
     @staticmethod
     def parse_kv_type_pair(type_str: str) -> KeyValueTypePair | None:  # noqa: C901
@@ -250,7 +277,6 @@ class BaseNodeElement:
             self._changes["ui_options"] = complete_dict["ui_options"]
 
         event_data.update(self._changes)
-
         # Publish the event
         event = ExecutionGriptapeNodeEvent(
             wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
@@ -1326,6 +1352,27 @@ class ParameterList(ParameterContainer):
         result = f"list[{base_type}]"
         return result
 
+    def _custom_setter_for_property_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.type = value
+        super()._custom_setter_for_property_type(value)
+
+    def _custom_setter_for_property_input_types(self, value: list[str] | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.input_types = value
+        return super()._custom_setter_for_property_input_types(value)
+
+    def _custom_setter_for_property_output_type(self, value: str | None) -> None:
+        # If we are setting a type, we need to propagate this to our children as well.
+        for child in self._children:
+            if isinstance(child, Parameter):
+                child.output_type = value
+        return super()._custom_setter_for_property_output_type(value)
+
     def _custom_getter_for_property_input_types(self) -> list[str]:
         # For every valid input type, also accept a list variant of that for the CONTAINER Parameter only.
         # Children still use the input types given to them.
@@ -1394,6 +1441,78 @@ class ParameterList(ParameterContainer):
         self.add_child(param)
 
         return param
+
+    def clear_list(self) -> None:
+        """Remove all children that have been added to the list."""
+        children = self.find_elements_by_type(element_type=Parameter)
+        for child in children:
+            if isinstance(child, Parameter):
+                self.remove_child(child)
+                del child
+
+    # --- Convenience methods for stable list management ---
+    def get_child_parameters(self) -> list[Parameter]:
+        """Return direct child parameters only, in order of appearance."""
+        return self.find_elements_by_type(element_type=Parameter, find_recursively=False)
+
+    def append_child_parameter(self, display_name: str | None = None) -> Parameter:
+        """Append one child parameter and optionally set a display name.
+
+        This preserves existing children and adds a new one at the end.
+        """
+        child = self.add_child_parameter()
+        if display_name is not None:
+            ui_opts = child.ui_options or {}
+            ui_opts["display_name"] = display_name
+            child.ui_options = ui_opts
+        return child
+
+    def remove_last_child_parameter(self) -> None:
+        """Remove the last child parameter if one exists.
+
+        This removes from the end to preserve earlier children and their connections.
+        """
+        children = self.get_child_parameters()
+        if children:
+            last = children[-1]
+            self.remove_child(last)
+            del last
+
+    def ensure_length(self, desired_count: int, display_name_prefix: str | None = None) -> None:
+        """Grow or shrink the list to the desired length while preserving existing items.
+
+        - If increasing, appends new children to the end.
+        - If decreasing, removes children from the end.
+        - Optionally sets display names like "{prefix} 1", "{prefix} 2", ...
+        """
+        if desired_count is None:
+            return
+        try:
+            desired_count = int(desired_count)
+        except Exception:
+            desired_count = 0
+        desired_count = max(desired_count, 0)
+
+        current_children = self.get_child_parameters()
+        current_len = len(current_children)
+
+        # Grow
+        if current_len < desired_count:
+            for index in range(current_len, desired_count):
+                name = f"{display_name_prefix} {index + 1}" if display_name_prefix else None
+                self.append_child_parameter(display_name=name)
+
+        # Shrink
+        elif current_len > desired_count:
+            for _ in range(current_len - desired_count):
+                self.remove_last_child_parameter()
+
+        # Optionally re-apply display names to existing children to keep indices tidy
+        if display_name_prefix:
+            for index, child in enumerate(self.get_child_parameters()):
+                ui_opts = child.ui_options or {}
+                ui_opts["display_name"] = f"{display_name_prefix} {index + 1}"
+                child.ui_options = ui_opts
 
     def add_child(self, child: BaseNodeElement) -> None:
         """Override to mark parent node as unresolved when children are added.

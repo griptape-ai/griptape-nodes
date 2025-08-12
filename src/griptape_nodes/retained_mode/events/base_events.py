@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.events import BaseEvent as GtBaseEvent
@@ -14,6 +15,64 @@ from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     import builtins
+
+
+@dataclass
+class ResultDetail:
+    """A single detail about an operation result, including logging level and human readable message."""
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    message: str
+
+
+@dataclass
+class ResultDetails:
+    """Container for multiple ResultDetail objects."""
+
+    result_details: list[ResultDetail]
+
+    def __init__(
+        self,
+        *result_details: ResultDetail,
+        message: str | None = None,
+        level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
+        logger: logging.Logger | str | None = "griptape_nodes",
+    ):
+        """Initialize with ResultDetail objects or create a single one from message/level.
+
+        Args:
+            *result_details: Variable number of ResultDetail objects
+            message: If provided, creates a single ResultDetail with this message
+            level: Logging level for the single ResultDetail (required if message is provided)
+            logger: Logger to use for auto-logging. String for logger name, Logger object, or None to skip
+        """
+        # Handle single message/level convenience
+        if message is not None:
+            if level is None:
+                err_msg = "level is required when message is provided"
+                raise ValueError(err_msg)
+            if result_details:
+                err_msg = "Cannot provide both result_details and message/level"
+                raise ValueError(err_msg)
+            self.result_details = [ResultDetail(level=level, message=message)]
+        else:
+            if not result_details:
+                err_msg = "ResultDetails requires at least one ResultDetail or message/level"
+                raise ValueError(err_msg)
+            self.result_details = list(result_details)
+
+        # Auto-log if logger is provided
+        if logger is not None:
+            try:
+                if isinstance(logger, str):
+                    logger = logging.getLogger(logger)
+
+                for detail in self.result_details:
+                    numeric_level = getattr(logging, detail.level)
+                    logger.log(numeric_level, detail.message)
+            except Exception:  # noqa: S110
+                # If logging fails for any reason, don't let it break the ResultDetails creation
+                pass
 
 
 # The Payload class is a marker interface
@@ -32,6 +91,7 @@ class RequestPayload(Payload, ABC):
 class ResultPayload(Payload, ABC):
     """Base class for all result payloads."""
 
+    result_details: ResultDetails | str
     """When set to True, alerts clients that this result made changes to the workflow state.
     Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
     altered_workflow_state: bool = False
@@ -76,6 +136,13 @@ class SkipTheLineMixin:
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
+    result_details: ResultDetails | str = "Success"
+
+    def __post_init__(self) -> None:
+        """Initialize success result with INFO level default for strings."""
+        if isinstance(self.result_details, str):
+            self.result_details = ResultDetails(message=self.result_details, level="DEBUG")
+
     def succeeded(self) -> bool:
         """Returns True as this is a success result.
 
@@ -90,7 +157,13 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
+    result_details: ResultDetails | str = "Failure"
     exception: Exception | None = None
+
+    def __post_init__(self) -> None:
+        """Initialize failure result with ERROR level default for strings."""
+        if isinstance(self.result_details, str):
+            self.result_details = ResultDetails(message=self.result_details, level="ERROR")
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.

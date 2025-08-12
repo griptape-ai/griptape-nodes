@@ -389,11 +389,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 )
             details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
             logger.error(details)
-            return GetEngineVersionResultFailure()
+            return GetEngineVersionResultFailure(result_details=details)
         except Exception as err:
             details = f"Attempted to get engine version. Failed due to '{err}'."
             logger.error(details)
-            return GetEngineVersionResultFailure()
+            return GetEngineVersionResultFailure(result_details=details)
 
     def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
         from griptape_nodes.app.app import subscribe_to_topic
@@ -434,7 +434,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         except Exception as err:
             details = f"Failed to end session due to '{err}'."
             logger.error(details)
-            return AppEndSessionResultFailure()
+            return AppEndSessionResultFailure(result_details=details)
 
     def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
         return AppGetSessionResultSuccess(session_id=GriptapeNodes.SessionManager().get_active_session_id())
@@ -447,14 +447,17 @@ class GriptapeNodes(metaclass=SingletonMeta):
         try:
             active_session_id = GriptapeNodes.SessionManager().get_active_session_id()
             if active_session_id is None:
-                logger.warning("Session heartbeat received but no active session found")
-                return SessionHeartbeatResultFailure()
+                details = "Session heartbeat received but no active session found"
+                logger.warning(details)
+                return SessionHeartbeatResultFailure(result_details=details)
 
-            logger.debug("Session heartbeat successful for session: %s", active_session_id)
+            details = f"Session heartbeat successful for session: {active_session_id}"
+            logger.debug(details)
             return SessionHeartbeatResultSuccess()
         except Exception as err:
-            logger.error("Failed to handle session heartbeat: %s", err)
-            return SessionHeartbeatResultFailure()
+            details = f"Failed to handle session heartbeat: {err}"
+            logger.error(details)
+            return SessionHeartbeatResultFailure(result_details=details)
 
     def handle_engine_heartbeat_request(self, request: EngineHeartbeatRequest) -> ResultPayload:
         """Handle engine heartbeat requests.
@@ -483,8 +486,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 **workflow_info,
             )
         except Exception as err:
-            logger.error("Failed to handle engine heartbeat: %s", err)
-            return EngineHeartbeatResultFailure(heartbeat_id=request.heartbeat_id)
+            details = f"Failed to handle engine heartbeat: {err}"
+            logger.error(details)
+            return EngineHeartbeatResultFailure(heartbeat_id=request.heartbeat_id, result_details=details)
 
     def handle_get_engine_name_request(self, request: GetEngineNameRequest) -> ResultPayload:  # noqa: ARG002
         """Handle requests to get the current engine name."""
@@ -495,7 +499,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         except Exception as err:
             error_message = f"Failed to get engine name: {err}"
             logger.error(error_message)
-            return GetEngineNameResultFailure(error_message=error_message)
+            return GetEngineNameResultFailure(error_message=error_message, result_details=error_message)
 
     def handle_set_engine_name_request(self, request: SetEngineNameRequest) -> ResultPayload:
         """Handle requests to set a new engine name."""
@@ -504,7 +508,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             if not request.engine_name or not request.engine_name.strip():
                 error_message = "Engine name cannot be empty"
                 logger.warning(error_message)
-                return SetEngineNameResultFailure(error_message=error_message)
+                return SetEngineNameResultFailure(error_message=error_message, result_details=error_message)
 
             # Set the new engine name
             GriptapeNodes.EngineIdentityManager().set_engine_name(request.engine_name.strip())
@@ -514,7 +518,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         except Exception as err:
             error_message = f"Failed to set engine name: {err}"
             logger.error(error_message)
-            return SetEngineNameResultFailure(error_message=error_message)
+            return SetEngineNameResultFailure(error_message=error_message, result_details=error_message)
 
     def _get_instance_info(self) -> dict[str, str | None]:
         """Get instance information from environment variables.

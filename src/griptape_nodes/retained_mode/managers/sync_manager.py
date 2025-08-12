@@ -144,8 +144,9 @@ class SyncManager:
             self._active_sync_tasks[sync_task_id] = sync_thread
             sync_thread.start()
         except Exception as e:
-            logger.error("Failed to start cloud workflow sync: %s", str(e))
-            return StartSyncAllCloudWorkflowsResultFailure()
+            details = f"Failed to start cloud workflow sync: {e!s}"
+            logger.error(details)
+            return StartSyncAllCloudWorkflowsResultFailure(result_details=details)
         else:
             logger.info("Started background sync for %d workflow files", len(workflow_files))
             return StartSyncAllCloudWorkflowsResultSuccess(

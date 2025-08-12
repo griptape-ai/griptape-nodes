@@ -528,7 +528,7 @@ class WorkflowManager:
             if not Path(complete_file_path).is_file():
                 details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
                 logger.error(details)
-                return RunWorkflowFromScratchResultFailure()
+                return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Start with a clean slate.
             clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
@@ -536,7 +536,7 @@ class WorkflowManager:
             if not clear_all_result.succeeded():
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 logger.error(details)
-                return RunWorkflowFromScratchResultFailure()
+                return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Run the file, goddamn it
             execution_result = self.run_workflow(relative_file_path=relative_file_path)
@@ -545,7 +545,7 @@ class WorkflowManager:
                 return RunWorkflowFromScratchResultSuccess()
 
             logger.error(execution_result.execution_details)
-            return RunWorkflowFromScratchResultFailure()
+            return RunWorkflowFromScratchResultFailure(result_details=execution_result.execution_details)
 
     def on_run_workflow_with_current_state_request(self, request: RunWorkflowWithCurrentStateRequest) -> ResultPayload:
         relative_file_path = request.file_path
@@ -553,22 +553,23 @@ class WorkflowManager:
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             logger.error(details)
-            return RunWorkflowWithCurrentStateResultFailure()
+            return RunWorkflowWithCurrentStateResultFailure(result_details=details)
         execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
         if execution_result.execution_successful:
             logger.debug(execution_result.execution_details)
             return RunWorkflowWithCurrentStateResultSuccess()
         logger.error(execution_result.execution_details)
-        return RunWorkflowWithCurrentStateResultFailure()
+        return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
     def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         # get workflow from registry
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.error("Failed to get workflow from registry.")
-            return RunWorkflowFromRegistryResultFailure()
+            details = f"Failed to get workflow '{request.workflow_name}' from registry."
+            logger.error(details)
+            return RunWorkflowFromRegistryResultFailure(result_details=details)
 
         # Update current context for workflow.
         if GriptapeNodes.ContextManager().has_current_workflow():
@@ -587,7 +588,7 @@ class WorkflowManager:
                 if not clear_all_result.succeeded():
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     logger.error(details)
-                    return RunWorkflowFromRegistryResultFailure()
+                    return RunWorkflowFromRegistryResultFailure(result_details=details)
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
             GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
@@ -602,7 +603,7 @@ class WorkflowManager:
                 clear_all_result = GriptapeNodes.handle_request(clear_all_request)
 
                 # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
-                return RunWorkflowFromRegistryResultFailure()
+                return RunWorkflowFromRegistryResultFailure(result_details=execution_result.execution_details)
 
         # Success!
         logger.debug(execution_result.execution_details)
@@ -617,7 +618,7 @@ class WorkflowManager:
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             logger.error(details)
-            return RegisterWorkflowResultFailure()
+            return RegisterWorkflowResultFailure(result_details=details)
         return RegisterWorkflowResultSuccess(workflow_name=workflow.metadata.name)
 
     def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
@@ -626,7 +627,7 @@ class WorkflowManager:
         except Exception:
             details = "Failed to list all workflows."
             logger.error(details)
-            return ListAllWorkflowsResultFailure()
+            return ListAllWorkflowsResultFailure(result_details=details)
         return ListAllWorkflowsResultSuccess(workflows=workflows)
 
     def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
@@ -635,14 +636,14 @@ class WorkflowManager:
         except Exception as e:
             details = f"Failed to remove workflow from registry with name '{request.name}'. Exception: {e}"
             logger.error(details)
-            return DeleteWorkflowResultFailure()
+            return DeleteWorkflowResultFailure(result_details=details)
         config_manager = GriptapeNodes.ConfigManager()
         try:
             config_manager.delete_user_workflow(workflow.file_path)
         except Exception as e:
             details = f"Failed to remove workflow from user config with name '{request.name}'. Exception: {e}"
             logger.error(details)
-            return DeleteWorkflowResultFailure()
+            return DeleteWorkflowResultFailure(result_details=details)
         # delete the actual file
         full_path = config_manager.workspace_path.joinpath(workflow.file_path)
         try:
@@ -650,7 +651,7 @@ class WorkflowManager:
         except Exception as e:
             details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
             logger.error(details)
-            return DeleteWorkflowResultFailure()
+            return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess()
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
@@ -659,13 +660,13 @@ class WorkflowManager:
         if isinstance(save_workflow_request, SaveWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             logger.error(details)
-            return RenameWorkflowResultFailure()
+            return RenameWorkflowResultFailure(result_details=details)
 
         delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
         if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
             logger.error(details)
-            return RenameWorkflowResultFailure()
+            return RenameWorkflowResultFailure(result_details=details)
 
         return RenameWorkflowResultSuccess()
 
@@ -674,18 +675,20 @@ class WorkflowManager:
             # Validate source workflow exists
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.error("Failed to move workflow '%s' because it does not exist", request.workflow_name)
-            return MoveWorkflowResultFailure()
+            details = f"Failed to move workflow '{request.workflow_name}' because it does not exist."
+            logger.error(details)
+            return MoveWorkflowResultFailure(result_details=details)
 
         config_manager = GriptapeNodes.ConfigManager()
 
         # Get current file path
         current_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
         if not Path(current_file_path).exists():
-            logger.error(
-                "Failed to move workflow '%s': File path '%s' does not exist", request.workflow_name, current_file_path
+            details = (
+                f"Failed to move workflow '{request.workflow_name}': File path '{current_file_path}' does not exist."
             )
-            return MoveWorkflowResultFailure()
+            logger.error(details)
+            return MoveWorkflowResultFailure(result_details=details)
 
         # Clean and validate target directory
         target_directory = request.target_directory.strip().replace("\\", "/")
@@ -698,8 +701,9 @@ class WorkflowManager:
             # Create target directory if it doesn't exist
             target_dir_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            logger.error("Failed to create target directory '%s': %s", target_dir_path, str(e))
-            return MoveWorkflowResultFailure()
+            details = f"Failed to create target directory '{target_dir_path}': {e!s}"
+            logger.error(details)
+            return MoveWorkflowResultFailure(result_details=details)
 
         # Create new file path
         workflow_filename = Path(workflow.file_path).name
@@ -708,12 +712,11 @@ class WorkflowManager:
 
         # Check if target file already exists
         if new_absolute_path.exists():
-            logger.error(
-                "Failed to move workflow '%s': Target file '%s' already exists",
-                request.workflow_name,
-                new_absolute_path,
+            details = (
+                f"Failed to move workflow '{request.workflow_name}': Target file '{new_absolute_path}' already exists."
             )
-            return MoveWorkflowResultFailure()
+            logger.error(details)
+            return MoveWorkflowResultFailure(result_details=details)
 
         try:
             # Move the file
@@ -727,22 +730,27 @@ class WorkflowManager:
             config_manager.save_user_workflow_json(str(new_absolute_path))
 
         except OSError as e:
-            logger.error("Failed to move workflow file '%s' to '%s': %s", current_file_path, new_absolute_path, str(e))
+            details = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {e!s}"
+            logger.error(details)
 
             # Attempt to rollback if file was moved but registry update failed
             if new_absolute_path.exists() and not Path(current_file_path).exists():
                 try:
                     new_absolute_path.rename(current_file_path)
-                    logger.info("Rolled back file move for workflow '%s'", request.workflow_name)
+                    details = f"Rolled back file move for workflow '{request.workflow_name}'"
+                    logger.info(details)
                 except OSError:
-                    logger.error("Failed to rollback file move for workflow '%s'", request.workflow_name)
+                    details = f"Failed to rollback file move for workflow '{request.workflow_name}'"
+                    logger.error(details)
 
-            return MoveWorkflowResultFailure()
+            return MoveWorkflowResultFailure(result_details=details)
         except Exception as e:
-            logger.error("Failed to move workflow '%s': %s", request.workflow_name, str(e))
-            return MoveWorkflowResultFailure()
+            details = f"Failed to move workflow '{request.workflow_name}': {e!s}"
+            logger.error(details)
+            return MoveWorkflowResultFailure(result_details=details)
         else:
-            logger.info("Successfully moved workflow '%s' to '%s'", request.workflow_name, new_relative_path)
+            details = f"Successfully moved workflow '{request.workflow_name}' to '{new_relative_path}'"
+            logger.info(details)
             return MoveWorkflowResultSuccess(moved_file_path=new_relative_path)
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
@@ -763,7 +771,7 @@ class WorkflowManager:
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}. Failed because no file could be found at that path."
             logger.error(details)
-            return LoadWorkflowMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure(result_details=details)
 
         # Find the metadata block.
         block_name = WorkflowManager.WORKFLOW_METADATA_HEADER
@@ -780,7 +788,7 @@ class WorkflowManager:
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed as it had {len(matches)} sections titled '{block_name}', and we expect exactly 1 such section."
             logger.error(details)
-            return LoadWorkflowMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure(result_details=details)
 
         # Now attempt to parse out the metadata section, stripped of comment prefixes.
         metadata_content_toml = "".join(
@@ -800,7 +808,7 @@ class WorkflowManager:
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata was not valid TOML: {err}"
             logger.error(details)
-            return LoadWorkflowMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure(result_details=details)
 
         tool_header = "tool"
         griptape_nodes_header = "griptape-nodes"
@@ -816,7 +824,7 @@ class WorkflowManager:
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the '[{tool_header}.{griptape_nodes_header}]' section could not be found: {err}"
             logger.error(details)
-            return LoadWorkflowMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure(result_details=details)
 
         try:
             # Is it kosher?
@@ -834,7 +842,7 @@ class WorkflowManager:
             )
             details = f"Attempted to load workflow metadata for a file at '{complete_file_path}'. Failed because the metadata in the '[{tool_header}.{griptape_nodes_header}]' section did not match the requisite schema with error: {err}"
             logger.error(details)
-            return LoadWorkflowMetadataResultFailure()
+            return LoadWorkflowMetadataResultFailure(result_details=details)
 
         # We have valid dependencies, etc.
         # TODO: validate schema versions, engine versions: https://github.com/griptape-ai/griptape-nodes/issues/617
@@ -878,7 +886,12 @@ class WorkflowManager:
             # See how our desired version compares against the actual library we (may) have.
             # See if the library exists.
             library_metadata_request = GetLibraryMetadataRequest(library=library_name)
-            library_metadata_result = GriptapeNodes.handle_request(library_metadata_request)
+            # NOTE: Per https://github.com/griptape-ai/griptape-vsl-gui/issues/1123, we
+            # generate a FLOOD of error messages here that can swamp the GUI. We'll call
+            # directly instead of the usual handle_request() path so we don't generate those.
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
                 # Metadata failed to be found.
                 had_critical_error = True
@@ -1361,14 +1374,15 @@ class WorkflowManager:
         except Exception as err:
             details = f"Attempted to save workflow '{relative_file_path}', but {err}"
             logger.error(details)
-            return SaveWorkflowResultFailure()
+            return SaveWorkflowResultFailure(result_details=details)
 
         # Create the pathing and write the file
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            logger.error("Attempted to save workflow '%s'. Failed when creating directory: %s", file_name, str(e))
-            return SaveWorkflowResultFailure()
+            details = f"Attempted to save workflow '{file_name}'. Failed when creating directory: {e}"
+            logger.error(details)
+            return SaveWorkflowResultFailure(result_details=details)
 
         relative_serialized_file_path = f"{file_name}.py"
         serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
@@ -1378,17 +1392,17 @@ class WorkflowManager:
         min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_workflows")
         if not OSManager.check_available_disk_space(serialized_file_path.parent, min_space_gb):
             error_msg = OSManager.format_disk_space_error(serialized_file_path.parent)
-            logger.error(
-                "Attempted to save workflow '%s' (requires %.1f GB). Failed: %s", file_name, min_space_gb, error_msg
-            )
-            return SaveWorkflowResultFailure()
+            details = f"Attempted to save workflow '{file_name}' (requires {min_space_gb:.1f} GB). Failed: {error_msg}"
+            logger.error(details)
+            return SaveWorkflowResultFailure(result_details=details)
 
         try:
             with serialized_file_path.open("w", encoding="utf-8") as file:
                 file.write(final_code_output)
         except OSError as e:
-            logger.error("Attempted to save workflow '%s'. Failed when writing file: %s", file_name, str(e))
-            return SaveWorkflowResultFailure()
+            details = f"Attempted to save workflow '{file_name}'. Failed when writing file: {e}"
+            logger.error(details)
+            return SaveWorkflowResultFailure(result_details=details)
 
         # save the created workflow as an entry in the JSON config file.
         registered_workflows = WorkflowRegistry.list_workflows()
@@ -1396,8 +1410,9 @@ class WorkflowManager:
             try:
                 GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
             except OSError as e:
-                logger.error("Attempted to save workflow '%s'. Failed when saving configuration: %s", file_name, str(e))
-                return SaveWorkflowResultFailure()
+                details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
+                logger.error(details)
+                return SaveWorkflowResultFailure(result_details=details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         # Update existing workflow's metadata in the registry
         existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
@@ -3058,7 +3073,7 @@ class WorkflowManager:
         except Exception as e:
             details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
             logger.exception(details)
-            return PublishWorkflowResultFailure(exception=e)
+            return PublishWorkflowResultFailure(exception=e, result_details=details)
 
     def _register_published_workflow_file(self, workflow_file: Path) -> None:
         """Register a published workflow file in the workflow registry."""
@@ -3118,45 +3133,35 @@ class WorkflowManager:
         try:
             workflow = self._get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.error(
-                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow is not registered",
-                request.workflow_name,
-            )
-            return ImportWorkflowAsReferencedSubFlowResultFailure()
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow is not registered"
+            logger.error(details)
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
         # (workflow schema was fixed in 0.6.0 to support importing workflows)
         required_version = Version(major=0, minor=6, patch=0)
         workflow_version = Version.from_string(workflow.metadata.schema_version)
         if workflow_version is None or workflow_version < required_version:
-            logger.error(
-                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow version '%s' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version.",
-                request.workflow_name,
-                workflow.metadata.schema_version,
-            )
-            return ImportWorkflowAsReferencedSubFlowResultFailure()
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
+            logger.error(details)
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Check target flow
         flow_name = request.flow_name
         if flow_name is None:
             if not GriptapeNodes.ContextManager().has_current_flow():
-                logger.error(
-                    "Attempted to import workflow '%s' into Current Context. Failed because Current Context was empty",
-                    request.workflow_name,
-                )
-                return ImportWorkflowAsReferencedSubFlowResultFailure()
+                details = f"Attempted to import workflow '{request.workflow_name}' into Current Context. Failed because Current Context was empty"
+                logger.error(details)
+                return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
         else:
             # Validate that the specified flow exists
             flow_manager = GriptapeNodes.FlowManager()
             try:
                 flow_manager.get_flow_by_name(flow_name)
             except KeyError:
-                logger.error(
-                    "Attempted to import workflow '%s' into flow '%s'. Failed because target flow does not exist",
-                    request.workflow_name,
-                    flow_name,
-                )
-                return ImportWorkflowAsReferencedSubFlowResultFailure()
+                details = f"Attempted to import workflow '{request.workflow_name}' into flow '{flow_name}'. Failed because target flow does not exist"
+                logger.error(details)
+                return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         return None
 
@@ -3178,23 +3183,18 @@ class WorkflowManager:
                 workflow_result = self.run_workflow(workflow.file_path)
 
         if not workflow_result.execution_successful:
-            logger.error(
-                "Attempted to import workflow '%s' as referenced sub flow. Failed because workflow execution failed: %s",
-                request.workflow_name,
-                workflow_result.execution_details,
-            )
-            return ImportWorkflowAsReferencedSubFlowResultFailure()
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow execution failed: {workflow_result.execution_details}"
+            logger.error(details)
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # Get flows after importing to find the new referenced sub flow
         flows_after = set(obj_manager.get_filtered_subset(type=ControlFlow).keys())
         new_flows = flows_after - flows_before
 
         if not new_flows:
-            logger.error(
-                "Attempted to import workflow '%s' as referenced sub flow. Failed because no new flow was created",
-                request.workflow_name,
-            )
-            return ImportWorkflowAsReferencedSubFlowResultFailure()
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because no new flow was created"
+            logger.error(details)
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
         # For now, use the first created flow as the main imported flow
         # This handles nested workflows correctly since sub-flows are expected
@@ -3216,12 +3216,9 @@ class WorkflowManager:
             set_metadata_result = GriptapeNodes.handle_request(set_metadata_request)
 
             if not isinstance(set_metadata_result, SetFlowMetadataResultSuccess):
-                logger.error(
-                    "Attempted to import workflow '%s' as referenced sub flow. Failed because metadata could not be applied to created flow '%s'",
-                    request.workflow_name,
-                    created_flow_name,
-                )
-                return ImportWorkflowAsReferencedSubFlowResultFailure()
+                details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because metadata could not be applied to created flow '{created_flow_name}'"
+                logger.error(details)
+                return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
             logger.debug(
                 "Applied imported flow metadata to '%s': %s", created_flow_name, request.imported_flow_metadata
@@ -3238,8 +3235,9 @@ class WorkflowManager:
             # Validate source workflow exists
             source_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.error("Failed to branch workflow '%s' because it does not exist", request.workflow_name)
-            return BranchWorkflowResultFailure()
+            details = f"Failed to branch workflow '{request.workflow_name}' because it does not exist"
+            logger.error(details)
+            return BranchWorkflowResultFailure(result_details=details)
 
         # Generate branch name if not provided
         branch_name = request.branched_workflow_name
@@ -3253,12 +3251,9 @@ class WorkflowManager:
 
         # Check if branch name already exists
         if WorkflowRegistry.has_workflow_with_name(branch_name):
-            logger.error(
-                "Failed to branch workflow '%s' because branch name '%s' already exists",
-                request.workflow_name,
-                branch_name,
-            )
-            return BranchWorkflowResultFailure()
+            details = f"Failed to branch workflow '{request.workflow_name}' because branch name '{branch_name}' already exists"
+            logger.error(details)
+            return BranchWorkflowResultFailure(result_details=details)
 
         try:
             # Create branch metadata by copying source metadata
@@ -3285,21 +3280,18 @@ class WorkflowManager:
             # Read source workflow content and replace metadata header
             source_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
             if not Path(source_file_path).exists():
-                logger.error(
-                    "Failed to branch workflow '%s': File path '%s' does not exist. "
-                    "The workflow may have been moved or the workspace configuration may have changed.",
-                    request.workflow_name,
-                    source_file_path,
-                )
-                return BranchWorkflowResultFailure()
+                details = f"Failed to branch workflow '{request.workflow_name}': File path '{source_file_path}' does not exist. The workflow may have been moved or the workspace configuration may have changed."
+                logger.error(details)
+                return BranchWorkflowResultFailure(result_details=details)
 
             source_content = Path(source_file_path).read_text(encoding="utf-8")
 
             # Replace the metadata header with branch metadata
             branch_content = self._replace_workflow_metadata_header(source_content, branch_metadata)
             if branch_content is None:
-                logger.error("Failed to replace metadata header for branch workflow '%s'", branch_name)
-                return BranchWorkflowResultFailure()
+                details = f"Failed to replace metadata header for branch workflow '{branch_name}'"
+                logger.error(details)
+                return BranchWorkflowResultFailure(result_details=details)
 
             # Write branch workflow file to disk BEFORE registering in registry
             branch_full_path = WorkflowRegistry.get_complete_file_path(branch_file_path)
@@ -3318,11 +3310,12 @@ class WorkflowManager:
             )
 
         except Exception as e:
-            logger.error("Failed to branch workflow '%s': %s", request.workflow_name, str(e))
+            details = f"Failed to branch workflow '{request.workflow_name}': {e!s}"
+            logger.error(details)
             import traceback
 
             traceback.print_exc()
-            return BranchWorkflowResultFailure()
+            return BranchWorkflowResultFailure(result_details=details)
 
     def on_merge_workflow_branch_request(self, request: MergeWorkflowBranchRequest) -> ResultPayload:
         """Merge a branch back into its source workflow, removing the branch when complete."""
@@ -3330,28 +3323,24 @@ class WorkflowManager:
             # Validate branch workflow exists
             branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError as e:
-            logger.error("Failed to merge workflow branch because it does not exist: %s", str(e))
-            return MergeWorkflowBranchResultFailure()
+            details = f"Failed to merge workflow branch because it does not exist: {e!s}"
+            logger.error(details)
+            return MergeWorkflowBranchResultFailure(result_details=details)
 
         # Get source workflow name from branch metadata
         source_workflow_name = branch_workflow.metadata.branched_from
         if not source_workflow_name:
-            logger.error(
-                "Failed to merge workflow branch '%s' because it has no source workflow",
-                request.workflow_name,
-            )
-            return MergeWorkflowBranchResultFailure()
+            details = f"Failed to merge workflow branch '{request.workflow_name}' because it has no source workflow"
+            logger.error(details)
+            return MergeWorkflowBranchResultFailure(result_details=details)
 
         # Validate source workflow exists
         try:
             source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
         except KeyError:
-            logger.error(
-                "Failed to merge workflow branch '%s' because source workflow '%s' does not exist",
-                request.workflow_name,
-                source_workflow_name,
-            )
-            return MergeWorkflowBranchResultFailure()
+            details = f"Failed to merge workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
+            logger.error(details)
+            return MergeWorkflowBranchResultFailure(result_details=details)
 
         try:
             # Create updated metadata for source workflow - update timestamp
@@ -3379,8 +3368,9 @@ class WorkflowManager:
             # Replace the metadata header with merged metadata
             merged_content = self._replace_workflow_metadata_header(branch_content, merged_metadata)
             if merged_content is None:
-                logger.error("Failed to replace metadata header for merged workflow '%s'", source_workflow_name)
-                return MergeWorkflowBranchResultFailure()
+                details = f"Failed to replace metadata header for merged workflow '{source_workflow_name}'"
+                logger.error(details)
+                return MergeWorkflowBranchResultFailure(result_details=details)
 
             # Write the updated content to the source workflow file
             source_file_path = WorkflowRegistry.get_complete_file_path(source_workflow.file_path)
@@ -3410,13 +3400,9 @@ class WorkflowManager:
             return MergeWorkflowBranchResultSuccess(merged_workflow_name=source_workflow_name)
 
         except Exception as e:
-            logger.error(
-                "Failed to merge branch workflow '%s' into source workflow '%s': %s",
-                request.workflow_name,
-                source_workflow_name,
-                str(e),
-            )
-            return MergeWorkflowBranchResultFailure()
+            details = f"Failed to merge branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}': {e!s}"
+            logger.error(details)
+            return MergeWorkflowBranchResultFailure(result_details=details)
 
     def on_reset_workflow_branch_request(self, request: ResetWorkflowBranchRequest) -> ResultPayload:
         """Reset a branch to match its source workflow, discarding branch changes."""
@@ -3424,28 +3410,24 @@ class WorkflowManager:
             # Validate branch workflow exists
             branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError as e:
-            logger.error("Failed to reset workflow branch because it does not exist: %s", str(e))
-            return ResetWorkflowBranchResultFailure()
+            details = f"Failed to reset workflow branch because it does not exist: {e!s}"
+            logger.error(details)
+            return ResetWorkflowBranchResultFailure(result_details=details)
 
         # Get source workflow name from branch metadata
         source_workflow_name = branch_workflow.metadata.branched_from
         if not source_workflow_name:
-            logger.error(
-                "Failed to reset workflow branch '%s' because it has no source workflow",
-                request.workflow_name,
-            )
-            return ResetWorkflowBranchResultFailure()
+            details = f"Failed to reset workflow branch '{request.workflow_name}' because it has no source workflow"
+            logger.error(details)
+            return ResetWorkflowBranchResultFailure(result_details=details)
 
         # Validate source workflow exists
         try:
             source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
         except KeyError:
-            logger.error(
-                "Failed to reset workflow branch '%s' because source workflow '%s' does not exist",
-                request.workflow_name,
-                source_workflow_name,
-            )
-            return ResetWorkflowBranchResultFailure()
+            details = f"Failed to reset workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
+            logger.error(details)
+            return ResetWorkflowBranchResultFailure(result_details=details)
 
         try:
             # Read content from the source workflow (what we're resetting the branch to)
@@ -3473,8 +3455,9 @@ class WorkflowManager:
             # Replace the metadata header with reset metadata
             reset_content = self._replace_workflow_metadata_header(source_content, reset_metadata)
             if reset_content is None:
-                logger.error("Failed to replace metadata header for reset branch workflow '%s'", request.workflow_name)
-                return ResetWorkflowBranchResultFailure()
+                details = f"Failed to replace metadata header for reset branch workflow '{request.workflow_name}'"
+                logger.error(details)
+                return ResetWorkflowBranchResultFailure(result_details=details)
 
             # Write the updated content to the branch workflow file
             branch_content_file_path = WorkflowRegistry.get_complete_file_path(branch_workflow.file_path)
@@ -3484,13 +3467,9 @@ class WorkflowManager:
             branch_workflow.metadata = reset_metadata
 
         except Exception as e:
-            logger.error(
-                "Failed to reset branch workflow '%s' to source workflow '%s': %s",
-                request.workflow_name,
-                source_workflow_name,
-                str(e),
-            )
-            return ResetWorkflowBranchResultFailure()
+            details = f"Failed to reset branch workflow '{request.workflow_name}' to source workflow '{source_workflow_name}': {e!s}"
+            logger.error(details)
+            return ResetWorkflowBranchResultFailure(result_details=details)
         else:
             logger.info(
                 "Successfully reset branch workflow '%s' to match source workflow '%s'",
@@ -3505,8 +3484,9 @@ class WorkflowManager:
             # Get the workflow to evaluate
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            logger.error("Failed to compare workflow '%s' because it does not exist", request.workflow_name)
-            return CompareWorkflowsResultFailure()
+            details = f"Failed to compare workflow '{request.workflow_name}' because it does not exist"
+            logger.error(details)
+            return CompareWorkflowsResultFailure(result_details=details)
 
         # Use the provided compare_workflow_name
         compare_workflow_name = request.compare_workflow_name
@@ -3731,10 +3711,9 @@ class WorkflowManager:
             succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
 
         except Exception as e:
-            logger.error(
-                "Failed to register workflows from configuration section '%s': %s", request.config_section, str(e)
-            )
-            return RegisterWorkflowsFromConfigResultFailure()
+            details = f"Failed to register workflows from configuration section '{request.config_section}': {e!s}"
+            logger.error(details)
+            return RegisterWorkflowsFromConfigResultFailure(result_details=details)
         else:
             return RegisterWorkflowsFromConfigResultSuccess(succeeded_workflows=succeeded, failed_workflows=failed)
 

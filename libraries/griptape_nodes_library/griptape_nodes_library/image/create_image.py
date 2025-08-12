@@ -268,7 +268,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             self._has_connection_to_prompt = True
             # hey.. what if we just remove the property mode from the prompt parameter?
             if ParameterMode.PROPERTY in target_parameter.allowed_modes:
-                target_parameter.allowed_modes.remove(ParameterMode.PROPERTY)
+                target_parameter.allowed_modes = target_parameter.allowed_modes - {ParameterMode.PROPERTY}
 
         if target_parameter.name == "model" and source_parameter.name == "image_model_config":
             # Check and see if the incoming connection is from a image model config.
@@ -294,7 +294,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         if target_parameter.name == "prompt":
             self._has_connection_to_prompt = False
             # If we have no connections to the prompt parameter, add the property mode back
-            target_parameter.allowed_modes.add(ParameterMode.PROPERTY)
+            target_parameter.allowed_modes = target_parameter.allowed_modes | {ParameterMode.PROPERTY}
 
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":

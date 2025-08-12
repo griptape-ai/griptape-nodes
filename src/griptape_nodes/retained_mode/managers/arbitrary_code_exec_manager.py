@@ -46,6 +46,6 @@ class ArbitraryCodeExecManager:
             result = RunArbitraryPythonStringResultSuccess(python_output=captured_output)
         except Exception as e:
             python_output = f"ERROR: {e}"
-            result = RunArbitraryPythonStringResultFailure(python_output=python_output)
+            result = RunArbitraryPythonStringResultFailure(python_output=python_output, result_details=python_output)
 
         return result

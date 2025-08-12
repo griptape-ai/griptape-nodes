@@ -416,6 +416,15 @@
       }
     },
     {
+      "class_name": "CreateImageList",
+      "file_path": "griptape_nodes_library/lists/create_image_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Creates a list of image items",
+        "display_name": "Create Image List"
+      }
+    },
+    {
       "class_name": "GetFromList",
       "file_path": "griptape_nodes_library/lists/get_from_list.py",
       "metadata": {
@@ -488,6 +497,16 @@
         "description": "Takes a list input and splits it either by index or by item value, with options for keeping the split item.",
         "display_name": "Split List",
         "icon": "square-split-vertical"
+      }
+    },
+    {
+      "class_name": "SplitText",
+      "file_path": "griptape_nodes_library/lists/split_text.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Takes a text string and splits it into a list based on a specified delimiter.",
+        "display_name": "Split Text",
+        "icon": "scissors"
       }
     },
     {

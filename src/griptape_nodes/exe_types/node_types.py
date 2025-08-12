@@ -882,12 +882,12 @@ class BaseNode(ABC):
 
         # Create event data using the parameter's to_event method
         if remove:
+            # Import logger here to avoid circular dependency
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=RemoveElementEvent(element_id=parameter.element_id))
             )
         else:
             event_data = parameter.to_event(self)
-
             # Publish the event
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
@@ -1087,10 +1087,16 @@ class EndNode(BaseNode):
 
 
 class StartLoopNode(BaseNode):
-    finished: bool
-    current_index: int
     end_node: EndLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+    @abstractmethod
+    def is_loop_finished(self) -> bool:
+        """Return True if the loop has finished executing.
+
+        This method must be implemented by subclasses to define when
+        the loop should terminate.
+        """
 
 
 class EndLoopNode(BaseNode):

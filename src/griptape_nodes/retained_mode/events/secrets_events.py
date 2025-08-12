@@ -20,11 +20,13 @@ class GetSecretValueRequest(RequestPayload):
 
     Args:
         key: Name of the secret key to retrieve
+        should_error_on_not_found: Whether to error if the key is not found (default: True)
 
     Results: GetSecretValueResultSuccess (with value) | GetSecretValueResultFailure (key not found)
     """
 
     key: str
+    should_error_on_not_found: bool = True
 
 
 @dataclass
