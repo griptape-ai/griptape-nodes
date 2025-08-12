@@ -1450,6 +1450,70 @@ class ParameterList(ParameterContainer):
                 self.remove_child(child)
                 del child
 
+    # --- Convenience methods for stable list management ---
+    def get_child_parameters(self) -> list[Parameter]:
+        """Return direct child parameters only, in order of appearance."""
+        return self.find_elements_by_type(element_type=Parameter, find_recursively=False)
+
+    def append_child_parameter(self, display_name: str | None = None) -> Parameter:
+        """Append one child parameter and optionally set a display name.
+
+        This preserves existing children and adds a new one at the end.
+        """
+        child = self.add_child_parameter()
+        if display_name is not None:
+            ui_opts = child.ui_options or {}
+            ui_opts["display_name"] = display_name
+            child.ui_options = ui_opts
+        return child
+
+    def remove_last_child_parameter(self) -> None:
+        """Remove the last child parameter if one exists.
+
+        This removes from the end to preserve earlier children and their connections.
+        """
+        children = self.get_child_parameters()
+        if children:
+            last = children[-1]
+            self.remove_child(last)
+            del last
+
+    def ensure_length(self, desired_count: int, display_name_prefix: str | None = None) -> None:
+        """Grow or shrink the list to the desired length while preserving existing items.
+
+        - If increasing, appends new children to the end.
+        - If decreasing, removes children from the end.
+        - Optionally sets display names like "{prefix} 1", "{prefix} 2", ...
+        """
+        if desired_count is None:
+            return
+        try:
+            desired_count = int(desired_count)
+        except Exception:
+            desired_count = 0
+        desired_count = max(desired_count, 0)
+
+        current_children = self.get_child_parameters()
+        current_len = len(current_children)
+
+        # Grow
+        if current_len < desired_count:
+            for index in range(current_len, desired_count):
+                name = f"{display_name_prefix} {index + 1}" if display_name_prefix else None
+                self.append_child_parameter(display_name=name)
+
+        # Shrink
+        elif current_len > desired_count:
+            for _ in range(current_len - desired_count):
+                self.remove_last_child_parameter()
+
+        # Optionally re-apply display names to existing children to keep indices tidy
+        if display_name_prefix:
+            for index, child in enumerate(self.get_child_parameters()):
+                ui_opts = child.ui_options or {}
+                ui_opts["display_name"] = f"{display_name_prefix} {index + 1}"
+                child.ui_options = ui_opts
+
     def add_child(self, child: BaseNodeElement) -> None:
         """Override to mark parent node as unresolved when children are added.
 
