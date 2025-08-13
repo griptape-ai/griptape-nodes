@@ -1116,7 +1116,15 @@ class ErrorProxyNode(DataNode):
 
         # Add error message parameter explaining the failure
         error_message = ParameterMessage(
-            name="error_proxy_message", variant="error", value=f"Node creation failed: {failure_reason}"
+            name="error_proxy_message",
+            variant="error",
+            value=(
+                f"This is a placeholder for the '{self.original_node_type}' node, which couldn't load. "
+                f"Technical issue: {failure_reason}\n\n"
+                f"Your original node will be restored once the issue above is fixed (which may require registering the appropriate library, or getting a code fix from the node author).\n\n"
+                f"Because the node failed to load, we are only able to display what we know about it based on the parameters used and connections that were made to it. The node may have other Parameters that will be restored when the issue is addressed.\n\n"
+                f"Note: Making changes here may require manual fixes later, as we can't predict how all node authors craft their custom nodes."
+            ),
         )
         self.add_node_element(error_message)
 
@@ -1151,7 +1159,7 @@ class ErrorProxyNode(DataNode):
                 type=ParameterTypeBuiltin.ANY.value,  # ANY = parameter's main type for maximum flexibility
                 input_types=[ParameterTypeBuiltin.ANY.value],  # ANY = accepts any single input type
                 output_type=ParameterTypeBuiltin.ALL.value,  # ALL = can output any type (passthrough)
-                tooltip="Auto-generated universal parameter for Error Proxy",
+                tooltip="Parameter created for placeholder node to preserve workflow connections",
                 mode_allowed_input=True,  # Enable all modes upfront
                 mode_allowed_output=True,
                 mode_allowed_property=True,
@@ -1207,16 +1215,10 @@ class ErrorProxyNode(DataNode):
     def validate_before_node_run(self) -> list[Exception] | None:
         """Prevent ErrorProxy nodes from running - validate at node level only."""
         error_msg = (
-            f"Cannot run node '{self.name}': This is an Error Proxy.\n\n"
-            f"This node was created because the original '{self.original_node_type}' "
-            f"from library '{self.original_library_name}' failed to load.\n\n"
-            f"Failure reason: {self.failure_reason}\n\n"
-            f"To fix this:\n"
-            f"1. Install or fix the missing library: {self.original_library_name}\n"
-            f"2. Reload the library dynamically\n"
-            f"3. Reload this workflow\n\n"
-            f"The Error Proxy will be automatically replaced with the original node "
-            f"once the dependency is resolved."
+            f"Cannot run node '{self.name}': This is a placeholder node put in place to preserve your workflow until the breaking issue is fixed.\n\n"
+            f"The original '{self.original_node_type}' from library '{self.original_library_name}' failed to load due to this technical issue:\n\n"
+            f"{self.failure_reason}\n\n"
+            f"Once you resolve the issue above, reload this workflow and the placeholder will be automatically replaced with the original node."
         )
         return [RuntimeError(error_msg)]
 

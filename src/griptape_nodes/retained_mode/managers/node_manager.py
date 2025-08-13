@@ -1335,7 +1335,7 @@ class NodeManager:
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
-            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from ErrorProxyNode '{node_name}'. ErrorProxy nodes don't allow runtime parameter alterations."
+            details = f"Cannot modify parameter '{request.parameter_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow parameter modifications, as they could cause issues when the original node is restored."
             logger.error(details)
             return AlterParameterDetailsResultFailure(result_details=details)
 
@@ -1485,7 +1485,7 @@ class NodeManager:
                 )
             else:
                 # Reject runtime parameter value changes on ErrorProxy
-                details = f"Attempted to set parameter '{param_name}' value on ErrorProxyNode '{node_name}'. ErrorProxy nodes don't allow parameter value changes - we don't understand the data."
+                details = f"Cannot set parameter '{param_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow parameter changes, as they could cause issues when the original node is restored."
                 logger.error(details)
                 return SetParameterValueResultFailure(result_details=details)
 
