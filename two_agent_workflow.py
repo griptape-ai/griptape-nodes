@@ -558,7 +558,25 @@ def _ensure_workflow_context() -> None:
 def execute_workflow(
     input: dict, storage_backend: str = "local", workflow_executor: WorkflowExecutor | None = None
 ) -> dict | None:
+    from concurrent.futures import ThreadPoolExecutor
+    
     _ensure_workflow_context()
+    
+    # # Clean up ThreadPoolExecutor to prevent interference between runs
+    # from griptape_nodes.machines.node_resolution import ExecuteNodeState
+    # ExecuteNodeState.executor.shutdown(wait=True)
+    # ExecuteNodeState.executor = ThreadPoolExecutor()
+    
+    # Reset the flow state before each execution
+    from griptape_nodes.retained_mode.events.execution_events import UnresolveFlowRequest
+    flow_name = GriptapeNodes.ContextManager().get_current_flow().name
+    GriptapeNodes.handle_request(UnresolveFlowRequest(flow_name=flow_name))
+    
+    # # Also reset the flow manager's resolution machine state
+    # flow_manager = GriptapeNodes.FlowManager()
+    # if flow_manager._global_control_flow_machine:
+    #     flow_manager._global_control_flow_machine._context.resolution_machine.reset_machine()
+    
     workflow_executor = workflow_executor or LocalWorkflowExecutor()
     workflow_executor.run(workflow_name="ControlFlow_1", flow_input=input, storage_backend=storage_backend)
     return workflow_executor.output

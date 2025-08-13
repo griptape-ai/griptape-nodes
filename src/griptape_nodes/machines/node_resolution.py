@@ -301,7 +301,6 @@ class ExecuteNodeState(State):
                 )
             )
             logger.info("Node '%s' is processing.", current_node.name)
-
             try:
                 work_is_scheduled = ExecuteNodeState._process_node(current_focus)
                 if work_is_scheduled:
@@ -458,8 +457,8 @@ class ExecuteNodeState(State):
 
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
-            except StopIteration:
-                logger.debug("Node '%s' generator is done.", current_node.name)
+            except StopIteration as e:
+                logger.debug("Node '%s' generator is done. Error: %s", current_node.name, e)
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
                 current_focus.process_generator = None
                 current_focus.scheduled_value = None
