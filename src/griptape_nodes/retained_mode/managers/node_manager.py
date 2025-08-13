@@ -23,6 +23,7 @@ from griptape_nodes.exe_types.node_types import (
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -901,7 +902,7 @@ class NodeManager:
             input_types=request.input_types,
             output_type=request.output_type,
             default_value=request.default_value,
-            user_defined=True,
+            user_defined=request.is_user_defined,
             tooltip=request.tooltip,
             tooltip_as_input=request.tooltip_as_input,
             tooltip_as_property=request.tooltip_as_property,
@@ -1291,7 +1292,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
 
@@ -1317,6 +1318,24 @@ class NodeManager:
         # Is the node locked?
         if node.lock:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure(result_details=details)
+
+        # Handle ErrorProxyNode parameter alteration requests
+        if isinstance(node, ErrorProxyNode):
+            if request.initial_setup:
+                # Record the alteration request for serialization replay
+                node.record_initialization_request(request)
+
+                # Early return with warning - we're just preserving the original changes
+                details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
+                logger.warning(details)
+
+                result_details = ResultDetails(message=details, level="WARNING")
+                return AlterParameterDetailsResultSuccess(result_details=result_details)
+
+            # Reject runtime parameter alterations on ErrorProxy
+            details = f"Attempted to alter details for Parameter '{request.parameter_name}' from ErrorProxyNode '{node_name}'. ErrorProxy nodes don't allow runtime parameter alterations."
             logger.error(details)
             return AlterParameterDetailsResultFailure(result_details=details)
 
@@ -1454,8 +1473,21 @@ class NodeManager:
             logger.error(details)
             return SetParameterValueResultFailure(result_details=details)
 
-        # Allow nodes to prepare before parameter lookup (e.g., ErrorProxyNode creates missing parameters)
-        node.prepare_for_set_parameter_value(parameter_name=param_name, value=request.value)
+        # Handle ErrorProxyNode parameter value requests
+        if isinstance(node, ErrorProxyNode):
+            if request.initial_setup:
+                # For initial_setup, actually create the parameter and set the value
+                # This allows normal serialization to handle it, rather than recording the command
+                node.on_attempt_set_parameter_value(param_name)
+                # Continue with normal parameter value setting logic below
+                logger.debug(
+                    "Created parameter '%s' on ErrorProxyNode '%s' during initial setup", param_name, node_name
+                )
+            else:
+                # Reject runtime parameter value changes on ErrorProxy
+                details = f"Attempted to set parameter '{param_name}' value on ErrorProxyNode '{node_name}'. ErrorProxy nodes don't allow parameter value changes - we don't understand the data."
+                logger.error(details)
+                return SetParameterValueResultFailure(result_details=details)
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
@@ -1965,14 +1997,28 @@ class NodeManager:
             element_modification_commands = []
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
-                if parameter.user_defined or reference_node is None:
-                    # Add a user-defined Parameter, or treat as user-defined if no reference node
+                if parameter.user_defined:
+                    # Always serialize user-defined parameters regardless of node type
+                    param_dict = parameter.to_dict()
+                    param_dict["initial_setup"] = True
+                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    element_modification_commands.append(add_param_request)
+                elif isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, replay recorded AlterParameterDetailsRequest commands
+                    alter_requests = [
+                        request
+                        for request in node.get_recorded_initialization_requests(AlterParameterDetailsRequest)
+                        if request.parameter_name == parameter.name
+                    ]
+                    element_modification_commands.extend(alter_requests)
+                elif reference_node is None:
+                    # Normal node with no reference - treat all parameters as needing serialization
                     param_dict = parameter.to_dict()
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
                 else:
-                    # Not user defined. Get any deltas from the values on the reference node.
+                    # Normal node - compare against reference node
                     diff = NodeManager._manage_alter_details(parameter, reference_node)
                     relevant = False
                     for key in diff:
@@ -1987,6 +2033,10 @@ class NodeManager:
 
             # Now assignment of values to all of the parameters.
             set_value_commands = []
+
+            # ErrorProxyNode uses normal parameter serialization now since we create real parameters
+            # Only AlterParameterDetailsRequest commands are recorded and replayed
+            # Normal node - use current parameter values
             for parameter in node.parameters:
                 # SetParameterValueRequest event
                 set_param_value_requests = NodeManager._handle_parameter_value_saving(

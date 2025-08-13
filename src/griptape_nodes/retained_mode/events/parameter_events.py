@@ -40,6 +40,7 @@ class AddParameterToNodeRequest(RequestPayload):
         mode_allowed_input: Whether parameter can be used as input
         mode_allowed_property: Whether parameter can be used as property
         mode_allowed_output: Whether parameter can be used as output
+        is_user_defined: Whether this is a user-defined parameter (affects serialization)
         parent_container_name: Name of parent container if nested
         initial_setup: Skip setup work when loading from file
 
@@ -61,6 +62,7 @@ class AddParameterToNodeRequest(RequestPayload):
     mode_allowed_input: bool = Field(default=True)
     mode_allowed_property: bool = Field(default=True)
     mode_allowed_output: bool = Field(default=True)
+    is_user_defined: bool = Field(default=True)
     parent_container_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False

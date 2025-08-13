@@ -26,6 +26,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ProgressEvent,
+    RequestPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     NodeUnresolvedEvent,
@@ -33,7 +34,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
-    AlterParameterDetailsRequest,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
@@ -202,20 +202,6 @@ class BaseNode(ABC):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
-        return
-
-    def prepare_for_set_parameter_value(
-        self,
-        parameter_name: str,  # noqa: ARG002
-        value: Any,  # noqa: ARG002
-    ) -> None:
-        """Callback to prepare for setting a parameter value (before parameter lookup).
-
-        Called before get_parameter_by_name() during set parameter value operations.
-        This allows nodes like ErrorProxyNode to create missing parameters on-demand
-        before the lookup fails, ensuring workflow loading can continue even when
-        nodes have missing dependencies.
-        """
         return
 
     def before_value_set(
@@ -1125,7 +1111,8 @@ class ErrorProxyNode(DataNode):
         self.original_node_type = original_node_type
         self.original_library_name = original_library_name
         self.failure_reason = failure_reason
-        self._generated_parameters: set[str] = set()
+        # Record ALL initial_setup=True requests in order for 1:1 replay
+        self._recorded_initialization_requests: list[RequestPayload] = []
 
         # Add error message parameter explaining the failure
         error_message = ParameterMessage(
@@ -1133,46 +1120,71 @@ class ErrorProxyNode(DataNode):
         )
         self.add_node_element(error_message)
 
-    def _ensure_parameter_exists(self, param_name: str, param_type: str, modes: set[ParameterMode]) -> None:
-        """Ensures a parameter exists on this node, creating or evolving it as needed.
+    def on_attempt_set_parameter_value(self, param_name: str) -> None:
+        """Public method to attempt setting a parameter value during initial setup.
+
+        Creates a PROPERTY mode parameter if it doesn't exist to support value setting.
+
+        Args:
+            param_name: Name of the parameter to prepare for value setting
+        """
+        self._ensure_parameter_exists(param_name)
+
+    def _ensure_parameter_exists(self, param_name: str) -> None:
+        """Ensures a parameter exists on this node.
+
+        Creates a universal parameter with all modes enabled for maximum flexibility.
+        Auto-generated parameters are marked as non-user-defined so they don't get serialized.
 
         Args:
             param_name: Name of the parameter to ensure exists
-            param_type: The type for the parameter
-            modes: Set of parameter modes that should be allowed (INPUT, OUTPUT, PROPERTY)
         """
-        existing_param = super().get_parameter_by_name(param_name)  # Use super() to avoid recursion
+        existing_param = super().get_parameter_by_name(param_name)
 
         if existing_param is None:
-            # Create new parameter with specified type and modes
+            # Create new universal parameter with all modes enabled
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             request = AddParameterToNodeRequest(
                 node_name=self.name,
                 parameter_name=param_name,
-                type=param_type,
-                tooltip=f"Generated parameter for Error Proxy (type: {param_type})",
-                mode_allowed_input=ParameterMode.INPUT in modes,
-                mode_allowed_output=ParameterMode.OUTPUT in modes,
-                mode_allowed_property=ParameterMode.PROPERTY in modes,
+                type=ParameterTypeBuiltin.ANY.value,  # ANY = parameter's main type for maximum flexibility
+                input_types=[ParameterTypeBuiltin.ANY.value],  # ANY = accepts any single input type
+                output_type=ParameterTypeBuiltin.ALL.value,  # ALL = can output any type (passthrough)
+                tooltip="Auto-generated universal parameter for Error Proxy",
+                mode_allowed_input=True,  # Enable all modes upfront
+                mode_allowed_output=True,
+                mode_allowed_property=True,
+                is_user_defined=False,  # Don't serialize this parameter
                 initial_setup=True,  # Allows setting non-settable parameters and prevents resolution cascades during workflow loading
             )
-            GriptapeNodes.handle_request(request)
-            self._generated_parameters.add(param_name)
-        elif not modes.issubset(existing_param.allowed_modes):
-            # Parameter exists, ensure it supports all the requested modes
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+            result = GriptapeNodes.handle_request(request)
 
-            current_modes = existing_param.allowed_modes.union(modes)
+            # Check if parameter creation was successful
+            from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeResultSuccess
 
-            request = AlterParameterDetailsRequest(
-                parameter_name=param_name,
-                node_name=self.name,
-                mode_allowed_input=ParameterMode.INPUT in current_modes,
-                mode_allowed_output=ParameterMode.OUTPUT in current_modes,
-                mode_allowed_property=ParameterMode.PROPERTY in current_modes,
-            )
-            GriptapeNodes.handle_request(request)
+            if not isinstance(result, AddParameterToNodeResultSuccess):
+                failure_message = f"Failed to create parameter '{param_name}': {result.result_details}"
+                raise RuntimeError(failure_message)
+        # If parameter already exists, nothing to do - it already has all modes
+
+    def allow_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> bool:
+        """ErrorProxyNode allows connections - it's a shell for maintaining connections."""
+        return True
+
+    def allow_outgoing_connection(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> bool:
+        """ErrorProxyNode allows connections - it's a shell for maintaining connections."""
+        return True
 
     def before_incoming_connection(
         self,
@@ -1181,9 +1193,7 @@ class ErrorProxyNode(DataNode):
         target_parameter_name: str,
     ) -> None:
         """Create target parameter before connection validation."""
-        # Create parameter with all modes enabled - we'll refine the type based on source later
-        all_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
-        self._ensure_parameter_exists(target_parameter_name, ParameterTypeBuiltin.ANY.value, all_modes)
+        self._ensure_parameter_exists(target_parameter_name)
 
     def before_outgoing_connection(
         self,
@@ -1192,19 +1202,46 @@ class ErrorProxyNode(DataNode):
         target_parameter_name: str,  # noqa: ARG002
     ) -> None:
         """Create source parameter before connection validation."""
-        # Create parameter with all modes enabled
-        all_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
-        self._ensure_parameter_exists(source_parameter_name, ParameterTypeBuiltin.ANY.value, all_modes)
+        self._ensure_parameter_exists(source_parameter_name)
 
-    def prepare_for_set_parameter_value(
-        self,
-        parameter_name: str,
-        value: Any,  # noqa: ARG002
-    ) -> None:
-        """Create parameter before value is set."""
-        # Create parameter with all modes enabled
-        all_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
-        self._ensure_parameter_exists(parameter_name, ParameterTypeBuiltin.ANY.value, all_modes)
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Prevent ErrorProxy nodes from running - validate at node level only."""
+        error_msg = (
+            f"Cannot run node '{self.name}': This is an Error Proxy.\n\n"
+            f"This node was created because the original '{self.original_node_type}' "
+            f"from library '{self.original_library_name}' failed to load.\n\n"
+            f"Failure reason: {self.failure_reason}\n\n"
+            f"To fix this:\n"
+            f"1. Install or fix the missing library: {self.original_library_name}\n"
+            f"2. Reload the library dynamically\n"
+            f"3. Reload this workflow\n\n"
+            f"The Error Proxy will be automatically replaced with the original node "
+            f"once the dependency is resolved."
+        )
+        return [RuntimeError(error_msg)]
+
+    def record_initialization_request(self, request: RequestPayload) -> None:
+        """Record an initialization request for 1:1 replay during serialization.
+
+        The ErrorProxy soaks up all initial_setup=True requests and stores them
+        in order for perfect replay when the workflow is saved.
+        """
+        self._recorded_initialization_requests.append(request)
+
+    def get_recorded_initialization_requests(self, request_type: type | None = None) -> list[RequestPayload]:
+        """Get recorded initialization requests for 1:1 serialization replay.
+
+        Args:
+            request_type: Optional class to filter by. If provided, only returns requests
+                         of that type. If None, returns all recorded requests.
+
+        Returns:
+            List of recorded requests in the order they were received.
+        """
+        if request_type is None:
+            return self._recorded_initialization_requests
+
+        return [req for req in self._recorded_initialization_requests if isinstance(req, request_type)]
 
     def process(self) -> Any:
         """No-op process method. Error Proxy nodes do nothing during execution."""
