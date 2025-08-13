@@ -1114,19 +1114,25 @@ class ErrorProxyNode(DataNode):
         # Record ALL initial_setup=True requests in order for 1:1 replay
         self._recorded_initialization_requests: list[RequestPayload] = []
 
+        # Track if user has made connection modifications after initial setup
+        self._has_connection_modifications: bool = False
+
         # Add error message parameter explaining the failure
-        error_message = ParameterMessage(
+        self._error_message = ParameterMessage(
             name="error_proxy_message",
             variant="error",
-            value=(
-                f"This is a placeholder for the '{self.original_node_type}' node, which couldn't load. "
-                f"Technical issue: {failure_reason}\n\n"
-                f"Your original node will be restored once the issue above is fixed (which may require registering the appropriate library, or getting a code fix from the node author).\n\n"
-                f"Because the node failed to load, we are only able to display what we know about it based on the parameters used and connections that were made to it. The node may have other Parameters that will be restored when the issue is addressed.\n\n"
-                f"Note: Making changes here may require manual fixes later, as we can't predict how all node authors craft their custom nodes."
-            ),
+            value="",  # Will be set by _update_error_message
         )
-        self.add_node_element(error_message)
+        self.add_node_element(self._error_message)
+        self._update_error_message()
+
+    def _get_base_error_message(self) -> str:
+        """Generate the base error message for this ErrorProxyNode."""
+        return (
+            f"This is a placeholder for the '{self.original_node_type}' node, which couldn't load. "
+            f"Technical issue: {self.failure_reason}\n\n"
+            f"Your original node will be restored once the issue above is fixed (which may require registering the appropriate library, or getting a code fix from the node author).\n\n"
+        )
 
     def on_attempt_set_parameter_value(self, param_name: str) -> None:
         """Public method to attempt setting a parameter value during initial setup.
@@ -1211,6 +1217,34 @@ class ErrorProxyNode(DataNode):
     ) -> None:
         """Create source parameter before connection validation."""
         self._ensure_parameter_exists(source_parameter_name)
+
+    def set_post_init_connections_modified(self) -> None:
+        """Mark that user-initiated connections have been modified and update the warning message."""
+        if not self._has_connection_modifications:
+            self._has_connection_modifications = True
+            self._update_error_message()
+
+    def _update_error_message(self) -> None:
+        """Update the ParameterMessage to include connection modification warning."""
+        # Build the updated message with connection warning
+        base_message = self._get_base_error_message()
+
+        # Add connection modification warning if applicable
+        if self._has_connection_modifications:
+            connection_warning = (
+                "⚠️ WARNING: You have modified connections to this placeholder node. "
+                "This may require manual fixes when the original node is restored.\n\n"
+            )
+            final_message = base_message + connection_warning
+        else:
+            # Add the general note only if no modifications have been made
+            final_message = (
+                base_message
+                + "Note: Making changes here may require manual fixes later, as we can't predict how all node authors craft their custom nodes."
+            )
+
+        # Update the error message value
+        self._error_message.value = final_message
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Prevent ErrorProxy nodes from running - validate at node level only."""

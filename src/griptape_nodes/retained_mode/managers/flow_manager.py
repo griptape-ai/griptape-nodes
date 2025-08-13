@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, StartLoopNode, StartNode
+from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -864,6 +864,13 @@ class FlowManager:
                 )
             )
 
+        # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
+        if not request.initial_setup:
+            if isinstance(source_node, ErrorProxyNode):
+                source_node.set_post_init_connections_modified()
+            if isinstance(target_node, ErrorProxyNode):
+                target_node.set_post_init_connections_modified()
+
         result = CreateConnectionResultSuccess()
 
         return result
@@ -1006,6 +1013,12 @@ class FlowManager:
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
+
+        # Check if either node is ErrorProxyNode and mark connection modification (deletes are always user-initiated)
+        if isinstance(source_node, ErrorProxyNode):
+            source_node.set_post_init_connections_modified()
+        if isinstance(target_node, ErrorProxyNode):
+            target_node.set_post_init_connections_modified()
 
         result = DeleteConnectionResultSuccess()
         return result
