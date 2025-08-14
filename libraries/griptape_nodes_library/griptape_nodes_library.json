@@ -1080,6 +1080,17 @@
       }
     },
     {
+      "class_name": "AddImageMatte",
+      "file_path": "griptape_nodes_library/image/add_image_matte.py",
+      "metadata": {
+        "category": "image",
+        "description": "Add matte (canvas padding) around an image to fit target aspect ratios or custom dimensions",
+        "display_name": "Add Image Matte",
+        "icon": "frame",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "SaveImage",
       "file_path": "griptape_nodes_library/image/save_image.py",
       "metadata": {
