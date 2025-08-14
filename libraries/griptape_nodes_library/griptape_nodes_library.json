@@ -605,6 +605,17 @@
       }
     },
     {
+      "class_name": "GetVideoMetadata",
+      "file_path": "griptape_nodes_library/video/get_video_metadata.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract metadata from video files including aspect ratio",
+        "display_name": "Get Video Metadata",
+        "icon": "info",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
