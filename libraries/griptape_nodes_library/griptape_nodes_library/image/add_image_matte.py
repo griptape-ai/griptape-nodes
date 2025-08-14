@@ -1,4 +1,5 @@
-from typing import Any
+from enum import StrEnum
+from typing import Any, NamedTuple
 
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
@@ -11,6 +12,82 @@ from griptape_nodes_library.utils.image_utils import (
     load_pil_from_url,
     save_pil_image_to_static_file,
 )
+
+
+class ImagePosition(StrEnum):
+    """Position options for placing the original image within the extended canvas."""
+
+    CENTER = "center"
+    TOP_LEFT = "top_left"
+    TOP_RIGHT = "top_right"
+    BOTTOM_LEFT = "bottom_left"
+    BOTTOM_RIGHT = "bottom_right"
+    TOP = "top"
+    BOTTOM = "bottom"
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class BackgroundColorConfig(NamedTuple):
+    """Configuration for background colors including image and mask colors."""
+
+    image_mode: str  # PIL image mode (RGB or RGBA)
+    bg_color: tuple[int, int, int] | tuple[int, int, int, int] | None  # Background color or None for transparent
+    mask_bg_color: tuple[int, int, int] | tuple[int, int, int, int]  # Mask background color
+    mask_fg_color: tuple[int, int, int] | tuple[int, int, int, int]  # Mask foreground color
+
+
+class BackgroundColor(StrEnum):
+    """Background color options for the extended canvas."""
+
+    BLACK = "black"
+    WHITE = "white"
+    TRANSPARENT = "transparent"
+    MAGENTA = "magenta"
+    GREEN = "green"
+    BLUE = "blue"
+
+
+# Background color configuration table
+BACKGROUND_COLOR_CONFIGS = {
+    BackgroundColor.BLACK: BackgroundColorConfig(
+        image_mode="RGB",
+        bg_color=(0, 0, 0),  # Black background
+        mask_bg_color=(255, 255, 255),  # White mask background
+        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+    ),
+    BackgroundColor.WHITE: BackgroundColorConfig(
+        image_mode="RGB",
+        bg_color=(255, 255, 255),  # White background
+        mask_bg_color=(255, 255, 255),  # White mask background
+        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+    ),
+    BackgroundColor.TRANSPARENT: BackgroundColorConfig(
+        image_mode="RGBA",
+        bg_color=(0, 0, 0, 0),  # Transparent background
+        mask_bg_color=(0, 0, 0, 0),  # Transparent mask background
+        mask_fg_color=(0, 0, 0, 255),  # Opaque black mask foreground (original image area)
+    ),
+    BackgroundColor.MAGENTA: BackgroundColorConfig(
+        image_mode="RGB",
+        bg_color=(255, 0, 255),  # Magenta background
+        mask_bg_color=(255, 255, 255),  # White mask background
+        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+    ),
+    BackgroundColor.GREEN: BackgroundColorConfig(
+        image_mode="RGB",
+        bg_color=(0, 255, 0),  # Green background
+        mask_bg_color=(255, 255, 255),  # White mask background
+        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+    ),
+    BackgroundColor.BLUE: BackgroundColorConfig(
+        image_mode="RGB",
+        bg_color=(0, 0, 255),  # Blue background
+        mask_bg_color=(255, 255, 255),  # White mask background
+        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+    ),
+}
+
 
 # Common aspect ratio presets (pure ratios without fixed pixels)
 # Organized by: Custom, Square, Landscape (ascending ratio), Portrait (ascending ratio)
@@ -152,6 +229,34 @@ class AddImageMatte(ControlNode):
         )
         self.add_parameter(self._custom_right_parameter)
 
+        # Position parameter (only applies to preset modes, not custom)
+        position_choices = [pos.value for pos in ImagePosition]
+        self._position_parameter = Parameter(
+            name="position",
+            input_types=["str"],
+            type="str",
+            output_type="str",
+            tooltip="Position of the original image within the extended canvas",
+            default_value=ImagePosition.CENTER.value,  # Convert enum to string
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            traits={Options(choices=position_choices)},
+        )
+        self.add_parameter(self._position_parameter)
+
+        # Background color parameter
+        background_color_choices = [color.value for color in BackgroundColor]
+        self._background_color_parameter = Parameter(
+            name="background_color",
+            input_types=["str"],
+            type="str",
+            output_type="str",
+            tooltip="Background color for the extended canvas areas",
+            default_value=BackgroundColor.BLACK.value,  # Convert enum to string
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            traits={Options(choices=background_color_choices)},
+        )
+        self.add_parameter(self._background_color_parameter)
+
         # Upscale factor parameter
         self.add_parameter(
             Parameter(
@@ -249,18 +354,22 @@ class AddImageMatte(ControlNode):
         self._extend_image(input_image, target_width, target_height, custom_offsets)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Show/hide custom parameters based on aspect ratio preset selection
+        # Show/hide parameters based on aspect ratio preset selection
         if parameter == self._aspect_ratio_preset:
             if value == "custom":
+                # Custom mode: show custom parameters, hide position
                 self.show_parameter_by_name(self._custom_top_parameter.name)
                 self.show_parameter_by_name(self._custom_bottom_parameter.name)
                 self.show_parameter_by_name(self._custom_left_parameter.name)
                 self.show_parameter_by_name(self._custom_right_parameter.name)
+                self.hide_parameter_by_name(self._position_parameter.name)
             else:
+                # Preset mode: hide custom parameters, show position
                 self.hide_parameter_by_name(self._custom_top_parameter.name)
                 self.hide_parameter_by_name(self._custom_bottom_parameter.name)
                 self.hide_parameter_by_name(self._custom_left_parameter.name)
                 self.hide_parameter_by_name(self._custom_right_parameter.name)
+                self.show_parameter_by_name(self._position_parameter.name)
 
         # Don't auto-process - let user run manually
         return super().after_value_set(parameter, value)
@@ -273,9 +382,8 @@ class AddImageMatte(ControlNode):
         custom_offsets: tuple[int, int] | None = None,
     ) -> None:
         """Extend the image and create the mask."""
-        # Use fixed values for background color and direction
-        background_color = "black"
-        extension_direction = "center"
+        position_str = self.get_parameter_value("position") or ImagePosition.CENTER
+        position = ImagePosition(position_str)
 
         # Load original image
         original_image = load_pil_from_url(image_artifact.value)
@@ -286,14 +394,14 @@ class AddImageMatte(ControlNode):
         final_width = max(target_width, original_width)
         final_height = max(target_height, original_height)
 
-        # Create new canvas with the final dimensions
-        if background_color == "transparent":
-            new_image = Image.new("RGBA", (final_width, final_height), (0, 0, 0, 0))
-            mask_image = Image.new("RGBA", (final_width, final_height), (0, 0, 0, 0))
-        else:
-            bg_color = (0, 0, 0) if background_color == "black" else (255, 255, 255)
-            new_image = Image.new("RGB", (final_width, final_height), bg_color)
-            mask_image = Image.new("RGB", (final_width, final_height), (255, 255, 255))  # White background for mask
+        # Get background color from parameter and look up configuration
+        background_color_str = self.get_parameter_value("background_color") or BackgroundColor.BLACK
+        background_color = BackgroundColor(background_color_str)
+        color_config = BACKGROUND_COLOR_CONFIGS[background_color]
+
+        # Create new canvas with the final dimensions using color configuration
+        new_image = Image.new(color_config.image_mode, (final_width, final_height), color_config.bg_color)
+        mask_image = Image.new(color_config.image_mode, (final_width, final_height), color_config.mask_bg_color)
 
         # Calculate position for original image
         if custom_offsets is not None:
@@ -305,19 +413,14 @@ class AddImageMatte(ControlNode):
                 original_height,
                 final_width,
                 final_height,
-                extension_direction,
+                position,
             )
 
         # Paste original image
         new_image.paste(original_image, (x, y))
 
-        # Create mask (black for original image, white for extended areas)
-        if background_color == "transparent":
-            # For transparent background, create alpha-based mask
-            mask_image.paste((0, 0, 0, 255), (x, y, x + original_width, y + original_height))
-        else:
-            # For solid background, create RGB mask
-            mask_image.paste((0, 0, 0), (x, y, x + original_width, y + original_height))
+        # Create mask using foreground color for the original image area
+        mask_image.paste(color_config.mask_fg_color, (x, y, x + original_width, y + original_height))
 
         # Save outputs
         extended_artifact = save_pil_image_to_static_file(new_image)
@@ -332,38 +435,38 @@ class AddImageMatte(ControlNode):
         self.publish_update_to_parameter("matte_mask", mask_artifact)
 
     def _calculate_position(
-        self, original_width: int, original_height: int, target_width: int, target_height: int, direction: str
+        self, original_width: int, original_height: int, target_width: int, target_height: int, position: ImagePosition
     ) -> tuple[int, int]:
-        """Calculate the position to place the original image based on direction."""
-        if direction == "center":
-            x = (target_width - original_width) // 2
-            y = (target_height - original_height) // 2
-        elif direction == "top_left":
-            x, y = 0, 0
-        elif direction == "top_right":
-            x = target_width - original_width
-            y = 0
-        elif direction == "bottom_left":
-            x = 0
-            y = target_height - original_height
-        elif direction == "bottom_right":
-            x = target_width - original_width
-            y = target_height - original_height
-        elif direction == "top":
-            x = (target_width - original_width) // 2
-            y = 0
-        elif direction == "bottom":
-            x = (target_width - original_width) // 2
-            y = target_height - original_height
-        elif direction == "left":
-            x = 0
-            y = (target_height - original_height) // 2
-        elif direction == "right":
-            x = target_width - original_width
-            y = (target_height - original_height) // 2
-        else:
-            # Default to center
-            x = (target_width - original_width) // 2
-            y = (target_height - original_height) // 2
+        """Calculate the position to place the original image based on position enum."""
+        match position:
+            case ImagePosition.CENTER:
+                x = (target_width - original_width) // 2
+                y = (target_height - original_height) // 2
+            case ImagePosition.TOP_LEFT:
+                x, y = 0, 0
+            case ImagePosition.TOP_RIGHT:
+                x = target_width - original_width
+                y = 0
+            case ImagePosition.BOTTOM_LEFT:
+                x = 0
+                y = target_height - original_height
+            case ImagePosition.BOTTOM_RIGHT:
+                x = target_width - original_width
+                y = target_height - original_height
+            case ImagePosition.TOP:
+                x = (target_width - original_width) // 2
+                y = 0
+            case ImagePosition.BOTTOM:
+                x = (target_width - original_width) // 2
+                y = target_height - original_height
+            case ImagePosition.LEFT:
+                x = 0
+                y = (target_height - original_height) // 2
+            case ImagePosition.RIGHT:
+                x = target_width - original_width
+                y = (target_height - original_height) // 2
+            case _:
+                msg = f"Invalid position: {position}"
+                raise ValueError(msg)
 
         return x, y
