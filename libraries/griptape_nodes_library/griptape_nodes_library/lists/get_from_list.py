@@ -3,6 +3,7 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
@@ -30,7 +31,7 @@ class GetFromList(ControlNode):
         self.item = Parameter(
             name="item",
             tooltip="Output the item at the specified index",
-            output_type="any",
+            output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.item)
