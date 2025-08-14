@@ -1460,7 +1460,7 @@ class RetainedMode:
         if command_name:
             func = getattr(cls, command_name, None)
             if not func or not callable(func):
-                return f"❌ No such command: {command_name}"
+                return f"[red]X[/red] No such command: {command_name}"
 
             doc = inspect.getdoc(func) or "No documentation available."
             sig_lines = _fancy_signature(func)
