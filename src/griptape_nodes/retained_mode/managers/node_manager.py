@@ -308,14 +308,15 @@ class NodeManager:
                         metadata=request.metadata,
                     )
 
-                    logger.info(
-                        "Created Error Proxy node '%s' to substitute for failed '%s'",
+                    logger.warning(
+                        "Created Error Proxy (placeholder) node '%s' to substitute for failed '%s'",
                         final_node_name,
                         request.node_type,
                     )
                 except Exception as proxy_err:
-                    logger.error("Failed to create Error Proxy node: %s", proxy_err)
-                    return CreateNodeResultFailure()
+                    details = f"Failed to create Error Proxy (placeholder) node: {proxy_err}"
+                    logger.error(details)
+                    return CreateNodeResultFailure(result_details=details)
             else:
                 return CreateNodeResultFailure(result_details=details)
         # Add it to the Flow.
