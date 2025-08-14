@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,15 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 logger = logging.getLogger("griptape_nodes")
 
 
+def _close_generator_safely(focus: Focus) -> None:
+    """Safely close a generator and clear its reference."""
+    if focus.process_generator is not None:
+        with suppress(Exception):
+            focus.process_generator.close()
+    focus.process_generator = None
+    focus.scheduled_value = None
+
+
 @dataclass
 class Focus:
     node: BaseNode
@@ -55,8 +65,8 @@ class ResolutionContext:
             node = self.focus_stack[-1].node
             # clear the data node being resolved.
             node.clear_node()
-            self.focus_stack[-1].process_generator = None
-            self.focus_stack[-1].scheduled_value = None
+            # Properly close the generator before clearing the reference
+            _close_generator_safely(self.focus_stack[-1])
         self.focus_stack.clear()
         self.paused = False
 
@@ -316,8 +326,8 @@ class ExecuteNodeState(State):
                         {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                     )
                 )
-                current_focus.process_generator = None
-                current_focus.scheduled_value = None
+                # Properly close generator before clearing reference
+                _close_generator_safely(current_focus)
 
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -458,11 +468,10 @@ class ExecuteNodeState(State):
 
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
                 future.add_done_callback(with_contextvars(on_future_done))
-            except StopIteration:
+            except (StopIteration, GeneratorExit):
                 logger.debug("Node '%s' generator is done.", current_node.name)
-                # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
-                current_focus.process_generator = None
-                current_focus.scheduled_value = None
+                # If that was the last generator, properly close and clear it
+                _close_generator_safely(current_focus)
                 return False
             else:
                 # If the generator is not done, indicate that there is work scheduled
