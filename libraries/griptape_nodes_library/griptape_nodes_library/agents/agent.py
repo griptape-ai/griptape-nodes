@@ -420,6 +420,9 @@ class Agent(ControlNode):
             )
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
 
+        # logger.error(f"[DEBUG] Agent output: {agent.output}")
+        logger.error(f"DEBUG agent tasks: {agent.tasks}")
+
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
             self.append_value_to_parameter("logs", "[Started processing agent..]\n")
@@ -488,6 +491,7 @@ class Agent(ControlNode):
                         self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
         else:
             agent.run(*args)
+            logger.debug("Agent output: %s", agent.output)
             self.append_value_to_parameter("output", value=str(agent.output))
             try_throw_error(agent.output)
         return agent

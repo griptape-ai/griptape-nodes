@@ -66,65 +66,71 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 case AppEvent():
                     self.__handle_app_event(event)
                 case _:
-                    msg = f"Unknown event type: {type(event)}"
-                    #logger.info(msg)
+                    f"Unknown event type: {type(event)}"
+                    # logger.info(msg)
                     self.queue.put(event)
         except Exception as e:
             logger.info(e)
 
     def __handle_node_event(self, event: GriptapeNodeEvent) -> None:
         result_event = event.wrapped_event
-        event_json = result_event.json()
-        #event_log = f"GriptapeNodeEvent: {event_json}"
-        #logger.info(event_log)
+        result_event.json()
+        # event_log = f"GriptapeNodeEvent: {event_json}"
+        # logger.info(event_log)
 
     def __handle_execution_node_event(self, event: ExecutionGriptapeNodeEvent) -> None:
         result_event = event.wrapped_event
         if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-            #event_log = f"NodeStartProcessEvent: {result_event.payload}"
-            #logger.info(event_log)
+            # event_log = f"NodeStartProcessEvent: {result_event.payload}"
+            # logger.info(event_log)
             pass
 
         elif type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
-            pass
-            #event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
-            #ogger.info(event_log)
+            # event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
+            # ogger.info(event_log)
 
             # Here we need to handle the resume event since this is the callback mechanism
             # for the flow to be resumed for any Node that yields a generator in its process method.
             node_name = result_event.payload.node_name
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-            
+
             # Thread debugging info for resume event
             resume_thread = threading.current_thread()
             logger.info(f"[RESUME-EVENT] Handling resume for node '{node_name}' on thread: {resume_thread.name}")
-            logger.info(f"[RESUME-EVENT] Thread native_id: {getattr(resume_thread, 'native_id', 'N/A')}, ident: {resume_thread.ident}")
+            logger.info(
+                f"[RESUME-EVENT] Thread native_id: {getattr(resume_thread, 'native_id', 'N/A')}, ident: {resume_thread.ident}"
+            )
             logger.info(f"[RESUME-EVENT] Active thread count: {threading.active_count()}")
-            
-            event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            GriptapeNodes.handle_request(event_request.request)
+
+            # Check if flow is still running before trying to resume
+            flow_manager = GriptapeNodes.FlowManager()
+            if flow_manager.check_for_existing_running_flow():
+                event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
+                GriptapeNodes.handle_request(event_request.request)
+            else:
+                logger.info(f"[RESUME-EVENT] Flow is not running, ignoring resume for node '{node_name}'")
 
         elif type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-            #event_log = f"NodeFinishProcessEvent: {result_event.payload}"
-            #logger.info(event_log)
+            # event_log = f"NodeFinishProcessEvent: {result_event.payload}"
+            # logger.info(event_log)
             pass
 
         else:
-            #event_log = f"ExecutionGriptapeNodeEvent: {result_event.payload}"
-            #logger.info(event_log)
+            # event_log = f"ExecutionGriptapeNodeEvent: {result_event.payload}"
+            # logger.info(event_log)
             pass
 
         self.queue.put(event)
 
     def __handle_progress_event(self, gt_event: ProgressEvent) -> None:
         pass
-        #event_log = f"ProgressEvent: {gt_event}"
-        #logger.info(event_log)
+        # event_log = f"ProgressEvent: {gt_event}"
+        # logger.info(event_log)
 
     def __handle_app_event(self, event: AppEvent) -> None:
         pass
-        #event_log = f"AppEvent: {event.payload}"
-        #logger.info(event_log)
+        # event_log = f"AppEvent: {event.payload}"
+        # logger.info(event_log)
 
     def _submit_output(self, output: dict) -> None:
         self.output = output
@@ -183,9 +189,11 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         thread_count = threading.active_count()
         all_threads = threading.enumerate()
         thread_info = [(t.name, getattr(t, "native_id", "N/A"), t.ident) for t in all_threads]
-        
+
         logger.info("Executing workflow: %s", workflow_name)
-        logger.info(f"[WORKFLOW-START] Starting on thread: {current_thread.name} (native_id: {getattr(current_thread, 'native_id', 'N/A')}, ident: {current_thread.ident})")
+        logger.info(
+            f"[WORKFLOW-START] Starting on thread: {current_thread.name} (native_id: {getattr(current_thread, 'native_id', 'N/A')}, ident: {current_thread.ident})"
+        )
         logger.info(f"[WORKFLOW-START] Active thread count: {thread_count}")
         logger.info(f"[WORKFLOW-START] All threads: {thread_info}")
 
@@ -242,7 +250,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         final_thread_count = threading.active_count()
         final_threads = threading.enumerate()
         final_thread_info = [(t.name, getattr(t, "native_id", "N/A"), t.ident) for t in final_threads]
-        
+
         logger.info(f"[WORKFLOW-END] Workflow '{workflow_name}' completed")
         logger.info(f"[WORKFLOW-END] Final active thread count: {final_thread_count}")
         logger.info(f"[WORKFLOW-END] Final threads: {final_thread_info}")

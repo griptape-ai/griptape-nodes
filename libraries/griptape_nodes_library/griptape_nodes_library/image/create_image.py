@@ -160,9 +160,11 @@ class GenerateImage(ControlNode):
 
     def _process(self) -> None:
         import time
+
         from griptape_nodes.retained_mode.griptape_nodes import logger
+
         execution_id = int(time.time() * 1000) % 10000  # Simple execution ID
-        
+
         # Get the parameters from the node
         params = self.parameter_values
 
@@ -250,15 +252,15 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         logger.info(f"[EXEC {execution_id}] About to call _create_image - this should block until complete")
         self._create_image(agent, prompt)
         logger.info(f"[EXEC {execution_id}] _create_image returned - _process should now complete")
-        
+
         # Thread debugging info after processing
         final_thread_count = threading.active_count()
         final_threads = threading.enumerate()
         final_thread_info = [(t.name, getattr(t, "native_id", "N/A"), t.ident) for t in final_threads]
-        
+
         logger.info(f"[EXEC {execution_id}] Final active thread count: {final_thread_count}")
         logger.info(f"[EXEC {execution_id}] Final threads: {final_thread_info}")
-        
+
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
         # Create a false memory for the agent
@@ -334,22 +336,24 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         import time
+
         from griptape_nodes.retained_mode.griptape_nodes import logger
+
         execution_id = int(time.time() * 1000) % 10000
-        
-        # Thread debugging info at 
-        
+
+        # Thread debugging info at
+
         # Force synchronous execution - agent.run() should block until complete
         result = agent.run(prompt)
         logger.info(f"[EXEC {execution_id}] Agent.run() returned: {type(result)}")
-        
+
         logger.info(f"[EXEC {execution_id}] Agent output type: {type(agent.output)}")
         if agent.output is None:
             logger.error(f"[EXEC {execution_id}] ERROR: Agent output is None")
             return
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
-        #logger.info(f"[EXEC {execution_id}] Saved static file: {static_url}")
+        # logger.info(f"[EXEC {execution_id}] Saved static file: {static_url}")
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
-        #logger.info(f"[EXEC {execution_id}] Published image artifact: {url_artifact.value}")
+        # logger.info(f"[EXEC {execution_id}] Published image artifact: {url_artifact.value}")
         try_throw_error(agent.output)

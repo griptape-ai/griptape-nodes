@@ -39,6 +39,7 @@ class Focus:
     node: BaseNode
     scheduled_value: Any | None = None
     process_generator: Generator | None = None
+    current_future: Future | None = None
 
 
 # This is on a per-node basis
@@ -53,6 +54,11 @@ class ResolutionContext:
     def reset(self) -> None:
         if self.focus_stack:
             node = self.focus_stack[-1].node
+            # Cancel any pending futures before clearing
+            for focus in self.focus_stack:
+                if focus.current_future is not None:
+                    focus.current_future.cancel()
+                    focus.current_future = None
             # clear the data node being resolved.
             node.clear_node()
             self.focus_stack[-1].process_generator = None
@@ -416,10 +422,13 @@ class ExecuteNodeState(State):
             """
             try:
                 current_focus.scheduled_value = future.result()
+                logger.debug(f"Current process generator: {current_focus.process_generator} for node '{current_node.name}'. Future is {future}")
             except Exception as e:
                 logger.debug("Error in future: %s", e)
                 current_focus.scheduled_value = e
             finally:
+                # Clear the future reference since it's done
+                current_focus.current_future = None
                 # If it hasn't been cancelled.
                 if current_focus.process_generator:
                     EventBus.publish_event(
@@ -432,6 +441,7 @@ class ExecuteNodeState(State):
         # Only start the processing if we don't already have a generator
         logger.debug("Node '%s' process generator: %s", current_node.name, current_focus.process_generator)
         if current_focus.process_generator is None:
+            logger.error(f"Starting process for node {current_node.name}")
             result = current_node.process()
 
             # If the process returned a generator, we need to store it for later
@@ -456,10 +466,17 @@ class ExecuteNodeState(State):
                 current_focus.scheduled_value = None
 
                 future = ExecuteNodeState.executor.submit(with_contextvars(func))
+                logger.debug(f"Future for node '{current_node.name}' is {future}")
+                current_focus.current_future = future
                 future.add_done_callback(with_contextvars(on_future_done))
             except StopIteration as e:
                 logger.debug("Node '%s' generator is done. Error: %s", current_node.name, e)
+                # Cancel any pending future to stop the thread
+                if current_focus.current_future is not None:
+                    current_focus.current_future.cancel()
+                    current_focus.current_future = None
                 # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
+                current_focus.process_generator.close()
                 current_focus.process_generator = None
                 current_focus.scheduled_value = None
                 return False
