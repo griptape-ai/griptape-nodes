@@ -1,3 +1,5 @@
+from typing import Any
+
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
@@ -89,64 +91,66 @@ class AddImageMatte(ControlNode):
         )
 
         # Aspect ratio preset parameter
-        self.add_parameter(
-            Parameter(
-                name="aspect_ratio_preset",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                tooltip="Select a preset aspect ratio or 'custom' to set manual dimensions",
-                default_value="1:1 square",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
-            )
+        self._aspect_ratio_preset = Parameter(
+            name="aspect_ratio_preset",
+            input_types=["str"],
+            type="str",
+            output_type="str",
+            tooltip="Select a preset aspect ratio or 'custom' to set manual dimensions",
+            default_value="1:1 square",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
         )
+        self.add_parameter(self._aspect_ratio_preset)
 
         # Custom pixel extensions (used when preset is 'custom')
-        self.add_parameter(
-            Parameter(
-                name="top",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                tooltip="Pixels to add as matte on the top side",
-                default_value=0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            )
+        self._custom_top_parameter = Parameter(
+            name="top",
+            input_types=["int"],
+            type="int",
+            output_type="int",
+            tooltip="Pixels to add as matte on the top side",
+            default_value=0,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            ui_options={"hide": True},
         )
-        self.add_parameter(
-            Parameter(
-                name="bottom",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                tooltip="Pixels to add as matte on the bottom side",
-                default_value=0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            )
+        self.add_parameter(self._custom_top_parameter)
+
+        self._custom_bottom_parameter = Parameter(
+            name="bottom",
+            input_types=["int"],
+            type="int",
+            output_type="int",
+            tooltip="Pixels to add as matte on the bottom side",
+            default_value=0,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            ui_options={"hide": True},
         )
-        self.add_parameter(
-            Parameter(
-                name="left",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                tooltip="Pixels to add as matte on the left side",
-                default_value=0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            )
+        self.add_parameter(self._custom_bottom_parameter)
+
+        self._custom_left_parameter = Parameter(
+            name="left",
+            input_types=["int"],
+            type="int",
+            output_type="int",
+            tooltip="Pixels to add as matte on the left side",
+            default_value=0,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            ui_options={"hide": True},
         )
-        self.add_parameter(
-            Parameter(
-                name="right",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                tooltip="Pixels to add as matte on the right side",
-                default_value=0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            )
+        self.add_parameter(self._custom_left_parameter)
+
+        self._custom_right_parameter = Parameter(
+            name="right",
+            input_types=["int"],
+            type="int",
+            output_type="int",
+            tooltip="Pixels to add as matte on the right side",
+            default_value=0,
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            ui_options={"hide": True},
         )
+        self.add_parameter(self._custom_right_parameter)
 
         # Upscale factor parameter
         self.add_parameter(
@@ -243,6 +247,23 @@ class AddImageMatte(ControlNode):
 
         # Process the image
         self._extend_image(input_image, target_width, target_height, custom_offsets)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        # Show/hide custom parameters based on aspect ratio preset selection
+        if parameter == self._aspect_ratio_preset:
+            if value == "custom":
+                self.show_parameter_by_name(self._custom_top_parameter.name)
+                self.show_parameter_by_name(self._custom_bottom_parameter.name)
+                self.show_parameter_by_name(self._custom_left_parameter.name)
+                self.show_parameter_by_name(self._custom_right_parameter.name)
+            else:
+                self.hide_parameter_by_name(self._custom_top_parameter.name)
+                self.hide_parameter_by_name(self._custom_bottom_parameter.name)
+                self.hide_parameter_by_name(self._custom_left_parameter.name)
+                self.hide_parameter_by_name(self._custom_right_parameter.name)
+
+        # Don't auto-process - let user run manually
+        return super().after_value_set(parameter, value)
 
     def _extend_image(
         self,
