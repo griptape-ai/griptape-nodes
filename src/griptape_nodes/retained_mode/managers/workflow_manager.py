@@ -389,19 +389,19 @@ class WorkflowManager:
 
         # Status emojis mapping
         status_emoji = {
-            self.WorkflowStatus.GOOD: "✅",
-            self.WorkflowStatus.FLAWED: "🟡",
-            self.WorkflowStatus.UNUSABLE: "❌",
-            self.WorkflowStatus.MISSING: "❓",
+            self.WorkflowStatus.GOOD: "[green]OK[/green]",
+            self.WorkflowStatus.FLAWED: "[yellow]![/yellow]",
+            self.WorkflowStatus.UNUSABLE: "[red]X[/red]",
+            self.WorkflowStatus.MISSING: "[red]?[/red]",
         }
 
         dependency_status_emoji = {
-            self.WorkflowDependencyStatus.PERFECT: "✅",
-            self.WorkflowDependencyStatus.GOOD: "👌",
-            self.WorkflowDependencyStatus.CAUTION: "🟡",
-            self.WorkflowDependencyStatus.BAD: "❌",
-            self.WorkflowDependencyStatus.MISSING: "❓",
-            self.WorkflowDependencyStatus.UNKNOWN: "❓",
+            self.WorkflowDependencyStatus.PERFECT: "[green]OK[/green]",
+            self.WorkflowDependencyStatus.GOOD: "[green]GOOD[/green]",
+            self.WorkflowDependencyStatus.CAUTION: "[yellow]CAUTION[/yellow]",
+            self.WorkflowDependencyStatus.BAD: "[red]BAD[/red]",
+            self.WorkflowDependencyStatus.MISSING: "[red]MISSING[/red]",
+            self.WorkflowDependencyStatus.UNKNOWN: "[red]UNKNOWN[/red]",
         }
 
         # Add rows for each workflow info
@@ -414,7 +414,7 @@ class WorkflowManager:
             # Workflow name column with emoji based on status
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
             name = wf_info.workflow_name if wf_info.workflow_name else "*UNKNOWN*"
-            workflow_name = f"{emoji} {name}"
+            workflow_name = f"{emoji} - {name}"
 
             # Problems column - format with numbers if there's more than one
             problems = "\n".join(wf_info.problems) if wf_info.problems else "No problems detected."
@@ -423,11 +423,11 @@ class WorkflowManager:
             if wf_info.status == self.WorkflowStatus.MISSING or (
                 wf_info.status == self.WorkflowStatus.UNUSABLE and not wf_info.workflow_dependencies
             ):
-                dependencies = "❓ UNKNOWN"
+                dependencies = "[red]?[/red] UNKNOWN"
             else:
                 dependencies = (
                     "\n".join(
-                        f"{dependency_status_emoji.get(dep.status, '?')} {dep.library_name} ({dep.version_requested}): {dep.status.value}"
+                        f"{dependency_status_emoji.get(dep.status, '?')} - {dep.library_name} ({dep.version_requested}): {dep.status.value}"
                         for dep in wf_info.workflow_dependencies
                     )
                     if wf_info.workflow_dependencies

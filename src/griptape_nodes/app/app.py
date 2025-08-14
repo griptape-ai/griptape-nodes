@@ -118,7 +118,7 @@ def _ensure_api_key() -> str:
                 "[code]gtn init --api-key <your key>[/code]\n"
                 "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
             ),
-            title="🔑 ❌ Missing Nodes API Key",
+            title="[red]X[/red] Missing Nodes API Key",
             border_style="red",
             padding=(1, 4),
         )

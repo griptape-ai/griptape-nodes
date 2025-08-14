@@ -41,7 +41,7 @@ class WebSocketConnectionManager:
         try:
             message = json.dumps(data)
             await self.websocket.send(message)
-            logger.debug("📤 Sent message: %s", message)
+            logger.debug("Sent message: %s", message)
         except Exception as e:
             logger.error("Failed to send message: %s", e)
             raise
@@ -157,7 +157,7 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
 
         except Exception as e:
             self.connection_manager.connected = False
-            logger.error("🔴 WebSocket connection failed: %s", str(e))
+            logger.error("[red]X[/red] WebSocket connection failed: %s", str(e))
             msg = f"Failed to connect to WebSocket: {e!s}"
             raise ConnectionError(msg) from e
 
@@ -192,7 +192,7 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
         """Send an event to the API without waiting for a response."""
         from griptape_nodes.app.app import _determine_request_topic
 
-        logger.debug("📝 Creating Event: %s - %s", request_type, json.dumps(payload))
+        logger.debug("Creating Event: %s - %s", request_type, json.dumps(payload))
 
         data = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
         topic = _determine_request_topic()
@@ -231,7 +231,7 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
         def success_handler(response: Any, _: Any) -> None:
             if not response_future.done():
                 result = response.get("payload", {}).get("result", "Success")
-                logger.debug("✅ Request succeeded: %s", result)
+                logger.debug("[green]OK[/green] Request succeeded: %s", result)
                 response_future.set_result(result)
 
         def failure_handler(response: Any, _: Any) -> None:
@@ -239,14 +239,14 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
                 error = (
                     response.get("payload", {}).get("result", {}).get("exception", "Unknown error") or "Unknown error"
                 )
-                logger.error("❌ Request failed: %s", error)
+                logger.error("[red]X[/red] Request failed: %s", error)
                 response_future.set_exception(Exception(error))
 
         # Generate request ID and subscribe
         request_id = self.connection_manager.subscribe_to_request_event(success_handler, failure_handler)
         payload["request_id"] = request_id
 
-        logger.debug("🚀 Request (%s): %s %s", request_id, request_type, json.dumps(payload))
+        logger.debug("Request (%s): %s %s", request_id, request_type, json.dumps(payload))
 
         try:
             # Send the event
