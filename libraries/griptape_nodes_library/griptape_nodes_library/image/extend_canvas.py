@@ -37,50 +37,39 @@ class BackgroundColorConfig(NamedTuple):
     mask_fg_color: tuple[int, int, int] | tuple[int, int, int, int]  # Mask foreground color
 
 
-class BackgroundColor(StrEnum):
-    """Background color options for the extended canvas."""
-
-    BLACK = "black"
-    WHITE = "white"
-    TRANSPARENT = "transparent"
-    MAGENTA = "magenta"
-    GREEN = "green"
-    BLUE = "blue"
-
-
 # Background color configuration table
 BACKGROUND_COLOR_CONFIGS = {
-    BackgroundColor.BLACK: BackgroundColorConfig(
+    "black": BackgroundColorConfig(
         image_mode="RGB",
         bg_color=(0, 0, 0),  # Black background
         mask_bg_color=(255, 255, 255),  # White mask background
         mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
     ),
-    BackgroundColor.WHITE: BackgroundColorConfig(
+    "white": BackgroundColorConfig(
         image_mode="RGB",
         bg_color=(255, 255, 255),  # White background
         mask_bg_color=(255, 255, 255),  # White mask background
         mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
     ),
-    BackgroundColor.TRANSPARENT: BackgroundColorConfig(
+    "transparent": BackgroundColorConfig(
         image_mode="RGBA",
         bg_color=(0, 0, 0, 0),  # Transparent background
         mask_bg_color=(0, 0, 0, 0),  # Transparent mask background
         mask_fg_color=(0, 0, 0, 255),  # Opaque black mask foreground (original image area)
     ),
-    BackgroundColor.MAGENTA: BackgroundColorConfig(
+    "magenta": BackgroundColorConfig(
         image_mode="RGB",
         bg_color=(255, 0, 255),  # Magenta background
         mask_bg_color=(255, 255, 255),  # White mask background
         mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
     ),
-    BackgroundColor.GREEN: BackgroundColorConfig(
+    "green": BackgroundColorConfig(
         image_mode="RGB",
         bg_color=(0, 255, 0),  # Green background
         mask_bg_color=(255, 255, 255),  # White mask background
         mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
     ),
-    BackgroundColor.BLUE: BackgroundColorConfig(
+    "blue": BackgroundColorConfig(
         image_mode="RGB",
         bg_color=(0, 0, 255),  # Blue background
         mask_bg_color=(255, 255, 255),  # White mask background
@@ -146,12 +135,12 @@ ASPECT_RATIO_PRESETS = {
 }
 
 
-class AddImageMatte(ControlNode):
+class ExtendCanvas(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
         self.category = "Image"
-        self.description = "Add matte (canvas padding) around an image to fit target aspect ratios or custom dimensions"
+        self.description = "Extend canvas around an image to fit target aspect ratios or custom dimensions"
 
         # Input image parameter
         self.add_parameter(
@@ -161,7 +150,7 @@ class AddImageMatte(ControlNode):
                 input_types=["ImageUrlArtifact", "ImageArtifact"],
                 output_type="ImageUrlArtifact",
                 type="ImageArtifact",
-                tooltip="The input image to add matte around",
+                tooltip="The input image to extend canvas around",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
@@ -186,7 +175,7 @@ class AddImageMatte(ControlNode):
             input_types=["int"],
             type="int",
             output_type="int",
-            tooltip="Pixels to add as matte on the top side",
+            tooltip="Pixels to extend canvas on the top side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             ui_options={"hide": True},
@@ -198,7 +187,7 @@ class AddImageMatte(ControlNode):
             input_types=["int"],
             type="int",
             output_type="int",
-            tooltip="Pixels to add as matte on the bottom side",
+            tooltip="Pixels to extend canvas on the bottom side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             ui_options={"hide": True},
@@ -210,7 +199,7 @@ class AddImageMatte(ControlNode):
             input_types=["int"],
             type="int",
             output_type="int",
-            tooltip="Pixels to add as matte on the left side",
+            tooltip="Pixels to extend canvas on the left side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             ui_options={"hide": True},
@@ -222,7 +211,7 @@ class AddImageMatte(ControlNode):
             input_types=["int"],
             type="int",
             output_type="int",
-            tooltip="Pixels to add as matte on the right side",
+            tooltip="Pixels to extend canvas on the right side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             ui_options={"hide": True},
@@ -244,14 +233,14 @@ class AddImageMatte(ControlNode):
         self.add_parameter(self._position_parameter)
 
         # Background color parameter
-        background_color_choices = [color.value for color in BackgroundColor]
+        background_color_choices = ["black", "white", "transparent", "magenta", "green", "blue"]
         self._background_color_parameter = Parameter(
             name="background_color",
             input_types=["str"],
             type="str",
             output_type="str",
             tooltip="Background color for the extended canvas areas",
-            default_value=BackgroundColor.BLACK.value,  # Convert enum to string
+            default_value="black",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             traits={Options(choices=background_color_choices)},
         )
@@ -273,9 +262,9 @@ class AddImageMatte(ControlNode):
         # Output extended image
         self.add_parameter(
             Parameter(
-                name="matted_image",
+                name="extended_image",
                 output_type="ImageUrlArtifact",
-                tooltip="The image with added matte",
+                tooltip="The image with extended canvas",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -284,9 +273,9 @@ class AddImageMatte(ControlNode):
         # Output mask
         self.add_parameter(
             Parameter(
-                name="matte_mask",
+                name="canvas_mask",
                 output_type="ImageUrlArtifact",
-                tooltip="Mask where black = original image, white = matte areas",
+                tooltip="Mask where black = original image, the selected background color = extended canvas areas",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -395,9 +384,8 @@ class AddImageMatte(ControlNode):
         final_height = max(target_height, original_height)
 
         # Get background color from parameter and look up configuration
-        background_color_str = self.get_parameter_value("background_color") or BackgroundColor.BLACK
-        background_color = BackgroundColor(background_color_str)
-        color_config = BACKGROUND_COLOR_CONFIGS[background_color]
+        background_color_str = self.get_parameter_value("background_color") or "black"
+        color_config = BACKGROUND_COLOR_CONFIGS[background_color_str]
 
         # Create new canvas with the final dimensions using color configuration
         new_image = Image.new(color_config.image_mode, (final_width, final_height), color_config.bg_color)
@@ -427,12 +415,12 @@ class AddImageMatte(ControlNode):
         mask_artifact = save_pil_image_to_static_file(mask_image)
 
         # Set outputs
-        self.set_parameter_value("matted_image", extended_artifact)
-        self.set_parameter_value("matte_mask", mask_artifact)
+        self.set_parameter_value("extended_image", extended_artifact)
+        self.set_parameter_value("canvas_mask", mask_artifact)
 
         # Publish updates
-        self.publish_update_to_parameter("matted_image", extended_artifact)
-        self.publish_update_to_parameter("matte_mask", mask_artifact)
+        self.publish_update_to_parameter("extended_image", extended_artifact)
+        self.publish_update_to_parameter("canvas_mask", mask_artifact)
 
     def _calculate_position(
         self, original_width: int, original_height: int, target_width: int, target_height: int, position: ImagePosition
