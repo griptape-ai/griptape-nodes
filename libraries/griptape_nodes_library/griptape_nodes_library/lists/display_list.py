@@ -1,4 +1,3 @@
-import contextlib
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -47,12 +46,16 @@ class DisplayList(ControlNode):
         # We'll create output parameters dynamically during processing
 
     def process(self) -> None:
-        # The display list is already updated by after_value_set when the items parameter changes
-        # No need to update it again during process() - this prevents duplicate processing
-        pass
+        # During process, we want to clean up parameters if the list is too long
+        self._update_display_list(delete_excess_parameters=True)
 
-    def _update_display_list(self) -> None:  # noqa: C901
-        """Update the display list parameters based on current input values."""
+    def _update_display_list(self, *, delete_excess_parameters: bool = False) -> None:
+        """Update the display list parameters based on current input values.
+
+        Args:
+            delete_excess_parameters: If True, delete parameters when list is shorter than parameter count.
+                                    If False, keep existing parameters even when list is shorter.
+        """
         # Prevent duplicate calls
         if self._updating_display_list:
             logger.debug(
@@ -105,29 +108,35 @@ class DisplayList(ControlNode):
             self.items_list.output_type = item_type
         self.items_list.input_types = [item_type]
         self.items_list.ui_options = new_ui_options
-
-        # Create child parameters and ensure they're properly tracked
-        length_of_items_list = len(self.items_list)
-        while length_of_items_list > len(list_values):
-            # Remove the parameter value - this will also handle parameter_output_values
-            with contextlib.suppress(KeyError):
-                self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
-                if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
-                    del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
-            # Remove the parameter from the list
-            self.items_list.remove_child(self.items_list[length_of_items_list - 1])
-            length_of_items_list = len(self.items_list)
+        # Only delete excess parameters if explicitly requested (e.g., during process())
+        if delete_excess_parameters:
+            self.delete_excess_parameters(list_values)
         for i, item in enumerate(list_values):
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
                 self.set_parameter_value(current_parameter.name, item)
+                # Using to ensure updates are being propagated
+                self.publish_update_to_parameter(current_parameter.name, item)
                 self.parameter_output_values[current_parameter.name] = item
                 continue
             new_child = self.items_list.add_child_parameter()
-            # Set the parameter value without emitting immediate change events
+            # Set the parameter value
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
         self._updating_display_list = False
+
+    def delete_excess_parameters(self, list_values: list) -> None:
+        """Delete parameters when list is shorter than parameter count."""
+        length_of_items_list = len(self.items_list)
+        while length_of_items_list > len(list_values):
+            # Remove the parameter value - this will also handle parameter_output_values
+            if self.items_list[length_of_items_list - 1].name in self.parameter_values:
+                self.remove_parameter_value(self.items_list[length_of_items_list - 1].name)
+            if self.items_list[length_of_items_list - 1].name in self.parameter_output_values:
+                del self.parameter_output_values[self.items_list[length_of_items_list - 1].name]
+            # Remove the parameter from the list
+            self.items_list.remove_child(self.items_list[length_of_items_list - 1])
+            length_of_items_list = len(self.items_list)
 
     def _clear_list(self) -> None:
         """Clear all dynamically-created parameters from the node."""
@@ -135,7 +144,7 @@ class DisplayList(ControlNode):
             # Remove the parameter value - this will also handle parameter_output_values
             # We are suppressing the error, which will be raised if the parameter is not in parameter_values.
             # This is ok, because we are just trying to remove the parameter value IF it exists.
-            with contextlib.suppress(KeyError):
+            if child.name in self.parameter_values:
                 self.remove_parameter_value(child.name)
             if child.name in self.parameter_output_values:
                 del self.parameter_output_values[child.name]

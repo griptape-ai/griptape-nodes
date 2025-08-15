@@ -167,10 +167,7 @@ class StaticFilesManager:
 
         try:
             response = httpx.request(
-                response["method"],
-                response["url"],
-                content=data,
-                headers=response["headers"],
+                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:

@@ -125,10 +125,10 @@ def command_arg_handler(node_param_split_func: Callable) -> Callable:
                     instance_or_cls,
                     node=node,
                     param=param,
-                    *args_to_process,
+                    *args_to_process,  # noqa: B026
                     **cleaned_kwargs,
                 )
-            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)
+            return func(node=node, param=param, *args_to_process, **cleaned_kwargs)  # noqa: B026
 
         return wrapper
 
@@ -1460,7 +1460,7 @@ class RetainedMode:
         if command_name:
             func = getattr(cls, command_name, None)
             if not func or not callable(func):
-                return f"❌ No such command: {command_name}"
+                return f"[red]X[/red] No such command: {command_name}"
 
             doc = inspect.getdoc(func) or "No documentation available."
             sig_lines = _fancy_signature(func)

@@ -240,10 +240,10 @@ class LibraryManager:
 
         # Status emojis mapping
         status_emoji = {
-            LibraryStatus.GOOD: "✅",
-            LibraryStatus.FLAWED: "🟡",
-            LibraryStatus.UNUSABLE: "❌",
-            LibraryStatus.MISSING: "❓",
+            LibraryStatus.GOOD: "[green]OK[/green]",
+            LibraryStatus.FLAWED: "[yellow]![/yellow]",
+            LibraryStatus.UNUSABLE: "[red]X[/red]",
+            LibraryStatus.MISSING: "[red]?[/red]",
         }
 
         # Add rows for each library info
@@ -256,7 +256,7 @@ class LibraryManager:
             # Library name column with emoji based on status
             emoji = status_emoji.get(lib_info.status, "ERROR: Unknown/Unexpected Library Status")
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
-            library_name = f"{emoji} {name}"
+            library_name = f"{emoji} - {name}"
 
             library_version = lib_info.library_version
             if library_version:
@@ -1596,7 +1596,7 @@ class LibraryManager:
                 f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
                 vertical="middle",
             ),
-            title="🚀 Griptape Nodes Engine Started",
+            title="Griptape Nodes Engine Started",
             subtitle=f"[green]{engine_version}{session_info}[/green]",
             border_style="green",
             padding=(1, 4),

@@ -92,7 +92,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             node_name = result_event.payload.node_name
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
             event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            GriptapeNodes.handle_request(event_request.request)
+            self.queue.put(event_request)
 
         elif type(result_event.payload).__name__ == "NodeFinishProcessEvent":
             event_log = f"NodeFinishProcessEvent: {result_event.payload}"
@@ -196,7 +196,13 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             try:
                 event = self.queue.get(block=True)
 
-                if isinstance(event, ExecutionGriptapeNodeEvent):
+                if isinstance(event, EventRequest):
+                    # Handle EventRequest objects by processing them through GriptapeNodes
+                    request_payload = event.request
+                    GriptapeNodes.handle_request(
+                        request_payload, response_topic=event.response_topic, request_id=event.request_id
+                    )
+                elif isinstance(event, ExecutionGriptapeNodeEvent):
                     result_event = event.wrapped_event
 
                     if type(result_event.payload).__name__ == "ControlFlowResolvedEvent":
@@ -208,6 +214,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                         is_flow_finished = True
                         logger.error(msg)
                         error = LocalExecutorError(msg)
+                else:
+                    logger.info("Unknown event type encountered: %s", type(event))
 
                 self.queue.task_done()
 

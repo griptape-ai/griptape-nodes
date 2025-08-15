@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from griptape_nodes.exe_types.core_types import Parameter, Trait
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
@@ -20,6 +20,55 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+
+
+def default_extract_url_from_artifact_value(
+    artifact_value: Any, artifact_classes: type | tuple[type, ...]
+) -> str | None:
+    """Default implementation to extract URL from any artifact parameter value.
+
+    This function provides the standard pattern for extracting URLs from artifact values
+    that can be in dict, artifact object, or string format. Users can override this
+    behavior by providing their own extract_url_func in ArtifactTetheringConfig.
+
+    Args:
+        artifact_value: The artifact value (dict, artifact object, or string)
+        artifact_classes: The artifact class(es) to check for (e.g., ImageUrlArtifact, VideoUrlArtifact)
+
+    Returns:
+        The extracted URL or None if no value is present
+
+    Raises:
+        ValueError: If the artifact value type is not supported
+    """
+    if not artifact_value:
+        return None
+
+    match artifact_value:
+        # Handle dictionary format (most common)
+        case dict():
+            url = artifact_value.get("value")
+        # Handle artifact objects - use isinstance for type safety
+        case _ if isinstance(artifact_value, artifact_classes):
+            url = artifact_value.value
+        # Handle raw strings
+        case str():
+            url = artifact_value
+        case _:
+            # Generate error message with expected class names
+            if isinstance(artifact_classes, tuple):
+                class_names = [cls.__name__ for cls in artifact_classes]
+            else:
+                class_names = [artifact_classes.__name__]
+
+            expected_types = f"dict, {', '.join(class_names)}, or str"
+            error_msg = f"Unsupported artifact value type: {type(artifact_value).__name__}. Expected: {expected_types}"
+            raise ValueError(error_msg)
+
+    if not url:
+        return None
+
+    return url
 
 
 @dataclass(eq=False)
@@ -95,13 +144,13 @@ class ArtifactPathValidator(Trait):
 
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(self.url_content_type_prefix):
-                error_msg = f"URL does not point to expected artifact type (content-type: {content_type})"
+                error_msg = f"URL validation failed for '{url}': Expected content-type starting with '{self.url_content_type_prefix}', got '{content_type}'"
                 raise ValueError(error_msg)
         except httpx.RequestError as e:
-            error_msg = f"Failed to access URL: {e}"
+            error_msg = f"Failed to access URL '{url}': {e}"
             raise ValueError(error_msg) from e
         except httpx.HTTPStatusError as e:
-            error_msg = f"URL returned error status {e.response.status_code}"
+            error_msg = f"URL '{url}' returned HTTP {e.response.status_code} error"
             raise ValueError(error_msg) from e
 
     def _validate_file_path(self, file_path: str) -> None:
@@ -109,16 +158,17 @@ class ArtifactPathValidator(Trait):
         path = Path(file_path)
 
         if not path.exists():
-            error_msg = f"File not found: {file_path}"
+            error_msg = f"File not found: '{file_path}'"
             raise FileNotFoundError(error_msg)
 
         if not path.is_file():
-            error_msg = f"Path is not a file: {file_path}"
+            path_type = "directory" if path.is_dir() else "special file" if path.exists() else "unknown"
+            error_msg = f"Path exists but is not a file: '{file_path}' (found: {path_type})"
             raise ValueError(error_msg)
 
         if path.suffix.lower() not in self.supported_extensions:
             supported = ", ".join(self.supported_extensions)
-            error_msg = f"Unsupported file format: {path.suffix}. Supported formats: {supported}"
+            error_msg = f"Unsupported file format '{path.suffix}' for file '{file_path}'. Supported: {supported}"
             raise ValueError(error_msg)
 
 
@@ -152,7 +202,7 @@ class ArtifactPathTethering:
 
     # Timeout constants - shared across all artifact types
     URL_VALIDATION_TIMEOUT: ClassVar[int] = 10  # seconds
-    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 30  # seconds
+    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 90  # seconds
 
     # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
     SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
@@ -203,8 +253,22 @@ class ArtifactPathTethering:
             elif parameter == self.path_parameter:
                 self._handle_path_change(value)
         except Exception as e:
-            param_type = "artifact" if parameter == self.artifact_parameter else "path"
-            error_msg = f"Failed to process {param_type}: {e}"
+            # Defensive parameter type detection
+            match parameter:
+                case self.artifact_parameter:
+                    param_type_for_error_str = "artifact"
+                case self.path_parameter:
+                    param_type_for_error_str = "path"
+                case _:
+                    param_type_for_error_str = "<UNKNOWN PARAMETER>"
+
+            # Include input value for forensics
+            if isinstance(value, str):
+                value_info = f" Input: '{value}'"
+            else:
+                value_info = f" Input: <{type(value).__name__}> (not human readable)"
+
+            error_msg = f"Failed to process {param_type_for_error_str} parameter '{parameter.name}' in node '{self.node.__class__.__name__}': {e}{value_info}"
             raise ValueError(error_msg) from e
         finally:
             # Always clear the update lock - critical for allowing future updates
@@ -213,24 +277,68 @@ class ArtifactPathTethering:
 
     def get_artifact_output(self) -> Any:
         """Get the processed artifact for node output."""
-        artifact_value = self.node.get_parameter_value(self.artifact_parameter.name)
-        if artifact_value is not None:
-            return self._to_artifact(artifact_value)
-        return None
+        return self.node.get_parameter_value(self.artifact_parameter.name)
 
     def get_path_output(self) -> str:
         """Get the path value for node output."""
-        return self.node.get_parameter_value(self.path_parameter.name) or ""
+        result = self.node.get_parameter_value(self.path_parameter.name) or ""
+        return result
 
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter."""
-        artifact = self._to_artifact(value)
-        self.node.parameter_output_values[self.artifact_parameter.name] = artifact
+        if isinstance(value, str):
+            # String input - route to path parameter logic
+            self._handle_string_input_to_artifact(value)
+        else:
+            # Artifact input - handle as normal
+            self._handle_artifact_input(value)
 
-        # Update path parameter with URL from artifact (bidirectional sync)
-        extracted_url = self.config.extract_url_func(value)
-        if extracted_url:
-            self._sync_parameter_value(self.path_parameter.name, extracted_url)
+    def _handle_string_input_to_artifact(self, path_value: str) -> None:
+        """Handle string input to artifact parameter by processing it as a path."""
+        path_value = self._strip_surrounding_quotes(path_value.strip()) if path_value else ""
+
+        if path_value:
+            try:
+                # Process the path (URL or file) - reuse existing path logic
+                if self._is_url(path_value):
+                    download_url = self._download_and_upload_url(path_value)
+                else:
+                    download_url = self._upload_file_to_static_storage(path_value)
+
+                # Create artifact dict and convert to artifact
+                artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
+                artifact = self._to_artifact(artifact_dict)
+
+                # Store artifact using sync helper (sets parameter value and publishes update)
+                self._sync_parameter_value(self.artifact_parameter.name, artifact)
+
+                # Update path parameter
+                self._sync_parameter_value(self.path_parameter.name, download_url)
+            except Exception:
+                # If processing fails, treat as invalid input - reset parameters
+                self._sync_parameter_value(self.artifact_parameter.name, None)
+                self._sync_parameter_value(self.path_parameter.name, "")
+                # Don't re-raise - let the node continue with None value
+        else:
+            # Empty string - reset both parameters
+            self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
+
+    def _handle_artifact_input(self, value: Any) -> None:
+        """Handle artifact input to artifact parameter."""
+        if value:
+            # Convert to artifact and update artifact parameter
+            artifact = self._to_artifact(value)
+            self._sync_parameter_value(self.artifact_parameter.name, artifact)
+
+            # Extract URL and update path parameter
+            extracted_url = self.config.extract_url_func(value)
+            if extracted_url:
+                self._sync_parameter_value(self.path_parameter.name, extracted_url)
+        else:
+            # No value - reset both parameters
+            self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
@@ -243,11 +351,15 @@ class ArtifactPathTethering:
             else:
                 download_url = self._upload_file_to_static_storage(path_value)
 
+            # Update both parameters with the processed URL
             artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
-            self._sync_parameter_value(self.artifact_parameter.name, artifact_dict)
+            artifact = self._to_artifact(artifact_dict)
+            self._sync_parameter_value(self.artifact_parameter.name, artifact)
+            self._sync_parameter_value(self.path_parameter.name, download_url)
         else:
-            # Empty path - reset the artifact parameter
+            # Empty path - reset both parameters
             self._sync_parameter_value(self.artifact_parameter.name, None)
+            self._sync_parameter_value(self.path_parameter.name, "")
 
     def _sync_parameter_value(self, target_param_name: str, target_value: Any) -> None:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
@@ -256,6 +368,8 @@ class ArtifactPathTethering:
         # that would call after_value_set() and potentially create an infinite loop
         self.node.set_parameter_value(target_param_name, target_value, initial_setup=True)
         self.node.publish_update_to_parameter(target_param_name, target_value)
+        # Also update output values so they're ready for process()
+        self.node.parameter_output_values[target_param_name] = target_value
 
     def _to_artifact(self, value: Any) -> Any:
         """Convert value to appropriate artifact type."""
@@ -293,18 +407,19 @@ class ArtifactPathTethering:
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL: {upload_result.error}"
+            error_msg = f"Failed to create upload URL for file '{file_name}': {upload_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Unexpected upload URL result type: {type(upload_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name}')"
             raise TypeError(error_msg)
 
         # Read and upload file
         try:
             file_data = path.read_bytes()
+            file_size = len(file_data)
         except Exception as e:
-            error_msg = f"Failed to read file {file_path}: {e}"
+            error_msg = f"Failed to read file '{file_path}': {e}"
             raise ValueError(error_msg) from e
 
         try:
@@ -316,7 +431,7 @@ class ArtifactPathTethering:
             )
             response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to upload file: {e}"
+            error_msg = f"Failed to upload file '{file_path}' to static storage (method: {upload_result.method}, size: {file_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Get download URL
@@ -324,11 +439,11 @@ class ArtifactPathTethering:
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL: {download_result.error}"
+            error_msg = f"Failed to create download URL for file '{file_name}': {download_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Unexpected download URL result type: {type(download_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name}')"
             raise TypeError(error_msg)
 
         return download_result.url
@@ -368,13 +483,14 @@ class ArtifactPathTethering:
             response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
             response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to download artifact from URL {url}: {e}"
+            error_msg = f"Failed to download artifact from URL '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e
 
         # Validate content type
         content_type = response.headers.get("content-type", "")
         if not content_type.startswith(self.config.url_content_type_prefix):
-            error_msg = f"URL does not point to expected artifact type (content-type: {content_type})"
+            artifact_type = self.config.url_content_type_prefix.rstrip("/")
+            error_msg = f"URL '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
             raise ValueError(error_msg)
 
         # Generate filename from URL
@@ -395,11 +511,11 @@ class ArtifactPathTethering:
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL: {upload_result.error}"
+            error_msg = f"Failed to create upload URL for file '{filename}': {upload_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Unexpected upload URL result type: {type(upload_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{filename}')"
             raise TypeError(error_msg)
 
         # Upload the downloaded artifact data
@@ -412,7 +528,8 @@ class ArtifactPathTethering:
             )
             upload_response.raise_for_status()
         except Exception as e:
-            error_msg = f"Failed to upload downloaded artifact: {e}"
+            content_size = len(response.content)
+            error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Get download URL
@@ -420,11 +537,11 @@ class ArtifactPathTethering:
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL: {download_result.error}"
+            error_msg = f"Failed to create download URL for file '{filename}': {download_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Unexpected download URL result type: {type(download_result)}"
+            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{filename}')"
             raise TypeError(error_msg)
 
         return download_result.url
@@ -456,11 +573,11 @@ class ArtifactPathTethering:
 
         path_parameter = Parameter(
             name=name,
-            input_types=["str"],
             type="str",
             default_value="",
             tooltip=tooltip,
             ui_options={"display_name": display_name},
+            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
         )
 
         # Add file system picker trait
