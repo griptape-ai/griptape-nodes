@@ -7,7 +7,6 @@ import json
 from typing import Literal
 
 import httpx
-from httpx import Response
 from rich.console import Console
 
 console = Console()
@@ -57,20 +56,6 @@ def get_complete_version_string() -> str:
     return f"{version} ({source} - {commit_id})"
 
 
-def access_update_url(update_url: str, client: httpx.Client) -> Response | None:
-    """Small helper to reduce repetitive code for error handling."""
-    try:
-        response = client.get(update_url)
-    except httpx.RequestError as e:
-        console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
-        console.print(
-            f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]"
-        )
-        return None
-    else:
-        return response
-
-
 def get_latest_version_pypi(package: str, pypi_url: str) -> str:
     """Gets the latest version from PyPI.
 
@@ -85,9 +70,15 @@ def get_latest_version_pypi(package: str, pypi_url: str) -> str:
     update_url = pypi_url.format(package=package)
 
     with httpx.Client(timeout=30.0) as client:
-        response = access_update_url(update_url, client)
-        if not response:
+        try:
+            response = client.get(update_url)
+        except httpx.RequestError as e:
+            console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
+            console.print(
+                f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]"
+            )
             return version
+
         try:
             response.raise_for_status()
             data = response.json()
@@ -115,8 +106,13 @@ def get_latest_version_git(package: str, github_url: str, latest_tag: str) -> st
     update_url = github_url.format(package=package, revision=revision)
 
     with httpx.Client(timeout=30.0) as client:
-        response = access_update_url(update_url, client)
-        if not response:
+        try:
+            response = client.get(update_url)
+        except httpx.RequestError as e:
+            console.print(f"[red]Error fetching latest version due to error: [/red][cyan]{e}[/cyan]")
+            console.print(
+                f"[red]Please check your internet connection or if you can access the following update url: [/red] [cyan]{update_url}[/cyan]"
+            )
             return version
 
         try:
