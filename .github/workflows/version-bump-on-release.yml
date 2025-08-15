@@ -8,6 +8,9 @@ on:
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout the release branch
@@ -19,16 +22,23 @@ jobs:
         id: branch
         run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
 
+      - name: Check if PR already exists
+        id: check-pr
+        run: |
+          PR_EXISTS=$(gh pr list --base main --head ${{ steps.branch.outputs.name }} --json number --jq length)
+          echo "exists=$PR_EXISTS" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create pull request into main
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          branch: ${{ steps.branch.outputs.name }}
-          title: "chore: ${{ steps.branch.outputs.name }} into main (version bump)"
-          body: |
-            This PR was automatically generated from a push to `${{ steps.branch.outputs.name }}`.
-            It likely includes a version bump or release updates.
-          draft: false
-          delete-branch: false
+        if: steps.check-pr.outputs.exists == '0'
+        run: |
+          gh pr create \
+            --base main \
+            --head ${{ steps.branch.outputs.name }} \
+            --title "chore: ${{ steps.branch.outputs.name }} into main (version bump)" \
+            --body "This PR was automatically generated from a push to \`${{ steps.branch.outputs.name }}\`.
+          It likely includes a version bump or release updates."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
