@@ -45,6 +45,7 @@ class CreateNodeRequest(RequestPayload):
         resolution: Initial resolution state (defaults to UNRESOLVED)
         initial_setup: Skip setup work when loading from file (defaults to False)
         set_as_new_context: Set this node as current context after creation (defaults to False)
+        create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -60,6 +61,8 @@ class CreateNodeRequest(RequestPayload):
     initial_setup: bool = False
     # When True, this Node will be pushed as the current Node within the Current Context.
     set_as_new_context: bool = False
+    # When True, create an Error Proxy node if the requested node type fails to create
+    create_error_proxy_on_failure: bool = True
 
 
 @dataclass
