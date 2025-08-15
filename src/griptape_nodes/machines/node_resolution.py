@@ -241,7 +241,9 @@ class ExecuteNodeState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-
+        from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
+        # Add the current node to the DAG
+        DagOrchestrator.DagNode(node_reference=current_node)
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
