@@ -43,10 +43,9 @@ class HuggingFaceRepoFileParameter:
             self._parameter_name
         ):
             choices = self.get_choices()
-            # Simple approach - just update choices without complex option utils
             parameter = self._node.get_parameter_by_name(self._parameter_name)
             if parameter and choices:
-                parameter.traits[Options].choices = choices  # type: ignore[reportAttributeAccessIssue]
+                # Update parameter default value when new choices become available
                 parameter.default_value = choices[0]
 
     def add_input_parameters(self) -> None:
@@ -64,20 +63,15 @@ class HuggingFaceRepoFileParameter:
             )
             return
 
-        self._node.add_parameter(
-            Parameter(
-                name=self._parameter_name,
-                default_value=choices[0] if choices else None,
-                input_types=["str"],
-                type="str",
-                traits={
-                    Options(
-                        choices=choices,
-                    )
-                },
-                tooltip=self._parameter_name,
-            )
+        parameter = Parameter(
+            name=self._parameter_name,
+            default_value=choices[0] if choices else None,
+            input_types=["str"],
+            type="str",
+            tooltip=self._parameter_name,
         )
+        parameter.add_trait(Options(choices=choices))
+        self._node.add_parameter(parameter)
 
     def get_choices(self) -> list[str]:
         return list(self._repo_files_by_name.keys())
