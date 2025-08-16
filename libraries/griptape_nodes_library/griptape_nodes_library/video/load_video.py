@@ -31,8 +31,8 @@ class LoadVideo(DataNode):
 
         self.video_parameter = Parameter(
             name="video",
-            input_types=["VideoArtifact", "VideoUrlArtifact", "str"],
-            type="VideoArtifact",
+            input_types=["VideoUrlArtifact", "VideoArtifact", "str"],
+            type="VideoUrlArtifact",
             output_type="VideoUrlArtifact",
             default_value=None,
             ui_options={
