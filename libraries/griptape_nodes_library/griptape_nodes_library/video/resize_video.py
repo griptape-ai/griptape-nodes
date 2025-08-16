@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import imageio_ffmpeg
+from static_ffmpeg import run
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -197,9 +197,12 @@ class ResizeVideo(ControlNode):
                     f"flags={scaling_algorithm}"
                 )
 
+                # Get ffmpeg executable path from static-ffmpeg dependency
+            ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+
             # Build ffmpeg command - ffmpeg can work directly with URLs
             cmd = [
-                imageio_ffmpeg.get_ffmpeg_exe(),
+                ffmpeg_path,
                 "-y",
                 "-i",
                 input_url,
