@@ -163,10 +163,16 @@ class CropImage(ControlNode):
         output_quality = self.get_parameter_value("output_quality")
 
         # Load image using existing utilities
-        if isinstance(input_artifact, ImageUrlArtifact):
-            img = load_pil_from_url(input_artifact.value)
-        else:  # Must be ImageArtifact due to validation
-            img = Image.open(io.BytesIO(input_artifact.value))
+        try:
+            if isinstance(input_artifact, ImageUrlArtifact):
+                img = load_pil_from_url(input_artifact.value)
+            else:  # Must be ImageArtifact due to validation
+                img = Image.open(io.BytesIO(input_artifact.value))
+        except Exception as e:
+            msg = f"{self.name}: Error loading image: {e}"
+            logger.error(msg)
+            return
+
         original_width, original_height = img.size
 
         # Step 1: Calculate the crop area (window) but don't apply it yet
@@ -180,9 +186,17 @@ class CropImage(ControlNode):
 
         # Ensure crop coordinates are within image bounds
         crop_left = max(0, min(crop_left, img_width))
-        crop_right = max(crop_left, min(crop_left + crop_width, img_width))
         crop_top = max(0, min(crop_top, img_height))
-        crop_bottom = max(crop_top, min(crop_top + crop_height, img_height))
+
+        # Ensure crop dimensions are valid
+        if crop_width <= 0 or crop_left + crop_width > img_width:
+            crop_width = img_width - crop_left
+        if crop_height <= 0 or crop_top + crop_height > img_height:
+            crop_height = img_height - crop_top
+
+        # Calculate final crop boundaries
+        crop_right = crop_left + crop_width
+        crop_bottom = crop_top + crop_height
 
         # Calculate the center of the crop area
         crop_center_x = (crop_left + crop_right) / 2
