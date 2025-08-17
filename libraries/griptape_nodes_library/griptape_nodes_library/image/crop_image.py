@@ -16,7 +16,7 @@ class CropMetadataTethering:
     """Helper object for managing bidirectional sync between crop parameters and metadata.
 
     This class provides reusable tethering logic that synchronizes crop parameters
-    (left, top, width, height, zoom, rotation_deg) with input_image.meta["crop_settings"].
+    (left, top, width, height, zoom, rotate) with input_image.meta["crop_settings"].
     When one is updated, the other automatically updates to reflect the change.
     """
 
@@ -153,10 +153,10 @@ class CropMetadataTethering:
         width = self.node.get_parameter_value("width") or 0
         height = self.node.get_parameter_value("height") or 0
         zoom = self.node.get_parameter_value("zoom") or 1.0
-        rotation_deg = self.node.get_parameter_value("rotation_deg") or 0.0
+        rotate = self.node.get_parameter_value("rotate") or 0.0
 
         logger.info(
-            f"About to update metadata with values: left={left}, top={top}, width={width}, height={height}, zoom={zoom}, rotation={rotation_deg}"
+            f"About to update metadata with values: left={left}, top={top}, width={width}, height={height}, zoom={zoom}, rotation={rotate}"
         )
 
         # Update all crop coordinates
@@ -167,7 +167,7 @@ class CropMetadataTethering:
 
         # Update zoom and rotation at top level
         crop_settings["zoom"] = float(zoom)  # Store as percentage (100 = no zoom)
-        crop_settings["rotate"] = float(rotation_deg)
+        crop_settings["rotate"] = float(rotate)
 
         logger.info(f"Updated metadata with all crop parameters: {crop_settings}")
 
@@ -216,7 +216,7 @@ class CropMetadataTethering:
         current_width = self.node.get_parameter_value("width") or 0
         current_height = self.node.get_parameter_value("height") or 0
         current_zoom = self.node.get_parameter_value("zoom") or 100.0
-        current_rotation = self.node.get_parameter_value("rotation_deg") or 0.0
+        current_rotation = self.node.get_parameter_value("rotate") or 0.0
 
         # Only sync from metadata if parameters are at their defaults
         # This prevents overwriting user-set values with metadata defaults
@@ -283,9 +283,9 @@ class CropMetadataTethering:
 
         if should_sync_rotation:
             value = crop_settings["rotate"]
-            logger.info(f"Syncing rotation_deg = {value}")
-            self._sync_parameter_value("rotation_deg", value)
-            logger.info(f"Synced rotation_deg = {value}")
+            logger.info(f"Syncing rotate = {value}")
+            self._sync_parameter_value("rotate", value)
+            logger.info(f"Synced rotate = {value}")
         else:
             logger.info(f"Skipping rotation sync - current value {current_rotation} is not default")
 
@@ -356,7 +356,7 @@ class CropImage(ControlNode):
                 traits={Slider(min_val=0.0, max_val=300.0)},
             )
             Parameter(
-                name="rotation_deg",
+                name="rotate",
                 type="float",
                 default_value=0.0,
                 tooltip="Rotation in degrees (-180 to 180)",
@@ -405,7 +405,7 @@ class CropImage(ControlNode):
         input_image_param = self.get_parameter_by_name("input_image")
         if input_image_param is None:
             raise ValueError("input_image parameter not found")
-        crop_params = ["left", "top", "width", "height", "zoom", "rotation_deg"]
+        crop_params = ["left", "top", "width", "height", "zoom", "rotate"]
         self._crop_tethering = CropMetadataTethering(
             node=self,
             input_image_parameter=input_image_param,
@@ -419,7 +419,7 @@ class CropImage(ControlNode):
         width = self.get_parameter_value("width")
         height = self.get_parameter_value("height")
         zoom = self.get_parameter_value("zoom")
-        rotation_deg = self.get_parameter_value("rotation_deg")
+        rotate = self.get_parameter_value("rotate")
         background_color = self.get_parameter_value("background_color")
         output_format = self.get_parameter_value("output_format")
         output_quality = self.get_parameter_value("output_quality")
@@ -475,11 +475,11 @@ class CropImage(ControlNode):
                 logger.warning(msg)
 
         # Apply rotation SECOND (around the center of the cropped area)
-        if rotation_deg != 0.0:
+        if rotate != 0.0:
             # Convert background color to RGBA
             bg_color = self._parse_color(background_color)
             # Rotate without expanding to keep the same image dimensions
-            img = img.rotate(rotation_deg, expand=False, fillcolor=bg_color)
+            img = img.rotate(rotate, expand=False, fillcolor=bg_color)
             # Dimensions remain the same since we're not expanding
 
         # Apply zoom (percentage-based: 100 = no zoom, 200 = 2x zoom in, 50 = 0.5x zoom out)
@@ -585,7 +585,7 @@ class CropImage(ControlNode):
         width = self.get_parameter_value("width") or 0
         height = self.get_parameter_value("height") or 0
         zoom = self.get_parameter_value("zoom") or 100.0
-        rotation = self.get_parameter_value("rotation_deg") or 0.0
+        rotation = self.get_parameter_value("rotate") or 0.0
 
         logger.info(
             f"Parameter values at start of process: left={left}, top={top}, width={width}, height={height}, zoom={zoom}, rotation={rotation}"
@@ -632,7 +632,7 @@ class CropImage(ControlNode):
             self._crop_tethering.check_and_sync_metadata()
 
         # Only do live cropping for crop parameters if we're not in execution mode
-        if parameter.name in ["left", "top", "width", "height", "zoom", "rotation_deg"] and not (
+        if parameter.name in ["left", "top", "width", "height", "zoom", "rotate"] and not (
             hasattr(self, "_processing") and self._processing
         ):
             logger.info("Doing live crop preview")
