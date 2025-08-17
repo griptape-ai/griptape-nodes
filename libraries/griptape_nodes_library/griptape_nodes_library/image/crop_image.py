@@ -158,7 +158,32 @@ class CropImage(ControlNode):
         crop_center_x = (crop_left + crop_right) / 2
         crop_center_y = (crop_top + crop_bottom) / 2
 
-        # Step 2: Apply rotation around the center of the crop area
+        # Step 2: Apply zoom by scaling the crop area
+        if zoom != 100.0:
+            # Convert percentage to factor (100% = 1.0, 200% = 2.0, 50% = 0.5)
+            zoom_factor = zoom / 100.0
+
+            # Calculate the current crop area size
+            crop_area_width = crop_right - crop_left
+            crop_area_height = crop_bottom - crop_top
+
+            # Scale the crop area size based on zoom
+            new_crop_area_width = int(crop_area_width / zoom_factor)
+            new_crop_area_height = int(crop_area_height / zoom_factor)
+
+            # Keep the crop center in the same position, but adjust the crop area size
+            crop_left = int(crop_center_x - new_crop_area_width / 2)
+            crop_top = int(crop_center_y - new_crop_area_height / 2)
+            crop_right = crop_left + new_crop_area_width
+            crop_bottom = crop_top + new_crop_area_height
+
+            # Ensure crop coordinates are within image bounds
+            crop_left = max(0, min(crop_left, img_width))
+            crop_right = max(crop_left, min(crop_right, img_width))
+            crop_top = max(0, min(crop_top, img_height))
+            crop_bottom = max(crop_top, min(crop_bottom, img_height))
+
+        # Step 3: Apply rotation around the center of the crop area
         if rotate != 0.0:
             # Convert background color to RGBA
             bg_color = self._parse_color(background_color)
