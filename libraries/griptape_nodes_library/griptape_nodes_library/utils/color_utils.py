@@ -18,6 +18,32 @@ RGBA_PATTERN = re.compile(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)")
 HSL_PATTERN = re.compile(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)")
 HSLA_PATTERN = re.compile(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)")
 
+# Named color mappings to avoid duplication
+NAMED_COLORS = {
+    "transparent": (0, 0, 0, 0),
+    "black": (0, 0, 0, MAX_ALPHA),
+    "white": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+    "red": (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA),
+    "green": (0, 128, 0, MAX_ALPHA),
+    "blue": (0, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+    "yellow": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+    "cyan": (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+    "magenta": (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+    "gray": (128, 128, 128, MAX_ALPHA),
+    "grey": (128, 128, 128, MAX_ALPHA),
+    "orange": (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA),
+    "purple": (128, 0, 128, MAX_ALPHA),
+    "pink": (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA),
+    "brown": (165, 42, 42, MAX_ALPHA),
+    "lime": (0, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+    "navy": (0, 0, 128, MAX_ALPHA),
+    "teal": (0, 128, 128, MAX_ALPHA),
+    "olive": (128, 128, 0, MAX_ALPHA),
+    "maroon": (128, 0, 0, MAX_ALPHA),
+    "silver": (192, 192, 192, MAX_ALPHA),
+    "gold": (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA),
+}
+
 
 def _parse_hex_color(color_str: str) -> tuple[int, int, int, int]:
     """Parse hex color string to RGBA tuple."""
@@ -149,31 +175,7 @@ def _parse_hsla_color(color_str: str) -> tuple[int, int, int, int] | None:
 
 def _get_named_color(color_str: str) -> tuple[int, int, int, int] | None:
     """Get RGBA tuple for named color."""
-    named_colors = {
-        "transparent": (0, 0, 0, 0),
-        "black": (0, 0, 0, MAX_ALPHA),
-        "white": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
-        "red": (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA),
-        "green": (0, 128, 0, MAX_ALPHA),
-        "blue": (0, 0, MAX_COLOR_VALUE, MAX_ALPHA),
-        "yellow": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA),
-        "cyan": (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
-        "magenta": (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA),
-        "gray": (128, 128, 128, MAX_ALPHA),
-        "grey": (128, 128, 128, MAX_ALPHA),
-        "orange": (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA),
-        "purple": (128, 0, 128, MAX_ALPHA),
-        "pink": (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA),
-        "brown": (165, 42, 42, MAX_ALPHA),
-        "lime": (0, MAX_COLOR_VALUE, 0, MAX_ALPHA),
-        "navy": (0, 0, 128, MAX_ALPHA),
-        "teal": (0, 128, 128, MAX_ALPHA),
-        "olive": (128, 128, 0, MAX_ALPHA),
-        "maroon": (128, 0, 0, MAX_ALPHA),
-        "silver": (192, 192, 192, MAX_ALPHA),
-        "gold": (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA),
-    }
-    return named_colors.get(color_str)
+    return NAMED_COLORS.get(color_str)
 
 
 def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
@@ -345,31 +347,9 @@ def rgba_to_named_color(rgba: tuple[int, int, int, int]) -> str | None:
     Returns:
         Named color string or None if no match found
     """
-    named_colors = {
-        (0, 0, 0, 0): "transparent",
-        (0, 0, 0, MAX_ALPHA): "black",
-        (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA): "white",
-        (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA): "red",
-        (0, 128, 0, MAX_ALPHA): "green",
-        (0, 0, MAX_COLOR_VALUE, MAX_ALPHA): "blue",
-        (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA): "yellow",
-        (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA): "cyan",
-        (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA): "magenta",
-        (128, 128, 128, MAX_ALPHA): "gray",
-        (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA): "orange",
-        (128, 0, 128, MAX_ALPHA): "purple",
-        (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA): "pink",
-        (165, 42, 42, MAX_ALPHA): "brown",
-        (0, MAX_COLOR_VALUE, 0, MAX_ALPHA): "lime",
-        (0, 0, 128, MAX_ALPHA): "navy",
-        (0, 128, 128, MAX_ALPHA): "teal",
-        (128, 128, 0, MAX_ALPHA): "olive",
-        (128, 0, 0, MAX_ALPHA): "maroon",
-        (192, 192, 192, MAX_ALPHA): "silver",
-        (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA): "gold",
-    }
-
-    return named_colors.get(rgba)
+    # Create reverse mapping from RGBA tuples to color names
+    rgba_to_name = {rgba_tuple: name for name, rgba_tuple in NAMED_COLORS.items()}
+    return rgba_to_name.get(rgba)
 
 
 def convert_color_format(color_str: str, target_format: str) -> str:  # noqa: PLR0911
