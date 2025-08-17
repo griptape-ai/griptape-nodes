@@ -11,8 +11,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
-from libraries.griptape_nodes_library.griptape_nodes_library.utils.color_utils import parse_color_to_rgba
-from libraries.griptape_nodes_library.griptape_nodes_library.utils.image_utils import (
+from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
     save_pil_image_to_static_file,

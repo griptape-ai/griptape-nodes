@@ -1,6 +1,6 @@
 import io
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -17,7 +17,9 @@ from griptape_nodes_library.utils.image_utils import (
     load_pil_from_url,
 )
 
+# Constants for magic numbers
 NO_ZOOM = 100.0
+MIN_ZOOM_FACTOR = 0.01
 
 
 @dataclass
@@ -227,8 +229,6 @@ class CropImage(ControlNode):
 
         # Try to get workflow name from context
         try:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             context_manager = GriptapeNodes.ContextManager()
             workflow_name = context_manager.get_current_workflow_name()
         except Exception as e:
@@ -240,7 +240,6 @@ class CropImage(ControlNode):
         node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
 
         # Get current timestamp for cache busting
-        from datetime import datetime
 
         timestamp = int(datetime.now(UTC).timestamp())
 
@@ -265,6 +264,9 @@ class CropImage(ControlNode):
     def _scale_crop_area(self, crop_area: CropArea, zoom: float) -> CropArea:
         """Scale the crop area size based on zoom factor."""
         zoom_factor = zoom / NO_ZOOM
+
+        # Clamp zoom_factor to prevent division by zero and extreme scaling
+        zoom_factor = max(MIN_ZOOM_FACTOR, zoom_factor)
 
         # Calculate new dimensions
         new_width = int(crop_area.width / zoom_factor)
@@ -360,7 +362,7 @@ class CropImage(ControlNode):
         ]:
             # Only run crop if we have a valid input image
             input_artifact = self.get_parameter_value("input_image")
-            if input_artifact and not isinstance(input_artifact, dict):
+            if input_artifact and isinstance(input_artifact, (ImageUrlArtifact, ImageArtifact)):
                 try:
                     self._crop()
                 except Exception as e:
