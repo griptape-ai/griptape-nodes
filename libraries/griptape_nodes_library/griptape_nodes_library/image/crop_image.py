@@ -151,32 +151,52 @@ class CropImage(ControlNode):
         )
 
     def _crop(self) -> None:
-        input_artifact = self.get_parameter_value("input_image")
-        left = self.get_parameter_value("left")
-        top = self.get_parameter_value("top")
-        width = self.get_parameter_value("width")
-        height = self.get_parameter_value("height")
-        zoom = self.get_parameter_value("zoom")
-        rotate = self.get_parameter_value("rotate")
-        background_color = self.get_parameter_value("background_color")
-        output_format = self.get_parameter_value("output_format")
-        output_quality = self.get_parameter_value("output_quality")
+        # Get parameters
+        params = self._get_crop_parameters()
 
-        # Load image using existing utilities
+        # Load image
+        img = self._load_image(params["input_artifact"])
+        if img is None:
+            return
+
+        # Calculate and apply crop area
+        crop_area = self._calculate_crop_area(params, img.size)
+        img = self._apply_crop_transformations(img, crop_area, params)
+
+        # Save result
+        self._save_cropped_image(img, params)
+
+    def _get_crop_parameters(self) -> dict:
+        """Get all crop parameters."""
+        return {
+            "input_artifact": self.get_parameter_value("input_image"),
+            "left": self.get_parameter_value("left"),
+            "top": self.get_parameter_value("top"),
+            "width": self.get_parameter_value("width"),
+            "height": self.get_parameter_value("height"),
+            "zoom": self.get_parameter_value("zoom"),
+            "rotate": self.get_parameter_value("rotate"),
+            "background_color": self.get_parameter_value("background_color"),
+            "output_format": self.get_parameter_value("output_format"),
+            "output_quality": self.get_parameter_value("output_quality"),
+        }
+
+    def _load_image(self, input_artifact: ImageUrlArtifact | ImageArtifact) -> Image.Image | None:
+        """Load image from artifact."""
         try:
             if isinstance(input_artifact, ImageUrlArtifact):
-                img = load_pil_from_url(input_artifact.value)
-            else:  # Must be ImageArtifact due to validation
-                img = Image.open(io.BytesIO(input_artifact.value))
+                return load_pil_from_url(input_artifact.value)
+            # Must be ImageArtifact due to validation
+            return Image.open(io.BytesIO(input_artifact.value))
         except Exception as e:
             msg = f"{self.name}: Error loading image: {e}"
             logger.error(msg)
-            return
+            return None
 
-        original_width, original_height = img.size
-
-        # Step 1: Calculate the crop area (window) but don't apply it yet
-        img_width, img_height = original_width, original_height
+    def _calculate_crop_area(self, params: dict, img_size: tuple[int, int]) -> CropArea:
+        """Calculate the crop area with validation."""
+        img_width, img_height = img_size
+        left, top, width, height = params["left"], params["top"], params["width"], params["height"]
 
         # Calculate crop coordinates relative to original image
         crop_left = left
@@ -202,28 +222,39 @@ class CropImage(ControlNode):
         crop_center_x = (crop_left + crop_right) / 2
         crop_center_y = (crop_top + crop_bottom) / 2
 
-        # Step 2: Apply zoom by scaling the crop area
-        crop_area = CropArea(crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y)
-        crop_area = self._apply_zoom_to_crop_area(crop_area, zoom, img_width, img_height)
+        return CropArea(crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y)
 
-        # Step 3: Apply rotation around the center of the crop area
-        img = self._apply_rotation_to_image(img, rotate, crop_area.center_x, crop_area.center_y, background_color)
+    def _apply_crop_transformations(self, img: Image.Image, crop_area: CropArea, params: dict) -> Image.Image:
+        """Apply zoom, rotation, and final crop to the image."""
+        img_width, img_height = img.size
 
-        # Step 4: Apply the final crop (the window)
+        # Apply zoom by scaling the crop area
+        crop_area = self._apply_zoom_to_crop_area(crop_area, params["zoom"], img_width, img_height)
+
+        # Apply rotation around the center of the crop area
+        img = self._apply_rotation_to_image(
+            img, params["rotate"], crop_area.center_x, crop_area.center_y, params["background_color"]
+        )
+
+        # Apply the final crop (the window)
         img = self._apply_final_crop(img, crop_area.left, crop_area.top, crop_area.right, crop_area.bottom)
 
+        return img
+
+    def _save_cropped_image(self, img: Image.Image, params: dict) -> None:
+        """Save the cropped image."""
         # Save result
         img_byte_arr = io.BytesIO()
 
         # Determine save format and options
-        save_format = output_format.upper()
+        save_format = params["output_format"].upper()
         save_options = {}
 
         if save_format == "JPEG":
-            save_options["quality"] = int(output_quality * 100)
+            save_options["quality"] = int(params["output_quality"] * 100)
             save_options["optimize"] = True
         elif save_format == "WEBP":
-            save_options["quality"] = int(output_quality * 100)
+            save_options["quality"] = int(params["output_quality"] * 100)
             save_options["lossless"] = False
 
         img.save(img_byte_arr, format=save_format, **save_options)
