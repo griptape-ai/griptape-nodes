@@ -9,6 +9,8 @@ HEX_RGB_LENGTH = 6
 HEX_RGBA_LENGTH = 8
 MAX_ALPHA = 255
 MAX_COLOR_VALUE = 255
+MAX_HUE = 360
+MAX_PERCENT = 100
 
 # Compiled regex patterns for better performance
 RGB_PATTERN = re.compile(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)")
@@ -17,7 +19,164 @@ HSL_PATTERN = re.compile(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)")
 HSLA_PATTERN = re.compile(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)")
 
 
-def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: PLR0911
+def _parse_hex_color(color_str: str) -> tuple[int, int, int, int]:
+    """Parse hex color string to RGBA tuple."""
+    color_str = color_str[1:]  # Remove #
+    if len(color_str) == HEX_RGB_LENGTH:
+        # RGB hex
+        r = int(color_str[0:2], 16)
+        g = int(color_str[2:4], 16)
+        b = int(color_str[4:6], 16)
+        return (r, g, b, MAX_ALPHA)
+    if len(color_str) == HEX_RGBA_LENGTH:
+        # RGBA hex
+        r = int(color_str[0:2], 16)
+        g = int(color_str[2:4], 16)
+        b = int(color_str[4:6], 16)
+        a = int(color_str[6:8], 16)
+        return (r, g, b, a)
+    msg = f"Invalid hex color format: {color_str}"
+    raise ValueError(msg)
+
+
+def _parse_rgb_color(color_str: str) -> tuple[int, int, int, int] | None:
+    """Parse RGB color string to RGBA tuple."""
+    rgb_match = RGB_PATTERN.match(color_str)
+    if rgb_match:
+        try:
+            r = int(rgb_match.group(1))
+            g = int(rgb_match.group(2))
+            b = int(rgb_match.group(3))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in RGB format: {color_str}"
+            raise ValueError(msg) from e
+        # Validate RGB values are in 0-255 range
+        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
+            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgb({r}, {g}, {b})"
+            raise ValueError(msg)
+        return (r, g, b, MAX_ALPHA)
+    return None
+
+
+def _parse_rgba_color(color_str: str) -> tuple[int, int, int, int] | None:
+    """Parse RGBA color string to RGBA tuple."""
+    rgba_match = RGBA_PATTERN.match(color_str)
+    if rgba_match:
+        try:
+            r = int(rgba_match.group(1))
+            g = int(rgba_match.group(2))
+            b = int(rgba_match.group(3))
+            a = float(rgba_match.group(4))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in RGBA format: {color_str}"
+            raise ValueError(msg) from e
+        # Validate RGB values are in 0-255 range
+        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
+            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
+            raise ValueError(msg)
+        # Validate alpha value is in 0-1 range
+        if not (0.0 <= a <= 1.0):
+            msg = f"Alpha value must be between 0.0 and 1.0: rgba({r}, {g}, {b}, {a})"
+            raise ValueError(msg)
+        # Convert alpha from 0-1 to 0-255
+        a = int(a * MAX_ALPHA)
+        return (r, g, b, a)
+    return None
+
+
+def _parse_hsl_color(color_str: str) -> tuple[int, int, int, int] | None:
+    """Parse HSL color string to RGBA tuple."""
+    hsl_match = HSL_PATTERN.match(color_str)
+    if hsl_match:
+        try:
+            h_val = int(hsl_match.group(1))
+            s_val = int(hsl_match.group(2))
+            l_val = int(hsl_match.group(3))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in HSL format: {color_str}"
+            raise ValueError(msg) from e
+        # Validate HSL values are in correct ranges
+        if not (0 <= h_val <= MAX_HUE):
+            msg = f"Hue value must be between 0 and {MAX_HUE}: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        if not (0 <= s_val <= MAX_PERCENT):
+            msg = f"Saturation value must be between 0 and {MAX_PERCENT}: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        if not (0 <= l_val <= MAX_PERCENT):
+            msg = f"Lightness value must be between 0 and {MAX_PERCENT}: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        h = h_val / MAX_HUE  # Convert to 0-1
+        s = s_val / MAX_PERCENT  # Convert to 0-1
+        lightness = l_val / MAX_PERCENT  # Convert to 0-1
+        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
+        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), MAX_ALPHA)
+    return None
+
+
+def _parse_hsla_color(color_str: str) -> tuple[int, int, int, int] | None:
+    """Parse HSLA color string to RGBA tuple."""
+    hsla_match = HSLA_PATTERN.match(color_str)
+    if hsla_match:
+        try:
+            h_val = int(hsla_match.group(1))
+            s_val = int(hsla_match.group(2))
+            l_val = int(hsla_match.group(3))
+            a = float(hsla_match.group(4))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in HSLA format: {color_str}"
+            raise ValueError(msg) from e
+        # Validate HSL values are in correct ranges
+        if not (0 <= h_val <= MAX_HUE):
+            msg = f"Hue value must be between 0 and {MAX_HUE}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        if not (0 <= s_val <= MAX_PERCENT):
+            msg = f"Saturation value must be between 0 and {MAX_PERCENT}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        if not (0 <= l_val <= MAX_PERCENT):
+            msg = f"Lightness value must be between 0 and {MAX_PERCENT}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        # Validate alpha value is in 0-1 range
+        if not (0.0 <= a <= 1.0):
+            msg = f"Alpha value must be between 0.0 and 1.0: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        h = h_val / MAX_HUE  # Convert to 0-1
+        s = s_val / MAX_PERCENT  # Convert to 0-1
+        lightness = l_val / MAX_PERCENT  # Convert to 0-1
+        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
+        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), int(a * MAX_ALPHA))
+    return None
+
+
+def _get_named_color(color_str: str) -> tuple[int, int, int, int] | None:
+    """Get RGBA tuple for named color."""
+    named_colors = {
+        "transparent": (0, 0, 0, 0),
+        "black": (0, 0, 0, MAX_ALPHA),
+        "white": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+        "red": (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA),
+        "green": (0, 128, 0, MAX_ALPHA),
+        "blue": (0, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+        "yellow": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+        "cyan": (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+        "magenta": (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+        "gray": (128, 128, 128, MAX_ALPHA),
+        "grey": (128, 128, 128, MAX_ALPHA),
+        "orange": (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA),
+        "purple": (128, 0, 128, MAX_ALPHA),
+        "pink": (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA),
+        "brown": (165, 42, 42, MAX_ALPHA),
+        "lime": (0, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+        "navy": (0, 0, 128, MAX_ALPHA),
+        "teal": (0, 128, 128, MAX_ALPHA),
+        "olive": (128, 128, 0, MAX_ALPHA),
+        "maroon": (128, 0, 0, MAX_ALPHA),
+        "silver": (192, 192, 192, MAX_ALPHA),
+        "gold": (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA),
+    }
+    return named_colors.get(color_str)
+
+
+def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
     """Parse color string to RGBA tuple.
 
     Supports multiple color formats:
