@@ -11,7 +11,7 @@ MAX_ALPHA = 255
 MAX_COLOR_VALUE = 255
 
 
-def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
+def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: PLR0911
     """Parse color string to RGBA tuple.
 
     Supports multiple color formats:
