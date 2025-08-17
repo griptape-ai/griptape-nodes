@@ -62,9 +62,13 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: P
     # Handle RGB format: rgb(r, g, b)
     rgb_match = RGB_PATTERN.match(color_str)
     if rgb_match:
-        r = int(rgb_match.group(1))
-        g = int(rgb_match.group(2))
-        b = int(rgb_match.group(3))
+        try:
+            r = int(rgb_match.group(1))
+            g = int(rgb_match.group(2))
+            b = int(rgb_match.group(3))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in RGB format: {color_str}"
+            raise ValueError(msg) from e
         # Validate RGB values are in 0-255 range
         if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
             msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgb({r}, {g}, {b})"
@@ -74,10 +78,14 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: P
     # Handle RGBA format: rgba(r, g, b, a)
     rgba_match = RGBA_PATTERN.match(color_str)
     if rgba_match:
-        r = int(rgba_match.group(1))
-        g = int(rgba_match.group(2))
-        b = int(rgba_match.group(3))
-        a = float(rgba_match.group(4))
+        try:
+            r = int(rgba_match.group(1))
+            g = int(rgba_match.group(2))
+            b = int(rgba_match.group(3))
+            a = float(rgba_match.group(4))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in RGBA format: {color_str}"
+            raise ValueError(msg) from e
         # Validate RGB values are in 0-255 range
         if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
             msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
@@ -93,9 +101,13 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: P
     # Handle HSL format: hsl(h, s%, l%)
     hsl_match = HSL_PATTERN.match(color_str)
     if hsl_match:
-        h_val = int(hsl_match.group(1))
-        s_val = int(hsl_match.group(2))
-        l_val = int(hsl_match.group(3))
+        try:
+            h_val = int(hsl_match.group(1))
+            s_val = int(hsl_match.group(2))
+            l_val = int(hsl_match.group(3))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in HSL format: {color_str}"
+            raise ValueError(msg) from e
         # Validate HSL values are in correct ranges
         if not (0 <= h_val <= 360):
             msg = f"Hue value must be between 0 and 360: hsl({h_val}, {s_val}%, {l_val}%)"
@@ -115,10 +127,14 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: P
     # Handle HSLA format: hsla(h, s%, l%, a)
     hsla_match = HSLA_PATTERN.match(color_str)
     if hsla_match:
-        h_val = int(hsla_match.group(1))
-        s_val = int(hsla_match.group(2))
-        l_val = int(hsla_match.group(3))
-        a = float(hsla_match.group(4))
+        try:
+            h_val = int(hsla_match.group(1))
+            s_val = int(hsla_match.group(2))
+            l_val = int(hsla_match.group(3))
+            a = float(hsla_match.group(4))
+        except (ValueError, TypeError) as e:
+            msg = f"Invalid numeric values in HSLA format: {color_str}"
+            raise ValueError(msg) from e
         # Validate HSL values are in correct ranges
         if not (0 <= h_val <= 360):
             msg = f"Hue value must be between 0 and 360: hsla({h_val}, {s_val}%, {l_val}%, {a})"
