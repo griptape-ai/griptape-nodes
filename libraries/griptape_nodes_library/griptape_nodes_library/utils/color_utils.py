@@ -10,6 +10,12 @@ HEX_RGBA_LENGTH = 8
 MAX_ALPHA = 255
 MAX_COLOR_VALUE = 255
 
+# Compiled regex patterns for better performance
+RGB_PATTERN = re.compile(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)")
+RGBA_PATTERN = re.compile(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)")
+HSL_PATTERN = re.compile(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)")
+HSLA_PATTERN = re.compile(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)")
+
 
 def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: PLR0911
     """Parse color string to RGBA tuple.
@@ -54,40 +60,82 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:  # noqa: P
         raise ValueError(msg)
 
     # Handle RGB format: rgb(r, g, b)
-    rgb_match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", color_str)
+    rgb_match = RGB_PATTERN.match(color_str)
     if rgb_match:
         r = int(rgb_match.group(1))
         g = int(rgb_match.group(2))
         b = int(rgb_match.group(3))
+        # Validate RGB values are in 0-255 range
+        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
+            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgb({r}, {g}, {b})"
+            raise ValueError(msg)
         return (r, g, b, MAX_ALPHA)
 
     # Handle RGBA format: rgba(r, g, b, a)
-    rgba_match = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)", color_str)
+    rgba_match = RGBA_PATTERN.match(color_str)
     if rgba_match:
         r = int(rgba_match.group(1))
         g = int(rgba_match.group(2))
         b = int(rgba_match.group(3))
         a = float(rgba_match.group(4))
+        # Validate RGB values are in 0-255 range
+        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
+            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
+            raise ValueError(msg)
+        # Validate alpha value is in 0-1 range
+        if not (0.0 <= a <= 1.0):
+            msg = f"Alpha value must be between 0.0 and 1.0: rgba({r}, {g}, {b}, {a})"
+            raise ValueError(msg)
         # Convert alpha from 0-1 to 0-255
         a = int(a * MAX_ALPHA)
         return (r, g, b, a)
 
     # Handle HSL format: hsl(h, s%, l%)
-    hsl_match = re.match(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)", color_str)
+    hsl_match = HSL_PATTERN.match(color_str)
     if hsl_match:
-        h = int(hsl_match.group(1)) / 360.0  # Convert to 0-1
-        s = int(hsl_match.group(2)) / 100.0  # Convert to 0-1
-        lightness = int(hsl_match.group(3)) / 100.0  # Convert to 0-1
+        h_val = int(hsl_match.group(1))
+        s_val = int(hsl_match.group(2))
+        l_val = int(hsl_match.group(3))
+        # Validate HSL values are in correct ranges
+        if not (0 <= h_val <= 360):
+            msg = f"Hue value must be between 0 and 360: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        if not (0 <= s_val <= 100):
+            msg = f"Saturation value must be between 0 and 100: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        if not (0 <= l_val <= 100):
+            msg = f"Lightness value must be between 0 and 100: hsl({h_val}, {s_val}%, {l_val}%)"
+            raise ValueError(msg)
+        h = h_val / 360.0  # Convert to 0-1
+        s = s_val / 100.0  # Convert to 0-1
+        lightness = l_val / 100.0  # Convert to 0-1
         r, g, b = colorsys.hls_to_rgb(h, lightness, s)
         return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), MAX_ALPHA)
 
     # Handle HSLA format: hsla(h, s%, l%, a)
-    hsla_match = re.match(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)", color_str)
+    hsla_match = HSLA_PATTERN.match(color_str)
     if hsla_match:
-        h = int(hsla_match.group(1)) / 360.0  # Convert to 0-1
-        s = int(hsla_match.group(2)) / 100.0  # Convert to 0-1
-        lightness = int(hsla_match.group(3)) / 100.0  # Convert to 0-1
-        a = float(hsla_match.group(4))  # Already 0-1
+        h_val = int(hsla_match.group(1))
+        s_val = int(hsla_match.group(2))
+        l_val = int(hsla_match.group(3))
+        a = float(hsla_match.group(4))
+        # Validate HSL values are in correct ranges
+        if not (0 <= h_val <= 360):
+            msg = f"Hue value must be between 0 and 360: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        if not (0 <= s_val <= 100):
+            msg = f"Saturation value must be between 0 and 100: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        if not (0 <= l_val <= 100):
+            msg = f"Lightness value must be between 0 and 100: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        # Validate alpha value is in 0-1 range
+        if not (0.0 <= a <= 1.0):
+            msg = f"Alpha value must be between 0.0 and 1.0: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+            raise ValueError(msg)
+        h = h_val / 360.0  # Convert to 0-1
+        s = s_val / 100.0  # Convert to 0-1
+        lightness = l_val / 100.0  # Convert to 0-1
         r, g, b = colorsys.hls_to_rgb(h, lightness, s)
         return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), int(a * MAX_ALPHA))
 
