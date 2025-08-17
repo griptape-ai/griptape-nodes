@@ -201,147 +201,29 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
 
     # Handle hex colors
     if color_str.startswith("#"):
-        color_str = color_str[1:]  # Remove #
-        if len(color_str) == HEX_RGB_LENGTH:
-            # RGB hex
-            r = int(color_str[0:2], 16)
-            g = int(color_str[2:4], 16)
-            b = int(color_str[4:6], 16)
-            return (r, g, b, MAX_ALPHA)
-        if len(color_str) == HEX_RGBA_LENGTH:
-            # RGBA hex
-            r = int(color_str[0:2], 16)
-            g = int(color_str[2:4], 16)
-            b = int(color_str[4:6], 16)
-            a = int(color_str[6:8], 16)
-            return (r, g, b, a)
-        msg = f"Invalid hex color format: {color_str}"
-        raise ValueError(msg)
+        return _parse_hex_color(color_str)
 
-    # Handle RGB format: rgb(r, g, b)
-    rgb_match = RGB_PATTERN.match(color_str)
-    if rgb_match:
-        try:
-            r = int(rgb_match.group(1))
-            g = int(rgb_match.group(2))
-            b = int(rgb_match.group(3))
-        except (ValueError, TypeError) as e:
-            msg = f"Invalid numeric values in RGB format: {color_str}"
-            raise ValueError(msg) from e
-        # Validate RGB values are in 0-255 range
-        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
-            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgb({r}, {g}, {b})"
-            raise ValueError(msg)
-        return (r, g, b, MAX_ALPHA)
+    # Try parsing different color formats
+    result = _parse_rgb_color(color_str)
+    if result is not None:
+        return result
 
-    # Handle RGBA format: rgba(r, g, b, a)
-    rgba_match = RGBA_PATTERN.match(color_str)
-    if rgba_match:
-        try:
-            r = int(rgba_match.group(1))
-            g = int(rgba_match.group(2))
-            b = int(rgba_match.group(3))
-            a = float(rgba_match.group(4))
-        except (ValueError, TypeError) as e:
-            msg = f"Invalid numeric values in RGBA format: {color_str}"
-            raise ValueError(msg) from e
-        # Validate RGB values are in 0-255 range
-        if not (0 <= r <= MAX_COLOR_VALUE and 0 <= g <= MAX_COLOR_VALUE and 0 <= b <= MAX_COLOR_VALUE):
-            msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
-            raise ValueError(msg)
-        # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= 1.0):
-            msg = f"Alpha value must be between 0.0 and 1.0: rgba({r}, {g}, {b}, {a})"
-            raise ValueError(msg)
-        # Convert alpha from 0-1 to 0-255
-        a = int(a * MAX_ALPHA)
-        return (r, g, b, a)
+    result = _parse_rgba_color(color_str)
+    if result is not None:
+        return result
 
-    # Handle HSL format: hsl(h, s%, l%)
-    hsl_match = HSL_PATTERN.match(color_str)
-    if hsl_match:
-        try:
-            h_val = int(hsl_match.group(1))
-            s_val = int(hsl_match.group(2))
-            l_val = int(hsl_match.group(3))
-        except (ValueError, TypeError) as e:
-            msg = f"Invalid numeric values in HSL format: {color_str}"
-            raise ValueError(msg) from e
-        # Validate HSL values are in correct ranges
-        if not (0 <= h_val <= 360):
-            msg = f"Hue value must be between 0 and 360: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
-        if not (0 <= s_val <= 100):
-            msg = f"Saturation value must be between 0 and 100: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
-        if not (0 <= l_val <= 100):
-            msg = f"Lightness value must be between 0 and 100: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
-        h = h_val / 360.0  # Convert to 0-1
-        s = s_val / 100.0  # Convert to 0-1
-        lightness = l_val / 100.0  # Convert to 0-1
-        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
-        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), MAX_ALPHA)
+    result = _parse_hsl_color(color_str)
+    if result is not None:
+        return result
 
-    # Handle HSLA format: hsla(h, s%, l%, a)
-    hsla_match = HSLA_PATTERN.match(color_str)
-    if hsla_match:
-        try:
-            h_val = int(hsla_match.group(1))
-            s_val = int(hsla_match.group(2))
-            l_val = int(hsla_match.group(3))
-            a = float(hsla_match.group(4))
-        except (ValueError, TypeError) as e:
-            msg = f"Invalid numeric values in HSLA format: {color_str}"
-            raise ValueError(msg) from e
-        # Validate HSL values are in correct ranges
-        if not (0 <= h_val <= 360):
-            msg = f"Hue value must be between 0 and 360: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        if not (0 <= s_val <= 100):
-            msg = f"Saturation value must be between 0 and 100: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        if not (0 <= l_val <= 100):
-            msg = f"Lightness value must be between 0 and 100: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= 1.0):
-            msg = f"Alpha value must be between 0.0 and 1.0: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        h = h_val / 360.0  # Convert to 0-1
-        s = s_val / 100.0  # Convert to 0-1
-        lightness = l_val / 100.0  # Convert to 0-1
-        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
-        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), int(a * MAX_ALPHA))
+    result = _parse_hsla_color(color_str)
+    if result is not None:
+        return result
 
     # Handle named colors
-    named_colors = {
-        "transparent": (0, 0, 0, 0),
-        "black": (0, 0, 0, MAX_ALPHA),
-        "white": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
-        "red": (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA),
-        "green": (0, 128, 0, MAX_ALPHA),
-        "blue": (0, 0, MAX_COLOR_VALUE, MAX_ALPHA),
-        "yellow": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA),
-        "cyan": (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
-        "magenta": (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA),
-        "gray": (128, 128, 128, MAX_ALPHA),
-        "grey": (128, 128, 128, MAX_ALPHA),
-        "orange": (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA),
-        "purple": (128, 0, 128, MAX_ALPHA),
-        "pink": (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA),
-        "brown": (165, 42, 42, MAX_ALPHA),
-        "lime": (0, MAX_COLOR_VALUE, 0, MAX_ALPHA),
-        "navy": (0, 0, 128, MAX_ALPHA),
-        "teal": (0, 128, 128, MAX_ALPHA),
-        "olive": (128, 128, 0, MAX_ALPHA),
-        "maroon": (128, 0, 0, MAX_ALPHA),
-        "silver": (192, 192, 192, MAX_ALPHA),
-        "gold": (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA),
-    }
-
-    if color_str in named_colors:
-        return named_colors[color_str]
+    result = _get_named_color(color_str)
+    if result is not None:
+        return result
 
     # If we get here, the color format is not supported
     msg = f"Unsupported color format: {color_str}"
