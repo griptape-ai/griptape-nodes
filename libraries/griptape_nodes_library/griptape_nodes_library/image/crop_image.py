@@ -19,7 +19,11 @@ from griptape_nodes_library.utils.image_utils import (
 
 # Constants for magic numbers
 NO_ZOOM = 100.0
+MAX_ZOOM = 300.0
 MIN_ZOOM_FACTOR = 0.1
+MAX_IMAGE_DIMENSION = 32767  # Maximum safe dimension to prevent overflow
+MAX_WIDTH = 4000
+MAX_HEIGHT = 4000
 
 
 @dataclass
@@ -67,7 +71,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Left edge of crop area in pixels",
-                traits={Slider(min_val=0, max_val=4000)},
+                traits={Slider(min_val=0, max_val=MAX_WIDTH)},
             )
 
             Parameter(
@@ -75,7 +79,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Top edge of crop area in pixels",
-                traits={Slider(min_val=0, max_val=4000)},
+                traits={Slider(min_val=0, max_val=MAX_HEIGHT)},
             )
 
             Parameter(
@@ -83,7 +87,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Width of crop area in pixels (0 = use full width)",
-                traits={Slider(min_val=0, max_val=4000)},
+                traits={Slider(min_val=0, max_val=MAX_WIDTH)},
             )
 
             Parameter(
@@ -91,7 +95,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Height of crop area in pixels (0 = use full height)",
-                traits={Slider(min_val=0, max_val=4000)},
+                traits={Slider(min_val=0, max_val=MAX_HEIGHT)},
             )
         self.add_node_element(crop_coordinates)
 
@@ -101,7 +105,7 @@ class CropImage(ControlNode):
                 type="float",
                 default_value=NO_ZOOM,
                 tooltip="Zoom percentage (100 = no zoom, 200 = 2x zoom in, 50 = 0.5x zoom out)",
-                traits={Slider(min_val=0.0, max_val=300.0)},
+                traits={Slider(min_val=0.0, max_val=MAX_ZOOM)},
             )
             Parameter(
                 name="rotate",
@@ -263,9 +267,13 @@ class CropImage(ControlNode):
         # Clamp zoom_factor to prevent division by zero and extreme scaling
         zoom_factor = max(MIN_ZOOM_FACTOR, zoom_factor)
 
-        # Calculate new dimensions
+        # Calculate new dimensions with overflow protection
         new_width = int(crop_area.width / zoom_factor)
         new_height = int(crop_area.height / zoom_factor)
+
+        # Clamp dimensions to prevent integer overflow
+        new_width = max(1, min(new_width, MAX_IMAGE_DIMENSION))
+        new_height = max(1, min(new_height, MAX_IMAGE_DIMENSION))
 
         # Keep center position, adjust size
         new_left = int(crop_area.center_x - new_width / 2)
