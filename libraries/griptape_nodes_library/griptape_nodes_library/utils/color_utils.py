@@ -4,6 +4,12 @@ import colorsys
 import re
 from typing import Any
 
+# Constants for magic numbers
+HEX_RGB_LENGTH = 6
+HEX_RGBA_LENGTH = 8
+MAX_ALPHA = 255
+MAX_COLOR_VALUE = 255
+
 
 def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
     """Parse color string to RGBA tuple.
@@ -31,20 +37,21 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
     # Handle hex colors
     if color_str.startswith("#"):
         color_str = color_str[1:]  # Remove #
-        if len(color_str) == 6:
+        if len(color_str) == HEX_RGB_LENGTH:
             # RGB hex
             r = int(color_str[0:2], 16)
             g = int(color_str[2:4], 16)
             b = int(color_str[4:6], 16)
-            return (r, g, b, 255)
-        if len(color_str) == 8:
+            return (r, g, b, MAX_ALPHA)
+        if len(color_str) == HEX_RGBA_LENGTH:
             # RGBA hex
             r = int(color_str[0:2], 16)
             g = int(color_str[2:4], 16)
             b = int(color_str[4:6], 16)
             a = int(color_str[6:8], 16)
             return (r, g, b, a)
-        raise ValueError(f"Invalid hex color format: {color_str}")
+        msg = f"Invalid hex color format: {color_str}"
+        raise ValueError(msg)
 
     # Handle RGB format: rgb(r, g, b)
     rgb_match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", color_str)
@@ -52,7 +59,7 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
         r = int(rgb_match.group(1))
         g = int(rgb_match.group(2))
         b = int(rgb_match.group(3))
-        return (r, g, b, 255)
+        return (r, g, b, MAX_ALPHA)
 
     # Handle RGBA format: rgba(r, g, b, a)
     rgba_match = re.match(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)", color_str)
@@ -62,7 +69,7 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
         b = int(rgba_match.group(3))
         a = float(rgba_match.group(4))
         # Convert alpha from 0-1 to 0-255
-        a = int(a * 255)
+        a = int(a * MAX_ALPHA)
         return (r, g, b, a)
 
     # Handle HSL format: hsl(h, s%, l%)
@@ -70,51 +77,52 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
     if hsl_match:
         h = int(hsl_match.group(1)) / 360.0  # Convert to 0-1
         s = int(hsl_match.group(2)) / 100.0  # Convert to 0-1
-        l = int(hsl_match.group(3)) / 100.0  # Convert to 0-1
-        r, g, b = colorsys.hls_to_rgb(h, l, s)
-        return (int(r * 255), int(g * 255), int(b * 255), 255)
+        lightness = int(hsl_match.group(3)) / 100.0  # Convert to 0-1
+        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
+        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), MAX_ALPHA)
 
     # Handle HSLA format: hsla(h, s%, l%, a)
     hsla_match = re.match(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)", color_str)
     if hsla_match:
         h = int(hsla_match.group(1)) / 360.0  # Convert to 0-1
         s = int(hsla_match.group(2)) / 100.0  # Convert to 0-1
-        l = int(hsla_match.group(3)) / 100.0  # Convert to 0-1
+        lightness = int(hsla_match.group(3)) / 100.0  # Convert to 0-1
         a = float(hsla_match.group(4))  # Already 0-1
-        r, g, b = colorsys.hls_to_rgb(h, l, s)
-        return (int(r * 255), int(g * 255), int(b * 255), int(a * 255))
+        r, g, b = colorsys.hls_to_rgb(h, lightness, s)
+        return (int(r * MAX_COLOR_VALUE), int(g * MAX_COLOR_VALUE), int(b * MAX_COLOR_VALUE), int(a * MAX_ALPHA))
 
     # Handle named colors
     named_colors = {
         "transparent": (0, 0, 0, 0),
-        "black": (0, 0, 0, 255),
-        "white": (255, 255, 255, 255),
-        "red": (255, 0, 0, 255),
-        "green": (0, 128, 0, 255),
-        "blue": (0, 0, 255, 255),
-        "yellow": (255, 255, 0, 255),
-        "cyan": (0, 255, 255, 255),
-        "magenta": (255, 0, 255, 255),
-        "gray": (128, 128, 128, 255),
-        "grey": (128, 128, 128, 255),
-        "orange": (255, 165, 0, 255),
-        "purple": (128, 0, 128, 255),
-        "pink": (255, 192, 203, 255),
-        "brown": (165, 42, 42, 255),
-        "lime": (0, 255, 0, 255),
-        "navy": (0, 0, 128, 255),
-        "teal": (0, 128, 128, 255),
-        "olive": (128, 128, 0, 255),
-        "maroon": (128, 0, 0, 255),
-        "silver": (192, 192, 192, 255),
-        "gold": (255, 215, 0, 255),
+        "black": (0, 0, 0, MAX_ALPHA),
+        "white": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+        "red": (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA),
+        "green": (0, 128, 0, MAX_ALPHA),
+        "blue": (0, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+        "yellow": (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+        "cyan": (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA),
+        "magenta": (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA),
+        "gray": (128, 128, 128, MAX_ALPHA),
+        "grey": (128, 128, 128, MAX_ALPHA),
+        "orange": (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA),
+        "purple": (128, 0, 128, MAX_ALPHA),
+        "pink": (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA),
+        "brown": (165, 42, 42, MAX_ALPHA),
+        "lime": (0, MAX_COLOR_VALUE, 0, MAX_ALPHA),
+        "navy": (0, 0, 128, MAX_ALPHA),
+        "teal": (0, 128, 128, MAX_ALPHA),
+        "olive": (128, 128, 0, MAX_ALPHA),
+        "maroon": (128, 0, 0, MAX_ALPHA),
+        "silver": (192, 192, 192, MAX_ALPHA),
+        "gold": (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA),
     }
 
     if color_str in named_colors:
         return named_colors[color_str]
 
     # If we get here, the color format is not supported
-    raise ValueError(f"Unsupported color format: {color_str}")
+    msg = f"Unsupported color format: {color_str}"
+    raise ValueError(msg)
 
 
 def rgba_to_hex(rgba: tuple[int, int, int, int]) -> str:
@@ -166,7 +174,7 @@ def rgba_to_rgba_string(rgba: tuple[int, int, int, int]) -> str:
         RGBA string with alpha 0-1 (e.g., "rgba(255, 0, 0, 1.0)")
     """
     r, g, b, a = rgba
-    alpha = a / 255.0
+    alpha = a / MAX_ALPHA
     return f"rgba({r}, {g}, {b}, {alpha:.2f})"
 
 
@@ -181,16 +189,16 @@ def rgba_to_hsl(rgba: tuple[int, int, int, int]) -> tuple[int, int, int]:
     """
     r, g, b, _ = rgba
     # Normalize to 0-1
-    r_norm = r / 255.0
-    g_norm = g / 255.0
-    b_norm = b / 255.0
+    r_norm = r / MAX_COLOR_VALUE
+    g_norm = g / MAX_COLOR_VALUE
+    b_norm = b / MAX_COLOR_VALUE
 
-    h, l, s = colorsys.rgb_to_hls(r_norm, g_norm, b_norm)
+    h, lightness, s = colorsys.rgb_to_hls(r_norm, g_norm, b_norm)
 
     # Convert to degrees and percentages
     h_deg = int(h * 360)
     s_percent = int(s * 100)
-    l_percent = int(l * 100)
+    l_percent = int(lightness * 100)
 
     return (h_deg, s_percent, l_percent)
 
@@ -204,8 +212,8 @@ def rgba_to_hsl_string(rgba: tuple[int, int, int, int]) -> str:
     Returns:
         HSL string (e.g., "hsl(0, 100%, 50%)")
     """
-    h, s, l = rgba_to_hsl(rgba)
-    return f"hsl({h}, {s}%, {l}%)"
+    h, s, lightness = rgba_to_hsl(rgba)
+    return f"hsl({h}, {s}%, {lightness}%)"
 
 
 def rgba_to_hsla_string(rgba: tuple[int, int, int, int]) -> str:
@@ -217,10 +225,10 @@ def rgba_to_hsla_string(rgba: tuple[int, int, int, int]) -> str:
     Returns:
         HSLA string with alpha 0-1 (e.g., "hsla(0, 100%, 50%, 1.0)")
     """
-    h, s, l = rgba_to_hsl(rgba)
+    h, s, lightness = rgba_to_hsl(rgba)
     _, _, _, a = rgba
-    alpha = a / 255.0
-    return f"hsla({h}, {s}%, {l}%, {alpha:.2f})"
+    alpha = a / MAX_ALPHA
+    return f"hsla({h}, {s}%, {lightness}%, {alpha:.2f})"
 
 
 def rgba_to_named_color(rgba: tuple[int, int, int, int]) -> str | None:
@@ -234,32 +242,32 @@ def rgba_to_named_color(rgba: tuple[int, int, int, int]) -> str | None:
     """
     named_colors = {
         (0, 0, 0, 0): "transparent",
-        (0, 0, 0, 255): "black",
-        (255, 255, 255, 255): "white",
-        (255, 0, 0, 255): "red",
-        (0, 128, 0, 255): "green",
-        (0, 0, 255, 255): "blue",
-        (255, 255, 0, 255): "yellow",
-        (0, 255, 255, 255): "cyan",
-        (255, 0, 255, 255): "magenta",
-        (128, 128, 128, 255): "gray",
-        (255, 165, 0, 255): "orange",
-        (128, 0, 128, 255): "purple",
-        (255, 192, 203, 255): "pink",
-        (165, 42, 42, 255): "brown",
-        (0, 255, 0, 255): "lime",
-        (0, 0, 128, 255): "navy",
-        (0, 128, 128, 255): "teal",
-        (128, 128, 0, 255): "olive",
-        (128, 0, 0, 255): "maroon",
-        (192, 192, 192, 255): "silver",
-        (255, 215, 0, 255): "gold",
+        (0, 0, 0, MAX_ALPHA): "black",
+        (MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA): "white",
+        (MAX_COLOR_VALUE, 0, 0, MAX_ALPHA): "red",
+        (0, 128, 0, MAX_ALPHA): "green",
+        (0, 0, MAX_COLOR_VALUE, MAX_ALPHA): "blue",
+        (MAX_COLOR_VALUE, MAX_COLOR_VALUE, 0, MAX_ALPHA): "yellow",
+        (0, MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_ALPHA): "cyan",
+        (MAX_COLOR_VALUE, 0, MAX_COLOR_VALUE, MAX_ALPHA): "magenta",
+        (128, 128, 128, MAX_ALPHA): "gray",
+        (MAX_COLOR_VALUE, 165, 0, MAX_ALPHA): "orange",
+        (128, 0, 128, MAX_ALPHA): "purple",
+        (MAX_COLOR_VALUE, 192, 203, MAX_ALPHA): "pink",
+        (165, 42, 42, MAX_ALPHA): "brown",
+        (0, MAX_COLOR_VALUE, 0, MAX_ALPHA): "lime",
+        (0, 0, 128, MAX_ALPHA): "navy",
+        (0, 128, 128, MAX_ALPHA): "teal",
+        (128, 128, 0, MAX_ALPHA): "olive",
+        (128, 0, 0, MAX_ALPHA): "maroon",
+        (192, 192, 192, MAX_ALPHA): "silver",
+        (MAX_COLOR_VALUE, 215, 0, MAX_ALPHA): "gold",
     }
 
     return named_colors.get(rgba)
 
 
-def convert_color_format(color_str: str, target_format: str) -> str:
+def convert_color_format(color_str: str, target_format: str) -> str:  # noqa: PLR0911
     """Convert color from one format to another.
 
     Args:
@@ -290,7 +298,8 @@ def convert_color_format(color_str: str, target_format: str) -> str:
             return named
         # Fallback to hex if no named color matches
         return rgba_to_hex(rgba)
-    raise ValueError(f"Unsupported target format: {target_format}")
+    msg = f"Unsupported target format: {target_format}"
+    raise ValueError(msg)
 
 
 def is_valid_color(color_str: str) -> bool:
@@ -304,9 +313,10 @@ def is_valid_color(color_str: str) -> bool:
     """
     try:
         parse_color_to_rgba(color_str)
-        return True
     except ValueError:
         return False
+    else:
+        return True
 
 
 def get_color_info(color_str: str) -> dict[str, Any]:
@@ -325,7 +335,7 @@ def get_color_info(color_str: str) -> dict[str, Any]:
         "rgba": rgba,
         "rgb": (r, g, b),
         "alpha": a,
-        "alpha_percent": round((a / 255.0) * 100, 1),
+        "alpha_percent": round((a / MAX_ALPHA) * 100, 1),
         "hex": rgba_to_hex(rgba),
         "rgb_hex": rgba_to_rgb_hex(rgba),
         "rgb_string": rgba_to_rgb_string(rgba),
@@ -335,5 +345,5 @@ def get_color_info(color_str: str) -> dict[str, Any]:
         "hsla_string": rgba_to_hsla_string(rgba),
         "named": rgba_to_named_color(rgba),
         "is_transparent": a == 0,
-        "is_opaque": a == 255,
+        "is_opaque": a == MAX_ALPHA,
     }
