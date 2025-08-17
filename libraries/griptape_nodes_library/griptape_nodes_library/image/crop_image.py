@@ -173,10 +173,10 @@ class CropImage(ControlNode):
         img_width, img_height = original_width, original_height
 
         # Calculate crop coordinates relative to original image
-        crop_left = left or 0
-        crop_top = top or 0
-        crop_width = width or img_width
-        crop_height = height or img_height
+        crop_left = left
+        crop_top = top
+        crop_width = width if width > 0 else img_width
+        crop_height = height if height > 0 else img_height
 
         # Ensure crop coordinates are within image bounds
         crop_left = max(0, min(crop_left, img_width))
