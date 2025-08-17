@@ -1,4 +1,5 @@
 import io
+from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
 
@@ -17,6 +18,32 @@ from griptape_nodes_library.utils.image_utils import (
 )
 
 NO_ZOOM = 100.0
+
+
+@dataclass
+class CropArea:
+    """Represents a crop area with coordinates and dimensions."""
+
+    left: int
+    top: int
+    right: int
+    bottom: int
+    center_x: float
+    center_y: float
+
+    @property
+    def width(self) -> int:
+        """Get the width of the crop area."""
+        return self.right - self.left
+
+    @property
+    def height(self) -> int:
+        """Get the height of the crop area."""
+        return self.bottom - self.top
+
+    def to_tuple(self) -> tuple[int, int, int, int]:
+        """Convert to tuple format for PIL operations."""
+        return (self.left, self.top, self.right, self.bottom)
 
 
 class CropImage(ControlNode):
@@ -160,9 +187,9 @@ class CropImage(ControlNode):
         crop_center_y = (crop_top + crop_bottom) / 2
 
         # Step 2: Apply zoom by scaling the crop area
-        crop_left, crop_top, crop_right, crop_bottom = self._apply_zoom_to_crop_area(
-            zoom, crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y, img_width, img_height
-        )
+        crop_area = CropArea(crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y)
+        crop_area = self._apply_zoom_to_crop_area(crop_area, zoom, img_width, img_height)
+        crop_left, crop_top, crop_right, crop_bottom = crop_area.to_tuple()
 
         # Step 3: Apply rotation around the center of the crop area
         img = self._apply_rotation_to_image(img, rotate, crop_center_x, crop_center_y, background_color)
@@ -222,46 +249,45 @@ class CropImage(ControlNode):
 
         return filename
 
-    def _apply_zoom_to_crop_area(  # noqa: PLR0913
-        self,
-        zoom: float,
-        crop_left: int,
-        crop_top: int,
-        crop_right: int,
-        crop_bottom: int,
-        crop_center_x: float,
-        crop_center_y: float,
-        img_width: int,
-        img_height: int,
-    ) -> tuple[int, int, int, int]:
+    def _apply_zoom_to_crop_area(self, crop_area: CropArea, zoom: float, img_width: int, img_height: int) -> CropArea:
         """Apply zoom by scaling the crop area size."""
         if zoom == NO_ZOOM:
-            return crop_left, crop_top, crop_right, crop_bottom
+            return crop_area
 
-        # Convert percentage to factor (100% = 1.0, 200% = 2.0, 50% = 0.5)
+        # Scale the crop area based on zoom
+        scaled_area = self._scale_crop_area(crop_area, zoom)
+
+        # Ensure the scaled area stays within image bounds
+        bounded_area = self._clamp_crop_area_to_bounds(scaled_area, img_width, img_height)
+
+        return bounded_area
+
+    def _scale_crop_area(self, crop_area: CropArea, zoom: float) -> CropArea:
+        """Scale the crop area size based on zoom factor."""
         zoom_factor = zoom / NO_ZOOM
 
-        # Calculate the current crop area size
-        crop_area_width = crop_right - crop_left
-        crop_area_height = crop_bottom - crop_top
+        # Calculate new dimensions
+        new_width = int(crop_area.width / zoom_factor)
+        new_height = int(crop_area.height / zoom_factor)
 
-        # Scale the crop area size based on zoom
-        new_crop_area_width = int(crop_area_width / zoom_factor)
-        new_crop_area_height = int(crop_area_height / zoom_factor)
+        # Keep center position, adjust size
+        new_left = int(crop_area.center_x - new_width / 2)
+        new_top = int(crop_area.center_y - new_height / 2)
+        new_right = new_left + new_width
+        new_bottom = new_top + new_height
 
-        # Keep the crop center in the same position, but adjust the crop area size
-        crop_left = int(crop_center_x - new_crop_area_width / 2)
-        crop_top = int(crop_center_y - new_crop_area_height / 2)
-        crop_right = crop_left + new_crop_area_width
-        crop_bottom = crop_top + new_crop_area_height
+        return CropArea(new_left, new_top, new_right, new_bottom, crop_area.center_x, crop_area.center_y)
 
-        # Ensure crop coordinates are within image bounds
-        crop_left = max(0, min(crop_left, img_width))
-        crop_right = max(crop_left, min(crop_right, img_width))
-        crop_top = max(0, min(crop_top, img_height))
-        crop_bottom = max(crop_top, min(crop_bottom, img_height))
+    def _clamp_crop_area_to_bounds(self, crop_area: CropArea, img_width: int, img_height: int) -> CropArea:
+        """Ensure crop area coordinates are within image bounds."""
+        clamped_left = max(0, min(crop_area.left, img_width))
+        clamped_right = max(clamped_left, min(crop_area.right, img_width))
+        clamped_top = max(0, min(crop_area.top, img_height))
+        clamped_bottom = max(clamped_top, min(crop_area.bottom, img_height))
 
-        return crop_left, crop_top, crop_right, crop_bottom
+        return CropArea(
+            clamped_left, clamped_top, clamped_right, clamped_bottom, crop_area.center_x, crop_area.center_y
+        )
 
     def _apply_rotation_to_image(
         self,
