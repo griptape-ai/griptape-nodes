@@ -1,4 +1,5 @@
 import io
+from datetime import UTC
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -9,7 +10,13 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from libraries.griptape_nodes_library.griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
+from libraries.griptape_nodes_library.griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from libraries.griptape_nodes_library.griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
+    load_pil_from_url,
+)
+
+NO_ZOOM = 100.0
 
 
 class CropImage(ControlNode):
@@ -67,7 +74,7 @@ class CropImage(ControlNode):
             Parameter(
                 name="zoom",
                 type="float",
-                default_value=100.0,
+                default_value=NO_ZOOM,
                 tooltip="Zoom percentage (100 = no zoom, 200 = 2x zoom in, 50 = 0.5x zoom out)",
                 traits={Slider(min_val=0.0, max_val=300.0)},
             )
@@ -126,17 +133,11 @@ class CropImage(ControlNode):
         output_format = self.get_parameter_value("output_format")
         output_quality = self.get_parameter_value("output_quality")
 
-        # Load image
-        def load_img(artifact):
-            if isinstance(artifact, dict):
-                artifact = dict_to_image_url_artifact(artifact)
-            if isinstance(artifact, ImageUrlArtifact):
-                return Image.open(io.BytesIO(artifact.to_bytes()))
-            if isinstance(artifact, ImageArtifact):
-                return Image.open(io.BytesIO(artifact.value))
-            raise ValueError("Invalid image artifact")
-
-        img = load_img(input_artifact)
+        # Load image using existing utilities
+        if isinstance(input_artifact, ImageUrlArtifact):
+            img = load_pil_from_url(input_artifact.value)
+        else:  # Must be ImageArtifact due to validation
+            img = Image.open(io.BytesIO(input_artifact.value))
         original_width, original_height = img.size
 
         # Step 1: Calculate the crop area (window) but don't apply it yet
@@ -159,71 +160,15 @@ class CropImage(ControlNode):
         crop_center_y = (crop_top + crop_bottom) / 2
 
         # Step 2: Apply zoom by scaling the crop area
-        if zoom != 100.0:
-            # Convert percentage to factor (100% = 1.0, 200% = 2.0, 50% = 0.5)
-            zoom_factor = zoom / 100.0
-
-            # Calculate the current crop area size
-            crop_area_width = crop_right - crop_left
-            crop_area_height = crop_bottom - crop_top
-
-            # Scale the crop area size based on zoom
-            new_crop_area_width = int(crop_area_width / zoom_factor)
-            new_crop_area_height = int(crop_area_height / zoom_factor)
-
-            # Keep the crop center in the same position, but adjust the crop area size
-            crop_left = int(crop_center_x - new_crop_area_width / 2)
-            crop_top = int(crop_center_y - new_crop_area_height / 2)
-            crop_right = crop_left + new_crop_area_width
-            crop_bottom = crop_top + new_crop_area_height
-
-            # Ensure crop coordinates are within image bounds
-            crop_left = max(0, min(crop_left, img_width))
-            crop_right = max(crop_left, min(crop_right, img_width))
-            crop_top = max(0, min(crop_top, img_height))
-            crop_bottom = max(crop_top, min(crop_bottom, img_height))
+        crop_left, crop_top, crop_right, crop_bottom = self._apply_zoom_to_crop_area(
+            zoom, crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y, img_width, img_height
+        )
 
         # Step 3: Apply rotation around the center of the crop area
-        if rotate != 0.0:
-            # Convert background color to RGBA
-            bg_color = self._parse_color(background_color)
+        img = self._apply_rotation_to_image(img, rotate, crop_center_x, crop_center_y, background_color)
 
-            # Store the crop center before rotation
-            original_crop_center_x = crop_center_x
-            original_crop_center_y = crop_center_y
-
-            # Simply rotate around the crop center point
-            img = img.rotate(rotate, center=(crop_center_x, crop_center_y), expand=False, fillcolor=bg_color)
-            img_width, img_height = img.size
-
-            # After rotation with expand=False, the crop center should still be at the same coordinates
-            # But we need to ensure the crop coordinates are still valid
-            crop_area_width = crop_right - crop_left
-            crop_area_height = crop_bottom - crop_top
-
-            # Keep the same crop center coordinates since we rotated around that point
-            crop_left = int(crop_center_x - crop_area_width / 2)
-            crop_top = int(crop_center_y - crop_area_height / 2)
-            crop_right = crop_left + crop_area_width
-            crop_bottom = crop_top + crop_area_height
-
-        # Step 3: Apply the final crop (the window)
-        # Ensure crop coordinates are within the final image bounds
-        crop_left = max(0, min(crop_left, img_width))
-        crop_right = max(crop_left, min(crop_right, img_width))
-        crop_top = max(0, min(crop_top, img_height))
-        crop_bottom = max(crop_top, min(crop_bottom, img_height))
-
-        # Apply the final crop
-        if crop_right > crop_left and crop_bottom > crop_top:
-            try:
-                img = img.crop((crop_left, crop_top, crop_right, crop_bottom))
-            except Exception as e:
-                msg = f"{self.name}: Final crop failed: {e}. Using image as is."
-                logger.warning(msg)
-        else:
-            msg = f"{self.name}: Invalid final crop coordinates, using image as is"
-            logger.warning(msg)
+        # Step 4: Apply the final crop (the window)
+        img = self._apply_final_crop(img, crop_left, crop_top, crop_right, crop_bottom)
 
         # Save result
         img_byte_arr = io.BytesIO()
@@ -270,46 +215,158 @@ class CropImage(ControlNode):
         # Get current timestamp for cache busting
         from datetime import datetime
 
-        timestamp = int(datetime.now().timestamp())
+        timestamp = int(datetime.now(UTC).timestamp())
 
         # Create filename with meaningful structure and timestamp as query parameter
         filename = f"crop_{workflow_name}_{node_name}.{extension}?t={timestamp}"
 
         return filename
 
+    def _apply_zoom_to_crop_area(  # noqa: PLR0913
+        self,
+        zoom: float,
+        crop_left: int,
+        crop_top: int,
+        crop_right: int,
+        crop_bottom: int,
+        crop_center_x: float,
+        crop_center_y: float,
+        img_width: int,
+        img_height: int,
+    ) -> tuple[int, int, int, int]:
+        """Apply zoom by scaling the crop area size."""
+        if zoom == NO_ZOOM:
+            return crop_left, crop_top, crop_right, crop_bottom
+
+        # Convert percentage to factor (100% = 1.0, 200% = 2.0, 50% = 0.5)
+        zoom_factor = zoom / NO_ZOOM
+
+        # Calculate the current crop area size
+        crop_area_width = crop_right - crop_left
+        crop_area_height = crop_bottom - crop_top
+
+        # Scale the crop area size based on zoom
+        new_crop_area_width = int(crop_area_width / zoom_factor)
+        new_crop_area_height = int(crop_area_height / zoom_factor)
+
+        # Keep the crop center in the same position, but adjust the crop area size
+        crop_left = int(crop_center_x - new_crop_area_width / 2)
+        crop_top = int(crop_center_y - new_crop_area_height / 2)
+        crop_right = crop_left + new_crop_area_width
+        crop_bottom = crop_top + new_crop_area_height
+
+        # Ensure crop coordinates are within image bounds
+        crop_left = max(0, min(crop_left, img_width))
+        crop_right = max(crop_left, min(crop_right, img_width))
+        crop_top = max(0, min(crop_top, img_height))
+        crop_bottom = max(crop_top, min(crop_bottom, img_height))
+
+        return crop_left, crop_top, crop_right, crop_bottom
+
+    def _apply_rotation_to_image(
+        self,
+        img: Image.Image,
+        rotate: float,
+        crop_center_x: float,
+        crop_center_y: float,
+        background_color: str,
+    ) -> Image.Image:
+        """Apply rotation around the crop center point."""
+        if rotate == 0.0:
+            return img
+
+        # Convert background color to RGBA
+        bg_color = self._parse_color(background_color)
+
+        # Simply rotate around the crop center point
+        img = img.rotate(rotate, center=(crop_center_x, crop_center_y), expand=False, fillcolor=bg_color)
+
+        return img
+
+    def _apply_final_crop(
+        self, img: Image.Image, crop_left: int, crop_top: int, crop_right: int, crop_bottom: int
+    ) -> Image.Image:
+        """Apply the final crop to the image."""
+        img_width, img_height = img.size
+
+        # Ensure crop coordinates are within the final image bounds
+        crop_left = max(0, min(crop_left, img_width))
+        crop_right = max(crop_left, min(crop_right, img_width))
+        crop_top = max(0, min(crop_top, img_height))
+        crop_bottom = max(crop_top, min(crop_bottom, img_height))
+
+        # Apply the final crop
+        if crop_right > crop_left and crop_bottom > crop_top:
+            try:
+                img = img.crop((crop_left, crop_top, crop_right, crop_bottom))
+            except Exception as e:
+                msg = f"{self.name}: Final crop failed: {e}. Using image as is."
+                logger.warning(msg)
+        else:
+            msg = f"{self.name}: Invalid final crop coordinates, using image as is"
+            logger.warning(msg)
+
+        return img
+
     def process(self) -> None:
         self._crop()
 
     def _parse_color(self, color_str: str) -> tuple[int, int, int, int]:
         """Parse color string to RGBA tuple."""
-        if color_str.startswith("#"):
-            # Hex color
-            color_str = color_str[1:]
-            if len(color_str) == 6:
-                r = int(color_str[0:2], 16)
-                g = int(color_str[2:4], 16)
-                b = int(color_str[4:6], 16)
-                return (r, g, b, 255)
-            if len(color_str) == 8:
-                r = int(color_str[0:2], 16)
-                g = int(color_str[2:4], 16)
-                b = int(color_str[4:6], 16)
-                a = int(color_str[6:8], 16)
-                return (r, g, b, a)
-        return (0, 0, 0, 0)  # Default transparent
+        try:
+            return parse_color_to_rgba(color_str)
+        except ValueError:
+            # Fallback to transparent if color parsing fails
+            return (0, 0, 0, 0)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         # Do live cropping for crop parameters
-        if parameter.name in ["left", "top", "width", "height", "zoom", "rotate"]:
-            self._crop()
+        if parameter.name in [
+            "left",
+            "top",
+            "width",
+            "height",
+            "zoom",
+            "rotate",
+            "background_color",
+            "output_format",
+            "output_quality",
+        ]:
+            # Only run crop if we have a valid input image
+            input_artifact = self.get_parameter_value("input_image")
+            if input_artifact and not isinstance(input_artifact, dict):
+                try:
+                    self._crop()
+                except Exception as e:
+                    # Log error but don't crash the UI
+                    msg = f"{self.name}: Error during live crop: {e}"
+                    logger.warning(msg)
 
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
 
-        if not self.get_parameter_value("input_image"):
+        input_artifact = self.get_parameter_value("input_image")
+        if not input_artifact:
             msg = f"{self.name} - Input image is required"
+            exceptions.append(Exception(msg))
+            return exceptions
+
+        # Validate input artifact type
+        if isinstance(input_artifact, dict):
+            # Convert dict to ImageUrlArtifact for validation
+            try:
+                input_artifact = dict_to_image_url_artifact(input_artifact)
+            except Exception as e:
+                msg = f"{self.name} - Invalid image dictionary: {e}"
+                exceptions.append(Exception(msg))
+                return exceptions
+
+        if not isinstance(input_artifact, (ImageUrlArtifact, ImageArtifact)):
+            msg = (
+                f"{self.name} - Input must be an ImageUrlArtifact or ImageArtifact, got {type(input_artifact).__name__}"
+            )
             exceptions.append(Exception(msg))
 
         return exceptions
