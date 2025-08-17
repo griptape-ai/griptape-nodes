@@ -10,8 +10,8 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from libraries.griptape_nodes_library.griptape_nodes_library.utils.color_utils import parse_color_to_rgba
-from libraries.griptape_nodes_library.griptape_nodes_library.utils.image_utils import (
+from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
 )
