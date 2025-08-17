@@ -19,7 +19,7 @@ from griptape_nodes_library.utils.image_utils import (
 
 # Constants for magic numbers
 NO_ZOOM = 100.0
-MIN_ZOOM_FACTOR = 0.01
+MIN_ZOOM_FACTOR = 0.1
 
 
 @dataclass
@@ -42,10 +42,6 @@ class CropArea:
     def height(self) -> int:
         """Get the height of the crop area."""
         return self.bottom - self.top
-
-    def to_tuple(self) -> tuple[int, int, int, int]:
-        """Convert to tuple format for PIL operations."""
-        return (self.left, self.top, self.right, self.bottom)
 
 
 class CropImage(ControlNode):
@@ -191,13 +187,12 @@ class CropImage(ControlNode):
         # Step 2: Apply zoom by scaling the crop area
         crop_area = CropArea(crop_left, crop_top, crop_right, crop_bottom, crop_center_x, crop_center_y)
         crop_area = self._apply_zoom_to_crop_area(crop_area, zoom, img_width, img_height)
-        crop_left, crop_top, crop_right, crop_bottom = crop_area.to_tuple()
 
         # Step 3: Apply rotation around the center of the crop area
-        img = self._apply_rotation_to_image(img, rotate, crop_center_x, crop_center_y, background_color)
+        img = self._apply_rotation_to_image(img, rotate, crop_area.center_x, crop_area.center_y, background_color)
 
         # Step 4: Apply the final crop (the window)
-        img = self._apply_final_crop(img, crop_left, crop_top, crop_right, crop_bottom)
+        img = self._apply_final_crop(img, crop_area.left, crop_area.top, crop_area.right, crop_area.bottom)
 
         # Save result
         img_byte_arr = io.BytesIO()
