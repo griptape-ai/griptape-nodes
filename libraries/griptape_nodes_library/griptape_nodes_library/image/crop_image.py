@@ -239,7 +239,6 @@ class CropImage(ControlNode):
         node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
 
         # Get current timestamp for cache busting
-
         timestamp = int(datetime.now(UTC).timestamp())
 
         # Create filename with meaningful structure and timestamp as query parameter

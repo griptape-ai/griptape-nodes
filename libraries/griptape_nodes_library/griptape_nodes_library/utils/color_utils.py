@@ -11,12 +11,14 @@ MAX_ALPHA = 255
 MAX_COLOR_VALUE = 255
 MAX_HUE = 360
 MAX_PERCENT = 100
+MAX_HUE_NORMALIZED = 1.0
+MAX_ALPHA_NORMALIZED = 1.0
 
-# Compiled regex patterns for better performance
-RGB_PATTERN = re.compile(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)")
-RGBA_PATTERN = re.compile(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)")
-HSL_PATTERN = re.compile(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)")
-HSLA_PATTERN = re.compile(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)")
+# Compiled regex patterns for better performance with case-insensitive flags
+RGB_PATTERN = re.compile(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", re.IGNORECASE)
+RGBA_PATTERN = re.compile(r"rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)", re.IGNORECASE)
+HSL_PATTERN = re.compile(r"hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)", re.IGNORECASE)
+HSLA_PATTERN = re.compile(r"hsla\((\d+),\s*(\d+)%,\s*(\d+)%,\s*([\d.]+)\)", re.IGNORECASE)
 
 # Named color mappings to avoid duplication
 NAMED_COLORS = {
@@ -101,8 +103,8 @@ def _parse_rgba_color(color_str: str) -> tuple[int, int, int, int] | None:
             msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
             raise ValueError(msg)
         # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= 1.0):
-            msg = f"Alpha value must be between 0.0 and 1.0: rgba({r}, {g}, {b}, {a})"
+        if not (0.0 <= a <= MAX_ALPHA_NORMALIZED):
+            msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: rgba({r}, {g}, {b}, {a})"
             raise ValueError(msg)
         # Convert alpha from 0-1 to 0-255
         a = int(a * MAX_ALPHA)
@@ -162,8 +164,8 @@ def _parse_hsla_color(color_str: str) -> tuple[int, int, int, int] | None:
             msg = f"Lightness value must be between 0 and {MAX_PERCENT}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
             raise ValueError(msg)
         # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= 1.0):
-            msg = f"Alpha value must be between 0.0 and 1.0: hsla({h_val}, {s_val}%, {l_val}%, {a})"
+        if not (0.0 <= a <= MAX_ALPHA_NORMALIZED):
+            msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
             raise ValueError(msg)
         h = h_val / MAX_HUE  # Convert to 0-1
         s = s_val / MAX_PERCENT  # Convert to 0-1
@@ -198,7 +200,7 @@ def parse_color_to_rgba(color_str: str) -> tuple[int, int, int, int]:
     Raises:
         ValueError: If color format is not supported or invalid
     """
-    # Normalize input
+    # Normalize input (case-insensitive regex patterns handle RGB/HSL formats)
     color_str = color_str.strip().lower()
 
     # Handle hex colors
@@ -303,9 +305,9 @@ def rgba_to_hsl(rgba: tuple[int, int, int, int]) -> tuple[int, int, int]:
     h, lightness, s = colorsys.rgb_to_hls(r_norm, g_norm, b_norm)
 
     # Convert to degrees and percentages
-    h_deg = int(h * 360)
-    s_percent = int(s * 100)
-    l_percent = int(lightness * 100)
+    h_deg = int(h * MAX_HUE)
+    s_percent = int(s * MAX_PERCENT)
+    l_percent = int(lightness * MAX_PERCENT)
 
     return (h_deg, s_percent, l_percent)
 
@@ -420,7 +422,7 @@ def get_color_info(color_str: str) -> dict[str, Any]:
         "rgba": rgba,
         "rgb": (r, g, b),
         "alpha": a,
-        "alpha_percent": round((a / MAX_ALPHA) * 100, 1),
+        "alpha_percent": round((a / MAX_ALPHA) * MAX_PERCENT, 1),
         "hex": rgba_to_hex(rgba),
         "rgb_hex": rgba_to_rgb_hex(rgba),
         "rgb_string": rgba_to_rgb_string(rgba),
