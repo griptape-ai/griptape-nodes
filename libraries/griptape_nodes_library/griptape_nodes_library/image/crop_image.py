@@ -265,10 +265,17 @@ class CropImage(ControlNode):
             save_options["lossless"] = False
 
         # Save result using context manager to ensure proper cleanup
+        img_data = None
         with io.BytesIO() as img_byte_arr:
             img.save(img_byte_arr, format=save_format, **save_options)
             img_byte_arr.seek(0)
-            img_data = img_byte_arr.getvalue()
+            img_data = img_byte_arr.getvalue()  # Returns a copy, data persists after context exit
+
+        # Verify we have valid data before proceeding
+        if img_data is None or len(img_data) == 0:
+            msg = f"{self.name}: Failed to save image data"
+            logger.error(msg)
+            return
 
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(save_format.lower())
