@@ -2298,6 +2298,7 @@ class NodeManager:
         value: Any,
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         unique_parameter_uuid_to_values: dict,
+        parameter: Parameter,
         parameter_name: str,
         node_name: str,
         *,
@@ -2321,8 +2322,10 @@ class NodeManager:
             case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
                 # This value is new for us.
 
-                # Confirm that the author wants this parameter and/or class to be serialized.
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+                # Check if parameter is marked as non-serializable (e.g., ImageDrivers, PromptDrivers, file handles)
+                if not parameter.serializable:
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+                    return None
 
                 # Check if we can serialize it.
                 try:
@@ -2403,12 +2406,13 @@ class NodeManager:
                 value=internal_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=False,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if internal_command is None:
-                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(internal_command)
@@ -2417,12 +2421,13 @@ class NodeManager:
                 value=output_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=True,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if output_command is None:
-                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(output_command)
