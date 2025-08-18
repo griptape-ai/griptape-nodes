@@ -131,6 +131,10 @@ class BaseIterativeStartNode(StartLoopNode):
         # Initialize status message
         self._update_status_message()
 
+    def _get_base_node_type_name(self) -> str:
+        """Get the base node type name (e.g., 'ForLoop' from 'ForLoopStartNode')."""
+        return self.__class__.__name__.replace("StartNode", "")
+
     @abstractmethod
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
@@ -370,7 +374,7 @@ class BaseIterativeStartNode(StartLoopNode):
 
         if not exec_out_connections:
             exec_out_display_name = self._get_exec_out_display_name()
-            node_type = self.__class__.__name__.replace("StartNode", "")
+            node_type = self._get_base_node_type_name()
             errors.append(
                 Exception(
                     f"{self.name}: Missing required connection from '{exec_out_display_name}'. "
@@ -381,7 +385,7 @@ class BaseIterativeStartNode(StartLoopNode):
 
         # Check if loop has outgoing connection to End
         if self.end_node is None:
-            node_type = self.__class__.__name__.replace("StartNode", "")
+            node_type = self._get_base_node_type_name()
             errors.append(
                 Exception(
                     f"{self.name}: Missing required tethering connection. "
@@ -392,8 +396,19 @@ class BaseIterativeStartNode(StartLoopNode):
 
         # Check if all hidden signal connections exist (only if end_node is connected)
         if self.end_node:
-            node_type = self.__class__.__name__.replace("StartNode", "")
-            if self.trigger_next_iteration_signal.name not in self._connected_parameters:
+            node_type = self._get_base_node_type_name()
+
+            # Query actual connections instead of relying on _connected_parameters tracking
+            connections = GriptapeNodes.FlowManager().get_connections()
+
+            # Check trigger_next_iteration_signal connection
+            node_connections = connections.incoming_index.get(self.name)
+            if node_connections is None:
+                trigger_connections = None
+            else:
+                trigger_connections = node_connections.get(self.trigger_next_iteration_signal.name)
+
+            if not trigger_connections:
                 errors.append(
                     Exception(
                         f"{self.name}: Missing hidden signal connection. "
@@ -402,7 +417,13 @@ class BaseIterativeStartNode(StartLoopNode):
                     )
                 )
 
-            if self.break_loop_signal.name not in self._connected_parameters:
+            # Check break_loop_signal connection
+            if node_connections is None:
+                break_connections = None
+            else:
+                break_connections = node_connections.get(self.break_loop_signal.name)
+
+            if not break_connections:
                 errors.append(
                     Exception(
                         f"{self.name}: Missing hidden signal connection. "
@@ -557,6 +578,10 @@ class BaseIterativeEndNode(EndLoopNode):
         self.add_parameter(self.trigger_next_iteration_signal_output)
         self.add_parameter(self.break_loop_signal_output)
 
+    def _get_base_node_type_name(self) -> str:
+        """Get the base node type name (e.g., 'ForLoop' from 'ForLoopEndNode')."""
+        return self.__class__.__name__.replace("EndNode", "")
+
     @abstractmethod
     def _get_compatible_start_classes(self) -> set[type]:
         """Return the set of Start node classes that this End node can connect to."""
@@ -682,7 +707,7 @@ class BaseIterativeEndNode(EndLoopNode):
 
         # Check if from_start has incoming connection from Start
         if self.start_node is None:
-            node_type = self.__class__.__name__.replace("EndNode", "")
+            node_type = self._get_base_node_type_name()
             errors.append(
                 Exception(
                     f"{self.name}: Missing required tethering connection. "
@@ -697,40 +722,46 @@ class BaseIterativeEndNode(EndLoopNode):
             # rather than relying on the _connected_parameters tracking set
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            try:
-                connections = GriptapeNodes.FlowManager().get_connections()
-                # Check if there's an incoming connection to loop_end_condition_met_signal_input
-                incoming_connections = connections.incoming_index.get(self.name, {}).get(
-                    "loop_end_condition_met_signal_input", []
+            connections = GriptapeNodes.FlowManager().get_connections()
+
+            # Check if there's an incoming connection to loop_end_condition_met_signal_input
+            node_connections = connections.incoming_index.get(self.name)
+            if node_connections is None:
+                incoming_connections = None
+            else:
+                incoming_connections = node_connections.get("loop_end_condition_met_signal_input")
+
+            if not incoming_connections:
+                node_type = self._get_base_node_type_name()
+                errors.append(
+                    Exception(
+                        f"{self.name}: Missing hidden signal connection. "
+                        f"REQUIRED ACTION: Connect {node_type} Start 'Loop End Signal' to {node_type} End 'Loop End Signal Input'. "
+                        "This receives the signal when the loop has completed naturally."
+                    )
                 )
 
-                if not incoming_connections:
-                    node_type = self.__class__.__name__.replace("EndNode", "")
-                    errors.append(
-                        Exception(
-                            f"{self.name}: Missing hidden signal connection. "
-                            f"REQUIRED ACTION: Connect {node_type} Start 'Loop End Signal' to {node_type} End 'Loop End Signal Input'. "
-                            "This receives the signal when the loop has completed naturally."
-                        )
-                    )
-            except Exception:
-                # Fallback to the original check if we can't access connections
-                if "loop_end_condition_met_signal_input" not in self._connected_parameters:
-                    node_type = self.__class__.__name__.replace("EndNode", "")
-                    errors.append(
-                        Exception(
-                            f"{self.name}: Missing hidden signal connection. "
-                            f"REQUIRED ACTION: Connect {node_type} Start 'Loop End Signal' to {node_type} End 'Loop End Signal Input'. "
-                            "This receives the signal when the loop has completed naturally."
-                        )
-                    )
-
         # Check if control inputs have at least one connection
+        # Query actual connections instead of relying on _connected_parameters tracking
         control_names = ["add_item", "skip_iteration", "break_loop"]
-        connected_controls = [name for name in control_names if name in self._connected_parameters]
+        connected_controls = []
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        node_connections = connections.incoming_index.get(self.name)
+
+        for control_name in control_names:
+            if node_connections is None:
+                incoming_connections = None
+            else:
+                incoming_connections = node_connections.get(control_name)
+
+            if incoming_connections:
+                connected_controls.append(control_name)
 
         if not connected_controls:
-            node_type = self.__class__.__name__.replace("EndNode", "")
+            node_type = self._get_base_node_type_name()
             errors.append(
                 Exception(
                     f"{self.name}: No control flow connections found. "
