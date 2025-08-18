@@ -21,6 +21,7 @@ from griptape_nodes_library.utils.image_utils import (
 NO_ZOOM = 100.0
 MAX_ZOOM = 300.0
 MIN_ZOOM_FACTOR = 0.1
+MAX_ZOOM_FACTOR = 10.0  # Maximum zoom factor to prevent memory issues
 MAX_IMAGE_DIMENSION = 32767  # Maximum safe dimension to prevent overflow
 MAX_WIDTH = 4000
 MAX_HEIGHT = 4000
@@ -243,26 +244,35 @@ class CropImage(ControlNode):
 
     def _save_cropped_image(self, img: Image.Image, params: dict) -> None:
         """Save the cropped image."""
-        # Save result
-        img_byte_arr = io.BytesIO()
-
-        # Determine save format and options
+        # Validate and prepare image for saving
         save_format = params["output_format"].upper()
-        save_options = {}
+        output_quality = max(0.0, min(1.0, params["output_quality"]))  # Clamp to 0.0-1.0
 
+        # Convert RGBA to RGB for JPEG format (JPEG doesn't support transparency)
+        if save_format == "JPEG" and img.mode == "RGBA":
+            # Create black background for transparent areas
+            background = Image.new("RGB", img.size, (0, 0, 0))
+            background.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
+            img = background
+
+        # Determine save options
+        save_options = {}
         if save_format == "JPEG":
-            save_options["quality"] = int(params["output_quality"] * 100)
+            save_options["quality"] = int(output_quality * 100)
             save_options["optimize"] = True
         elif save_format == "WEBP":
-            save_options["quality"] = int(params["output_quality"] * 100)
+            save_options["quality"] = int(output_quality * 100)
             save_options["lossless"] = False
 
-        img.save(img_byte_arr, format=save_format, **save_options)
-        img_byte_arr = img_byte_arr.getvalue()
+        # Save result using context manager to ensure proper cleanup
+        with io.BytesIO() as img_byte_arr:
+            img.save(img_byte_arr, format=save_format, **save_options)
+            img_byte_arr.seek(0)
+            img_data = img_byte_arr.getvalue()
 
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(save_format.lower())
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_byte_arr, filename)
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename)
         self.parameter_output_values["output"] = ImageUrlArtifact(value=static_url)
 
     def _generate_filename(self, extension: str) -> str:
@@ -309,7 +319,7 @@ class CropImage(ControlNode):
         zoom_factor = zoom / NO_ZOOM
 
         # Clamp zoom_factor to prevent division by zero and extreme scaling
-        zoom_factor = max(MIN_ZOOM_FACTOR, zoom_factor)
+        zoom_factor = max(MIN_ZOOM_FACTOR, min(MAX_ZOOM_FACTOR, zoom_factor))
 
         # Calculate new dimensions with overflow protection
         new_width = int(crop_area.width / zoom_factor)
