@@ -15,6 +15,7 @@ from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
+    validate_pil_format,
 )
 
 # Constants for magic numbers
@@ -246,6 +247,15 @@ class CropImage(ControlNode):
         """Save the cropped image."""
         # Validate and prepare image for saving
         save_format = params["output_format"].upper()
+
+        # Validate that the save format is supported by PIL
+        try:
+            validate_pil_format(save_format, "output_format")
+        except ValueError as e:
+            msg = f"{self.name}: {e}"
+            logger.error(msg)
+            return
+
         output_quality = max(0.0, min(1.0, params["output_quality"]))  # Clamp to 0.0-1.0
 
         # Convert RGBA to RGB for JPEG format (JPEG doesn't support transparency)

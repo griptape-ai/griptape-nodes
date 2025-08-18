@@ -47,6 +47,44 @@ NAMED_COLORS = {
 }
 
 
+def _validate_hsl_values(h_val: int, s_val: int, l_val: int, color_str: str) -> None:
+    """Validate HSL values are within correct ranges.
+
+    Args:
+        h_val: Hue value (0-360)
+        s_val: Saturation value (0-100)
+        l_val: Lightness value (0-100)
+        color_str: Original color string for error messages
+
+    Raises:
+        ValueError: If any HSL value is out of range
+    """
+    if not (0 <= h_val <= MAX_HUE):
+        msg = f"Hue value must be between 0 and {MAX_HUE}: {color_str}"
+        raise ValueError(msg)
+    if not (0 <= s_val <= MAX_PERCENT):
+        msg = f"Saturation value must be between 0 and {MAX_PERCENT}: {color_str}"
+        raise ValueError(msg)
+    if not (0 <= l_val <= MAX_PERCENT):
+        msg = f"Lightness value must be between 0 and {MAX_PERCENT}: {color_str}"
+        raise ValueError(msg)
+
+
+def _validate_alpha_value(alpha: float, color_str: str) -> None:
+    """Validate alpha value is within correct range.
+
+    Args:
+        alpha: Alpha value (0.0-1.0)
+        color_str: Original color string for error messages
+
+    Raises:
+        ValueError: If alpha value is out of range
+    """
+    if not (0.0 <= alpha <= MAX_ALPHA_NORMALIZED):
+        msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: {color_str}"
+        raise ValueError(msg)
+
+
 def _parse_hex_color(color_str: str) -> tuple[int, int, int, int]:
     """Parse hex color string to RGBA tuple."""
     color_str = color_str[1:]  # Remove #
@@ -103,9 +141,7 @@ def _parse_rgba_color(color_str: str) -> tuple[int, int, int, int] | None:
             msg = f"RGB values must be between 0 and {MAX_COLOR_VALUE}: rgba({r}, {g}, {b}, {a})"
             raise ValueError(msg)
         # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= MAX_ALPHA_NORMALIZED):
-            msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: rgba({r}, {g}, {b}, {a})"
-            raise ValueError(msg)
+        _validate_alpha_value(a, color_str)
         # Convert alpha from 0-1 to 0-255
         a = int(a * MAX_ALPHA)
         return (r, g, b, a)
@@ -124,15 +160,7 @@ def _parse_hsl_color(color_str: str) -> tuple[int, int, int, int] | None:
             msg = f"Invalid numeric values in HSL format: {color_str}"
             raise ValueError(msg) from e
         # Validate HSL values are in correct ranges
-        if not (0 <= h_val <= MAX_HUE):
-            msg = f"Hue value must be between 0 and {MAX_HUE}: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
-        if not (0 <= s_val <= MAX_PERCENT):
-            msg = f"Saturation value must be between 0 and {MAX_PERCENT}: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
-        if not (0 <= l_val <= MAX_PERCENT):
-            msg = f"Lightness value must be between 0 and {MAX_PERCENT}: hsl({h_val}, {s_val}%, {l_val}%)"
-            raise ValueError(msg)
+        _validate_hsl_values(h_val, s_val, l_val, color_str)
         h = h_val / MAX_HUE  # Convert to 0-1
         s = s_val / MAX_PERCENT  # Convert to 0-1
         lightness = l_val / MAX_PERCENT  # Convert to 0-1
@@ -154,19 +182,9 @@ def _parse_hsla_color(color_str: str) -> tuple[int, int, int, int] | None:
             msg = f"Invalid numeric values in HSLA format: {color_str}"
             raise ValueError(msg) from e
         # Validate HSL values are in correct ranges
-        if not (0 <= h_val <= MAX_HUE):
-            msg = f"Hue value must be between 0 and {MAX_HUE}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        if not (0 <= s_val <= MAX_PERCENT):
-            msg = f"Saturation value must be between 0 and {MAX_PERCENT}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
-        if not (0 <= l_val <= MAX_PERCENT):
-            msg = f"Lightness value must be between 0 and {MAX_PERCENT}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
+        _validate_hsl_values(h_val, s_val, l_val, color_str)
         # Validate alpha value is in 0-1 range
-        if not (0.0 <= a <= MAX_ALPHA_NORMALIZED):
-            msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: hsla({h_val}, {s_val}%, {l_val}%, {a})"
-            raise ValueError(msg)
+        _validate_alpha_value(a, color_str)
         h = h_val / MAX_HUE  # Convert to 0-1
         s = s_val / MAX_PERCENT  # Convert to 0-1
         lightness = l_val / MAX_PERCENT  # Convert to 0-1
