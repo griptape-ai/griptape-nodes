@@ -288,6 +288,7 @@ class ConfigManager:
         should_load_env_var_if_detected: bool = True,
         config_source: Literal["user_config", "workspace_config", "default_config", "merged_config"] = "merged_config",
         default: Any | None = None,
+        should_warn_on_not_found: bool = True,
     ) -> Any:
         """Get a value from the configuration.
 
@@ -299,6 +300,7 @@ class ConfigManager:
             should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
             config_source: The source of the configuration to use. Can be 'user_config', 'workspace_config', 'default_config', or 'merged_config'.
             default: The default value to return if the key is not found in the configuration.
+            should_warn_on_not_found: If True, log a warning when the key is not found (default: True).
 
         Returns:
             The value associated with the key, or the entire category if key points to a dict.
@@ -313,8 +315,9 @@ class ConfigManager:
         value = get_dot_value(config, key, default)
 
         if value is None:
-            msg = f"Config key '{key}' not found in config file."
-            logger.warning(msg)
+            if should_warn_on_not_found:
+                msg = f"Config key '{key}' not found in config file."
+                logger.warning(msg)
             return None
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
@@ -358,9 +361,16 @@ class ConfigManager:
             result_details = "Successfully returned the entire config dictionary."
             return GetConfigCategoryResultSuccess(contents=contents, result_details=result_details)
 
-        # See if we got something valid.
-        find_results = self.get_config_value(request.category)
+        # See if we got something valid (don't warn if not found and should_error_on_not_found is False).
+        find_results = self.get_config_value(
+            request.category, should_warn_on_not_found=request.should_error_on_not_found
+        )
         if find_results is None:
+            if not request.should_error_on_not_found:
+                # Return empty dict when category doesn't exist and should_error_on_not_found is False
+                result_details = f"Config category '{request.category}' not found, returning empty dictionary."
+                return GetConfigCategoryResultSuccess(contents={}, result_details=result_details)
+
             result_details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
             return GetConfigCategoryResultFailure(result_details=result_details)
 

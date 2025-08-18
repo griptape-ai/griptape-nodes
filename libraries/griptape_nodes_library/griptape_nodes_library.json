@@ -1544,6 +1544,84 @@
       }
     }
   ],
+  "settings": [
+    {
+      "description": "Griptape Nodes Library Settings",
+      "category": "nodes.Griptape",
+      "contents": {
+        "GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"
+      }
+    },
+    {
+      "description": "OpenAI Settings",
+      "category": "nodes.OpenAI",
+      "contents": {
+        "OPENAI_API_KEY": "$OPENAI_API_KEY"
+      }
+    },
+    {
+      "description": "Amazon Settings",
+      "category": "nodes.Amazon",
+      "contents": {
+        "AWS_ACCESS_KEY_ID": "$AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY": "$AWS_SECRET_ACCESS_KEY",
+        "AWS_DEFAULT_REGION": "$AWS_DEFAULT_REGION"
+      }
+    },
+    {
+      "description": "Anthropic Settings",
+      "category": "nodes.Anthropic",
+      "contents": {
+        "ANTHROPIC_API_KEY": "$ANTHROPIC_API_KEY"
+      }
+    },
+    {
+      "description": "Microsoft Azure Settings",
+      "category": "nodes.Microsoft Azure",
+      "contents": {
+        "AZURE_OPENAI_ENDPOINT": "$AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_DALL_E_3_ENDPOINT": "$AZURE_OPENAI_DALL_E_3_ENDPOINT",
+        "AZURE_OPENAI_DALL_E_3_API_KEY": "$AZURE_OPENAI_DALL_E_3_API_KEY",
+        "AZURE_OPENAI_API_KEY": "$AZURE_OPENAI_API_KEY"
+      }
+    },
+    {
+      "description": "Cohere Settings",
+      "category": "nodes.Cohere",
+      "contents": {
+        "COHERE_API_KEY": "$COHERE_API_KEY"
+      }
+    },
+    {
+      "description": "Exa Settings",
+      "category": "nodes.Exa",
+      "contents": {
+        "EXA_API_KEY": "$EXA_API_KEY"
+      }
+    },
+    {
+      "description": "Grok Settings",
+      "category": "nodes.Grok",
+      "contents": {
+        "GROK_API_KEY": "$GROK_API_KEY"
+      }
+    },
+    {
+      "description": "Groq Settings",
+      "category": "nodes.Groq",
+      "contents": {
+        "GROQ_API_KEY": "$GROQ_API_KEY"
+      }
+    },
+    {
+      "description": "Google Settings",
+      "category": "nodes.Google",
+      "contents": {
+        "GOOGLE_API_KEY": "$GOOGLE_API_KEY",
+        "GOOGLE_API_SEARCH_ID": "$GOOGLE_API_SEARCH_ID"
+      }
+    }
+  ],
   "workflows": [
     "workflows/templates/prompt_an_image.py",
     "workflows/templates/coordinating_agents.py",

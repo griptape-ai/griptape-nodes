@@ -86,11 +86,13 @@ class GetConfigCategoryRequest(RequestPayload):
 
     Args:
         category: Name of the configuration category (None for all categories)
+        should_error_on_not_found: Whether to error if the category is not found (default: True)
 
     Results: GetConfigCategoryResultSuccess (with contents dict) | GetConfigCategoryResultFailure (category not found)
     """
 
     category: str | None = None
+    should_error_on_not_found: bool = True
 
 
 @dataclass
