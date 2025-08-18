@@ -221,6 +221,11 @@ class ExecuteNodeState(State):
             upstream_connection = connections.get_connected_node(current_node, parameter)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
+                from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
+
+                # Add the current node to the DAG
+                # upstream_node_reference = DagOrchestrator.node_to_reference[upstream_node.name]
+                DagOrchestrator.network.add_edge(upstream_node.name, current_node.name)
 
                 # If the upstream node is resolved, collect its output value
                 if upstream_parameter.name in upstream_node.parameter_output_values:
@@ -242,8 +247,11 @@ class ExecuteNodeState(State):
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
+
         # Add the current node to the DAG
-        DagOrchestrator.DagNode(node_reference=current_node)
+        node_reference = DagOrchestrator.DagNode(node_reference=current_node)
+        DagOrchestrator.node_to_reference[current_node.name] = node_reference
+        DagOrchestrator.network.add_node(node_for_adding=current_node.name)
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:

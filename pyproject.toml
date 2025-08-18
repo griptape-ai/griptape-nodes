@@ -25,6 +25,7 @@ dependencies = [
   "pillow>=11.3.0",
   "watchfiles>=1.1.0",
   "networkx>=3.5",
+  "matplotlib>=3.10.5",
 ]
 
 [project.optional-dependencies]
