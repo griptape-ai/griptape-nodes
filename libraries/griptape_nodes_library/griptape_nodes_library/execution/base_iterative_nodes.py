@@ -716,12 +716,13 @@ class BaseIterativeEndNode(EndLoopNode):
                 )
             )
 
+        # Oh those lazy imports.
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Check if all hidden signal connections exist (only if start_node is connected)
         if self.start_node:
             # Check if the connection actually exists by looking at the parameter's connections
             # rather than relying on the _connected_parameters tracking set
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             connections = GriptapeNodes.FlowManager().get_connections()
 
             # Check if there's an incoming connection to loop_end_condition_met_signal_input
@@ -745,8 +746,6 @@ class BaseIterativeEndNode(EndLoopNode):
         # Query actual connections instead of relying on _connected_parameters tracking
         control_names = ["add_item", "skip_iteration", "break_loop"]
         connected_controls = []
-
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         connections = GriptapeNodes.FlowManager().get_connections()
         node_connections = connections.incoming_index.get(self.name)
