@@ -70,18 +70,47 @@ def _validate_hsl_values(h_val: int, s_val: int, l_val: int, color_str: str) -> 
         raise ValueError(msg)
 
 
-def _validate_alpha_value(alpha: float, color_str: str) -> None:
+def _validate_alpha_value(alpha: float, color_str: str, *, allow_255_range: bool = False) -> None:
     """Validate alpha value is within correct range.
 
     Args:
-        alpha: Alpha value (0.0-1.0)
+        alpha: Alpha value (0.0-1.0 or 0-255 if allow_255_range=True)
+        color_str: Original color string for error messages
+        allow_255_range: If True, allows 0-255 range instead of 0.0-1.0
+
+    Raises:
+        ValueError: If alpha value is out of range
+    """
+    if allow_255_range:
+        if not (0 <= alpha <= MAX_ALPHA):
+            msg = f"Alpha value must be between 0 and {MAX_ALPHA}: {color_str}"
+            raise ValueError(msg)
+    elif not (0.0 <= alpha <= MAX_ALPHA_NORMALIZED):
+        msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: {color_str}"
+        raise ValueError(msg)
+
+
+def validate_alpha_value_auto(alpha: float, color_str: str) -> None:
+    """Automatically detect and validate alpha value range.
+
+    Detects whether alpha is in 0.0-1.0 or 0-255 range based on the value.
+    Values <= 1.0 are treated as 0.0-1.0 range, values > 1.0 are treated as 0-255 range.
+
+    Args:
+        alpha: Alpha value (automatically detected range)
         color_str: Original color string for error messages
 
     Raises:
         ValueError: If alpha value is out of range
     """
-    if not (0.0 <= alpha <= MAX_ALPHA_NORMALIZED):
-        msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: {color_str}"
+    if alpha <= 1.0:
+        # Treat as 0.0-1.0 range
+        if not (0.0 <= alpha <= MAX_ALPHA_NORMALIZED):
+            msg = f"Alpha value must be between 0.0 and {MAX_ALPHA_NORMALIZED}: {color_str}"
+            raise ValueError(msg)
+    # Treat as 0-255 range
+    elif not (0 <= alpha <= MAX_ALPHA):
+        msg = f"Alpha value must be between 0 and {MAX_ALPHA}: {color_str}"
         raise ValueError(msg)
 
 

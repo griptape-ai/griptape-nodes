@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -20,7 +20,7 @@ from griptape_nodes_library.utils.image_utils import (
 
 # Constants for magic numbers
 NO_ZOOM = 100.0
-MAX_ZOOM = 300.0
+MAX_ZOOM = 500.0
 MIN_ZOOM_FACTOR = 0.1
 MAX_ZOOM_FACTOR = 10.0  # Maximum zoom factor to prevent memory issues
 MAX_IMAGE_DIMENSION = 32767  # Maximum safe dimension to prevent overflow
@@ -53,13 +53,14 @@ class CropArea:
 class CropImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.category = "Image"
-        self.description = "Crop an image to a specific size."
+
+        self.MAX_WIDTH = MAX_WIDTH
+        self.MAX_HEIGHT = MAX_HEIGHT
 
         self.add_parameter(
             Parameter(
                 name="input_image",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["ImageUrlArtifact"],
                 type="ImageUrlArtifact",
                 default_value=None,
                 tooltip="Input image to crop",
@@ -73,7 +74,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Left edge of crop area in pixels",
-                traits={Slider(min_val=0, max_val=MAX_WIDTH)},
+                traits={Slider(min_val=0, max_val=self.MAX_WIDTH)},
             )
 
             Parameter(
@@ -81,7 +82,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Top edge of crop area in pixels",
-                traits={Slider(min_val=0, max_val=MAX_HEIGHT)},
+                traits={Slider(min_val=0, max_val=self.MAX_HEIGHT)},
             )
 
             Parameter(
@@ -89,7 +90,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Width of crop area in pixels (0 = use full width)",
-                traits={Slider(min_val=0, max_val=MAX_WIDTH)},
+                traits={Slider(min_val=0, max_val=self.MAX_WIDTH)},
             )
 
             Parameter(
@@ -97,7 +98,7 @@ class CropImage(ControlNode):
                 type="int",
                 default_value=0,
                 tooltip="Height of crop area in pixels (0 = use full height)",
-                traits={Slider(min_val=0, max_val=MAX_HEIGHT)},
+                traits={Slider(min_val=0, max_val=self.MAX_HEIGHT)},
             )
         self.add_node_element(crop_coordinates)
 
@@ -157,8 +158,11 @@ class CropImage(ControlNode):
         params = self._get_crop_parameters()
 
         # Load image
-        img = self._load_image(params["input_artifact"])
-        if img is None:
+        try:
+            img = load_pil_from_url(params["input_artifact"].value)
+        except Exception as e:
+            msg = f"{self.name}: Error loading image: {e}"
+            logger.error(msg)
             return
 
         # Calculate and apply crop area
@@ -182,18 +186,6 @@ class CropImage(ControlNode):
             "output_format": self.get_parameter_value("output_format"),
             "output_quality": self.get_parameter_value("output_quality"),
         }
-
-    def _load_image(self, input_artifact: ImageUrlArtifact | ImageArtifact) -> Image.Image | None:
-        """Load image from artifact."""
-        try:
-            if isinstance(input_artifact, ImageUrlArtifact):
-                return load_pil_from_url(input_artifact.value)
-            # Must be ImageArtifact due to validation
-            return Image.open(io.BytesIO(input_artifact.value))
-        except Exception as e:
-            msg = f"{self.name}: Error loading image: {e}"
-            logger.error(msg)
-            return None
 
     def _calculate_crop_area(self, params: dict, img_size: tuple[int, int]) -> CropArea:
         """Calculate the crop area with validation."""
@@ -272,7 +264,7 @@ class CropImage(ControlNode):
             save_options["optimize"] = True
         elif save_format == "WEBP":
             save_options["quality"] = int(output_quality * 100)
-            save_options["lossless"] = False
+            save_options["lossless"] = True
 
         # Save result using context manager to ensure proper cleanup
         img_data = None
@@ -422,6 +414,30 @@ class CropImage(ControlNode):
             return (0, 0, 0, 0)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        # Set the max_value for sliders based on the image size
+        if parameter.name == "input_image":
+            print(value)
+            # Load image
+            try:
+                img = load_pil_from_url(value.value)
+            except Exception as e:
+                msg = f"{self.name}: Error loading image: {e}"
+                logger.error(msg)
+                return None
+            if img.width and img.height:
+                top_param = self.get_parameter_by_name("top")
+                left_param = self.get_parameter_by_name("left")
+                width_param = self.get_parameter_by_name("width")
+                height_param = self.get_parameter_by_name("height")
+                if top_param:
+                    top_param.update_ui_options({"slider": {"max_val": img.height}})
+                if left_param:
+                    left_param.update_ui_options({"slider": {"max_val": img.width}})
+                if width_param:
+                    width_param.update_ui_options({"slider": {"max_val": img.width}})
+                if height_param:
+                    height_param.update_ui_options({"slider": {"max_val": img.height, "min_val": 0}})
+
         # Do live cropping for crop parameters
         if parameter.name in [
             "left",
@@ -436,7 +452,7 @@ class CropImage(ControlNode):
         ]:
             # Only run crop if we have a valid input image
             input_artifact = self.get_parameter_value("input_image")
-            if input_artifact and isinstance(input_artifact, (ImageUrlArtifact, ImageArtifact)):
+            if input_artifact and isinstance(input_artifact, ImageUrlArtifact):
                 try:
                     self._crop()
                 except Exception as e:
@@ -465,10 +481,8 @@ class CropImage(ControlNode):
                 exceptions.append(Exception(msg))
                 return exceptions
 
-        if not isinstance(input_artifact, (ImageUrlArtifact, ImageArtifact)):
-            msg = (
-                f"{self.name} - Input must be an ImageUrlArtifact or ImageArtifact, got {type(input_artifact).__name__}"
-            )
+        if not isinstance(input_artifact, ImageUrlArtifact):
+            msg = f"{self.name} - Input must be an ImageUrlArtifact, got {type(input_artifact).__name__}"
             exceptions.append(Exception(msg))
 
         return exceptions
