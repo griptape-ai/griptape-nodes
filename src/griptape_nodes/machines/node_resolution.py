@@ -224,7 +224,6 @@ class ExecuteNodeState(State):
                 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
                 # Add the current node to the DAG
-                # upstream_node_reference = DagOrchestrator.node_to_reference[upstream_node.name]
                 DagOrchestrator.network.add_edge(upstream_node.name, current_node.name)
 
                 # If the upstream node is resolved, collect its output value
@@ -250,7 +249,9 @@ class ExecuteNodeState(State):
 
         # Add the current node to the DAG
         node_reference = DagOrchestrator.DagNode(node_reference=current_node)
+        # create node_reference for the DAG.
         DagOrchestrator.node_to_reference[current_node.name] = node_reference
+        # Add node name to DAG (has to be a hashable value)
         DagOrchestrator.network.add_node(node_for_adding=current_node.name)
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
