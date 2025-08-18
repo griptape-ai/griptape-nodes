@@ -714,6 +714,10 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     # During save/load, this value IS still serialized to save its proper state.
     settable: bool = True
 
+    # "serializable" controls whether parameter values should be serialized during save/load operations.
+    # Set to False for parameters containing non-serializable types (ImageDrivers, PromptDrivers, file handles, etc.)
+    serializable: bool = True
+
     user_defined: bool = False
     _allowed_modes: set = field(
         default_factory=lambda: {
@@ -747,6 +751,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         ui_options: dict | None = None,
         *,
         settable: bool = True,
+        serializable: bool = True,
         user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
@@ -764,6 +769,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.tooltip_as_property = tooltip_as_property
         self.tooltip_as_output = tooltip_as_output
         self.settable = settable
+        self.serializable = serializable
         self.user_defined = user_defined
         if allowed_modes is None:
             self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
@@ -813,6 +819,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         our_dict["tooltip_as_property"] = self.tooltip_as_property
 
         our_dict["is_user_defined"] = self.user_defined
+        our_dict["settable"] = self.settable
+        our_dict["serializable"] = self.serializable
         our_dict["ui_options"] = self.ui_options
 
         # Let's bundle up the mode details.
