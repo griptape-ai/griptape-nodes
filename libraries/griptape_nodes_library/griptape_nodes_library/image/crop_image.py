@@ -413,10 +413,9 @@ class CropImage(ControlNode):
             # Fallback to transparent if color parsing fails
             return (0, 0, 0, 0)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901
         # Set the max_value for sliders based on the image size
         if parameter.name == "input_image":
-            print(value)
             # Load image
             try:
                 img = load_pil_from_url(value.value)
