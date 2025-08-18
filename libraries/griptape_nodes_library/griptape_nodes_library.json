@@ -235,6 +235,14 @@
       }
     },
     {
+      "variables": {
+        "color": "border-orange-500",
+        "title": "Variables",
+        "description": "Workflow variable management nodes",
+        "icon": "Variable"
+      }
+    },
+    {
       "audio/audioldm": {
         "color": "border-sky-500",
         "title": "Audio/AudioLDM",
@@ -1541,6 +1549,46 @@
         "display_name": "For Loop End",
         "icon": "repeat",
         "group": "iteration"
+      }
+    },
+    {
+      "class_name": "CreateWorkflowVariable",
+      "file_path": "griptape_nodes_library/variables/create_workflow_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Create a new workflow variable with a specified name, scope, and initial value",
+        "display_name": "Create Workflow Variable",
+        "icon": "PlusCircle"
+      }
+    },
+    {
+      "class_name": "GetWorkflowVariable",
+      "file_path": "griptape_nodes_library/variables/get_workflow_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Retrieve the value of an existing workflow variable",
+        "display_name": "Get Workflow Variable",
+        "icon": "ArrowDown"
+      }
+    },
+    {
+      "class_name": "SetWorkflowVariable",
+      "file_path": "griptape_nodes_library/variables/set_workflow_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Set the value of an existing workflow variable",
+        "display_name": "Set Workflow Variable",
+        "icon": "ArrowUp"
+      }
+    },
+    {
+      "class_name": "HasWorkflowVariable",
+      "file_path": "griptape_nodes_library/variables/has_workflow_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Check whether a workflow variable exists",
+        "display_name": "Has Workflow Variable",
+        "icon": "QuestionMarkCircle"
       }
     }
   ],
