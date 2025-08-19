@@ -26,7 +26,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
-from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from concurrent.futures import Future
@@ -69,19 +68,15 @@ class DagOrchestrator:
     network: nx.DiGraph
     # The node to reference mapping. Includes node and thread references.
     node_to_reference: dict[str, DagOrchestrator.DagNode]
-    # The queued, running, and completed nodes.
-    # TODO: These will disappear.
-    queued_nodes: ClassVar[list[str]] = []
-    running_nodes: ClassVar[list[str]] = []
-    cancelled_nodes: ClassVar[list[str]] = []
-    # NOTE: Threading will be implemented later
-
+    # The thread executor reference
+    thread_executor: ThreadPoolExecutor
     def __init__(self) -> None:
         """Initialize the DagOrchestrator singleton with initialization guard."""
         # Initialize only if our network hasn't been created yet (like GriptapeNodes pattern)
         self.network = nx.DiGraph()
         # Node to reference will also contain node state.
         self.node_to_reference = {}
+        self.thread_executor = ThreadPoolExecutor()
 
     @dataclass(kw_only=True)
     class DagNode:
