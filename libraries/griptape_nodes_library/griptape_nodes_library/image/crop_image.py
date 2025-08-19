@@ -26,6 +26,8 @@ MAX_ZOOM_FACTOR = 10.0  # Maximum zoom factor to prevent memory issues
 MAX_IMAGE_DIMENSION = 32767  # Maximum safe dimension to prevent overflow
 MAX_WIDTH = 4000
 MAX_HEIGHT = 4000
+ROTATION_MIN = -180.0
+ROTATION_MAX = 180.0
 
 
 @dataclass
@@ -115,7 +117,7 @@ class CropImage(ControlNode):
                 type="float",
                 default_value=0.0,
                 tooltip="Rotation in degrees (-180 to 180)",
-                traits={Slider(min_val=-180.0, max_val=180.0)},
+                traits={Slider(min_val=ROTATION_MIN, max_val=ROTATION_MAX)},
             )
 
         self.add_node_element(transform_options)
@@ -449,19 +451,30 @@ class CropImage(ControlNode):
             "output_format",
             "output_quality",
         ]:
-            # Only run crop if we have a valid input image
-            input_artifact = self.get_parameter_value("input_image")
-            if input_artifact and isinstance(input_artifact, ImageUrlArtifact):
-                try:
-                    self._crop()
-                except Exception as e:
-                    # Log error but don't crash the UI
-                    msg = f"{self.name}: Error during live crop: {e}"
-                    logger.warning(msg)
+            # Check if image is valid
+            image_exceptions = self._validate_image()
+            if image_exceptions:
+                # Image is not valid, don't run crop
+                return None
+
+            # Check if parameters are valid
+            parameter_exceptions = self._validate_parameters()
+            if parameter_exceptions:
+                # Parameters are not valid, don't run crop
+                return None
+
+            # Both image and parameters are valid, run crop
+            try:
+                self._crop()
+            except Exception as e:
+                # Log error but don't crash the UI
+                msg = f"{self.name}: Error during live crop: {e}"
+                logger.warning(msg)
 
         return super().after_value_set(parameter, value)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
+    def _validate_image(self) -> list[Exception]:
+        """Validate the input image parameter."""
         exceptions = []
 
         input_artifact = self.get_parameter_value("input_image")
@@ -485,3 +498,60 @@ class CropImage(ControlNode):
             exceptions.append(Exception(msg))
 
         return exceptions
+
+    def _validate_parameters(self) -> list[Exception]:
+        """Validate parameter values."""
+        exceptions = []
+
+        # Validate zoom parameter
+        zoom = self.get_parameter_value("zoom")
+        if zoom is not None and (zoom < 0.0 or zoom > MAX_ZOOM):
+            msg = f"{self.name} - Zoom must be between 0.0 and {MAX_ZOOM}, got {zoom}"
+            exceptions.append(Exception(msg))
+
+        # Validate rotation parameter
+        rotate = self.get_parameter_value("rotate")
+        if rotate is not None and (rotate < ROTATION_MIN or rotate > ROTATION_MAX):
+            msg = f"{self.name} - Rotation must be between {ROTATION_MIN} and {ROTATION_MAX} degrees, got {rotate}"
+            exceptions.append(Exception(msg))
+
+        # Validate output quality parameter
+        output_quality = self.get_parameter_value("output_quality")
+        if output_quality is not None and (output_quality < 0.0 or output_quality > 1.0):
+            msg = f"{self.name} - Output quality must be between 0.0 and 1.0, got {output_quality}"
+            exceptions.append(Exception(msg))
+
+        # Validate crop coordinates are non-negative
+        left = self.get_parameter_value("left")
+        top = self.get_parameter_value("top")
+        width = self.get_parameter_value("width")
+        height = self.get_parameter_value("height")
+
+        if left is not None and left < 0:
+            msg = f"{self.name} - Left coordinate must be non-negative, got {left}"
+            exceptions.append(Exception(msg))
+
+        if top is not None and top < 0:
+            msg = f"{self.name} - Top coordinate must be non-negative, got {top}"
+            exceptions.append(Exception(msg))
+
+        if width is not None and width < 0:
+            msg = f"{self.name} - Width must be non-negative, got {width}"
+            exceptions.append(Exception(msg))
+
+        if height is not None and height < 0:
+            msg = f"{self.name} - Height must be non-negative, got {height}"
+            exceptions.append(Exception(msg))
+
+        return exceptions
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions = []
+
+        # Validate image
+        exceptions.extend(self._validate_image())
+
+        # Validate parameters
+        exceptions.extend(self._validate_parameters())
+
+        return exceptions if exceptions else None
