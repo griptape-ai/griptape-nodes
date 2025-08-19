@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, thread
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -81,10 +81,6 @@ class DagOrchestrator(metaclass=SingletonMeta):
         node_reference: BaseNode
         thread_reference: Future | None = field(default=None)
 
-    @classmethod
-    def start_node_thread(cls) -> None:
-        # NOTE: Implement thread startup
-        pass
 
     @classmethod
     def execute_dag_workflow(cls) -> tuple[ExecutionResult, list[str]]:
@@ -97,54 +93,55 @@ class DagOrchestrator(metaclass=SingletonMeta):
         """
         # Initialize workflow state
         workflow_state = WorkflowState.NO_ERROR
-        node_states: dict[str, NodeState] = {}
         thread_pool = ThreadPoolExecutor(max_workers=3)
         error_list: list[str] = []
-
-        # Mark all nodes as QUEUED initially
-        for node in cls.network.nodes():
-            node_states[node] = NodeState.QUEUED
-
         while workflow_state == WorkflowState.NO_ERROR:
             # Find leaf nodes not in canceled state using topological approach
-            remaining_graph = cls.network
+            for node in cls.running_nodes:
+                # Check the future and see if it's completed.
+                thread_reference = cls.node_to_reference[node].thread_reference
+                # The thread has finished running now.
+                if thread_reference is not None and thread_reference.done():
+                    # Remove from running nodes
+                    cls.running_nodes.remove(node)
+                    # Remove the node from the network
+                    cls.network.remove_node(node)
+                    if thread_reference.exception() is not None:
+                        error_list.append(str(thread_reference.exception()))
+                        # Add to cancelled nodes
+                        cls.cancelled_nodes.append(node)
+                        workflow_state = WorkflowState.ERRORED
+                        break
+            # Mark nodes that are leaf nodes and ready to go as queued.
+            for node in cls.network.nodes():
+                if cls.network.in_degree(node) == 0:
+                    cls.queued_nodes.append(node)
 
-            # Remove nodes that are DONE, CANCELED, or PROCESSING
-            nodes_to_remove = [
-                node
-                for node, state in node_states.items()
-                if state in [NodeState.DONE, NodeState.CANCELED, NodeState.PROCESSING]
-            ]
-            remaining_graph.remove_nodes_from(nodes_to_remove)
-
-            # Get ready nodes (leaf nodes with in_degree = 0 in remaining graph)
-            ready_nodes = [
-                node
-                for node in remaining_graph.nodes()
-                if dict(remaining_graph.in_degree())[node] == 0 and node_states[node] == NodeState.QUEUED
-            ]
-
-            if not ready_nodes:
+            # No more nodes left in the queue.
+            if len(cls.queued_nodes) == 0:
                 workflow_state = WorkflowState.WORKFLOW_COMPLETE
                 break
 
-            # Check if any nodes are in DONE state (completed since last iteration)
-            done_nodes = [node for node, state in node_states.items() if state == NodeState.DONE]
-            if done_nodes:
-                # Remove edges from completed nodes (pop from graph)
-                for done_node in done_nodes:
-                    cls.network.remove_node(done_node)
-                continue
+            # Threading implementation will go here:
+            while len(cls.queued_nodes) > 0 and thread_pool._work_queue.__sizeof__() < thread_pool._max_workers:
+                node = cls.queued_nodes.pop(0)
+                thread_pool.submit(cls.execute_node, node)
+            # Is there a thread available? If so, assign it to the next node until no more threads are available.
 
-            # NOTE: Threading implementation will go here later
-            # Future: Check for available threads and allocate to ready nodes
-
-            # For now, just process nodes sequentially without threading
-            for node in ready_nodes:
-                node_states[node] = NodeState.PROCESSING
-                # NOTE: Actual node execution will be implemented here
-                # For now, mark as done immediately
-                node_states[node] = NodeState.DONE
+        # Handle errored workflow state
+        if workflow_state == WorkflowState.ERRORED:
+            # Cancel and shut down everyrhing
+            thread_pool.shutdown(wait=True, cancel_futures=True)
+            running_nodes = cls.running_nodes.copy()
+            # Wait for all of the threads to cancel/shut down.
+            while len(running_nodes) > 0:
+                for node in cls.running_nodes:
+                    thread_reference = cls.node_to_reference[node].thread_reference
+                    if thread_reference is not None and (thread_reference.cancelled() or thread_reference.done()):
+                        running_nodes.remove(node)
+                        cls.cancelled_nodes.append(node)
+                cls.running_nodes = running_nodes
+            return ExecutionResult.ERRORED, error_list
 
         # Handle final workflow state
         if workflow_state == WorkflowState.WORKFLOW_COMPLETE:
