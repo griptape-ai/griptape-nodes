@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
-import logging
 from dataclasses import dataclass
 from enum import Enum
-import threading
+from typing import TYPE_CHECKING
+
 from griptape.utils import with_contextvars
 
 from griptape_nodes.machines.fsm import FSM, State
-from regex import D
-from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator, NodeState
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
-logger = logging.getLogger("griptape_nodes")
+if TYPE_CHECKING:
+    import threading
+    from concurrent.futures import Future
+from griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator, NodeState
+
 
 class WorkflowState(Enum):
     """Workflow execution states."""
@@ -25,18 +28,15 @@ class WorkflowState(Enum):
 class ExecutionContext:
     current_dag: DagOrchestrator
     error_message: str | None
-    currently_running_nodes: list[DagOrchestrator.DagNode]
     workflow_state: WorkflowState
 
     def __init__(self) -> None:
         self.dag_state = {}
         self.error_message = None
-        self.currently_running_nodes = []
         self.workflow_state = WorkflowState.NO_ERROR
 
     def reset(self) -> None:
         self.current_dag.clear()
-        self.currently_running_nodes.clear()
         self.workflow_state = WorkflowState.NO_ERROR
         self.error_message = None
 
@@ -53,7 +53,7 @@ class ExecutionState(State):
             current_node.node_reference.process()
 
     @staticmethod
-    def on_enter(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
+    def on_enter(context: ExecutionContext) -> type[State] | None:
         logger.info("Entering DAG execution state")
         for node in context.current_dag.node_to_reference.values():
             # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
@@ -97,7 +97,10 @@ class ExecutionState(State):
             ExecutionState.handle_done_nodes(context, context.current_dag.node_to_reference[node])
         # Are there any in the queued state?
         def on_future_done(future: Future) -> None:
+            # TODO: Will this call the correct thing?
             node_reference.node_state = NodeState.DONE
+            # TODO: WIll this have to be sent all over?
+            logger.error(future.result())
         for node in queued_nodes:
             # Do we have any threads available?
             if context.current_dag.sem.acquire(blocking=False):
