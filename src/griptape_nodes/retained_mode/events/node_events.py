@@ -677,3 +677,53 @@ class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayload
     Common causes: nodes not found, constraints/conflicts,
     insufficient resources, connection duplication failures.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageRequest(RequestPayload):
+    """Send a message to a specific node.
+
+    Use when: External systems need to signal or send data directly to individual nodes,
+    implementing custom communication patterns, triggering node-specific behaviors.
+
+    Args:
+        node_name: Name of the target node (None for current context node)
+        optional_parameter_name: Optional parameter name this message relates to
+        message_type: String indicating message type for receiver parsing
+        message: Message payload of any type
+
+    Results: SendNodeMessageResultSuccess (with response) | SendNodeMessageResultFailure (node not found, handler error)
+    """
+
+    message_type: str
+    message: Any
+    node_name: str | None = None
+    optional_parameter_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node message sent and processed successfully.
+
+    Args:
+        response: Optional response data from the node's message handler
+    """
+
+    response: Any = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node message sending failed.
+
+    Common causes: node not found, no current context, message handler error,
+    unsupported message type.
+
+    Args:
+        response: Optional response data from the node's message handler (even on failure)
+    """
+
+    response: Any = None

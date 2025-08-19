@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from griptape.events import BaseEvent, EventBus
 
@@ -50,6 +50,20 @@ class NodeResolutionState(StrEnum):
     UNRESOLVED = auto()
     RESOLVING = auto()
     RESOLVED = auto()
+
+
+class NodeMessageResult(NamedTuple):
+    """Result from a node message callback.
+
+    Attributes:
+        success: True if the message was handled successfully, False otherwise
+        details: Human-readable description of what happened
+        response: Optional response data to return to the sender
+    """
+
+    success: bool
+    details: str
+    response: Any = None
 
 
 class BaseNode(ABC):
@@ -250,6 +264,31 @@ class BaseNode(ABC):
     def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
         """Callback for when a Griptape Event comes destined for this Node."""
         return
+
+    def on_node_message_received(
+        self,
+        optional_parameter_name: str | None,  # noqa: ARG002
+        message_type: str,
+        message: Any,  # noqa: ARG002
+    ) -> NodeMessageResult:
+        """Callback for when a message is sent directly to this node.
+
+        Custom nodes may elect to override this method to handle specific message types
+        and implement custom communication patterns with external systems.
+
+        Args:
+            optional_parameter_name: Optional parameter name this message relates to
+            message_type: String indicating the message type for parsing
+            message: Message payload of any type
+
+        Returns:
+            NodeMessageResult: Result containing success status, details, and optional response
+        """
+        return NodeMessageResult(
+            success=False,
+            details=f"Node '{self.name}' was sent a message of type '{message_type}'. Failed because no message handler was specified for this node. Implement the on_node_message_received method in this node class in order for it to receive messages.",
+            response=None,
+        )
 
     def does_name_exist(self, param_name: str) -> bool:
         for parameter in self.parameters:
