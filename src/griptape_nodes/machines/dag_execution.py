@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from concurrent.futures import thread
-from enum import Enum
+from concurrent.futures import Future
 import logging
 from dataclasses import dataclass
-import queue
-from typing import Any
+from enum import Enum
+import threading
+from griptape.utils import with_contextvars
 
 from griptape_nodes.machines.fsm import FSM, State
+from regex import D
 from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator, NodeState
 
 logger = logging.getLogger("griptape_nodes")
@@ -34,7 +35,9 @@ class ExecutionContext:
         self.workflow_state = WorkflowState.NO_ERROR
 
     def reset(self) -> None:
-        self.dag_state.clear()
+        self.current_dag.clear()
+        self.currently_running_nodes.clear()
+        self.workflow_state = WorkflowState.NO_ERROR
         self.error_message = None
 
 
@@ -43,6 +46,11 @@ class ExecutionState(State):
     @staticmethod
     def handle_done_nodes(context:ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
         pass
+
+    @staticmethod
+    def execute_node(current_node: DagOrchestrator.DagNode, sem: threading.Semaphore) -> None:
+        with sem:
+            current_node.node_reference.process()
 
     @staticmethod
     def on_enter(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
@@ -88,9 +96,20 @@ class ExecutionState(State):
             # Return thread to thread pool.
             ExecutionState.handle_done_nodes(context, context.current_dag.node_to_reference[node])
         # Are there any in the queued state?
+        def on_future_done(future: Future) -> None:
+            node_reference.node_state = NodeState.DONE
         for node in queued_nodes:
             # Do we have any threads available?
-            threads_available = context.current_dag.thread_executor._max_workers
+            if context.current_dag.sem.acquire(blocking=False):
+                # we have threads available
+                node_reference = context.current_dag.node_to_reference[node]
+                node_future = context.current_dag.thread_executor.submit(ExecutionState.execute_node, node_reference, context.current_dag.sem)
+                #Add a callback to set node to done when future has finished.
+                node_future.add_done_callback(with_contextvars(on_future_done))
+                # Map futures to nodes.
+                context.current_dag.future_to_node[node_future] = node_reference
+                node_reference.thread_reference = node_future
+                node_reference.node_state = NodeState.PROCESSING
         return ExecutionState
 
 
@@ -99,14 +118,10 @@ class ErrorState(State):
     def on_enter(context: ExecutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
-        context.currently_running_nodes = []
         for node in context.current_dag.node_to_reference.values():
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
-            elif node.node_state == NodeState.PROCESSING:
-                # Add nodes that are currently processing to this list
-                context.currently_running_nodes.append(node)
         # Shut down and cancel all threads that haven't yet ran. Currently running threads will not be affected.
         context.current_dag.thread_executor.shutdown(wait=False, cancel_futures=True)
         return ErrorState
@@ -114,18 +129,16 @@ class ErrorState(State):
     @staticmethod
     def on_update(context: ExecutionContext) -> type[State] | None:
         # Don't modify lists while iterating through them.
-        for node in context.currently_running_nodes.copy():
-            if node.thread_reference is not None:
-                if node.thread_reference.done():
-                    node.node_state = NodeState.DONE
-                elif node.thread_reference.cancelled():
-                    node.node_state = NodeState.CANCELED
-                # remove the node from currently running nodes
-                context.currently_running_nodes.remove(node)
-                # Get rid of this future
-                del node.thread_reference
-        if not context.currently_running_nodes:
+        future_to_node = context.current_dag.future_to_node
+        for future, node in future_to_node.copy().items():
+            if future.done():
+                node.node_state = NodeState.DONE
+            elif future.cancelled():
+                node.node_state = NodeState.CANCELED
+            future_to_node.pop(future)
+        if len(future_to_node) == 0:
             # Finish up. We failed.
+            context.workflow_state = WorkflowState.ERRORED
             return CompleteState
         # Let's continue going through until everything is cancelled.
         return ErrorState
