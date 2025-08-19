@@ -1027,6 +1027,17 @@
       }
     },
     {
+      "class_name": "CropImage",
+      "file_path": "griptape_nodes_library/image/crop_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Crop, zoom, rotate, and pan images with precise control over transformations",
+        "display_name": "Crop Image",
+        "icon": "crop",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ImageBash",
       "file_path": "griptape_nodes_library/image/image_bash.py",
       "metadata": {
