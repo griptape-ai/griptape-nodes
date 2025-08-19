@@ -704,7 +704,7 @@ class SendNodeMessageRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SendNodeMessageResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class SendNodeMessageResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Node message sent and processed successfully.
 
     Args:
@@ -716,7 +716,7 @@ class SendNodeMessageResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class SendNodeMessageResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class SendNodeMessageResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
     """Node message sending failed.
 
     Common causes: node not found, no current context, message handler error,
