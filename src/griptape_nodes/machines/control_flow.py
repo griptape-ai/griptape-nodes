@@ -10,14 +10,15 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.dag_resolution import DagResolutionMachine
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
+from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator
 
 
 @dataclass
@@ -39,12 +40,14 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
-    resolution_machine: NodeResolutionMachine
+    # resolution_machine: NodeResolutionMachine
+    resolution_machine: DagResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
 
     def __init__(self) -> None:
-        self.resolution_machine = NodeResolutionMachine()
+        # self.resolution_machine = NodeResolutionMachine()
+        self.resolution_machine = DagResolutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -113,7 +116,8 @@ class ResolveNodeState(State):
         if context.current_node is None:
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
-            context.resolution_machine.resolve_node(context.current_node)
+            # context.resolution_machine.resolve_node(context.current_node)
+            context.resolution_machine.build_dag_for_node(context.current_node)
 
         if context.resolution_machine.is_complete():
             return NextNodeState
@@ -191,6 +195,7 @@ class CompleteState(State):
             )
         logger.info("Flow is complete.")
         # At this point, we'll use the DagOrchestrator to run the rest of the flow.
+        DagOrchestrator.execute_dag_workflow()
         return None
 
     @staticmethod

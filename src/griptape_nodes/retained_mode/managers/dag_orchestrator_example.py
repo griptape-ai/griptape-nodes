@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, thread
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar
@@ -52,6 +52,7 @@ class NodeState(Enum):
     DONE = "done"
     CANCELED = "canceled"
     ERRORED = "errored"
+    WAITING = "waiting"
 
 
 class ExecutionResult(Enum):
@@ -60,19 +61,27 @@ class ExecutionResult(Enum):
     COMPLETED_SUCCESSFULLY = "completed_successfully"
     ERRORED = "errored"
 
-
-class DagOrchestrator(metaclass=SingletonMeta):
+# orchestrator attached to each flow, owned by griptape nodes
+class DagOrchestrator:
     """Main DAG structure containing nodes and edges."""
 
     # The generated network of nodes
-    network: ClassVar[nx.DiGraph] = nx.DiGraph()
+    network: nx.DiGraph
     # The node to reference mapping. Includes node and thread references.
-    node_to_reference: ClassVar[dict[str, DagOrchestrator.DagNode]] = {}
+    node_to_reference: dict[str, DagOrchestrator.DagNode]
     # The queued, running, and completed nodes.
+    # TODO: These will disappear.
     queued_nodes: ClassVar[list[str]] = []
     running_nodes: ClassVar[list[str]] = []
     cancelled_nodes: ClassVar[list[str]] = []
     # NOTE: Threading will be implemented later
+
+    def __init__(self) -> None:
+        """Initialize the DagOrchestrator singleton with initialization guard."""
+        # Initialize only if our network hasn't been created yet (like GriptapeNodes pattern)
+        self.network = nx.DiGraph()
+        # Node to reference will also contain node state.
+        self.node_to_reference = {}
 
     @dataclass(kw_only=True)
     class DagNode:
@@ -80,7 +89,7 @@ class DagOrchestrator(metaclass=SingletonMeta):
 
         node_reference: BaseNode
         thread_reference: Future | None = field(default=None)
-
+        node_state: NodeState = field(default=NodeState.WAITING)
 
     @classmethod
     def execute_dag_workflow(cls) -> tuple[ExecutionResult, list[str]]:
@@ -91,21 +100,42 @@ class DagOrchestrator(metaclass=SingletonMeta):
         Returns:
             Tuple of (ExecutionResult, error_list)
         """
+        # Validate DAG state before execution
+        dag_instance = cls.get_instance()
+        logger.info("EXECUTE_DAG: Starting workflow execution. Instance ID: %s", id(dag_instance))
+        logger.info("EXECUTE_DAG: Pre-execution state check...")
+        cls.debug_dag_state()
+
+        if not cls.network.nodes():
+            error_msg = "DAG network is empty - no nodes to execute. DAG must be built before execution."
+            logger.error("EXECUTE_DAG: %s", error_msg)
+            return ExecutionResult.ERRORED, [error_msg]
+
+        if not cls.node_to_reference:
+            error_msg = "node_to_reference is empty - DAG references missing. DAG must be built before execution."
+            logger.error("EXECUTE_DAG: %s", error_msg)
+            return ExecutionResult.ERRORED, [error_msg]
+
         # Initialize workflow state
         workflow_state = WorkflowState.NO_ERROR
         thread_pool = ThreadPoolExecutor(max_workers=3)
         error_list: list[str] = []
-        while workflow_state == WorkflowState.NO_ERROR:
+        while workflow_state == WorkflowState.NO_ERROR and workflow_state != WorkflowState.WORKFLOW_COMPLETE:
             # Find leaf nodes not in canceled state using topological approach
-            for node in cls.running_nodes:
+            # Don't modify list while iterating
+            # state of node maintained as a variable in the loop
+            running_nodes = cls.running_nodes.copy()
+            for node in running_nodes:
                 # Check the future and see if it's completed.
                 thread_reference = cls.node_to_reference[node].thread_reference
                 # The thread has finished running now.
+                # TODO: UPDATE TO USE AS_COMPLETED
                 if thread_reference is not None and thread_reference.done():
                     # Remove from running nodes
                     cls.running_nodes.remove(node)
                     # Remove the node from the network
                     cls.network.remove_node(node)
+                    # return to thread refernces 
                     if thread_reference.exception() is not None:
                         error_list.append(str(thread_reference.exception()))
                         # Add to cancelled nodes
@@ -125,7 +155,12 @@ class DagOrchestrator(metaclass=SingletonMeta):
             # Threading implementation will go here:
             while len(cls.queued_nodes) > 0 and thread_pool._work_queue.__sizeof__() < thread_pool._max_workers:
                 node = cls.queued_nodes.pop(0)
-                thread_pool.submit(cls.execute_node, node)
+                node_reference = cls.node_to_reference[node].node_reference
+                # Add to running nodes
+                future = thread_pool.submit(cls.execute_node, node_reference)
+                # Set future on node reference
+                cls.node_to_reference[node].thread_reference = future
+                cls.running_nodes.append(node)
             # Is there a thread available? If so, assign it to the next node until no more threads are available.
 
         # Handle errored workflow state
@@ -134,6 +169,7 @@ class DagOrchestrator(metaclass=SingletonMeta):
             thread_pool.shutdown(wait=True, cancel_futures=True)
             running_nodes = cls.running_nodes.copy()
             # Wait for all of the threads to cancel/shut down.
+            # add nodes to cancelled state
             while len(running_nodes) > 0:
                 for node in cls.running_nodes:
                     thread_reference = cls.node_to_reference[node].thread_reference
@@ -145,27 +181,9 @@ class DagOrchestrator(metaclass=SingletonMeta):
 
         # Handle final workflow state
         if workflow_state == WorkflowState.WORKFLOW_COMPLETE:
-            if any(state == NodeState.ERRORED for state in node_states.values()):
-                return ExecutionResult.ERRORED, error_list
             return ExecutionResult.COMPLETED_SUCCESSFULLY, []
         return ExecutionResult.ERRORED, error_list
 
-    @classmethod
-    def on_node_complete(cls, _node: str, _node_states: dict[str, NodeState]) -> None:
-        """Callback for when a node completes successfully.
-
-        NOTE: Will be used with threading implementation.
-        """
-
-    @classmethod
-    def on_node_error(
-        cls, _node: str, _error: str, _node_states: dict[str, NodeState], _error_list: list[str]
-    ) -> WorkflowState:
-        """Callback for when a node encounters an error.
-
-        NOTE: Will be used with threading implementation.
-        """
-        return WorkflowState.ERRORED
 
     @classmethod
     def execute_node(cls, current_node: BaseNode) -> None:
@@ -359,3 +377,24 @@ class DagOrchestrator(metaclass=SingletonMeta):
             )
             EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         current_node.parameter_output_values.clear()
+
+    @classmethod
+    def debug_dag_state(cls) -> None:
+        """Debug method to inspect current DAG state and log details."""
+        logger.info("=== DAG ORCHESTRATOR DEBUG STATE ===")
+        logger.info("Singleton Instance ID: %s", id(cls))
+        logger.info("Network nodes count: %d", len(cls.network.nodes()))
+        logger.info("Network edges count: %d", len(cls.network.edges()))
+        logger.info("node_to_reference count: %d", len(cls.node_to_reference))
+        logger.info("queued_nodes count: %d", len(cls.queued_nodes))
+        logger.info("running_nodes count: %d", len(cls.running_nodes))
+        logger.info("cancelled_nodes count: %d", len(cls.cancelled_nodes))
+
+        if cls.network.nodes():
+            logger.info("Network nodes: %s", list(cls.network.nodes()))
+        if cls.network.edges():
+            logger.info("Network edges: %s", list(cls.network.edges()))
+        if cls.node_to_reference:
+            logger.info("node_to_reference keys: %s", list(cls.node_to_reference.keys()))
+
+        logger.info("=== END DAG ORCHESTRATOR DEBUG STATE ===")
