@@ -51,7 +51,6 @@ class NodeState(Enum):
     DONE = "done"
     CANCELED = "canceled"
     ERRORED = "errored"
-    WAITING = "waiting"
 
 
 class ExecutionResult(Enum):

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import thread
+from enum import Enum
 import logging
 from dataclasses import dataclass
+import queue
 from typing import Any
 
 from griptape_nodes.machines.fsm import FSM, State
@@ -9,16 +12,26 @@ from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import D
 
 logger = logging.getLogger("griptape_nodes")
 
+class WorkflowState(Enum):
+    """Workflow execution states."""
+
+    NO_ERROR = "no_error"
+    WORKFLOW_COMPLETE = "workflow_complete"
+    ERRORED = "errored"
+
 
 @dataclass
 class ExecutionContext:
     current_dag: DagOrchestrator
-    error_message: str | None = None
-    currently_running_nodes: list[DagOrchestrator.DagNode] = []
+    error_message: str | None
+    currently_running_nodes: list[DagOrchestrator.DagNode]
+    workflow_state: WorkflowState
 
     def __init__(self) -> None:
         self.dag_state = {}
         self.error_message = None
+        self.currently_running_nodes = []
+        self.workflow_state = WorkflowState.NO_ERROR
 
     def reset(self) -> None:
         self.dag_state.clear()
@@ -26,23 +39,59 @@ class ExecutionContext:
 
 
 class ExecutionState(State):
+
+    @staticmethod
+    def handle_done_nodes(context:ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
+        pass
+
     @staticmethod
     def on_enter(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
         logger.info("Entering DAG execution state")
-        return None
+        for node in context.current_dag.node_to_reference.values():
+            # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
+            node.node_state = NodeState.QUEUED
+        context.workflow_state = WorkflowState.NO_ERROR
+        return ExecutionState
 
     @staticmethod
     def on_update(context: ExecutionContext) -> type[State] | None:
-        try:
-            # DAG execution logic would go here
-            logger.info("DAG execution in progress")
-        except Exception as e:
-            logger.error("DAG execution failed: %s", e)
-            context.error_message = str(e)
-            return ErrorState
-        else:
-            # For now, assume execution completes successfully
+        # Do we have any Leaf Nodes not in canceled state?
+        network = context.current_dag.network
+        # Check and see if there are leaf nodes that are cancelled.
+        leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+        # We have no more leaf nodes. Quit early.
+        if not leaf_nodes:
+            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
             return CompleteState
+        done_nodes = []
+        canceled_nodes = []
+        queued_nodes = []
+        # Get the status of all of the leaf nodes.
+        for node in leaf_nodes:
+            node_state = context.current_dag.node_to_reference[node].node_state
+            if node_state == NodeState.CANCELED:
+                canceled_nodes.append(node)
+            elif node_state == NodeState.DONE:
+                done_nodes.append(node)
+            elif node_state == NodeState.QUEUED:
+                queued_nodes.append(node)
+        if len(canceled_nodes) == len(leaf_nodes):
+            # All leaf nodes are cancelled.
+            # Set state to workflow complete.
+            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
+            return CompleteState
+        # Are there any nodes in Done state?
+        for node in done_nodes:
+            # We have nodes in done state.
+            # Remove the leaf node from the graph.
+            network.remove_node(node)
+            # Return thread to thread pool.
+            ExecutionState.handle_done_nodes(context, context.current_dag.node_to_reference[node])
+        # Are there any in the queued state?
+        for node in queued_nodes:
+            # Do we have any threads available?
+            threads_available = context.current_dag.thread_executor._max_workers
+        return ExecutionState
 
 
 class ErrorState(State):
@@ -53,7 +102,7 @@ class ErrorState(State):
         context.currently_running_nodes = []
         for node in context.current_dag.node_to_reference.values():
             # Cancel all nodes that haven't yet begun processing.
-            if node.node_state in [NodeState.WAITING, NodeState.QUEUED]:
+            if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
             elif node.node_state == NodeState.PROCESSING:
                 # Add nodes that are currently processing to this list
