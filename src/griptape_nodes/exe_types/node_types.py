@@ -1304,10 +1304,23 @@ class ErrorProxyNode(BaseNode):
         return [RuntimeError(error_msg)]
 
     def record_initialization_request(self, request: RequestPayload) -> None:
-        """Record an initialization request for 1:1 replay during serialization.
+        """Record an initialization request for replay during serialization.
 
-        The ErrorProxy soaks up all initial_setup=True requests and stores them
-        in order for perfect replay when the workflow is saved.
+        This method captures requests that modify ErrorProxyNode structure during workflow loading,
+        preserving information needed for restoration when the original node becomes available.
+
+        WHAT WE RECORD:
+        - AlterParameterDetailsRequest: Parameter modifications from original node definition
+        - Any request with initial_setup=True that changes node structure in ways that cannot
+          be reconstructed from final state alone
+
+        WHAT WE DO NOT RECORD (and why):
+        - SetParameterValueRequest: Final parameter values are serialized normally via parameter_values
+        - AddParameterToNodeRequest: User-defined parameters are serialized via is_user_defined=True flag
+        - CreateConnectionRequest: Connections are serialized separately and recreated during loading
+        - RenameParameterRequest: Final parameter names are preserved in serialized state
+        - SetNodeMetadataRequest: Final metadata state is preserved in node.metadata
+        - SetLockNodeStateRequest: Final lock state is preserved in node.lock
         """
         self._recorded_initialization_requests.append(request)
 

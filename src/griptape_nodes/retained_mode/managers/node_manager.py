@@ -2008,14 +2008,17 @@ class NodeManager:
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
                 elif isinstance(node, ErrorProxyNode):
-                    # For ErrorProxyNode, replay recorded AlterParameterDetailsRequest commands
-                    recorded_alter_requests = node.get_recorded_initialization_requests(AlterParameterDetailsRequest)
-                    for alter_request in recorded_alter_requests:
+                    # For ErrorProxyNode, replay all recorded initialization requests for this parameter
+                    recorded_requests = node.get_recorded_initialization_requests()
+                    matching_requests = [
+                        recorded_request
+                        for recorded_request in recorded_requests
                         if (
-                            isinstance(alter_request, AlterParameterDetailsRequest)
-                            and alter_request.parameter_name == parameter.name
-                        ):
-                            element_modification_commands.append(alter_request)  # noqa: PERF401
+                            hasattr(recorded_request, "parameter_name")
+                            and getattr(recorded_request, "parameter_name", None) == parameter.name
+                        )
+                    ]
+                    element_modification_commands.extend(matching_requests)
                 elif reference_node is None:
                     # Normal node with no reference - treat all parameters as needing serialization
                     param_dict = parameter.to_dict()
