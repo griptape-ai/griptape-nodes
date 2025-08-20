@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ def parse_hex_color(color: str) -> tuple[int, int, int]:
 def create_background_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create background image with specified color and transparency."""
     if transparent_bg:
-        return Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        return Image.new("RGBA", (width, height), NAMED_COLORS["transparent"])
     rgb_color = parse_hex_color(background_color)
     return Image.new("RGB", (width, height), rgb_color)
 
@@ -250,8 +251,8 @@ def create_alpha_mask(image: Image.Image) -> Image.Image:
     mask = image.getchannel("A")
 
     # Convert to RGB (black background with white mask)
-    mask_rgb = Image.new("RGB", mask.size, (0, 0, 0))
-    mask_rgb.paste((255, 255, 255), mask=mask)
+    mask_rgb = Image.new("RGB", mask.size, NAMED_COLORS["black"])
+    mask_rgb.paste(NAMED_COLORS["white"], mask=mask)
 
     return mask_rgb
 
@@ -352,7 +353,7 @@ def extract_channel_from_image(image: Image.Image, channel: str, context_name: s
 def create_placeholder_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create a placeholder image with specified dimensions and background."""
     if transparent_bg:
-        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        image = Image.new("RGBA", (width, height), NAMED_COLORS["transparent"])
     else:
         # Convert hex color to RGB
         background_color = background_color.removeprefix("#")

@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.color_utils import NAMED_COLORS, parse_color_to_rgba
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -413,7 +413,7 @@ class CropImage(ControlNode):
             return parse_color_to_rgba(color_str)
         except ValueError:
             # Fallback to transparent if color parsing fails
-            return (0, 0, 0, 0)
+            return NAMED_COLORS["transparent"]
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901
         # Set the max_value for sliders based on the image size
