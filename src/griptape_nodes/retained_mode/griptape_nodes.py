@@ -46,7 +46,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
-from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -336,6 +336,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def SyncManager(cls) -> SyncManager:
         return GriptapeNodes.get_instance()._sync_manager
+
+    @classmethod
+    def DagManager(cls) -> DagOrchestrator:
+        return GriptapeNodes.get_instance()._dag_manager
 
     @classmethod
     def clear_data(cls) -> None:

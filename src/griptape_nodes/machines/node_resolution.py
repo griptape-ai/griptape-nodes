@@ -221,7 +221,7 @@ class ExecuteNodeState(State):
             upstream_connection = connections.get_connected_node(current_node, parameter)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
-                from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator
+                from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
                 # Add the current node to the DAG
                 DagOrchestrator.network.add_edge(upstream_node.name, current_node.name)
@@ -245,7 +245,7 @@ class ExecuteNodeState(State):
     @staticmethod
     def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-        from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator
+        from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
         # Add the current node to the DAG
         node_reference = DagOrchestrator.DagNode(node_reference=current_node)

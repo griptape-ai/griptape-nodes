@@ -10,6 +10,7 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.dag_execution import DagExecutionMachine
 from griptape_nodes.machines.dag_resolution import DagResolutionMachine
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -18,7 +19,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
-from src.griptape_nodes.retained_mode.managers.dag_orchestrator_example import DagOrchestrator
+#from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 
 @dataclass
@@ -195,7 +196,7 @@ class CompleteState(State):
             )
         logger.info("Flow is complete.")
         # At this point, we'll use the DagOrchestrator to run the rest of the flow.
-        DagOrchestrator.execute_dag_workflow()
+        DagExecutionMachine().start_execution()
         return None
 
     @staticmethod
