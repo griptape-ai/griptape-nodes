@@ -5,8 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -18,6 +16,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
+from griptape_nodes.utils.events import put_event
 
 
 @dataclass
@@ -95,7 +94,7 @@ class ResolveNodeState(State):
                 )
             )
         # Now broadcast that we have a current control node.
-        EventBus.publish_event(
+        put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
             )
@@ -136,7 +135,7 @@ class NextNodeState(State):
         if next_output is not None:
             context.selected_output = next_output
             next_node_info = context.get_next_node(context.selected_output)
-            EventBus.publish_event(
+            put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=SelectedControlOutputEvent(
@@ -177,7 +176,7 @@ class CompleteState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
-            EventBus.publish_event(
+            put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(

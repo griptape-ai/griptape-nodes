@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowsFromConfigRequest,
     RegisterWorkflowsFromConfigResultSuccess,
 )
+from griptape_nodes.utils.events import put_event
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -428,8 +429,6 @@ class SyncManager:
         self, sync_id: str, workflow_files: list[str], storage_driver: GriptapeCloudStorageDriver, sync_dir: Path
     ) -> None:
         """Background thread function to sync workflows."""
-        from griptape_nodes.app.app import event_queue
-
         synced_workflows = []
         failed_downloads = []
         total_workflows = len(workflow_files)
@@ -470,7 +469,8 @@ class SyncManager:
             failed_workflows=failed_downloads,
             total_workflows=total_workflows,
         )
-        event_queue.put(AppEvent(payload=sync_complete_event))
+
+        put_event(AppEvent(payload=sync_complete_event))
 
         # Register workflows from the synced directory
         if synced_workflows:

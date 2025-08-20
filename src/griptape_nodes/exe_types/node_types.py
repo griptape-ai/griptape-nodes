@@ -6,8 +6,6 @@ from collections.abc import Callable, Generator, Iterable
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, TypeVar
 
-from griptape.events import BaseEvent, EventBus
-
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -38,6 +36,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.events import put_event
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -124,7 +123,8 @@ class BaseNode(ABC):
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
-            EventBus.publish_event(
+
+            put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeUnresolvedEvent(node_name=self.name))
                 )
@@ -282,10 +282,6 @@ class BaseNode(ABC):
     def after_settings_changed(self, **kwargs: Any) -> None:  # noqa: ARG002
         """Callback for when the settings of this Node are changed."""
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
-        return
-
-    def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
-        """Callback for when a Griptape Event comes destined for this Node."""
         return
 
     def on_node_message_received(
@@ -781,7 +777,8 @@ class BaseNode(ABC):
         else:
             self.parameter_output_values[parameter_name] = value
         # Publish the event up!
-        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+
+        put_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
         parameter = self.get_parameter_by_name(parameter_name)
@@ -794,7 +791,8 @@ class BaseNode(ABC):
                 data_type=data_type,
                 value=TypeValidator.safe_serialize(value),
             )
-            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+
+            put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         else:
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
@@ -920,7 +918,8 @@ class BaseNode(ABC):
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
-        EventBus.publish_event(event)
+
+        put_event(event)
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.
@@ -1073,7 +1072,8 @@ class TrackedParameterOutputValues(dict[str, Any]):
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
-            EventBus.publish_event(event)
+
+            put_event(event)
 
 
 class ControlNode(BaseNode):

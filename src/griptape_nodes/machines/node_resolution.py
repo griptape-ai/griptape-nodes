@@ -6,7 +6,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
@@ -30,6 +29,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
+from griptape_nodes.utils.events import put_event
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -66,7 +66,7 @@ class InitializeSpotlightState(State):
     def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
         current_node = context.focus_stack[-1].node
-        EventBus.publish_event(
+        put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
             )
@@ -110,7 +110,7 @@ class EvaluateParameterState(State):
         if current_parameter is None:
             return ExecuteNodeState
         # if not in debug mode - keep going!
-        EventBus.publish_event(
+        put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=ParameterSpotlightEvent(
@@ -192,7 +192,7 @@ class ExecuteNodeState(State):
                 data_type=parameter_type,
                 value=None,
             )
-            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+            put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
         current_node.parameter_output_values.clear()
 
     @staticmethod
@@ -262,7 +262,7 @@ class ExecuteNodeState(State):
                 data_type = parameter.type
                 if data_type is None:
                     data_type = ParameterTypeBuiltin.NONE.value
-                EventBus.publish_event(
+                put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
                             payload=ParameterValueUpdateEvent(
@@ -295,7 +295,7 @@ class ExecuteNodeState(State):
         # If the node is not locked, execute all of this.
         if not current_node.lock:
             # To set the event manager without circular import errors
-            EventBus.publish_event(
+            put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeStartProcessEvent(node_name=current_node.name))
                 )
@@ -323,7 +323,7 @@ class ExecuteNodeState(State):
 
                 GriptapeNodes.FlowManager().cancel_flow_run()
 
-                EventBus.publish_event(
+                put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                     )
@@ -332,7 +332,7 @@ class ExecuteNodeState(State):
 
             logger.info("Node '%s' finished processing.", current_node.name)
 
-            EventBus.publish_event(
+            put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                 )
@@ -358,7 +358,7 @@ class ExecuteNodeState(State):
                 data_type = parameter.type
                 if data_type is None:
                     data_type = ParameterTypeBuiltin.NONE.value
-                EventBus.publish_event(
+                put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
                             payload=ParameterValueUpdateEvent(
@@ -376,7 +376,7 @@ class ExecuteNodeState(State):
             library_name = library[0]
         else:
             library_name = None
-        EventBus.publish_event(
+        put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
@@ -423,7 +423,7 @@ class ExecuteNodeState(State):
             finally:
                 # If it hasn't been cancelled.
                 if current_focus.process_generator:
-                    EventBus.publish_event(
+                    put_event(
                         ExecutionGriptapeNodeEvent(
                             wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
                         )

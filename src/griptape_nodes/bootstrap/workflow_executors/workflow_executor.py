@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class WorkflowExecutor(ABC):
     @abstractmethod
-    def run(
+    async def run(
         self,
         workflow_name: str,
         flow_input: Any,

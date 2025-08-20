@@ -1,5 +1,5 @@
+import asyncio
 import logging
-from queue import Queue
 from typing import Any
 
 from griptape.events import BaseEvent, EventBus, EventListener
@@ -27,7 +27,7 @@ class LocalExecutorError(Exception):
 
 class LocalWorkflowExecutor(WorkflowExecutor):
     def __init__(self) -> None:
-        self.queue = Queue()
+        self.queue: asyncio.Queue = asyncio.Queue()
         self.output: dict | None = None
 
     def _load_flow_for_workflow(self) -> str:
@@ -67,7 +67,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 case _:
                     msg = f"Unknown event type: {type(event)}"
                     logger.info(msg)
-                    self.queue.put(event)
+                    self.queue.put_nowait(event)
         except Exception as e:
             logger.info(e)
 
@@ -92,7 +92,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             node_name = result_event.payload.node_name
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
             event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            self.queue.put(event_request)
+            self.queue.put_nowait(event_request)
 
         elif type(result_event.payload).__name__ == "NodeFinishProcessEvent":
             event_log = f"NodeFinishProcessEvent: {result_event.payload}"
@@ -102,7 +102,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             event_log = f"ExecutionGriptapeNodeEvent: {result_event.payload}"
             logger.info(event_log)
 
-        self.queue.put(event)
+        self.queue.put_nowait(event)
 
     def __handle_progress_event(self, gt_event: ProgressEvent) -> None:
         event_log = f"ProgressEvent: {gt_event}"
@@ -115,7 +115,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     def _submit_output(self, output: dict) -> None:
         self.output = output
 
-    def _set_input_for_flow(self, flow_name: str, flow_input: dict[str, dict]) -> None:
+    async def _set_input_for_flow(self, flow_name: str, flow_input: dict[str, dict]) -> None:
         control_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
         nodes = control_flow.nodes
         for node_name, node in nodes.items():
@@ -128,7 +128,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                             value=parameter_value,
                             node_name=node_name,
                         )
-                        set_parameter_value_result = GriptapeNodes.handle_request(set_parameter_value_request)
+                        set_parameter_value_result = await GriptapeNodes.ahandle_request(set_parameter_value_request)
 
                         if set_parameter_value_result.failed():
                             msg = f"Failed to set parameter {parameter_name} for node {node_name}."
@@ -144,7 +144,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         return output
 
-    def run(
+    async def run(
         self,
         workflow_name: str,
         flow_input: Any,
@@ -177,11 +177,11 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         # Load the flow
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
-        self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+        await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
 
         # Now send the run command to actually execute it
         start_flow_request = StartFlowRequest(flow_name=flow_name)
-        start_flow_result = GriptapeNodes.handle_request(start_flow_request)
+        start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
 
         if start_flow_result.failed():
             msg = f"Failed to start flow {flow_name}"
@@ -194,12 +194,12 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         error: Exception | None = None
         while not is_flow_finished:
             try:
-                event = self.queue.get(block=True)
+                event = await self.queue.get()
 
                 if isinstance(event, EventRequest):
                     # Handle EventRequest objects by processing them through GriptapeNodes
                     request_payload = event.request
-                    GriptapeNodes.handle_request(
+                    await GriptapeNodes.ahandle_request(
                         request_payload, response_topic=event.response_topic, request_id=event.request_id
                     )
                 elif isinstance(event, ExecutionGriptapeNodeEvent):

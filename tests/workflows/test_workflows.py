@@ -90,7 +90,8 @@ def clear_state_before_each_test() -> Generator[None, Any, None]:
 
 
 @pytest.mark.parametrize("workflow_path", get_workflows())
-def test_workflow_runs(workflow_path: str) -> None:
+@pytest.mark.asyncio
+async def test_workflow_runs(workflow_path: str) -> None:
     """Simple test to check if the workflow runs without errors."""
     # Run in subprocess - it will load the workflow in the subprocess
     runner = SubprocessWorkflowExecutor()

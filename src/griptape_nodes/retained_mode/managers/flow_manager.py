@@ -4,8 +4,6 @@ import logging
 from queue import Queue
 from typing import TYPE_CHECKING, cast
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -113,6 +111,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.events import put_event
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -1699,9 +1698,7 @@ class FlowManager:
         self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
 
-        EventBus.publish_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
-        )
+        put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent())))
 
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
