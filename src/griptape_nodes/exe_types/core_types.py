@@ -727,13 +727,14 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         }
     )
     _converters: list[Callable[[Any], Any]]
+    _read_converters: list[Callable[[Any], Any]]
     _validators: list[Callable[[Parameter, Any], None]]
     _ui_options: dict
     next: Parameter | None = None
     prev: Parameter | None = None
     parent_container_name: str | None = None
 
-    def __init__(  # noqa: PLR0913,PLR0912
+    def __init__(  # noqa: PLR0913,PLR0912,C901
         self,
         name: str,
         tooltip: str | list[dict],
@@ -746,6 +747,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         tooltip_as_output: str | list[dict] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
+        read_converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
@@ -780,6 +782,11 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._converters = []
         else:
             self._converters = converters
+
+        if read_converters is None:
+            self._read_converters = []
+        else:
+            self._read_converters = read_converters
 
         if validators is None:
             self._validators = []
@@ -885,6 +892,15 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             converters += trait.converters_for_trait()
         converters += self._converters
         return converters
+
+    @property
+    def read_converters(self) -> list[Callable[[Any], Any]]:
+        read_converters = []
+        traits = self.find_elements_by_type(Trait)
+        for trait in traits:
+            read_converters += trait.read_converters_for_trait()
+        read_converters += self._read_converters
+        return read_converters
 
     @property
     def validators(self) -> list[Callable[[Parameter, Any], None]]:
@@ -1856,6 +1872,10 @@ class Trait(ABC, BaseNodeElement):
 
     def converters_for_trait(self) -> list[Callable[[Any], Any]]:
         """Returns a list of methods to be applied as a convertor."""
+        return []
+
+    def read_converters_for_trait(self) -> list[Callable[[Any], Any]]:
+        """Returns a list of methods to be applied as a convertor when reading parameter values."""
         return []
 
     def validators_for_trait(self) -> list[Callable[[Parameter, Any]]]:

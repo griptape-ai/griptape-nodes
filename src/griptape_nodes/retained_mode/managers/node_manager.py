@@ -2512,7 +2512,8 @@ class NodeManager:
             output_value = node.parameter_output_values[parameter.name]
         if parameter.name in node.parameter_values:
             # Check the internal parameter values
-            internal_value = node.get_parameter_value(parameter.name)
+            # Disabling read converters here because we want to serialize the raw value.
+            internal_value = node.get_parameter_value(parameter.name, run_read_converters=False)
         # We have a value. Attempt to get a hash for it to see if it matches one
         # we've already indexed.
         commands = []

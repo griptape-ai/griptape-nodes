@@ -4,6 +4,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes_library.traits.presigned_url_generator import PresignedUrlGenerator
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
@@ -46,6 +47,7 @@ class LoadImage(DataNode):
             },
             tooltip="The loaded image.",
         )
+        self.image_parameter.add_trait(PresignedUrlGenerator())
         self.add_parameter(self.image_parameter)
 
         # Use the tethering utility to create the properly configured path parameter
@@ -68,7 +70,6 @@ class LoadImage(DataNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         # Delegate tethering logic to helper
-        self._tethering.on_after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:

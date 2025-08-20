@@ -1,6 +1,6 @@
 import logging
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -55,6 +55,9 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             The full file path with static files directory prefix if configured.
         """
         if self.static_files_directory:
+            # Don't add the directory prefix if it's already present
+            if file_name.startswith(f"{self.static_files_directory}/"):
+                return file_name
             return f"{self.static_files_directory}/{file_name}"
         return file_name
 
@@ -89,6 +92,18 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         response_data = response.json()
 
         return response_data["url"]
+
+    def create_asset_url(self, file_name: str) -> str:
+        """Create a persistent asset URL for the given file name.
+
+        Args:
+            file_name: The name of the file to create an asset URL for.
+
+        Returns:
+            str: The persistent asset URL for the file.
+        """
+        full_file_path = self._get_full_file_path(file_name)
+        return urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{full_file_path}")
 
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
@@ -206,3 +221,28 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             msg = f"Failed to delete file {file_name}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
+
+    def extract_file_name_from_url(self, url: str) -> str | None:
+        """Extract the file name from a Griptape Cloud asset URL.
+
+        Handles URL formats like:
+        - /api/buckets/{bucket_id}/assets/{file_path}
+        - https://cloud.griptape.ai/api/buckets/{bucket_id}/assets/{file_path}
+
+        Args:
+            url: The URL to extract the file name from.
+
+        Returns:
+            str | None: The extracted file name, or None if the URL doesn't match cloud storage patterns.
+        """
+        try:
+            parsed = urlparse(url)
+
+            # Handle asset URLs: /api/buckets/{bucket_id}/assets/{file_path}
+            if "/assets/" in parsed.path:
+                return parsed.path.split("/assets/", 1)[1]
+
+        except Exception as e:
+            logger.debug("Failed to extract filename from URL: %s", e)
+
+        return None

@@ -78,11 +78,13 @@ class CreateStaticFileUploadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPayl
         url: Presigned URL for uploading the file
         headers: HTTP headers required for the upload request
         method: HTTP method to use for upload (typically PUT)
+        asset_url: Persistent asset URL for the file (non-presigned)
     """
 
     url: str
     headers: dict = field(default_factory=dict)
     method: str = "PUT"
+    asset_url: str = ""
 
 
 @dataclass
@@ -106,12 +108,14 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
     enabling temporary download links, controlling file access permissions.
 
     Args:
-        file_name: Name of the file to be downloaded
+        file_name: Name of the file to be downloaded (used when asset_url is not provided)
+        asset_url: Asset URL to parse and extract file name from (takes precedence over file_name)
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
-    file_name: str
+    file_name: str | None = None
+    asset_url: str | None = None
 
 
 @dataclass
