@@ -11,10 +11,10 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
-    parse_hex_color,
     save_pil_image_to_static_file,
 )
 
@@ -734,8 +734,8 @@ class ImageBash(DataNode):
         background_hex = meta.get("canvas_background_color", "#ffffff")
 
         # Create base canvas
-        r, g, b = parse_hex_color(background_hex)
-        canvas = Image.new("RGBA", (canvas_width, canvas_height), (r, g, b, 255))
+        r, g, b, a = parse_color_to_rgba(background_hex)
+        canvas = Image.new("RGBA", (canvas_width, canvas_height), (r, g, b, a))
 
         # Prepare layer sources
         konva_json = meta.get("konva_json", {}) or {}

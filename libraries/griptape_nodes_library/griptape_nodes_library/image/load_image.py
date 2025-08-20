@@ -4,10 +4,8 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
-    ArtifactPathValidator,
     ArtifactTetheringConfig,
     default_extract_url_from_artifact_value,
 )
@@ -36,36 +34,27 @@ class LoadImage(DataNode):
         )
         self.image_parameter = Parameter(
             name="image",
-            input_types=["ImageArtifact", "ImageUrlArtifact"],
+            input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
             type="ImageUrlArtifact",
             output_type="ImageUrlArtifact",
             default_value=None,
-            ui_options={"clickable_file_browser": True, "expander": True, "edit_mask": True},
+            ui_options={
+                "clickable_file_browser": True,
+                "expander": True,
+                "edit_mask": True,
+                "display_name": "Image or Path to Image",
+            },
             tooltip="The loaded image.",
         )
         self.add_parameter(self.image_parameter)
 
-        self.path_parameter = Parameter(
+        # Use the tethering utility to create the properly configured path parameter
+        self.path_parameter = ArtifactPathTethering.create_path_parameter(
             name="path",
-            input_types=["str"],
-            type="str",
-            default_value="",
+            config=self._tethering_config,
+            display_name="File Path or URL",
             tooltip="Path to a local image file or URL to an image",
-            ui_options={"display_name": "File Path or URL"},
         )
-
-        self.path_parameter.add_trait(
-            FileSystemPicker(
-                allow_directories=False,
-                allow_files=True,
-                file_types=list(self.SUPPORTED_EXTENSIONS),
-            )
-        )
-
-        self.path_parameter.add_trait(
-            ArtifactPathValidator(supported_extensions=self.SUPPORTED_EXTENSIONS, url_content_type_prefix="image/")
-        )
-
         self.add_parameter(self.path_parameter)
 
         # Tethering helper: keeps image and path parameters in sync bidirectionally
@@ -83,9 +72,9 @@ class LoadImage(DataNode):
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        # Get outputs from tethering helper
-        image_artifact = self._tethering.get_artifact_output()
-        if image_artifact is not None:
-            self.parameter_output_values["image"] = image_artifact
+        # Get parameter values and assign to outputs
+        image_artifact = self.get_parameter_value("image")
+        self.parameter_output_values["image"] = image_artifact
 
-        self.parameter_output_values["path"] = self._tethering.get_path_output()
+        path_value = self.get_parameter_value("path")
+        self.parameter_output_values["path"] = path_value

@@ -80,6 +80,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SendNodeMessageRequest,
+    SendNodeMessageResultFailure,
+    SendNodeMessageResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializedSelectedNodesCommands,
@@ -2403,6 +2406,7 @@ class NodeManager:
         value: Any,
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         unique_parameter_uuid_to_values: dict,
+        parameter: Parameter,
         parameter_name: str,
         node_name: str,
         *,
@@ -2426,8 +2430,10 @@ class NodeManager:
             case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
                 # This value is new for us.
 
-                # Confirm that the author wants this parameter and/or class to be serialized.
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+                # Check if parameter is marked as non-serializable (e.g., ImageDrivers, PromptDrivers, file handles)
+                if not parameter.serializable:
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+                    return None
 
                 # Check if we can serialize it.
                 try:
@@ -2508,12 +2514,13 @@ class NodeManager:
                 value=internal_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=False,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if internal_command is None:
-                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(internal_command)
@@ -2522,12 +2529,13 @@ class NodeManager:
                 value=output_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=True,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if output_command is None:
-                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(output_command)
@@ -2638,3 +2646,66 @@ class NodeManager:
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
         return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)
+
+    def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
+        """Handle a SendNodeMessageRequest by calling the node's message callback.
+
+        Args:
+            request: The SendNodeMessageRequest containing message details
+
+        Returns:
+            ResultPayload: Success or failure result with callback response
+        """
+        node_name = request.node_name
+        node = None
+
+        if node_name is None:
+            # Get from the current context
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to send message to Node from Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            # Find the node by name
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to send message to Node '{node_name}', but no such Node was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+        # Validate optional_element_name if specified
+        if request.optional_element_name is not None:
+            element = node.root_ui_element.find_element_by_name(request.optional_element_name)
+            if element is None:
+                details = f"Attempted to send message to Node '{node_name}' with element '{request.optional_element_name}', but no such element was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
+
+        # Call the node's message callback
+        callback_result = node.on_node_message_received(
+            optional_element_name=request.optional_element_name,
+            message_type=request.message_type,
+            message=request.message,
+        )
+
+        if not callback_result.success:
+            details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
+            logger.warning(details)
+            return SendNodeMessageResultFailure(
+                result_details=callback_result.details,
+                response=callback_result.response,
+                altered_workflow_state=callback_result.altered_workflow_state,
+            )
+
+        details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
+        logger.debug(details)
+        return SendNodeMessageResultSuccess(
+            result_details=callback_result.details,
+            response=callback_result.response,
+            altered_workflow_state=callback_result.altered_workflow_state,
+        )
