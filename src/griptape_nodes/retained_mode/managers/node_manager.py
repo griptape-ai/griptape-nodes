@@ -1952,7 +1952,11 @@ class NodeManager:
             library_used = node.metadata["library"]
             # Get the library metadata so we can get the version.
             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-            library_metadata_result = GriptapeNodes().handle_request(library_metadata_request)
+            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
 
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
                 if isinstance(node, ErrorProxyNode):
