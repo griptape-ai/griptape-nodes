@@ -56,7 +56,10 @@ class ExecutionContext:
 class ExecutionState(State):
     @staticmethod
     def handle_done_nodes(context: ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
-        pass
+        node = done_node.node_reference
+        # Publish all parameter updates.
+        for parameter, value in node.parameter_output_values.items():
+            node.publish_update_to_parameter(parameter,value)
 
     @staticmethod
     def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
@@ -102,8 +105,22 @@ class ExecutionState(State):
 
     @staticmethod
     def execute_node(current_node: DagOrchestrator.DagNode, sem: threading.Semaphore) -> None:
+        import threading
         with sem:
+            node_name = current_node.node_reference.name
+            thread_name = threading.current_thread().name
+            logger.info("THREAD_DEBUG: Starting process() for node '%s' in thread '%s'", node_name, thread_name)
+            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values BEFORE process(): %s", 
+                       node_name, list(current_node.node_reference.parameter_output_values.keys()))
+            
             current_node.node_reference.process()
+            
+            logger.info("THREAD_DEBUG: Completed process() for node '%s' in thread '%s'", node_name, thread_name)
+            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values AFTER process(): %s", 
+                       node_name, list(current_node.node_reference.parameter_output_values.keys()))
+            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values contents: %s", 
+                       node_name, {k: str(v)[:100] + "..." if len(str(v)) > 100 else str(v) 
+                                  for k, v in current_node.node_reference.parameter_output_values.items()})
 
     @staticmethod
     def on_enter(context: ExecutionContext) -> type[State] | None:
@@ -157,7 +174,9 @@ class ExecutionState(State):
 
                 # Collect parameter values from upstream nodes before executing
                 try:
+                    logger.info("THREAD_DEBUG: About to collect parameter values for node '%s' in main thread", node_reference.node_reference.name)
                     ExecutionState.collect_values_from_upstream_nodes(node_reference)
+                    logger.info("THREAD_DEBUG: Completed parameter collection for node '%s' in main thread", node_reference.node_reference.name)
                 except Exception as e:
                     logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
                     context.error_message = f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
@@ -169,10 +188,6 @@ class ExecutionState(State):
                     # TODO: Will this call the correct thing?
                     node = context.current_dag.future_to_node.pop(future)
                     node.node_state = NodeState.DONE
-                    # TODO: WIll this have to be sent all over?
-                    logger.error(
-                        f"Finishing up thread for node {node.node_reference.name} with result {future.result()}"
-                    )
                     # Publish event to resume DAG execution
                     EventBus.publish_event(
                         ExecutionGriptapeNodeEvent(
@@ -182,9 +197,11 @@ class ExecutionState(State):
                         )
                     )
 
+                logger.info("THREAD_DEBUG: Submitting node '%s' to thread executor from main thread", node_reference.node_reference.name)
                 node_future = context.current_dag.thread_executor.submit(
                     ExecutionState.execute_node, node_reference, context.current_dag.sem
                 )
+                logger.info("THREAD_DEBUG: Node '%s' submitted to thread executor successfully", node_reference.node_reference.name)
                 # Add a callback to set node to done when future has finished.
                 context.current_dag.future_to_node[node_future] = node_reference
                 node_reference.thread_reference = node_future

@@ -6,6 +6,7 @@ but supports connecting custom prompt_model_configurations. It handles parameter
 for tools, rulesets, prompts, and streams output back to the user interface.
 """
 
+import threading
 from typing import Any
 
 from griptape.artifacts import BaseArtifact
@@ -426,11 +427,19 @@ class Agent(ControlNode):
             self._process(agent, prompt)
             self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
             try_throw_error(agent.output)
+            logger.info("THREAD_DEBUG: Agent node '%s' completed processing with prompt in thread. Current thread: %s", 
+                       self.name, threading.current_thread().name)
         else:
             self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
             self.parameter_output_values["output"] = "Agent created."
+            logger.info("THREAD_DEBUG: Agent node '%s' set parameter_output_values['output'] = 'Agent created.' in thread", self.name)
+        
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
+        logger.info("THREAD_DEBUG: Agent node '%s' set parameter_output_values['agent'] in thread. Current thread: %s", 
+                   self.name, threading.current_thread().name)
+        logger.info("THREAD_DEBUG: Agent node '%s' parameter_output_values keys after setting: %s", 
+                   self.name, list(self.parameter_output_values.keys()))
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         """Performs the synchronous, streaming interaction with the Griptape Agent.

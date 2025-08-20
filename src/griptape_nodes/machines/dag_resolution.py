@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
-import networkx as nx
 
 from griptape.events import EventBus
 
@@ -147,6 +146,7 @@ class BuildDagNodeState(State):
 
                 # Add the edge to the DAG - this is the key DAG building step
                 dag_instance = GriptapeNodes.get_instance().DagManager()
+                # update DAG instance
                 dag_instance.network.add_edge(upstream_node.name, current_node.name)
                 logger.info(
                     "DAG BUILD: Added edge '%s' -> '%s'. Network now has %d edges. Instance ID: %s",
@@ -220,6 +220,8 @@ class ExecuteDagState(State):
             error_msg = context.execution_machine.get_error_message()
             logger.error("DAG execution failed: %s", error_msg)
             return DagCompleteState
+        #Is this the right move?
+        context.execution_machine.update()
 
         return None
 
@@ -227,9 +229,7 @@ class ExecuteDagState(State):
 class DagCompleteState(State):
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
-        logger.info("DAG resolution completed successfully")
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        nx.draw(GriptapeNodes.get_instance().DagManager().network)
+        logger.info("DAG resolution and execution completed successfully")
         return None
 
     @staticmethod
