@@ -59,11 +59,14 @@ class NodeMessageResult(NamedTuple):
         success: True if the message was handled successfully, False otherwise
         details: Human-readable description of what happened
         response: Optional response data to return to the sender
+        altered_workflow_state: True if the message handling altered workflow state.
+            Clients can use this to determine if the workflow needs to be re-saved.
     """
 
     success: bool
     details: str
     response: Any = None
+    altered_workflow_state: bool = True
 
 
 class BaseNode(ABC):
@@ -267,7 +270,7 @@ class BaseNode(ABC):
 
     def on_node_message_received(
         self,
-        optional_parameter_name: str | None,  # noqa: ARG002
+        optional_element_name: str | None,  # noqa: ARG002
         message_type: str,
         message: Any,  # noqa: ARG002
     ) -> NodeMessageResult:
@@ -277,7 +280,7 @@ class BaseNode(ABC):
         and implement custom communication patterns with external systems.
 
         Args:
-            optional_parameter_name: Optional parameter name this message relates to
+            optional_element_name: Optional element name this message relates to
             message_type: String indicating the message type for parsing
             message: Message payload of any type
 

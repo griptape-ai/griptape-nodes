@@ -689,7 +689,7 @@ class SendNodeMessageRequest(RequestPayload):
 
     Args:
         node_name: Name of the target node (None for current context node)
-        optional_parameter_name: Optional parameter name this message relates to
+        optional_element_name: Optional element name this message relates to
         message_type: String indicating message type for receiver parsing
         message: Message payload of any type
 
@@ -699,12 +699,12 @@ class SendNodeMessageRequest(RequestPayload):
     message_type: str
     message: Any
     node_name: str | None = None
-    optional_parameter_name: str | None = None
+    optional_element_name: str | None = None
 
 
 @dataclass
 @PayloadRegistry.register
-class SendNodeMessageResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class SendNodeMessageResultSuccess(ResultPayloadSuccess):
     """Node message sent and processed successfully.
 
     Args:
@@ -716,7 +716,7 @@ class SendNodeMessageResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 
 @dataclass
 @PayloadRegistry.register
-class SendNodeMessageResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+class SendNodeMessageResultFailure(ResultPayloadFailure):
     """Node message sending failed.
 
     Common causes: node not found, no current context, message handler error,

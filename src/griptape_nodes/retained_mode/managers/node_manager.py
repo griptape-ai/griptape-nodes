@@ -2573,9 +2573,17 @@ class NodeManager:
                 logger.error(details)
                 return SendNodeMessageResultFailure(result_details=details)
 
+        # Validate optional_element_name if specified
+        if request.optional_element_name is not None:
+            element = node.root_ui_element.find_element_by_name(request.optional_element_name)
+            if element is None:
+                details = f"Attempted to send message to Node '{node_name}' with element '{request.optional_element_name}', but no such element was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
+
         # Call the node's message callback
         callback_result = node.on_node_message_received(
-            optional_parameter_name=request.optional_parameter_name,
+            optional_element_name=request.optional_element_name,
             message_type=request.message_type,
             message=request.message,
         )
@@ -2584,9 +2592,15 @@ class NodeManager:
             details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
             logger.warning(details)
             return SendNodeMessageResultFailure(
-                result_details=callback_result.details, response=callback_result.response
+                result_details=callback_result.details,
+                response=callback_result.response,
+                altered_workflow_state=callback_result.altered_workflow_state,
             )
 
         details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
         logger.debug(details)
-        return SendNodeMessageResultSuccess(result_details=callback_result.details, response=callback_result.response)
+        return SendNodeMessageResultSuccess(
+            result_details=callback_result.details,
+            response=callback_result.response,
+            altered_workflow_state=callback_result.altered_workflow_state,
+        )
