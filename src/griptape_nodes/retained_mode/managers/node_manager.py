@@ -73,6 +73,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SendNodeMessageRequest,
+    SendNodeMessageResultFailure,
+    SendNodeMessageResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializedSelectedNodesCommands,
@@ -2538,3 +2541,66 @@ class NodeManager:
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
         return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)
+
+    def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
+        """Handle a SendNodeMessageRequest by calling the node's message callback.
+
+        Args:
+            request: The SendNodeMessageRequest containing message details
+
+        Returns:
+            ResultPayload: Success or failure result with callback response
+        """
+        node_name = request.node_name
+        node = None
+
+        if node_name is None:
+            # Get from the current context
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to send message to Node from Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            # Find the node by name
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to send message to Node '{node_name}', but no such Node was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+        # Validate optional_element_name if specified
+        if request.optional_element_name is not None:
+            element = node.root_ui_element.find_element_by_name(request.optional_element_name)
+            if element is None:
+                details = f"Attempted to send message to Node '{node_name}' with element '{request.optional_element_name}', but no such element was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
+
+        # Call the node's message callback
+        callback_result = node.on_node_message_received(
+            optional_element_name=request.optional_element_name,
+            message_type=request.message_type,
+            message=request.message,
+        )
+
+        if not callback_result.success:
+            details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
+            logger.warning(details)
+            return SendNodeMessageResultFailure(
+                result_details=callback_result.details,
+                response=callback_result.response,
+                altered_workflow_state=callback_result.altered_workflow_state,
+            )
+
+        details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
+        logger.debug(details)
+        return SendNodeMessageResultSuccess(
+            result_details=callback_result.details,
+            response=callback_result.response,
+            altered_workflow_state=callback_result.altered_workflow_state,
+        )
