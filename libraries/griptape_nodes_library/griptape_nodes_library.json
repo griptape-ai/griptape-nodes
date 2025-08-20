@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.41.0",
-    "engine_version": "0.41.0",
+    "library_version": "0.50.0",
+    "engine_version": "0.50.0",
     "tags": [
       "Griptape",
       "AI"
