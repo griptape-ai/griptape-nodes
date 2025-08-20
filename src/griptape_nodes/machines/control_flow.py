@@ -10,7 +10,6 @@ from griptape.events import EventBus
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.machines.dag_execution import DagExecutionMachine
 from griptape_nodes.machines.dag_resolution import DagResolutionMachine
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -38,18 +37,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-# This is the control flow context. Owns the Resolution and Execution Machines
+# This is the control flow context. Owns the Resolution Machine
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
     resolution_machine: DagResolutionMachine
-    execution_machine: DagExecutionMachine
     selected_output: Parameter | None
     paused: bool = False
 
     def __init__(self) -> None:
         self.resolution_machine = DagResolutionMachine()
-        self.execution_machine = DagExecutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -79,7 +76,6 @@ class ControlFlowContext:
             self.current_node.clear_node()
         self.current_node = None
         self.resolution_machine.reset_machine()
-        self.execution_machine.reset_machine()
         self.selected_output = None
         self.paused = False
 
@@ -123,38 +119,9 @@ class ResolveNodeState(State):
             context.resolution_machine.build_dag_for_node(context.current_node)
 
         if context.resolution_machine.is_complete():
-            return ExecuteDagState
-        return None
-
-
-class ExecuteDagState(State):
-    @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
-        if context.current_node is None:
-            return CompleteState
-
-        # Start DAG execution after resolution is complete
-        context.execution_machine.start_execution()
-        logger.info("Starting DAG execution for resolved nodes")
-
-        if not context.paused:
-            return ExecuteDagState
-        return None
-
-    @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:
-        if context.current_node is None:
-            return CompleteState
-
-        # Check if DAG execution is complete
-        if context.execution_machine.is_complete():
             return NextNodeState
-        if context.execution_machine.is_error():
-            error_msg = context.execution_machine.get_error_message()
-            logger.error("DAG execution failed: %s", error_msg)
-            return CompleteState
-
         return None
+
 
 
 class NextNodeState(State):
@@ -261,7 +228,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
-        execution_machine = self._context.execution_machine
 
         if change_debug_mode:
             resolution_machine.change_debug_mode(True)
@@ -269,16 +235,11 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         # If we're in the resolution phase, step the resolution machine
         if self._current_state is ResolveNodeState:
             resolution_machine.update()
-        # If we're in the execution phase, step the execution machine
-        elif self._current_state is ExecuteDagState:
-            execution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
         if (
             self._current_state is ResolveNodeState
             and (resolution_machine.is_complete() or not resolution_machine.is_started())
-        ) or (
-            self._current_state is ExecuteDagState and (execution_machine.is_complete() or execution_machine.is_error())
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
@@ -286,23 +247,17 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
-        execution_machine = self._context.execution_machine
 
         resolution_machine.change_debug_mode(False)
 
         # If we're in the resolution phase, step the resolution machine
         if self._current_state is ResolveNodeState:
             resolution_machine.update()
-        # If we're in the execution phase, step the execution machine
-        elif self._current_state is ExecuteDagState:
-            execution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
         if (
             self._current_state is ResolveNodeState
             and (resolution_machine.is_complete() or not resolution_machine.is_started())
-        ) or (
-            self._current_state is ExecuteDagState and (execution_machine.is_complete() or execution_machine.is_error())
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:

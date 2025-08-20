@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+import networkx as nx
 
 from griptape.events import EventBus
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.machines.dag_execution import DagExecutionMachine
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -31,10 +33,12 @@ class Focus:
 class DagResolutionContext:
     focus_stack: list[Focus]
     paused: bool
+    execution_machine: DagExecutionMachine
 
     def __init__(self) -> None:
         self.focus_stack = []
         self.paused = False
+        self.execution_machine = DagExecutionMachine()
 
     def reset(self) -> None:
         if self.focus_stack:
@@ -42,6 +46,7 @@ class DagResolutionContext:
             node.clear_node()
         self.focus_stack.clear()
         self.paused = False
+        self.execution_machine.reset_machine()
 
 
 class InitializeDagSpotlightState(State):
@@ -192,12 +197,39 @@ class BuildDagNodeState(State):
         if len(context.focus_stack):
             return EvaluateDagParameterState
 
-        return DagCompleteState
+        return ExecuteDagState
+
+
+class ExecuteDagState(State):
+    @staticmethod
+    def on_enter(context: DagResolutionContext) -> type[State] | None:
+        # Start DAG execution after resolution is complete
+        context.execution_machine.start_execution()
+        logger.info("Starting DAG execution for resolved nodes")
+
+        if not context.paused:
+            return ExecuteDagState
+        return None
+
+    @staticmethod
+    def on_update(context: DagResolutionContext) -> type[State] | None:
+        # Check if DAG execution is complete
+        if context.execution_machine.is_complete():
+            return DagCompleteState
+        if context.execution_machine.is_error():
+            error_msg = context.execution_machine.get_error_message()
+            logger.error("DAG execution failed: %s", error_msg)
+            return DagCompleteState
+
+        return None
 
 
 class DagCompleteState(State):
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
+        logger.info("DAG resolution completed successfully")
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        nx.draw(GriptapeNodes.get_instance().DagManager().network)
         return None
 
     @staticmethod
