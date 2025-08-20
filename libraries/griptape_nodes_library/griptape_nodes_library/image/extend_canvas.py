@@ -39,44 +39,14 @@ class BackgroundColorConfig(NamedTuple):
 
 
 # Background color configuration table
-BACKGROUND_COLOR_CONFIGS = {
-    "black": BackgroundColorConfig(
-        image_mode="RGB",
-        bg_color=NAMED_COLORS["black"],  # Black background
-        mask_bg_color=NAMED_COLORS["white"],  # White mask background
-        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
-    ),
-    "white": BackgroundColorConfig(
-        image_mode="RGB",
-        bg_color=NAMED_COLORS["white"],  # White background
-        mask_bg_color=NAMED_COLORS["white"],  # White mask background
-        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
-    ),
-    "transparent": BackgroundColorConfig(
+BACKGROUND_COLOR_CONFIGS = {}
+for key, value in NAMED_COLORS.items():
+    BACKGROUND_COLOR_CONFIGS[key] = BackgroundColorConfig(
         image_mode="RGBA",
-        bg_color=NAMED_COLORS["transparent"],  # Transparent background
-        mask_bg_color=NAMED_COLORS["transparent"],  # Transparent mask background
-        mask_fg_color=NAMED_COLORS["black"],  # Opaque black mask foreground (original image area)
-    ),
-    "magenta": BackgroundColorConfig(
-        image_mode="RGB",
-        bg_color=NAMED_COLORS["magenta"],  # Magenta background
-        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        bg_color=value,  # Background color
+        mask_bg_color=value if key == "transparent" else NAMED_COLORS["white"],
         mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
-    ),
-    "green": BackgroundColorConfig(
-        image_mode="RGB",
-        bg_color=NAMED_COLORS["green"],  # Green background
-        mask_bg_color=NAMED_COLORS["white"],  # White mask background
-        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
-    ),
-    "blue": BackgroundColorConfig(
-        image_mode="RGB",
-        bg_color=NAMED_COLORS["blue"],  # Blue background
-        mask_bg_color=NAMED_COLORS["white"],  # White mask background
-        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
-    ),
-}
+    )
 
 
 # Common aspect ratio presets (pure ratios without fixed pixels)
