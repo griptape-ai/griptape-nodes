@@ -7,6 +7,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -41,39 +42,39 @@ class BackgroundColorConfig(NamedTuple):
 BACKGROUND_COLOR_CONFIGS = {
     "black": BackgroundColorConfig(
         image_mode="RGB",
-        bg_color=(0, 0, 0),  # Black background
-        mask_bg_color=(255, 255, 255),  # White mask background
-        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+        bg_color=NAMED_COLORS["black"],  # Black background
+        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
     ),
     "white": BackgroundColorConfig(
         image_mode="RGB",
-        bg_color=(255, 255, 255),  # White background
-        mask_bg_color=(255, 255, 255),  # White mask background
-        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+        bg_color=NAMED_COLORS["white"],  # White background
+        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
     ),
     "transparent": BackgroundColorConfig(
         image_mode="RGBA",
-        bg_color=(0, 0, 0, 0),  # Transparent background
-        mask_bg_color=(0, 0, 0, 0),  # Transparent mask background
-        mask_fg_color=(0, 0, 0, 255),  # Opaque black mask foreground (original image area)
+        bg_color=NAMED_COLORS["transparent"],  # Transparent background
+        mask_bg_color=NAMED_COLORS["transparent"],  # Transparent mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Opaque black mask foreground (original image area)
     ),
     "magenta": BackgroundColorConfig(
         image_mode="RGB",
-        bg_color=(255, 0, 255),  # Magenta background
-        mask_bg_color=(255, 255, 255),  # White mask background
-        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+        bg_color=NAMED_COLORS["magenta"],  # Magenta background
+        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
     ),
     "green": BackgroundColorConfig(
         image_mode="RGB",
-        bg_color=(0, 255, 0),  # Green background
-        mask_bg_color=(255, 255, 255),  # White mask background
-        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+        bg_color=NAMED_COLORS["green"],  # Green background
+        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
     ),
     "blue": BackgroundColorConfig(
         image_mode="RGB",
-        bg_color=(0, 0, 255),  # Blue background
-        mask_bg_color=(255, 255, 255),  # White mask background
-        mask_fg_color=(0, 0, 0),  # Black mask foreground (original image area)
+        bg_color=NAMED_COLORS["blue"],  # Blue background
+        mask_bg_color=NAMED_COLORS["white"],  # White mask background
+        mask_fg_color=NAMED_COLORS["black"],  # Black mask foreground (original image area)
     ),
 }
 
