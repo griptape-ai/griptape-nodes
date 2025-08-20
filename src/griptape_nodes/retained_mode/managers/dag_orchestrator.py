@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+
 class NodeState(Enum):
     """Individual node execution states."""
 
@@ -25,6 +26,7 @@ class NodeState(Enum):
     CANCELED = "canceled"
     ERRORED = "errored"
     WAITING = "waiting"
+
 
 # orchestrator attached to each flow, owned by griptape nodes
 class DagOrchestrator:

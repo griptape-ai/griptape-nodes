@@ -44,9 +44,9 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.agent_manager import AgentManager

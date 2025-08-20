@@ -17,7 +17,7 @@ from griptape.tasks import PromptTask
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -345,7 +345,7 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
-    def process(self) -> AsyncResult[Structure]:  # noqa: C901
+    def process(self) -> None:  # noqa: C901
         """Executes the main logic of the node asynchronously.
 
         Sets up the Griptape Agent (either new or from input), configures the
@@ -423,7 +423,7 @@ class Agent(ControlNode):
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
             self.append_value_to_parameter("logs", "[Started processing agent..]\n")
-            yield lambda: self._process(agent, prompt)
+            self._process(agent, prompt)
             self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
             try_throw_error(agent.output)
         else:

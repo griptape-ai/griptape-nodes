@@ -5,9 +5,21 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+)
+from griptape_nodes.retained_mode.events.execution_events import (
+    ResumeNodeProcessingEvent,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    SetParameterValueRequest,
+)
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 if TYPE_CHECKING:
@@ -42,10 +54,51 @@ class ExecutionContext:
 
 
 class ExecutionState(State):
+    @staticmethod
+    def handle_done_nodes(context: ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
+        pass
 
     @staticmethod
-    def handle_done_nodes(context:ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
-        pass
+    def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
+        """Collect output values from resolved upstream nodes and pass them to the current node.
+
+        This method iterates through all input parameters of the current node, finds their
+        connected upstream nodes, and if those nodes are resolved, retrieves their output
+        values and passes them through using SetParameterValueRequest.
+
+        Args:
+            node_reference (DagOrchestrator.DagNode): The node to collect values for.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        current_node = node_reference.node_reference
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        for parameter in current_node.parameters:
+            # Skip control type parameters
+            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
+                continue
+
+            # Get the connected upstream node for this parameter
+            upstream_connection = connections.get_connected_node(current_node, parameter)
+            if upstream_connection:
+                upstream_node, upstream_parameter = upstream_connection
+
+                # If the upstream node is resolved, collect its output value
+                if upstream_parameter.name in upstream_node.parameter_output_values:
+                    output_value = upstream_node.parameter_output_values[upstream_parameter.name]
+                else:
+                    output_value = upstream_node.get_parameter_value(upstream_parameter.name)
+
+                # Pass the value through using the same mechanism as normal resolution
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=parameter.name,
+                        node_name=current_node.name,
+                        value=output_value,
+                        data_type=upstream_parameter.output_type,
+                    )
+                )
 
     @staticmethod
     def execute_node(current_node: DagOrchestrator.DagNode, sem: threading.Semaphore) -> None:
@@ -102,21 +155,44 @@ class ExecutionState(State):
                 # we have threads available
                 node_reference = context.current_dag.node_to_reference[node]
 
+                # Collect parameter values from upstream nodes before executing
+                try:
+                    ExecutionState.collect_values_from_upstream_nodes(node_reference)
+                except Exception as e:
+                    logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
+                    context.error_message = f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
+                    context.workflow_state = WorkflowState.ERRORED
+                    context.current_dag.sem.release()  # Release the semaphore we just acquired
+                    return ErrorState
+
                 def on_future_done(future: Future) -> None:
                     # TODO: Will this call the correct thing?
                     node = context.current_dag.future_to_node.pop(future)
                     node.node_state = NodeState.DONE
                     # TODO: WIll this have to be sent all over?
-                    logger.error(f"Finishing up thread for node {node.node_reference.name} with result {future.result()}")
+                    logger.error(
+                        f"Finishing up thread for node {node.node_reference.name} with result {future.result()}"
+                    )
+                    # Publish event to resume DAG execution
+                    EventBus.publish_event(
+                        ExecutionGriptapeNodeEvent(
+                            wrapped_event=ExecutionEvent(
+                                payload=ResumeNodeProcessingEvent(node_name=node.node_reference.name)
+                            )
+                        )
+                    )
 
-                node_future = context.current_dag.thread_executor.submit(ExecutionState.execute_node, node_reference, context.current_dag.sem)
-                #Add a callback to set node to done when future has finished.
+                node_future = context.current_dag.thread_executor.submit(
+                    ExecutionState.execute_node, node_reference, context.current_dag.sem
+                )
+                # Add a callback to set node to done when future has finished.
                 context.current_dag.future_to_node[node_future] = node_reference
                 node_reference.thread_reference = node_future
                 node_reference.node_state = NodeState.PROCESSING
                 node_future.add_done_callback(with_contextvars(on_future_done))
                 # Map futures to nodes.
-        return ExecutionState
+        # Exit out to None. Wait to reenter.
+        return None
 
 
 class ErrorState(State):

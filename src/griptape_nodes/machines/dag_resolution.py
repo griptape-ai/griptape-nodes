@@ -155,6 +155,7 @@ class BuildDagNodeState(State):
     def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         dag_instance = GriptapeNodes.get_instance().DagManager()
 
         # Add the current node to the DAG using get_instance() pattern
