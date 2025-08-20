@@ -26,12 +26,14 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ProgressEvent,
+    RequestPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     NodeUnresolvedEvent,
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
@@ -165,6 +167,15 @@ class BaseNode(ABC):
         """Callback to confirm allowing a Connection going OUT of this Node."""
         return True
 
+    def before_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter_name: str,  # noqa: ARG002
+        target_parameter_name: str,  # noqa: ARG002
+    ) -> None:
+        """Callback before validating a Connection coming TO this Node."""
+        return
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -172,6 +183,15 @@ class BaseNode(ABC):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
+        return
+
+    def before_outgoing_connection(
+        self,
+        source_parameter_name: str,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter_name: str,  # noqa: ARG002
+    ) -> None:
+        """Callback before validating a Connection going OUT of this Node."""
         return
 
     def after_outgoing_connection(
@@ -1110,6 +1130,218 @@ class StartLoopNode(BaseNode):
 class EndLoopNode(BaseNode):
     start_node: StartLoopNode | None = None
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+
+
+class ErrorProxyNode(BaseNode):
+    """A proxy node that substitutes for nodes that failed to create due to missing dependencies or errors.
+
+    This node maintains the original node type information and allows workflows to continue loading
+    even when some node types are unavailable. It generates parameters dynamically as connections
+    and values are assigned to maintain workflow structure.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        original_node_type: str,
+        original_library_name: str,
+        failure_reason: str,
+        metadata: dict[Any, Any] | None = None,
+    ) -> None:
+        super().__init__(name, metadata)
+
+        self.original_node_type = original_node_type
+        self.original_library_name = original_library_name
+        self.failure_reason = failure_reason
+        # Record ALL initial_setup=True requests in order for 1:1 replay
+        self._recorded_initialization_requests: list[RequestPayload] = []
+
+        # Track if user has made connection modifications after initial setup
+        self._has_connection_modifications: bool = False
+
+        # Add error message parameter explaining the failure
+        self._error_message = ParameterMessage(
+            name="error_proxy_message",
+            variant="error",
+            value="",  # Will be set by _update_error_message
+        )
+        self.add_node_element(self._error_message)
+        self._update_error_message()
+
+    def _get_base_error_message(self) -> str:
+        """Generate the base error message for this ErrorProxyNode."""
+        return (
+            f"This is a placeholder for a node of type '{self.original_node_type}'"
+            f"\nfrom the '{self.original_library_name}' library."
+            f"\nIt encountered a problem when loading."
+            f"\nThe technical issue:\n{self.failure_reason}\n\n"
+            f"Your original node will be restored once the issue above is fixed"
+            f"(which may require registering the appropriate library, or getting"
+            f"a code fix from the node author)."
+        )
+
+    def on_attempt_set_parameter_value(self, param_name: str) -> None:
+        """Public method to attempt setting a parameter value during initial setup.
+
+        Creates a PROPERTY mode parameter if it doesn't exist to support value setting.
+
+        Args:
+            param_name: Name of the parameter to prepare for value setting
+        """
+        self._ensure_parameter_exists(param_name)
+
+    def _ensure_parameter_exists(self, param_name: str) -> None:
+        """Ensures a parameter exists on this node.
+
+        Creates a universal parameter with all modes enabled for maximum flexibility.
+        Auto-generated parameters are marked as non-user-defined so they don't get serialized.
+
+        Args:
+            param_name: Name of the parameter to ensure exists
+        """
+        existing_param = super().get_parameter_by_name(param_name)
+
+        if existing_param is None:
+            # Create new universal parameter with all modes enabled
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            request = AddParameterToNodeRequest(
+                node_name=self.name,
+                parameter_name=param_name,
+                type=ParameterTypeBuiltin.ANY.value,  # ANY = parameter's main type for maximum flexibility
+                input_types=[ParameterTypeBuiltin.ANY.value],  # ANY = accepts any single input type
+                output_type=ParameterTypeBuiltin.ALL.value,  # ALL = can output any type (passthrough)
+                tooltip="Parameter created for placeholder node to preserve workflow connections",
+                mode_allowed_input=True,  # Enable all modes upfront
+                mode_allowed_output=True,
+                mode_allowed_property=True,
+                is_user_defined=False,  # Don't serialize this parameter
+                initial_setup=True,  # Allows setting non-settable parameters and prevents resolution cascades during workflow loading
+            )
+            result = GriptapeNodes.handle_request(request)
+
+            # Check if parameter creation was successful
+            from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeResultSuccess
+
+            if not isinstance(result, AddParameterToNodeResultSuccess):
+                failure_message = f"Failed to create parameter '{param_name}': {result.result_details}"
+                raise RuntimeError(failure_message)
+        # If parameter already exists, nothing to do - it already has all modes
+
+    def allow_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> bool:
+        """ErrorProxyNode allows connections - it's a shell for maintaining connections."""
+        return True
+
+    def allow_outgoing_connection(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> bool:
+        """ErrorProxyNode allows connections - it's a shell for maintaining connections."""
+        return True
+
+    def before_incoming_connection(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter_name: str,  # noqa: ARG002
+        target_parameter_name: str,
+    ) -> None:
+        """Create target parameter before connection validation."""
+        self._ensure_parameter_exists(target_parameter_name)
+
+    def before_outgoing_connection(
+        self,
+        source_parameter_name: str,
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter_name: str,  # noqa: ARG002
+    ) -> None:
+        """Create source parameter before connection validation."""
+        self._ensure_parameter_exists(source_parameter_name)
+
+    def set_post_init_connections_modified(self) -> None:
+        """Mark that user-initiated connections have been modified and update the warning message."""
+        if not self._has_connection_modifications:
+            self._has_connection_modifications = True
+            self._update_error_message()
+
+    def _update_error_message(self) -> None:
+        """Update the ParameterMessage to include connection modification warning."""
+        # Build the updated message with connection warning
+        base_message = self._get_base_error_message()
+
+        # Add connection modification warning if applicable
+        if self._has_connection_modifications:
+            connection_warning = (
+                "\n\nWARNING: You have modified connections to this placeholder node."
+                "\nThis may require manual fixes when the original node is restored."
+            )
+            final_message = base_message + connection_warning
+        else:
+            # Add the general note only if no modifications have been made
+            general_warning = (
+                "\n\nNote: Making changes to this node may require manual fixes when restored,"
+                "\nas we can't predict how all node authors craft their custom nodes."
+            )
+            final_message = base_message + general_warning
+
+        # Update the error message value
+        self._error_message.value = final_message
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Prevent ErrorProxy nodes from running - validate at node level only."""
+        error_msg = (
+            f"Cannot run node '{self.name}': This is a placeholder node put in place to preserve your workflow until the breaking issue is fixed.\n\n"
+            f"The original '{self.original_node_type}' from library '{self.original_library_name}' failed to load due to this technical issue:\n\n"
+            f"{self.failure_reason}\n\n"
+            f"Once you resolve the issue above, reload this workflow and the placeholder will be automatically replaced with the original node."
+        )
+        return [RuntimeError(error_msg)]
+
+    def record_initialization_request(self, request: RequestPayload) -> None:
+        """Record an initialization request for replay during serialization.
+
+        This method captures requests that modify ErrorProxyNode structure during workflow loading,
+        preserving information needed for restoration when the original node becomes available.
+
+        WHAT WE RECORD:
+        - AlterParameterDetailsRequest: Parameter modifications from original node definition
+        - Any request with initial_setup=True that changes node structure in ways that cannot
+          be reconstructed from final state alone
+
+        WHAT WE DO NOT RECORD (and why):
+        - SetParameterValueRequest: Final parameter values are serialized normally via parameter_values
+        - AddParameterToNodeRequest: User-defined parameters are serialized via is_user_defined=True flag
+        - CreateConnectionRequest: Connections are serialized separately and recreated during loading
+        - RenameParameterRequest: Final parameter names are preserved in serialized state
+        - SetNodeMetadataRequest: Final metadata state is preserved in node.metadata
+        - SetLockNodeStateRequest: Final lock state is preserved in node.lock
+        """
+        self._recorded_initialization_requests.append(request)
+
+    def get_recorded_initialization_requests(self, request_type: type | None = None) -> list[RequestPayload]:
+        """Get recorded initialization requests for 1:1 serialization replay.
+
+        Args:
+            request_type: Optional class to filter by. If provided, only returns requests
+                         of that type. If None, returns all recorded requests.
+
+        Returns:
+            List of recorded requests in the order they were received.
+        """
+        if request_type is None:
+            return self._recorded_initialization_requests
+
+        return [req for req in self._recorded_initialization_requests if isinstance(req, request_type)]
+
+    def process(self) -> Any:
+        """No-op process method. Error Proxy nodes do nothing during execution."""
+        return None
 
 
 class Connection:
