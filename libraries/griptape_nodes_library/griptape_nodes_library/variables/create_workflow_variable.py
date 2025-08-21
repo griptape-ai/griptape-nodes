@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 logger = logging.getLogger("griptape_nodes")
 
 
-class CreateWorkflowVariable(DataNode):
+class CreateVariable(DataNode):
     def __init__(
         self,
         name: str,
@@ -19,7 +19,7 @@ class CreateWorkflowVariable(DataNode):
             name="variable_name",
             type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-            tooltip="The name of the workflow variable to create",
+            tooltip="The name of the variable to create",
         )
         self.add_parameter(self.variable_name_param)
 
@@ -28,7 +28,7 @@ class CreateWorkflowVariable(DataNode):
             type="bool",
             default_value=False,
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-            tooltip="Whether this is a global variable (true) or current workflow variable (false)",
+            tooltip="Whether this is a global variable (true) or current flow variable (false)",
         )
         self.add_parameter(self.is_global_param)
 
@@ -121,19 +121,19 @@ class CreateWorkflowVariable(DataNode):
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
         from griptape_nodes.retained_mode.events.workflow_variable_events import (
-            CreateWorkflowVariableRequest,
-            CreateWorkflowVariableResultSuccess,
+            CreateVariableRequest,
+            CreateVariableResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        from griptape_nodes.retained_mode.managers.workflow_variable_manager import VariableScope
+        from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
 
         variable_name = self.get_parameter_value("variable_name")
         is_global = self.get_parameter_value("is_global")
-        scope = VariableScope.GLOBAL if is_global else VariableScope.CURRENT_WORKFLOW
+        scope = VariableScope.GLOBAL if is_global else VariableScope.CURRENT_FLOW
         variable_type = self.get_parameter_value("variable_type")
         value = self.get_parameter_value("value")
 
-        request = CreateWorkflowVariableRequest(
+        request = CreateVariableRequest(
             name=variable_name,
             scope=scope,
             type=variable_type,
@@ -142,12 +142,12 @@ class CreateWorkflowVariable(DataNode):
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, CreateWorkflowVariableResultSuccess):
+        if isinstance(result, CreateVariableResultSuccess):
             # Set output values
             self.parameter_output_values["variable_name"] = variable_name
             self.parameter_output_values["is_global"] = is_global
             self.parameter_output_values["variable_type"] = variable_type
             self.parameter_output_values["value"] = value
         else:
-            error_msg = f"Failed to create workflow variable: {result.result_details}"
+            error_msg = f"Failed to create variable: {result.result_details}"
             raise TypeError(error_msg)

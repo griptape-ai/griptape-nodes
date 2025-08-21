@@ -9,7 +9,7 @@ from griptape_nodes_library.variables.variable_utils import (
 )
 
 
-class GetWorkflowVariable(DataNode):
+class GetVariable(DataNode):
     def __init__(
         self,
         name: str,
@@ -42,8 +42,8 @@ class GetWorkflowVariable(DataNode):
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
         from griptape_nodes.retained_mode.events.workflow_variable_events import (
-            GetWorkflowVariableValueRequest,
-            GetWorkflowVariableValueResultSuccess,
+            GetVariableValueRequest,
+            GetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -54,7 +54,7 @@ class GetWorkflowVariable(DataNode):
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        request = GetWorkflowVariableValueRequest(
+        request = GetVariableValueRequest(
             uuid=uuid if uuid else None,
             name=variable_name if variable_name else None,
             scope=scope,
@@ -62,9 +62,9 @@ class GetWorkflowVariable(DataNode):
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, GetWorkflowVariableValueResultSuccess):
+        if isinstance(result, GetVariableValueResultSuccess):
             self.parameter_output_values["value"] = deepcopy(result.value)
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            msg = f"Failed to get workflow variable: {result.result_details}"
+            msg = f"Failed to get variable: {result.result_details}"
             raise TypeError(msg)

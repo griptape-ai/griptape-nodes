@@ -9,14 +9,14 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.workflow_variable_types import VariableScope, WorkflowVariable
+from griptape_nodes.retained_mode.workflow_variable_types import FlowVariable, VariableScope
 
 
-# Create Variable Events
+# Variable Events
 @dataclass
 @PayloadRegistry.register
-class CreateWorkflowVariableRequest(RequestPayload):
-    """Create a new workflow variable.
+class CreateVariableRequest(RequestPayload):
+    """Create a new variable.
 
     Args:
         name: The name of the variable
@@ -37,23 +37,23 @@ class CreateWorkflowVariableRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkflowVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable created successfully."""
+class CreateVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Variable created successfully."""
 
     variable_uuid: str
 
 
 @dataclass
 @PayloadRegistry.register
-class CreateWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
-    """Workflow variable creation failed."""
+class CreateVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Variable creation failed."""
 
 
 # Get Variable Events
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableRequest(RequestPayload):
-    """Get a complete workflow variable by UUID or name.
+class GetVariableRequest(RequestPayload):
+    """Get a complete variable by UUID or name.
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -68,23 +68,23 @@ class GetWorkflowVariableRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable retrieved successfully."""
+class GetVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variable retrieved successfully."""
 
-    variable: WorkflowVariable
+    variable: FlowVariable
 
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variable retrieval failed."""
+class GetVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variable retrieval failed."""
 
 
 # Get Variable Value Events
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableValueRequest(RequestPayload):
-    """Get the value of a workflow variable by UUID or name.
+class GetVariableValueRequest(RequestPayload):
+    """Get the value of a variable by UUID or name.
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -99,23 +99,23 @@ class GetWorkflowVariableValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable value retrieved successfully."""
+class GetVariableValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variable value retrieved successfully."""
 
     value: Any
 
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variable value retrieval failed."""
+class GetVariableValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variable value retrieval failed."""
 
 
 # Set Variable Value Events
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableValueRequest(RequestPayload):
-    """Set the value of a workflow variable by UUID or name.
+class SetVariableValueRequest(RequestPayload):
+    """Set the value of a variable by UUID or name.
 
     Args:
         value: The new value to set
@@ -132,21 +132,21 @@ class SetWorkflowVariableValueRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable value set successfully."""
+class SetVariableValueResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Variable value set successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableValueResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
-    """Workflow variable value setting failed."""
+class SetVariableValueResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Variable value setting failed."""
 
 
 # Get Variable Type Events
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableTypeRequest(RequestPayload):
-    """Get the type of a workflow variable by UUID or name.
+class GetVariableTypeRequest(RequestPayload):
+    """Get the type of a variable by UUID or name.
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -161,23 +161,23 @@ class GetWorkflowVariableTypeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable type retrieved successfully."""
+class GetVariableTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variable type retrieved successfully."""
 
     type: str
 
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variable type retrieval failed."""
+class GetVariableTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variable type retrieval failed."""
 
 
 # Set Variable Type Events
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableTypeRequest(RequestPayload):
-    """Set the type of a workflow variable by UUID or name.
+class SetVariableTypeRequest(RequestPayload):
+    """Set the type of a variable by UUID or name.
 
     Args:
         type: The new user-defined type (e.g., "JSON", "str", "int")
@@ -194,21 +194,21 @@ class SetWorkflowVariableTypeRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableTypeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable type set successfully."""
+class SetVariableTypeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Variable type set successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class SetWorkflowVariableTypeResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
-    """Workflow variable type setting failed."""
+class SetVariableTypeResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Variable type setting failed."""
 
 
 # Delete Variable Events
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowVariableRequest(RequestPayload):
-    """Delete a workflow variable by UUID or name.
+class DeleteVariableRequest(RequestPayload):
+    """Delete a variable by UUID or name.
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -223,21 +223,21 @@ class DeleteWorkflowVariableRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable deleted successfully."""
+class DeleteVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Variable deleted successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
-    """Workflow variable deletion failed."""
+class DeleteVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Variable deletion failed."""
 
 
 # Rename Variable Events
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowVariableRequest(RequestPayload):
-    """Rename a workflow variable by UUID or name.
+class RenameVariableRequest(RequestPayload):
+    """Rename a variable by UUID or name.
 
     Args:
         new_name: The new name for the variable
@@ -254,21 +254,21 @@ class RenameWorkflowVariableRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable renamed successfully."""
+class RenameVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Variable renamed successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class RenameWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
-    """Workflow variable renaming failed."""
+class RenameVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Variable renaming failed."""
 
 
 # Has Variable Events
 @dataclass
 @PayloadRegistry.register
-class HasWorkflowVariableRequest(RequestPayload):
-    """Check if a workflow variable exists by UUID or name.
+class HasVariableRequest(RequestPayload):
+    """Check if a variable exists by UUID or name.
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -283,8 +283,8 @@ class HasWorkflowVariableRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class HasWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable existence check completed."""
+class HasVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variable existence check completed."""
 
     exists: bool
     found_scope: VariableScope | None = None
@@ -292,15 +292,15 @@ class HasWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
 
 @dataclass
 @PayloadRegistry.register
-class HasWorkflowVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variable existence check failed."""
+class HasVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variable existence check failed."""
 
 
 # List Variables Events
 @dataclass
 @PayloadRegistry.register
-class ListWorkflowVariablesRequest(RequestPayload):
-    """List all workflow variables in the specified scope.
+class ListVariablesRequest(RequestPayload):
+    """List all variables in the specified scope.
 
     Args:
         scope: Optional scope filter (global, current_workflow, or None for both)
@@ -311,23 +311,23 @@ class ListWorkflowVariablesRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ListWorkflowVariablesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variables listed successfully."""
+class ListVariablesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variables listed successfully."""
 
-    variables: list[WorkflowVariable]
+    variables: list[FlowVariable]
 
 
 @dataclass
 @PayloadRegistry.register
-class ListWorkflowVariablesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variables listing failed."""
+class ListVariablesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variables listing failed."""
 
 
 # Get Variable Details Events
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableDetailsRequest(RequestPayload):
-    """Get workflow variable details (metadata only, no heavy values).
+class GetVariableDetailsRequest(RequestPayload):
+    """Get variable details (metadata only, no heavy values).
 
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
@@ -341,7 +341,7 @@ class GetWorkflowVariableDetailsRequest(RequestPayload):
 
 
 @dataclass
-class WorkflowVariableDetails:
+class VariableDetails:
     """Lightweight variable details without heavy values."""
 
     uuid: str
@@ -352,13 +352,13 @@ class WorkflowVariableDetails:
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow variable details retrieved successfully."""
+class GetVariableDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variable details retrieved successfully."""
 
-    details: WorkflowVariableDetails
+    details: VariableDetails
 
 
 @dataclass
 @PayloadRegistry.register
-class GetWorkflowVariableDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Workflow variable details retrieval failed."""
+class GetVariableDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Variable details retrieval failed."""

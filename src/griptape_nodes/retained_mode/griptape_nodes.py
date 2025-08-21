@@ -75,7 +75,7 @@ if TYPE_CHECKING:
     )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
     from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
-        WorkflowVariablesManager,
+        VariablesManager,
     )
 
 
@@ -135,7 +135,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _context_manager: ContextManager
     _library_manager: LibraryManager
     _workflow_manager: WorkflowManager
-    _workflow_variables_manager: WorkflowVariablesManager
+    _workflow_variables_manager: VariablesManager
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
     _operation_depth_manager: OperationDepthManager
     _static_files_manager: StaticFilesManager
@@ -175,7 +175,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             WorkflowManager,
         )
         from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
-            WorkflowVariablesManager,
+            VariablesManager,
         )
 
         # Initialize only if our managers haven't been created yet
@@ -190,7 +190,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
-            self._workflow_variables_manager = WorkflowVariablesManager(self._event_manager)
+            self._workflow_variables_manager = VariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
             self._static_files_manager = StaticFilesManager(
@@ -343,7 +343,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._sync_manager
 
     @classmethod
-    def WorkflowVariablesManager(cls) -> WorkflowVariablesManager:
+    def VariablesManager(cls) -> VariablesManager:
         return GriptapeNodes.get_instance()._workflow_variables_manager
 
     @classmethod

@@ -8,7 +8,7 @@ from griptape_nodes_library.variables.variable_utils import (
 )
 
 
-class HasWorkflowVariable(DataNode):
+class HasVariable(DataNode):
     def __init__(
         self,
         name: str,
@@ -41,8 +41,8 @@ class HasWorkflowVariable(DataNode):
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
         from griptape_nodes.retained_mode.events.workflow_variable_events import (
-            HasWorkflowVariableRequest,
-            HasWorkflowVariableResultSuccess,
+            HasVariableRequest,
+            HasVariableResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -53,7 +53,7 @@ class HasWorkflowVariable(DataNode):
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        request = HasWorkflowVariableRequest(
+        request = HasVariableRequest(
             uuid=uuid if uuid else None,
             name=variable_name if variable_name else None,
             scope=scope,
@@ -61,9 +61,9 @@ class HasWorkflowVariable(DataNode):
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, HasWorkflowVariableResultSuccess):
+        if isinstance(result, HasVariableResultSuccess):
             self.parameter_output_values["exists"] = result.exists
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            msg = f"Failed to check workflow variable existence: {result.result_details}"
+            msg = f"Failed to check variable existence: {result.result_details}"
             raise TypeError(msg)

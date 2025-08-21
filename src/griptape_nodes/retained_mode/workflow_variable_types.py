@@ -5,11 +5,12 @@ from typing import Any
 
 class VariableScope(StrEnum):
     GLOBAL = "global"
-    CURRENT_WORKFLOW = "current_workflow"
+    CURRENT_FLOW = "current_flow"
+    PARENT_FLOWS = "parent_flows"
 
 
 @dataclass
-class WorkflowVariable:
+class FlowVariable:
     uuid: str
     name: str
     scope: VariableScope

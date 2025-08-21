@@ -11,7 +11,8 @@ from griptape_nodes.traits.options import Options
 class ScopeOption(StrEnum):
     NOT_SPECIFIED = "<not specified>"
     GLOBAL = "global"
-    CURRENT_WORKFLOW = "current workflow"
+    CURRENT_FLOW = "current flow"
+    PARENT_FLOWS = "parent flows"
 
 
 class AdvancedParameterGroup(NamedTuple):
@@ -41,7 +42,7 @@ def create_advanced_parameter_group() -> AdvancedParameterGroup:
             type="str",
             default_value=ScopeOption.NOT_SPECIFIED.value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="Variable scope: search both scopes, global only, or current workflow only",
+            tooltip="Variable scope: hierarchical search, current flow only, or global only",
         )
         scope_param.add_trait(Options(choices=[option.value for option in ScopeOption]))
 
@@ -67,8 +68,10 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope | None":
     match scope_str:
         case ScopeOption.GLOBAL.value:
             return VariableScope.GLOBAL
-        case ScopeOption.CURRENT_WORKFLOW.value:
-            return VariableScope.CURRENT_WORKFLOW
+        case ScopeOption.CURRENT_FLOW.value:
+            return VariableScope.CURRENT_FLOW
+        case ScopeOption.PARENT_FLOWS.value:
+            return VariableScope.PARENT_FLOWS
         case ScopeOption.NOT_SPECIFIED.value:
             return None
         case _:

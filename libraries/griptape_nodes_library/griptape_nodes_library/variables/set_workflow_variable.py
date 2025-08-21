@@ -8,7 +8,7 @@ from griptape_nodes_library.variables.variable_utils import (
 )
 
 
-class SetWorkflowVariable(DataNode):
+class SetVariable(DataNode):
     def __init__(
         self,
         name: str,
@@ -41,8 +41,8 @@ class SetWorkflowVariable(DataNode):
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
         from griptape_nodes.retained_mode.events.workflow_variable_events import (
-            SetWorkflowVariableValueRequest,
-            SetWorkflowVariableValueResultSuccess,
+            SetVariableValueRequest,
+            SetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -54,7 +54,7 @@ class SetWorkflowVariable(DataNode):
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        request = SetWorkflowVariableValueRequest(
+        request = SetVariableValueRequest(
             value=value,
             uuid=uuid if uuid else None,
             name=variable_name if variable_name else None,
@@ -63,8 +63,8 @@ class SetWorkflowVariable(DataNode):
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, SetWorkflowVariableValueResultSuccess):
+        if isinstance(result, SetVariableValueResultSuccess):
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            msg = f"Failed to set workflow variable: {result.result_details}"
+            msg = f"Failed to set variable: {result.result_details}"
             raise TypeError(msg)
