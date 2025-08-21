@@ -123,7 +123,6 @@ class ResolveNodeState(State):
         return None
 
 
-
 class NextNodeState(State):
     @staticmethod
     def on_enter(context: ControlFlowContext) -> type[State] | None:
@@ -237,9 +236,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             resolution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
-        if (
-            self._current_state is ResolveNodeState
-            and (resolution_machine.is_complete() or not resolution_machine.is_started())
+        if self._current_state is ResolveNodeState and (
+            resolution_machine.is_complete() or not resolution_machine.is_started()
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
@@ -255,9 +253,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             resolution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
-        if (
-            self._current_state is ResolveNodeState
-            and (resolution_machine.is_complete() or not resolution_machine.is_started())
+        if self._current_state is ResolveNodeState and (
+            resolution_machine.is_complete() or not resolution_machine.is_started()
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:

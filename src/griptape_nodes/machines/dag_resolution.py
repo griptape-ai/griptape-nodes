@@ -39,8 +39,8 @@ class DagResolutionContext:
         self.paused = False
         # Get the DAG instance that will be used throughout resolution and execution
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         dag_instance = GriptapeNodes.get_instance().DagManager()
-        logger.info("DAG_INSTANCE: DagResolutionContext using DAG instance ID: %s", id(dag_instance))
         self.execution_machine = DagExecutionMachine(dag_instance)
 
     def reset(self) -> None:
@@ -124,7 +124,7 @@ class EvaluateDagParameterState(State):
             if next_node.name in focus_stack_names:
                 msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
                 raise RuntimeError(msg)
-            #TODO: maybe it should be here.
+            # TODO: maybe it should be here.
             context.focus_stack.append(Focus(node=next_node))
             return InitializeDagSpotlightState
 
@@ -151,17 +151,6 @@ class BuildDagNodeState(State):
                 upstream_node, upstream_parameter = upstream_connection
 
                 # Add the edge to the DAG if it is unresolved - this is the key DAG building step
-                # if upstream_node.state == NodeResolutionState.UNRESOLVED:
-                #     dag_instance = GriptapeNodes.get_instance().DagManager()
-                #     # update DAG instance
-                #     dag_instance.network.add_edge(upstream_node.name, current_node.name)
-                #     logger.info(
-                #         "DAG BUILD: Added edge '%s' -> '%s'. Network now has %d edges. Instance ID: %s",
-                #         upstream_node.name,
-                #         current_node.name,
-                #         len(dag_instance.network.edges()),
-                #         id(dag_instance),
-                #     )
 
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
@@ -175,18 +164,6 @@ class BuildDagNodeState(State):
         dag_instance.node_to_reference[current_node.name] = node_reference
         # Add node name to DAG (has to be a hashable value)
         dag_instance.network.add_node(node_for_adding=current_node.name)
-        
-        # Validation logging
-        logger.info("DAG_INSTANCE: BuildDagNodeState using DAG instance ID: %s for node '%s'", id(dag_instance), current_node.name)
-
-        # Debug logging to track DAG building
-        logger.info(
-            "DAG BUILD: Added node '%s' to network. Network now has %d nodes, %d edges. Instance ID: %s",
-            current_node.name,
-            len(dag_instance.network.nodes()),
-            len(dag_instance.network.edges()),
-            id(dag_instance),
-        )
 
         # Build DAG connections
         BuildDagNodeState.collect_dag_connections(context)
@@ -201,7 +178,6 @@ class BuildDagNodeState(State):
 
         # Mark node as resolved for DAG building purposes
         current_node.state = NodeResolutionState.RESOLVED
-        logger.info("DAG node '%s' added to graph.", current_node.name)
 
         context.focus_stack.pop()
         if len(context.focus_stack):
@@ -215,7 +191,6 @@ class ExecuteDagState(State):
     def on_enter(context: DagResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
         context.execution_machine.start_execution()
-        logger.info("Starting DAG execution for resolved nodes")
 
         if not context.paused:
             return ExecuteDagState
@@ -227,10 +202,8 @@ class ExecuteDagState(State):
         if context.execution_machine.is_complete():
             return DagCompleteState
         if context.execution_machine.is_error():
-            error_msg = context.execution_machine.get_error_message()
-            logger.error("DAG execution failed: %s", error_msg)
             return DagCompleteState
-        #Is this the right move?
+        # Is this the right move?
         context.execution_machine.update()
 
         return None
@@ -238,12 +211,11 @@ class ExecuteDagState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
-        logger.info("DAG resolution and execution completed successfully")
+    def on_enter(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:
+    def on_update(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 

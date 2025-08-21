@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import (
@@ -15,12 +16,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    ParameterValueUpdateEvent,
     ResumeNodeProcessingEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 if TYPE_CHECKING:
@@ -46,10 +47,8 @@ class ExecutionContext:
     def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
         if dag_instance is not None:
             self.current_dag = dag_instance
-            logger.info("DAG_INSTANCE: ExecutionContext using provided DAG instance ID: %s", id(dag_instance))
         else:
             self.current_dag = GriptapeNodes.get_instance().DagManager()
-            logger.info("DAG_INSTANCE: ExecutionContext created new DAG instance ID: %s", id(self.current_dag))
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
@@ -61,12 +60,10 @@ class ExecutionContext:
 
 class ExecutionState(State):
     @staticmethod
-    def handle_done_nodes(context: ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
+    def handle_done_nodes(done_node: DagOrchestrator.DagNode) -> None:
         node = done_node.node_reference
         # Publish all parameter updates.
         node.state = NodeResolutionState.RESOLVED
-        # for parameter, value in node.parameter_output_values.items():
-        #     node.publish_update_to_parameter(parameter,value)
 
     @staticmethod
     def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
@@ -111,44 +108,46 @@ class ExecutionState(State):
                 )
 
     @staticmethod
+    def clear_parameter_output_values(node_reference: DagOrchestrator.DagNode) -> None:
+        """Clear all parameter output values for the given node and publish events.
+
+        This method iterates through each parameter output value stored in the node,
+        removes it from the node's parameter_output_values dictionary, and publishes an event
+        to notify the system about the parameter value being set to None.
+
+        Args:
+            node_reference (DagOrchestrator.DagNode): The DAG node to clear values for.
+
+        Raises:
+            ValueError: If a parameter name in parameter_output_values doesn't correspond
+                to an actual parameter in the node.
+        """
+        current_node = node_reference.node_reference
+        for parameter_name in current_node.parameter_output_values.copy():
+            parameter = current_node.get_parameter_by_name(parameter_name)
+            if parameter is None:
+                err = f"Attempted to clear output values for node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
+                raise ValueError(err)
+            parameter_type = parameter.type
+            if parameter_type is None:
+                parameter_type = ParameterTypeBuiltin.NONE.value
+            payload = ParameterValueUpdateEvent(
+                node_name=current_node.name,
+                parameter_name=parameter_name,
+                data_type=parameter_type,
+                value=None,
+            )
+            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+        current_node.parameter_output_values.clear()
+
+    @staticmethod
     def execute_node(current_node: DagOrchestrator.DagNode, sem: threading.Semaphore) -> None:
-        import threading
         with sem:
-            node_name = current_node.node_reference.name
-            thread_name = threading.current_thread().name
-            logger.info("THREAD_DEBUG: Starting process() for node '%s' in thread '%s'", node_name, thread_name)
-            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values BEFORE process(): %s", 
-                       node_name, list(current_node.node_reference.parameter_output_values.keys()))
-            
             current_node.node_reference.process()
-            
-            logger.info("THREAD_DEBUG: Completed process() for node '%s' in thread '%s'", node_name, thread_name)
-            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values AFTER process(): %s", 
-                       node_name, list(current_node.node_reference.parameter_output_values.keys()))
-            logger.info("THREAD_DEBUG: Node '%s' parameter_output_values contents: %s", 
-                       node_name, {k: str(v)[:100] + "..." if len(str(v)) > 100 else str(v) 
-                                  for k, v in current_node.node_reference.parameter_output_values.items()})
 
     @staticmethod
     def on_enter(context: ExecutionContext) -> type[State] | None:
-        logger.info("Entering DAG execution state")
-        logger.info("DAG_INSTANCE: ExecutionState using DAG instance ID: %s", id(context.current_dag))
-        logger.info("DAG_INSTANCE: DAG has %d nodes in network, %d nodes in node_to_reference", 
-                   len(context.current_dag.network.nodes()), len(context.current_dag.node_to_reference))
-        
-        # Log all nodes to verify they exist in both network and node_to_reference
-        network_nodes = set(context.current_dag.network.nodes())
-        reference_nodes = set(context.current_dag.node_to_reference.keys())
-        logger.info("DAG_INSTANCE: Network nodes: %s", network_nodes)
-        logger.info("DAG_INSTANCE: Reference nodes: %s", reference_nodes)
-        
-        if network_nodes != reference_nodes:
-            logger.error("DAG_INSTANCE: MISMATCH! Network nodes != Reference nodes")
-            logger.error("DAG_INSTANCE: Only in network: %s", network_nodes - reference_nodes)
-            logger.error("DAG_INSTANCE: Only in references: %s", reference_nodes - network_nodes)
-        
         for node in context.current_dag.node_to_reference.values():
-            logger.info("Node %s state: %s", node.node_reference.name, node.node_state)
             # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
             node.node_state = NodeState.QUEUED
         context.workflow_state = WorkflowState.NO_ERROR
@@ -165,7 +164,13 @@ class ExecutionState(State):
         queued_nodes = []
         # Get the status of all of the leaf nodes.
         for node in leaf_nodes:
-            node_state = context.current_dag.node_to_reference[node].node_state
+            node_reference = context.current_dag.node_to_reference[node]
+            # If the node is locked, mark it as done so it skips execution
+            if node_reference.node_reference.lock:
+                node_reference.node_state = NodeState.DONE
+                done_nodes.append(node)
+                continue
+            node_state = node_reference.node_state
             if node_state == NodeState.DONE:
                 done_nodes.append(node)
             elif node_state == NodeState.CANCELED:
@@ -178,7 +183,7 @@ class ExecutionState(State):
             # Remove the leaf node from the graph.
             network.remove_node(node)
             # Return thread to thread pool.
-            ExecutionState.handle_done_nodes(context, context.current_dag.node_to_reference[node])
+            ExecutionState.handle_done_nodes(context.current_dag.node_to_reference[node])
         # Reinitialize leaf nodes since maybe we changed things up.
         if len(done_nodes) > 0:
             # We removed nodes from the network. There may be new leaf nodes.
@@ -186,7 +191,12 @@ class ExecutionState(State):
             canceled_nodes = []
             queued_nodes = []
             for node in leaf_nodes:
-                node_state = context.current_dag.node_to_reference[node].node_state
+                node_reference = context.current_dag.node_to_reference[node]
+                # If the node is locked, mark it as done so it skips execution
+                if node_reference.node_reference.lock:
+                    node_reference.node_state = NodeState.DONE
+                    continue
+                node_state = node_reference.node_state
                 if node_state == NodeState.CANCELED:
                     canceled_nodes.append(node)
                 elif node_state == NodeState.QUEUED:
@@ -195,12 +205,6 @@ class ExecutionState(State):
         if not leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
             return CompleteState
-        for node in leaf_nodes:
-            node_state = context.current_dag.node_to_reference[node].node_state
-            if node_state == NodeState.CANCELED:
-                canceled_nodes.append(node)
-            elif node_state == NodeState.QUEUED:
-                queued_nodes.append(node)
         if len(canceled_nodes) == len(leaf_nodes):
             # All leaf nodes are cancelled.
             # Set state to workflow complete.
@@ -215,12 +219,28 @@ class ExecutionState(State):
 
                 # Collect parameter values from upstream nodes before executing
                 try:
-                    logger.info("THREAD_DEBUG: About to collect parameter values for node '%s' in main thread", node_reference.node_reference.name)
                     ExecutionState.collect_values_from_upstream_nodes(node_reference)
-                    logger.info("THREAD_DEBUG: Completed parameter collection for node '%s' in main thread", node_reference.node_reference.name)
                 except Exception as e:
-                    logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
-                    context.error_message = f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
+                    logger.exception(
+                        "Error collecting parameter values for node '%s'", node_reference.node_reference.name
+                    )
+                    context.error_message = (
+                        f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
+                    )
+                    context.workflow_state = WorkflowState.ERRORED
+                    context.current_dag.sem.release()  # Release the semaphore we just acquired
+                    return ErrorState
+
+                # Clear parameter output values before execution
+                try:
+                    ExecutionState.clear_parameter_output_values(node_reference)
+                except Exception as e:
+                    logger.exception(
+                        "Error clearing parameter output values for node '%s'", node_reference.node_reference.name
+                    )
+                    context.error_message = (
+                        f"Parameter clearing failed for node '{node_reference.node_reference.name}': {e}"
+                    )
                     context.workflow_state = WorkflowState.ERRORED
                     context.current_dag.sem.release()  # Release the semaphore we just acquired
                     return ErrorState
@@ -238,11 +258,9 @@ class ExecutionState(State):
                         )
                     )
 
-                logger.info("THREAD_DEBUG: Submitting node '%s' to thread executor from main thread", node_reference.node_reference.name)
                 node_future = context.current_dag.thread_executor.submit(
-                    ExecutionState.execute_node, node_reference, context.current_dag.sem
+                    with_contextvars(ExecutionState.execute_node), node_reference, context.current_dag.sem
                 )
-                logger.info("THREAD_DEBUG: Node '%s' submitted to thread executor successfully", node_reference.node_reference.name)
                 # Add a callback to set node to done when future has finished.
                 context.current_dag.future_to_node[node_future] = node_reference
                 node_reference.thread_reference = node_future
@@ -301,7 +319,6 @@ class DagExecutionMachine(FSM[ExecutionContext]):
 
     def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
         execution_context = ExecutionContext(dag_instance)
-        logger.info("DAG_INSTANCE: DagExecutionMachine initialized with DAG instance ID: %s", id(execution_context.current_dag))
         super().__init__(execution_context)
 
     def start_execution(self) -> None:
