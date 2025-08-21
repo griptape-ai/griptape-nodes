@@ -1175,8 +1175,8 @@ class ErrorProxyNode(BaseNode):
             f"\nfrom the '{self.original_library_name}' library."
             f"\nIt encountered a problem when loading."
             f"\nThe technical issue:\n{self.failure_reason}\n\n"
-            f"Your original node will be restored once the issue above is fixed"
-            f"(which may require registering the appropriate library, or getting"
+            f"Your original node will be restored once the issue above is fixed "
+            f"(which may require registering the appropriate library, or getting "
             f"a code fix from the node author)."
         )
 
