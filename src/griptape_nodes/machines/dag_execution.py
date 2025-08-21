@@ -43,12 +43,14 @@ class ExecutionContext:
     current_dag: DagOrchestrator
     error_message: str | None
     workflow_state: WorkflowState
+    flow_name: str
 
-    def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
+    def __init__(self, flow_name: str, dag_instance: DagOrchestrator | None = None) -> None:
+        self.flow_name = flow_name
         if dag_instance is not None:
             self.current_dag = dag_instance
         else:
-            self.current_dag = GriptapeNodes.get_instance().DagManager()
+            self.current_dag = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
@@ -258,6 +260,8 @@ class ExecutionState(State):
                         )
                     )
 
+                # Ensure thread pool is ready before submitting work
+                context.current_dag._ensure_thread_pool_alive()
                 node_future = context.current_dag.thread_executor.submit(
                     with_contextvars(ExecutionState.execute_node), node_reference, context.current_dag.sem
                 )
@@ -317,8 +321,8 @@ class CompleteState(State):
 class DagExecutionMachine(FSM[ExecutionContext]):
     """State machine for DAG execution."""
 
-    def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
-        execution_context = ExecutionContext(dag_instance)
+    def __init__(self, flow_name: str, dag_instance: DagOrchestrator | None = None) -> None:
+        execution_context = ExecutionContext(flow_name, dag_instance)
         super().__init__(execution_context)
 
     def start_execution(self) -> None:

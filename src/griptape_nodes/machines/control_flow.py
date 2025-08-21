@@ -44,9 +44,11 @@ class ControlFlowContext:
     resolution_machine: DagResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
+    flow_name: str
 
-    def __init__(self) -> None:
-        self.resolution_machine = DagResolutionMachine()
+    def __init__(self, flow_name: str) -> None:
+        self.flow_name = flow_name
+        self.resolution_machine = DagResolutionMachine(flow_name)
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -203,8 +205,8 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self) -> None:
-        context = ControlFlowContext()
+    def __init__(self, flow_name: str) -> None:
+        context = ControlFlowContext(flow_name)
         super().__init__(context)
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

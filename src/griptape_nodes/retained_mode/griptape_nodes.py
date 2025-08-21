@@ -44,7 +44,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DagManager
 from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -141,7 +141,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
     _sync_manager: SyncManager
-    _dag_manager: DagOrchestrator
+    _dag_manager: DagManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -195,7 +195,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
-            self._dag_manager = DagOrchestrator()
+            self._dag_manager = DagManager()
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -338,7 +338,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._sync_manager
 
     @classmethod
-    def DagManager(cls) -> DagOrchestrator:
+    def DagManager(cls) -> DagManager:
         return GriptapeNodes.get_instance()._dag_manager
 
     @classmethod

@@ -512,6 +512,9 @@ class FlowManager:
             if flow in self._flow_to_referenced_workflow_name:
                 del self._flow_to_referenced_workflow_name[flow]
 
+            # Clean up DAG orchestrator for this flow
+            GriptapeNodes.DagManager().remove_orchestrator_for_flow(flow.name)
+
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
         result = DeleteFlowResultSuccess()
@@ -1625,7 +1628,7 @@ class FlowManager:
                 node.emit_parameter_changes()
         return FlushParameterChangesResultSuccess()
 
-    def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002, ARG002
+    def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
@@ -1640,7 +1643,7 @@ class FlowManager:
 
         # Initialize global control flow machine if needed
         if self._global_control_flow_machine is None:
-            self._global_control_flow_machine = ControlFlowMachine()
+            self._global_control_flow_machine = ControlFlowMachine(flow.name)
 
         try:
             self._global_control_flow_machine.start_flow(start_node, debug_mode)
@@ -1721,7 +1724,7 @@ class FlowManager:
         return self._has_connection(source_node, source_parameter, target_node, target_parameter)
 
     # Internal execution queue helper methods to consolidate redundant operations
-    def _handle_flow_start_if_not_running(self, flow: ControlFlow, *, debug_mode: bool, error_message: str) -> None:  # noqa: ARG002
+    def _handle_flow_start_if_not_running(self, flow: ControlFlow, *, debug_mode: bool, error_message: str) -> None:
         """Common logic for starting flow execution if not already running."""
         if not self.check_for_existing_running_flow():
             if self._global_flow_queue.empty():
@@ -1729,7 +1732,7 @@ class FlowManager:
             start_node = self._global_flow_queue.get()
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = ControlFlowMachine()
+                self._global_control_flow_machine = ControlFlowMachine(flow.name)
             self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
@@ -1740,7 +1743,7 @@ class FlowManager:
             if self._global_control_flow_machine is not None:
                 self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
-    def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002, ARG002
+    def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
@@ -1749,7 +1752,7 @@ class FlowManager:
         self._global_single_node_resolution = True
         # Initialize global control flow machine if needed
         if self._global_control_flow_machine is None:
-            self._global_control_flow_machine = ControlFlowMachine()
+            self._global_control_flow_machine = ControlFlowMachine(flow.name)
         # Get the node resolution machine for the current flow!
         self._global_control_flow_machine._context.current_node = node
         resolution_machine = self._global_control_flow_machine._context.resolution_machine

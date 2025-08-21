@@ -33,15 +33,17 @@ class DagResolutionContext:
     focus_stack: list[Focus]
     paused: bool
     execution_machine: DagExecutionMachine
+    flow_name: str
 
-    def __init__(self) -> None:
+    def __init__(self, flow_name: str) -> None:
+        self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
         # Get the DAG instance that will be used throughout resolution and execution
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        dag_instance = GriptapeNodes.get_instance().DagManager()
-        self.execution_machine = DagExecutionMachine(dag_instance)
+        dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
+        self.execution_machine = DagExecutionMachine(flow_name, dag_instance)
 
     def reset(self) -> None:
         if self.focus_stack:
@@ -117,14 +119,16 @@ class EvaluateDagParameterState(State):
         next_node = connections.get_connected_node(current_node, current_parameter)
         if next_node:
             next_node, _ = next_node
-            dag_instance = GriptapeNodes.get_instance().DagManager()
-            dag_instance.network.add_edge(next_node.name, current_node.name)
+            # dag_instance = GriptapeNodes.get_instance().DagManager()
+            # dag_instance.network.add_edge(next_node.name, current_node.name)
         if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
             focus_stack_names = {focus.node.name for focus in context.focus_stack}
             if next_node.name in focus_stack_names:
                 msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
                 raise RuntimeError(msg)
             # TODO: maybe it should be here.
+            dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
+            dag_instance.network.add_edge(next_node.name, current_node.name)
             context.focus_stack.append(Focus(node=next_node))
             return InitializeDagSpotlightState
 
@@ -157,7 +161,7 @@ class BuildDagNodeState(State):
         current_node = context.focus_stack[-1].node
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        dag_instance = GriptapeNodes.get_instance().DagManager()
+        dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
 
         # Add the current node to the DAG using get_instance() pattern
         node_reference = DagOrchestrator.DagNode(node_reference=current_node)
@@ -222,8 +226,8 @@ class DagCompleteState(State):
 class DagResolutionMachine(FSM[DagResolutionContext]):
     """State machine for building DAG structure without execution."""
 
-    def __init__(self) -> None:
-        resolution_context = DagResolutionContext()
+    def __init__(self, flow_name: str) -> None:
+        resolution_context = DagResolutionContext(flow_name)
         super().__init__(resolution_context)
 
     def build_dag_for_node(self, node: BaseNode) -> None:
