@@ -4,8 +4,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.41.0",
-    "engine_version": "0.41.0",
+    "library_version": "0.50.0",
+    "engine_version": "0.50.0",
     "tags": [
       "Griptape",
       "AI"
@@ -1032,6 +1032,17 @@
         "display_name": "Load Image",
         "icon": "image-up",
         "group": "general"
+      }
+    },
+    {
+      "class_name": "CropImage",
+      "file_path": "griptape_nodes_library/image/crop_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Crop, zoom, rotate, and pan images with precise control over transformations",
+        "display_name": "Crop Image",
+        "icon": "crop",
+        "group": "edit"
       }
     },
     {
