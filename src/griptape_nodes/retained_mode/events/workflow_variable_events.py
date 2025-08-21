@@ -23,12 +23,16 @@ class CreateWorkflowVariableRequest(RequestPayload):
         scope: The scope of the variable (global or current_workflow)
         type: The user-defined type (e.g., "JSON", "str", "int")
         value: The initial value of the variable
+        uuid: Optional UUID for the variable (used during serialization/deserialization)
+        initial_setup: True when loading from serialized workflow, False for new variables
     """
 
     name: str
     scope: VariableScope
     type: str
     value: Any = None
+    uuid: str | None = None
+    initial_setup: bool = False
 
 
 @dataclass

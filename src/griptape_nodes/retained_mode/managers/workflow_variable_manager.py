@@ -97,6 +97,17 @@ class WorkflowVariablesManager:
                 result_details=f"Attempted to create a workflow variable named '{request.name}' with global scope. Failed because global workflow variables are not yet supported."
             )
 
+        # Validate UUID and initial_setup parameters
+        if not request.initial_setup and request.uuid is not None:
+            return CreateWorkflowVariableResultFailure(
+                result_details=f"Attempted to create a new workflow variable named '{request.name}' with a specified UUID. Failed because UUIDs can only be specified during initial setup from serialized workflows."
+            )
+
+        if request.initial_setup and request.uuid is None:
+            return CreateWorkflowVariableResultFailure(
+                result_details=f"Attempted to create a workflow variable named '{request.name}' during initial setup without providing a UUID. Failed because initial setup requires a UUID from the serialized workflow."
+            )
+
         # Check for name collision in current workflow variables
         existing = self._find_variable_by_uuid_or_name(None, request.name)
         if existing:
@@ -104,14 +115,28 @@ class WorkflowVariablesManager:
                 result_details=f"Attempted to create a workflow variable named '{request.name}'. Failed because a variable with that name already exists."
             )
 
-        # Generate new UUID and create variable
-        variable_uuid = uuid.uuid4().hex
+        # Use provided UUID for initial setup, or generate new UUID for new variables
+        if request.initial_setup:
+            variable_uuid = request.uuid  # type: ignore[assignment]  # Validation above ensures this is not None
+
+            # Check for UUID collision when using provided UUID
+            if variable_uuid in self._local_workflow_variables:
+                return CreateWorkflowVariableResultFailure(
+                    result_details=f"Attempted to create a workflow variable named '{request.name}' with UUID: {variable_uuid} during initial setup. Failed because a variable with that UUID already exists."
+                )
+        else:
+            variable_uuid = uuid.uuid4().hex
+
         variable = WorkflowVariable(
-            uuid=variable_uuid, name=request.name, scope=request.scope, type=request.type, value=request.value
+            uuid=variable_uuid,  # type: ignore[arg-type]  # UUID validated above
+            name=request.name,
+            scope=request.scope,
+            type=request.type,
+            value=request.value,
         )
 
-        self._local_workflow_variables[variable_uuid] = variable
-        return CreateWorkflowVariableResultSuccess(variable_uuid=variable_uuid)
+        self._local_workflow_variables[variable_uuid] = variable  # type: ignore[index]  # UUID validated above
+        return CreateWorkflowVariableResultSuccess(variable_uuid=variable_uuid)  # type: ignore[arg-type]  # UUID validated above
 
     def on_get_workflow_variable_request(self, request: GetWorkflowVariableRequest) -> ResultPayload:
         """Get a full workflow variable by UUID or name."""
