@@ -1,6 +1,7 @@
+from copy import deepcopy
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes_library.variables.variable_utils import (
     create_advanced_parameter_group,
@@ -8,7 +9,7 @@ from griptape_nodes_library.variables.variable_utils import (
 )
 
 
-class HasVariable(DataNode):
+class GetVariable(DataNode):
     def __init__(
         self,
         name: str,
@@ -20,17 +21,17 @@ class HasVariable(DataNode):
             name="variable_name",
             type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-            tooltip="Name of the variable to check for existence",
+            tooltip="Name of the variable to retrieve",
         )
         self.add_parameter(self.variable_name_param)
 
-        self.exists_param = Parameter(
-            name="exists",
-            type="bool",
+        self.value_param = Parameter(
+            name="value",
+            type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
-            tooltip="Whether the workflow variable exists",
+            tooltip="The value of the workflow variable",
         )
-        self.add_parameter(self.exists_param)
+        self.add_parameter(self.value_param)
 
         # Advanced parameters group (collapsed by default)
         advanced = create_advanced_parameter_group()
@@ -40,30 +41,28 @@ class HasVariable(DataNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.workflow_variable_events import (
-            HasVariableRequest,
-            HasVariableResultSuccess,
+        from griptape_nodes.retained_mode.events.variable_events import (
+            GetVariableValueRequest,
+            GetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        uuid = self.get_parameter_value("uuid")
         variable_name = self.get_parameter_value("variable_name")
         scope_str = self.get_parameter_value("scope")
 
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        request = HasVariableRequest(
-            uuid=uuid if uuid else None,
-            name=variable_name if variable_name else None,
+        request = GetVariableValueRequest(
+            name=variable_name,
             scope=scope,
         )
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, HasVariableResultSuccess):
-            self.parameter_output_values["exists"] = result.exists
+        if isinstance(result, GetVariableValueResultSuccess):
+            self.parameter_output_values["value"] = deepcopy(result.value)
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            msg = f"Failed to check variable existence: {result.result_details}"
+            msg = f"Failed to get variable: {result.result_details}"
             raise TypeError(msg)

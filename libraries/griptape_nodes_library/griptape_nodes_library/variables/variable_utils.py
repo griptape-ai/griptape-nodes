@@ -2,7 +2,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
+    from griptape_nodes.retained_mode.variable_types import VariableScope
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.traits.options import Options
@@ -53,17 +53,17 @@ def create_advanced_parameter_group() -> AdvancedParameterGroup:
     )
 
 
-def scope_string_to_variable_scope(scope_str: str) -> "VariableScope | None":
+def scope_string_to_variable_scope(scope_str: str) -> "VariableScope":
     """Convert scope option string to VariableScope enum.
 
     Args:
         scope_str: The scope option string value
 
     Returns:
-        VariableScope enum value or None for "not specified"
+        VariableScope enum value, with PARENT_FLOWS as default for "not specified"
     """
     # Lazy import to avoid circular import issues
-    from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
+    from griptape_nodes.retained_mode.variable_types import VariableScope
 
     match scope_str:
         case ScopeOption.GLOBAL.value:
@@ -73,7 +73,7 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope | None":
         case ScopeOption.PARENT_FLOWS.value:
             return VariableScope.PARENT_FLOWS
         case ScopeOption.NOT_SPECIFIED.value:
-            return None
+            return VariableScope.PARENT_FLOWS
         case _:
             msg = f"Invalid scope option: {scope_str}"
             raise ValueError(msg)

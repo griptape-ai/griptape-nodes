@@ -120,23 +120,21 @@ class CreateVariable(DataNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.workflow_variable_events import (
+        from griptape_nodes.retained_mode.events.variable_events import (
             CreateVariableRequest,
             CreateVariableResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
 
         variable_name = self.get_parameter_value("variable_name")
         is_global = self.get_parameter_value("is_global")
-        scope = VariableScope.GLOBAL if is_global else VariableScope.CURRENT_FLOW
         variable_type = self.get_parameter_value("variable_type")
         value = self.get_parameter_value("value")
 
         request = CreateVariableRequest(
             name=variable_name,
-            scope=scope,
             type=variable_type,
+            is_global=is_global,
             value=value,
         )
 

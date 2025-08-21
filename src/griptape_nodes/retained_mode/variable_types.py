@@ -11,7 +11,6 @@ class VariableScope(StrEnum):
 
 @dataclass
 class FlowVariable:
-    uuid: str
     name: str
     scope: VariableScope
     type: str

@@ -40,13 +40,12 @@ class SetVariable(DataNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.workflow_variable_events import (
+        from griptape_nodes.retained_mode.events.variable_events import (
             SetVariableValueRequest,
             SetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        uuid = self.get_parameter_value("uuid")
         variable_name = self.get_parameter_value("variable_name")
         value = self.get_parameter_value("value")
         scope_str = self.get_parameter_value("scope")
@@ -56,8 +55,7 @@ class SetVariable(DataNode):
 
         request = SetVariableValueRequest(
             value=value,
-            uuid=uuid if uuid else None,
-            name=variable_name if variable_name else None,
+            name=variable_name,
             scope=scope,
         )
 

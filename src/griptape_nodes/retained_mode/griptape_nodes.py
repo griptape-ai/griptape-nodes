@@ -70,13 +70,13 @@ if TYPE_CHECKING:
         StaticFilesManager,
     )
     from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+    from griptape_nodes.retained_mode.managers.variable_manager import (
+        VariablesManager,
+    )
     from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
         VersionCompatibilityManager,
     )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
-    from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
-        VariablesManager,
-    )
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -168,14 +168,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
             StaticFilesManager,
         )
         from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+        from griptape_nodes.retained_mode.managers.variable_manager import (
+            VariablesManager,
+        )
         from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
             VersionCompatibilityManager,
         )
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
-        )
-        from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
-            VariablesManager,
         )
 
         # Initialize only if our managers haven't been created yet

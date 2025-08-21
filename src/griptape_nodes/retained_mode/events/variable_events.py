@@ -9,7 +9,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.workflow_variable_types import FlowVariable, VariableScope
+from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableScope
 
 
 # Variable Events
@@ -20,27 +20,21 @@ class CreateVariableRequest(RequestPayload):
 
     Args:
         name: The name of the variable
-        scope: The scope of the variable (global or current_workflow)
+        is_global: Whether this is a global variable (True) or current flow variable (False)
         type: The user-defined type (e.g., "JSON", "str", "int")
         value: The initial value of the variable
-        uuid: Optional UUID for the variable (used during serialization/deserialization)
-        initial_setup: True when loading from serialized workflow, False for new variables
     """
 
     name: str
-    scope: VariableScope
     type: str
+    is_global: bool = False
     value: Any = None
-    uuid: str | None = None
-    initial_setup: bool = False
 
 
 @dataclass
 @PayloadRegistry.register
 class CreateVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Variable created successfully."""
-
-    variable_uuid: str
 
 
 @dataclass
@@ -53,17 +47,15 @@ class CreateVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetVariableRequest(RequestPayload):
-    """Get a complete variable by UUID or name.
+    """Get a complete variable by name.
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -84,17 +76,15 @@ class GetVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetVariableValueRequest(RequestPayload):
-    """Get the value of a variable by UUID or name.
+    """Get the value of a variable by name.
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -115,19 +105,17 @@ class GetVariableValueResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 @dataclass
 @PayloadRegistry.register
 class SetVariableValueRequest(RequestPayload):
-    """Set the value of a variable by UUID or name.
+    """Set the value of a variable by name.
 
     Args:
         value: The new value to set
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
     value: Any
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -146,17 +134,15 @@ class SetVariableValueResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetVariableTypeRequest(RequestPayload):
-    """Get the type of a variable by UUID or name.
+    """Get the type of a variable by name.
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -177,19 +163,17 @@ class GetVariableTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 @dataclass
 @PayloadRegistry.register
 class SetVariableTypeRequest(RequestPayload):
-    """Set the type of a variable by UUID or name.
+    """Set the type of a variable by name.
 
     Args:
         type: The new user-defined type (e.g., "JSON", "str", "int")
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
     type: str
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -208,17 +192,15 @@ class SetVariableTypeResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class DeleteVariableRequest(RequestPayload):
-    """Delete a variable by UUID or name.
+    """Delete a variable by name.
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -237,19 +219,17 @@ class DeleteVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class RenameVariableRequest(RequestPayload):
-    """Rename a variable by UUID or name.
+    """Rename a variable by name.
 
     Args:
         new_name: The new name for the variable
-        uuid: Optional variable UUID (takes precedence if provided)
         name: Optional current variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
     new_name: str
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -268,17 +248,15 @@ class RenameVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class HasVariableRequest(RequestPayload):
-    """Check if a variable exists by UUID or name.
+    """Check if a variable exists by name.
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -303,10 +281,10 @@ class ListVariablesRequest(RequestPayload):
     """List all variables in the specified scope.
 
     Args:
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    scope: VariableScope | None = None
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
@@ -330,21 +308,18 @@ class GetVariableDetailsRequest(RequestPayload):
     """Get variable details (metadata only, no heavy values).
 
     Args:
-        uuid: Optional variable UUID (takes precedence if provided)
-        name: Optional variable name (used if uuid not provided)
-        scope: Optional scope filter (global, current_workflow, or None for both)
+        name: Variable name to lookup
+        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
     """
 
-    uuid: str | None = None
-    name: str | None = None
-    scope: VariableScope | None = None
+    name: str
+    scope: VariableScope = VariableScope.PARENT_FLOWS
 
 
 @dataclass
 class VariableDetails:
     """Lightweight variable details without heavy values."""
 
-    uuid: str
     name: str
     scope: VariableScope
     type: str
