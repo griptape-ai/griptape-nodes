@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from griptape.events import EventBus
 from griptape.utils import with_contextvars
 
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -42,8 +43,13 @@ class ExecutionContext:
     error_message: str | None
     workflow_state: WorkflowState
 
-    def __init__(self) -> None:
-        self.current_dag = GriptapeNodes.get_instance().DagManager()
+    def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
+        if dag_instance is not None:
+            self.current_dag = dag_instance
+            logger.info("DAG_INSTANCE: ExecutionContext using provided DAG instance ID: %s", id(dag_instance))
+        else:
+            self.current_dag = GriptapeNodes.get_instance().DagManager()
+            logger.info("DAG_INSTANCE: ExecutionContext created new DAG instance ID: %s", id(self.current_dag))
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
@@ -58,8 +64,9 @@ class ExecutionState(State):
     def handle_done_nodes(context: ExecutionContext, done_node: DagOrchestrator.DagNode) -> None:
         node = done_node.node_reference
         # Publish all parameter updates.
-        for parameter, value in node.parameter_output_values.items():
-            node.publish_update_to_parameter(parameter,value)
+        node.state = NodeResolutionState.RESOLVED
+        # for parameter, value in node.parameter_output_values.items():
+        #     node.publish_update_to_parameter(parameter,value)
 
     @staticmethod
     def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
@@ -125,7 +132,23 @@ class ExecutionState(State):
     @staticmethod
     def on_enter(context: ExecutionContext) -> type[State] | None:
         logger.info("Entering DAG execution state")
+        logger.info("DAG_INSTANCE: ExecutionState using DAG instance ID: %s", id(context.current_dag))
+        logger.info("DAG_INSTANCE: DAG has %d nodes in network, %d nodes in node_to_reference", 
+                   len(context.current_dag.network.nodes()), len(context.current_dag.node_to_reference))
+        
+        # Log all nodes to verify they exist in both network and node_to_reference
+        network_nodes = set(context.current_dag.network.nodes())
+        reference_nodes = set(context.current_dag.node_to_reference.keys())
+        logger.info("DAG_INSTANCE: Network nodes: %s", network_nodes)
+        logger.info("DAG_INSTANCE: Reference nodes: %s", reference_nodes)
+        
+        if network_nodes != reference_nodes:
+            logger.error("DAG_INSTANCE: MISMATCH! Network nodes != Reference nodes")
+            logger.error("DAG_INSTANCE: Only in network: %s", network_nodes - reference_nodes)
+            logger.error("DAG_INSTANCE: Only in references: %s", reference_nodes - network_nodes)
+        
         for node in context.current_dag.node_to_reference.values():
+            logger.info("Node %s state: %s", node.node_reference.name, node.node_state)
             # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
             node.node_state = NodeState.QUEUED
         context.workflow_state = WorkflowState.NO_ERROR
@@ -137,27 +160,18 @@ class ExecutionState(State):
         network = context.current_dag.network
         # Check and see if there are leaf nodes that are cancelled.
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
-        # We have no more leaf nodes. Quit early.
-        if not leaf_nodes:
-            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
-            return CompleteState
         done_nodes = []
         canceled_nodes = []
         queued_nodes = []
         # Get the status of all of the leaf nodes.
         for node in leaf_nodes:
             node_state = context.current_dag.node_to_reference[node].node_state
-            if node_state == NodeState.CANCELED:
-                canceled_nodes.append(node)
-            elif node_state == NodeState.DONE:
+            if node_state == NodeState.DONE:
                 done_nodes.append(node)
+            elif node_state == NodeState.CANCELED:
+                canceled_nodes.append(node)
             elif node_state == NodeState.QUEUED:
                 queued_nodes.append(node)
-        if len(canceled_nodes) == len(leaf_nodes):
-            # All leaf nodes are cancelled.
-            # Set state to workflow complete.
-            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
-            return CompleteState
         # Are there any nodes in Done state?
         for node in done_nodes:
             # We have nodes in done state.
@@ -165,6 +179,33 @@ class ExecutionState(State):
             network.remove_node(node)
             # Return thread to thread pool.
             ExecutionState.handle_done_nodes(context, context.current_dag.node_to_reference[node])
+        # Reinitialize leaf nodes since maybe we changed things up.
+        if len(done_nodes) > 0:
+            # We removed nodes from the network. There may be new leaf nodes.
+            leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+            canceled_nodes = []
+            queued_nodes = []
+            for node in leaf_nodes:
+                node_state = context.current_dag.node_to_reference[node].node_state
+                if node_state == NodeState.CANCELED:
+                    canceled_nodes.append(node)
+                elif node_state == NodeState.QUEUED:
+                    queued_nodes.append(node)
+        # We have no more leaf nodes. Quit early.
+        if not leaf_nodes:
+            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
+            return CompleteState
+        for node in leaf_nodes:
+            node_state = context.current_dag.node_to_reference[node].node_state
+            if node_state == NodeState.CANCELED:
+                canceled_nodes.append(node)
+            elif node_state == NodeState.QUEUED:
+                queued_nodes.append(node)
+        if len(canceled_nodes) == len(leaf_nodes):
+            # All leaf nodes are cancelled.
+            # Set state to workflow complete.
+            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
+            return CompleteState
         # Are there any in the queued state?
         for node in queued_nodes:
             # Do we have any threads available?
@@ -206,6 +247,7 @@ class ExecutionState(State):
                 context.current_dag.future_to_node[node_future] = node_reference
                 node_reference.thread_reference = node_future
                 node_reference.node_state = NodeState.PROCESSING
+                node_reference.node_reference.state = NodeResolutionState.RESOLVING
                 node_future.add_done_callback(with_contextvars(on_future_done))
                 # Map futures to nodes.
         # Exit out to None. Wait to reenter.
@@ -257,8 +299,9 @@ class CompleteState(State):
 class DagExecutionMachine(FSM[ExecutionContext]):
     """State machine for DAG execution."""
 
-    def __init__(self) -> None:
-        execution_context = ExecutionContext()
+    def __init__(self, dag_instance: DagOrchestrator | None = None) -> None:
+        execution_context = ExecutionContext(dag_instance)
+        logger.info("DAG_INSTANCE: DagExecutionMachine initialized with DAG instance ID: %s", id(execution_context.current_dag))
         super().__init__(execution_context)
 
     def start_execution(self) -> None:

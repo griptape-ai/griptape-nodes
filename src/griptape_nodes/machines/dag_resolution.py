@@ -37,7 +37,11 @@ class DagResolutionContext:
     def __init__(self) -> None:
         self.focus_stack = []
         self.paused = False
-        self.execution_machine = DagExecutionMachine()
+        # Get the DAG instance that will be used throughout resolution and execution
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        dag_instance = GriptapeNodes.get_instance().DagManager()
+        logger.info("DAG_INSTANCE: DagResolutionContext using DAG instance ID: %s", id(dag_instance))
+        self.execution_machine = DagExecutionMachine(dag_instance)
 
     def reset(self) -> None:
         if self.focus_stack:
@@ -113,12 +117,14 @@ class EvaluateDagParameterState(State):
         next_node = connections.get_connected_node(current_node, current_parameter)
         if next_node:
             next_node, _ = next_node
+            dag_instance = GriptapeNodes.get_instance().DagManager()
+            dag_instance.network.add_edge(next_node.name, current_node.name)
         if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
             focus_stack_names = {focus.node.name for focus in context.focus_stack}
             if next_node.name in focus_stack_names:
                 msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
                 raise RuntimeError(msg)
-
+            #TODO: maybe it should be here.
             context.focus_stack.append(Focus(node=next_node))
             return InitializeDagSpotlightState
 
@@ -144,17 +150,18 @@ class BuildDagNodeState(State):
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
-                # Add the edge to the DAG - this is the key DAG building step
-                dag_instance = GriptapeNodes.get_instance().DagManager()
-                # update DAG instance
-                dag_instance.network.add_edge(upstream_node.name, current_node.name)
-                logger.info(
-                    "DAG BUILD: Added edge '%s' -> '%s'. Network now has %d edges. Instance ID: %s",
-                    upstream_node.name,
-                    current_node.name,
-                    len(dag_instance.network.edges()),
-                    id(dag_instance),
-                )
+                # Add the edge to the DAG if it is unresolved - this is the key DAG building step
+                # if upstream_node.state == NodeResolutionState.UNRESOLVED:
+                #     dag_instance = GriptapeNodes.get_instance().DagManager()
+                #     # update DAG instance
+                #     dag_instance.network.add_edge(upstream_node.name, current_node.name)
+                #     logger.info(
+                #         "DAG BUILD: Added edge '%s' -> '%s'. Network now has %d edges. Instance ID: %s",
+                #         upstream_node.name,
+                #         current_node.name,
+                #         len(dag_instance.network.edges()),
+                #         id(dag_instance),
+                #     )
 
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
@@ -168,6 +175,9 @@ class BuildDagNodeState(State):
         dag_instance.node_to_reference[current_node.name] = node_reference
         # Add node name to DAG (has to be a hashable value)
         dag_instance.network.add_node(node_for_adding=current_node.name)
+        
+        # Validation logging
+        logger.info("DAG_INSTANCE: BuildDagNodeState using DAG instance ID: %s for node '%s'", id(dag_instance), current_node.name)
 
         # Debug logging to track DAG building
         logger.info(
