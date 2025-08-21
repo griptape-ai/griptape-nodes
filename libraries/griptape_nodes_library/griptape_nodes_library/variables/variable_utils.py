@@ -1,5 +1,8 @@
 from enum import StrEnum
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.traits.options import Options
@@ -19,12 +22,12 @@ class AdvancedParameterGroup(NamedTuple):
 
 def create_advanced_parameter_group() -> AdvancedParameterGroup:
     """Create a collapsed Advanced parameter group with UUID and scope parameters.
-    
+
     Returns:
         AdvancedParameterGroup with the parameter group and its child parameters
     """
     parameter_group = ParameterGroup(name="Advanced", ui_options={"collapsed": True})
-    
+
     with parameter_group:
         uuid_param = Parameter(
             name="uuid",
@@ -35,13 +38,13 @@ def create_advanced_parameter_group() -> AdvancedParameterGroup:
 
         scope_param = Parameter(
             name="scope",
-            type="str", 
+            type="str",
             default_value=ScopeOption.NOT_SPECIFIED.value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="Variable scope: search both scopes, global only, or current workflow only",
         )
         scope_param.add_trait(Options(choices=[option.value for option in ScopeOption]))
-    
+
     return AdvancedParameterGroup(
         parameter_group=parameter_group,
         uuid_param=uuid_param,
@@ -49,18 +52,18 @@ def create_advanced_parameter_group() -> AdvancedParameterGroup:
     )
 
 
-def scope_string_to_variable_scope(scope_str: str):
+def scope_string_to_variable_scope(scope_str: str) -> "VariableScope | None":
     """Convert scope option string to VariableScope enum.
-    
+
     Args:
         scope_str: The scope option string value
-        
+
     Returns:
         VariableScope enum value or None for "not specified"
     """
     # Lazy import to avoid circular import issues
-    from griptape_nodes.retained_mode.managers.workflow_variable_manager import VariableScope
-    
+    from griptape_nodes.retained_mode.workflow_variable_types import VariableScope
+
     match scope_str:
         case ScopeOption.GLOBAL.value:
             return VariableScope.GLOBAL
@@ -69,4 +72,5 @@ def scope_string_to_variable_scope(scope_str: str):
         case ScopeOption.NOT_SPECIFIED.value:
             return None
         case _:
-            raise ValueError(f"Invalid scope option: {scope_str}")
+            msg = f"Invalid scope option: {scope_str}"
+            raise ValueError(msg)

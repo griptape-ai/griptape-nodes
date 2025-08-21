@@ -3,7 +3,10 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.variables.variable_utils import create_advanced_parameter_group, scope_string_to_variable_scope
+from griptape_nodes_library.variables.variable_utils import (
+    create_advanced_parameter_group,
+    scope_string_to_variable_scope,
+)
 
 
 class GetWorkflowVariable(DataNode):
@@ -15,7 +18,7 @@ class GetWorkflowVariable(DataNode):
         super().__init__(name, metadata)
 
         self.variable_name_param = Parameter(
-            name="variable_name", 
+            name="variable_name",
             type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             tooltip="Name of the variable to retrieve",
@@ -43,11 +46,11 @@ class GetWorkflowVariable(DataNode):
             GetWorkflowVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        
+
         uuid = self.get_parameter_value("uuid")
         variable_name = self.get_parameter_value("variable_name")
         scope_str = self.get_parameter_value("scope")
-        
+
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
@@ -63,4 +66,5 @@ class GetWorkflowVariable(DataNode):
             self.parameter_output_values["value"] = deepcopy(result.value)
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            raise RuntimeError(f"Failed to get workflow variable: {result.result_details}")
+            msg = f"Failed to get workflow variable: {result.result_details}"
+            raise TypeError(msg)

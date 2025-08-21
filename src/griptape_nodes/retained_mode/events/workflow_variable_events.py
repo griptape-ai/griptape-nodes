@@ -9,7 +9,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.managers.workflow_variable_manager import VariableScope, WorkflowVariable
+from griptape_nodes.retained_mode.workflow_variable_types import VariableScope, WorkflowVariable
 
 
 # Create Variable Events
@@ -17,13 +17,14 @@ from griptape_nodes.retained_mode.managers.workflow_variable_manager import Vari
 @PayloadRegistry.register
 class CreateWorkflowVariableRequest(RequestPayload):
     """Create a new workflow variable.
-    
+
     Args:
         name: The name of the variable
-        scope: The scope of the variable (global or current_workflow)  
+        scope: The scope of the variable (global or current_workflow)
         type: The user-defined type (e.g., "JSON", "str", "int")
         value: The initial value of the variable
     """
+
     name: str
     scope: VariableScope
     type: str
@@ -34,6 +35,7 @@ class CreateWorkflowVariableRequest(RequestPayload):
 @PayloadRegistry.register
 class CreateWorkflowVariableResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Workflow variable created successfully."""
+
     variable_uuid: str
 
 
@@ -48,12 +50,13 @@ class CreateWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFai
 @PayloadRegistry.register
 class GetWorkflowVariableRequest(RequestPayload):
     """Get a complete workflow variable by UUID or name.
-    
+
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     uuid: str | None = None
     name: str | None = None
     scope: VariableScope | None = None
@@ -63,6 +66,7 @@ class GetWorkflowVariableRequest(RequestPayload):
 @PayloadRegistry.register
 class GetWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow variable retrieved successfully."""
+
     variable: WorkflowVariable
 
 
@@ -77,12 +81,13 @@ class GetWorkflowVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @PayloadRegistry.register
 class GetWorkflowVariableValueRequest(RequestPayload):
     """Get the value of a workflow variable by UUID or name.
-    
+
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     uuid: str | None = None
     name: str | None = None
     scope: VariableScope | None = None
@@ -92,6 +97,7 @@ class GetWorkflowVariableValueRequest(RequestPayload):
 @PayloadRegistry.register
 class GetWorkflowVariableValueResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow variable value retrieved successfully."""
+
     value: Any
 
 
@@ -106,13 +112,14 @@ class GetWorkflowVariableValueResultFailure(WorkflowNotAlteredMixin, ResultPaylo
 @PayloadRegistry.register
 class SetWorkflowVariableValueRequest(RequestPayload):
     """Set the value of a workflow variable by UUID or name.
-    
+
     Args:
         value: The new value to set
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     value: Any
     uuid: str | None = None
     name: str | None = None
@@ -136,12 +143,13 @@ class SetWorkflowVariableValueResultFailure(WorkflowAlteredMixin, ResultPayloadF
 @PayloadRegistry.register
 class GetWorkflowVariableTypeRequest(RequestPayload):
     """Get the type of a workflow variable by UUID or name.
-    
+
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     uuid: str | None = None
     name: str | None = None
     scope: VariableScope | None = None
@@ -151,6 +159,7 @@ class GetWorkflowVariableTypeRequest(RequestPayload):
 @PayloadRegistry.register
 class GetWorkflowVariableTypeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow variable type retrieved successfully."""
+
     type: str
 
 
@@ -165,13 +174,14 @@ class GetWorkflowVariableTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @PayloadRegistry.register
 class SetWorkflowVariableTypeRequest(RequestPayload):
     """Set the type of a workflow variable by UUID or name.
-    
+
     Args:
         type: The new user-defined type (e.g., "JSON", "str", "int")
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     type: str
     uuid: str | None = None
     name: str | None = None
@@ -195,12 +205,13 @@ class SetWorkflowVariableTypeResultFailure(WorkflowAlteredMixin, ResultPayloadFa
 @PayloadRegistry.register
 class DeleteWorkflowVariableRequest(RequestPayload):
     """Delete a workflow variable by UUID or name.
-    
+
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     uuid: str | None = None
     name: str | None = None
     scope: VariableScope | None = None
@@ -223,13 +234,14 @@ class DeleteWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFai
 @PayloadRegistry.register
 class RenameWorkflowVariableRequest(RequestPayload):
     """Rename a workflow variable by UUID or name.
-    
+
     Args:
         new_name: The new name for the variable
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional current variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     new_name: str
     uuid: str | None = None
     name: str | None = None
@@ -253,12 +265,13 @@ class RenameWorkflowVariableResultFailure(WorkflowAlteredMixin, ResultPayloadFai
 @PayloadRegistry.register
 class HasWorkflowVariableRequest(RequestPayload):
     """Check if a workflow variable exists by UUID or name.
-    
+
     Args:
         uuid: Optional variable UUID (takes precedence if provided)
         name: Optional variable name (used if uuid not provided)
         scope: Optional scope filter (global, current_workflow, or None for both)
     """
+
     uuid: str | None = None
     name: str | None = None
     scope: VariableScope | None = None
@@ -268,6 +281,7 @@ class HasWorkflowVariableRequest(RequestPayload):
 @PayloadRegistry.register
 class HasWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow variable existence check completed."""
+
     exists: bool
     found_scope: VariableScope | None = None
 
@@ -276,3 +290,71 @@ class HasWorkflowVariableResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
 @PayloadRegistry.register
 class HasWorkflowVariableResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow variable existence check failed."""
+
+
+# List Variables Events
+@dataclass
+@PayloadRegistry.register
+class ListWorkflowVariablesRequest(RequestPayload):
+    """List all workflow variables in the specified scope.
+
+    Args:
+        scope: Optional scope filter (global, current_workflow, or None for both)
+    """
+
+    scope: VariableScope | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ListWorkflowVariablesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow variables listed successfully."""
+
+    variables: list[WorkflowVariable]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListWorkflowVariablesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow variables listing failed."""
+
+
+# Get Variable Details Events
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowVariableDetailsRequest(RequestPayload):
+    """Get workflow variable details (metadata only, no heavy values).
+
+    Args:
+        uuid: Optional variable UUID (takes precedence if provided)
+        name: Optional variable name (used if uuid not provided)
+        scope: Optional scope filter (global, current_workflow, or None for both)
+    """
+
+    uuid: str | None = None
+    name: str | None = None
+    scope: VariableScope | None = None
+
+
+@dataclass
+class WorkflowVariableDetails:
+    """Lightweight variable details without heavy values."""
+
+    uuid: str
+    name: str
+    scope: VariableScope
+    type: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowVariableDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow variable details retrieved successfully."""
+
+    details: WorkflowVariableDetails
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowVariableDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow variable details retrieval failed."""

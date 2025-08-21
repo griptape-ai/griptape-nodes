@@ -2,7 +2,10 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.variables.variable_utils import create_advanced_parameter_group, scope_string_to_variable_scope
+from griptape_nodes_library.variables.variable_utils import (
+    create_advanced_parameter_group,
+    scope_string_to_variable_scope,
+)
 
 
 class SetWorkflowVariable(DataNode):
@@ -14,7 +17,7 @@ class SetWorkflowVariable(DataNode):
         super().__init__(name, metadata)
 
         self.variable_name_param = Parameter(
-            name="variable_name", 
+            name="variable_name",
             type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             tooltip="Name of the variable to set",
@@ -42,12 +45,12 @@ class SetWorkflowVariable(DataNode):
             SetWorkflowVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        
+
         uuid = self.get_parameter_value("uuid")
         variable_name = self.get_parameter_value("variable_name")
         value = self.get_parameter_value("value")
         scope_str = self.get_parameter_value("scope")
-        
+
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
@@ -63,4 +66,5 @@ class SetWorkflowVariable(DataNode):
         if isinstance(result, SetWorkflowVariableValueResultSuccess):
             self.parameter_output_values["variable_name"] = variable_name
         else:
-            raise RuntimeError(f"Failed to set workflow variable: {result.result_details}")
+            msg = f"Failed to set workflow variable: {result.result_details}"
+            raise TypeError(msg)

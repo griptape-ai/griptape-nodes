@@ -150,4 +150,4 @@ class CreateWorkflowVariable(DataNode):
             self.parameter_output_values["value"] = value
         else:
             error_msg = f"Failed to create workflow variable: {result.result_details}"
-            raise RuntimeError(error_msg)
+            raise TypeError(error_msg)

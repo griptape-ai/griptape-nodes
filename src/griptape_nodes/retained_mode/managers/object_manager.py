@@ -143,6 +143,10 @@ class ObjectManager:
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
         context_mgr._clipboard.clear()
+
+        # Clear all local workflow variables
+        GriptapeNodes.WorkflowVariablesManager().on_clear_object_state()
+
         details = "Successfully cleared all object state (deleted everything)."
         logger.debug(details)
         return ClearAllObjectStateResultSuccess()

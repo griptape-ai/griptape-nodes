@@ -74,6 +74,9 @@ if TYPE_CHECKING:
         VersionCompatibilityManager,
     )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+    from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
+        WorkflowVariablesManager,
+    )
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -132,6 +135,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _context_manager: ContextManager
     _library_manager: LibraryManager
     _workflow_manager: WorkflowManager
+    _workflow_variables_manager: WorkflowVariablesManager
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
     _operation_depth_manager: OperationDepthManager
     _static_files_manager: StaticFilesManager
@@ -170,6 +174,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
+        from griptape_nodes.retained_mode.managers.workflow_variable_manager import (
+            WorkflowVariablesManager,
+        )
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
@@ -183,6 +190,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
+            self._workflow_variables_manager = WorkflowVariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
             self._static_files_manager = StaticFilesManager(
@@ -333,6 +341,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def SyncManager(cls) -> SyncManager:
         return GriptapeNodes.get_instance()._sync_manager
+
+    @classmethod
+    def WorkflowVariablesManager(cls) -> WorkflowVariablesManager:
+        return GriptapeNodes.get_instance()._workflow_variables_manager
 
     @classmethod
     def clear_data(cls) -> None:
