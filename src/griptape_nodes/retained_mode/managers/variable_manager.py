@@ -84,7 +84,7 @@ class VariablesManager:
             )
 
         # Determine scope based on is_global flag
-        scope = VariableScope.GLOBAL if request.is_global else VariableScope.CURRENT_FLOW
+        scope = VariableScope.GLOBAL_ONLY if request.is_global else VariableScope.CURRENT_FLOW_ONLY
 
         variable = FlowVariable(
             name=request.name,
@@ -99,7 +99,7 @@ class VariablesManager:
     def on_get_variable_request(self, request: GetVariableRequest) -> ResultPayload:
         """Get a full variable by name."""
         # For now, just look in current flow variables
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return GetVariableResultFailure(
                 result_details=f"Attempted to get variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -116,7 +116,7 @@ class VariablesManager:
         """Get the value of a variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return GetVariableValueResultFailure(
                 result_details=f"Attempted to get value for variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -134,7 +134,7 @@ class VariablesManager:
         """Set the value of an existing variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return SetVariableValueResultFailure(
                 result_details=f"Attempted to set value for variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -152,7 +152,7 @@ class VariablesManager:
         """Get the type of a variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return GetVariableTypeResultFailure(
                 result_details=f"Attempted to get type for variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -169,7 +169,7 @@ class VariablesManager:
         """Set the type of an existing variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return SetVariableTypeResultFailure(
                 result_details=f"Attempted to set type for variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -187,7 +187,7 @@ class VariablesManager:
         """Delete a variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return DeleteVariableResultFailure(
                 result_details=f"Attempted to delete variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -206,7 +206,7 @@ class VariablesManager:
         """Rename a variable."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return RenameVariableResultFailure(
                 result_details=f"Attempted to rename variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
@@ -235,21 +235,21 @@ class VariablesManager:
         """Check if a variable exists."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return HasVariableResultFailure(
                 result_details=f"Attempted to check existence of variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )
 
         variable = self._find_variable_by_name(request.name)
         exists = variable is not None
-        found_scope = VariableScope.CURRENT_FLOW if exists else None
+        found_scope = VariableScope.CURRENT_FLOW_ONLY if exists else None
 
         return HasVariableResultSuccess(exists=exists, found_scope=found_scope)
 
     def on_list_variables_request(self, request: ListVariablesRequest) -> ResultPayload:
         """List all variables in the specified scope."""
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return ListVariablesResultFailure(
                 result_details="Attempted to list variables with global scope. Failed because global variables are not yet supported."
             )
@@ -262,7 +262,7 @@ class VariablesManager:
         """Get variable details (metadata only, no heavy values)."""
         # For now, just look in current flow variables
         # Reject GLOBAL scope requests for now
-        if request.scope == VariableScope.GLOBAL:
+        if request.lookup_scope == VariableScope.GLOBAL_ONLY:
             return GetVariableDetailsResultFailure(
                 result_details=f"Attempted to get details for variable '{request.name}' with global scope. Failed because global variables are not yet supported."
             )

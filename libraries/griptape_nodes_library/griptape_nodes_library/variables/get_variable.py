@@ -55,7 +55,7 @@ class GetVariable(DataNode):
 
         request = GetVariableValueRequest(
             name=variable_name,
-            scope=scope,
+            lookup_scope=scope,
         )
 
         result = GriptapeNodes.handle_request(request)

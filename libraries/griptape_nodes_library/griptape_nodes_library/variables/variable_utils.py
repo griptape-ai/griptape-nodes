@@ -10,9 +10,10 @@ from griptape_nodes.traits.options import Options
 
 class ScopeOption(StrEnum):
     NOT_SPECIFIED = "<not specified>"
-    GLOBAL = "global"
-    CURRENT_FLOW = "current flow"
+    CURRENT_FLOW_ONLY = "current flow only"
     PARENT_FLOWS = "parent flows"
+    GLOBAL_ONLY = "global only"
+    ALL = "all flows"
 
 
 class AdvancedParameterGroup(NamedTuple):
@@ -66,12 +67,14 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope":
     from griptape_nodes.retained_mode.variable_types import VariableScope
 
     match scope_str:
-        case ScopeOption.GLOBAL.value:
-            return VariableScope.GLOBAL
-        case ScopeOption.CURRENT_FLOW.value:
-            return VariableScope.CURRENT_FLOW
+        case ScopeOption.CURRENT_FLOW_ONLY.value:
+            return VariableScope.CURRENT_FLOW_ONLY
         case ScopeOption.PARENT_FLOWS.value:
             return VariableScope.PARENT_FLOWS
+        case ScopeOption.GLOBAL_ONLY.value:
+            return VariableScope.GLOBAL_ONLY
+        case ScopeOption.ALL.value:
+            return VariableScope.ALL
         case ScopeOption.NOT_SPECIFIED.value:
             return VariableScope.PARENT_FLOWS
         case _:

@@ -4,9 +4,10 @@ from typing import Any
 
 
 class VariableScope(StrEnum):
-    GLOBAL = "global"
-    CURRENT_FLOW = "current_flow"
+    CURRENT_FLOW_ONLY = "current_flow_only"
     PARENT_FLOWS = "parent_flows"
+    GLOBAL_ONLY = "global_only"
+    ALL = "all"  # For ListVariables to get all variables from all flows
 
 
 @dataclass

@@ -56,7 +56,7 @@ class SetVariable(DataNode):
         request = SetVariableValueRequest(
             value=value,
             name=variable_name,
-            scope=scope,
+            lookup_scope=scope,
         )
 
         result = GriptapeNodes.handle_request(request)

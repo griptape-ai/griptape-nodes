@@ -20,15 +20,17 @@ class CreateVariableRequest(RequestPayload):
 
     Args:
         name: The name of the variable
-        is_global: Whether this is a global variable (True) or current flow variable (False)
         type: The user-defined type (e.g., "JSON", "str", "int")
+        is_global: Whether this is a global variable (True) or current flow variable (False)
         value: The initial value of the variable
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
     type: str
     is_global: bool = False
     value: Any = None
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -51,11 +53,13 @@ class GetVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -80,11 +84,13 @@ class GetVariableValueRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -110,12 +116,14 @@ class SetVariableValueRequest(RequestPayload):
     Args:
         value: The new value to set
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     value: Any
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -138,11 +146,13 @@ class GetVariableTypeRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -168,12 +178,14 @@ class SetVariableTypeRequest(RequestPayload):
     Args:
         type: The new user-defined type (e.g., "JSON", "str", "int")
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     type: str
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -196,11 +208,13 @@ class DeleteVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -223,13 +237,15 @@ class RenameVariableRequest(RequestPayload):
 
     Args:
         new_name: The new name for the variable
-        name: Optional current variable name (used if uuid not provided)
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        name: Current variable name
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     new_name: str
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -252,11 +268,13 @@ class HasVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -281,10 +299,12 @@ class ListVariablesRequest(RequestPayload):
     """List all variables in the specified scope.
 
     Args:
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global; use ALL to get variables from all flows for GUI enumeration)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
@@ -309,11 +329,13 @@ class GetVariableDetailsRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        scope: Scope for variable search (default: hierarchical search through current flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    starting_flow: str | None = None
 
 
 @dataclass
