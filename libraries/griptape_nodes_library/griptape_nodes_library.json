@@ -1563,42 +1563,42 @@
       }
     },
     {
-      "class_name": "CreateWorkflowVariable",
-      "file_path": "griptape_nodes_library/variables/create_workflow_variable.py",
+      "class_name": "CreateVariable",
+      "file_path": "griptape_nodes_library/variables/create_variable.py",
       "metadata": {
         "category": "variables",
-        "description": "Create a new workflow variable with a specified name, scope, and initial value",
-        "display_name": "Create Workflow Variable",
+        "description": "Create a new variable with a specified name, scope, and initial value",
+        "display_name": "Create Variable",
         "icon": "PlusCircle"
       }
     },
     {
-      "class_name": "GetWorkflowVariable",
-      "file_path": "griptape_nodes_library/variables/get_workflow_variable.py",
+      "class_name": "GetVariable",
+      "file_path": "griptape_nodes_library/variables/get_variable.py",
       "metadata": {
         "category": "variables",
-        "description": "Retrieve the value of an existing workflow variable",
-        "display_name": "Get Workflow Variable",
+        "description": "Retrieve the value of an existing variable",
+        "display_name": "Get Variable",
         "icon": "ArrowDown"
       }
     },
     {
-      "class_name": "SetWorkflowVariable",
-      "file_path": "griptape_nodes_library/variables/set_workflow_variable.py",
+      "class_name": "SetVariable",
+      "file_path": "griptape_nodes_library/variables/set_variable.py",
       "metadata": {
         "category": "variables",
-        "description": "Set the value of an existing workflow variable",
-        "display_name": "Set Workflow Variable",
+        "description": "Set the value of an existing variable",
+        "display_name": "Set Variable",
         "icon": "ArrowUp"
       }
     },
     {
-      "class_name": "HasWorkflowVariable",
-      "file_path": "griptape_nodes_library/variables/has_workflow_variable.py",
+      "class_name": "HasVariable",
+      "file_path": "griptape_nodes_library/variables/has_variable.py",
       "metadata": {
         "category": "variables",
-        "description": "Check whether a workflow variable exists",
-        "display_name": "Has Workflow Variable",
+        "description": "Check whether a variable exists",
+        "display_name": "Has Variable",
         "icon": "QuestionMarkCircle"
       }
     }
