@@ -53,12 +53,12 @@ class GetVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -84,12 +84,12 @@ class GetVariableValueRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -116,13 +116,13 @@ class SetVariableValueRequest(RequestPayload):
     Args:
         value: The new value to set
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     value: Any
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -146,12 +146,12 @@ class GetVariableTypeRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -178,13 +178,13 @@ class SetVariableTypeRequest(RequestPayload):
     Args:
         type: The new user-defined type (e.g., "JSON", "str", "int")
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     type: str
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -208,12 +208,12 @@ class DeleteVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -238,13 +238,13 @@ class RenameVariableRequest(RequestPayload):
     Args:
         new_name: The new name for the variable
         name: Current variable name
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     new_name: str
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -268,12 +268,12 @@ class HasVariableRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -299,11 +299,11 @@ class ListVariablesRequest(RequestPayload):
     """List all variables in the specified scope.
 
     Args:
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global; use ALL to get variables from all flows for GUI enumeration)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global; use ALL to get variables from all flows for GUI enumeration)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -329,12 +329,12 @@ class GetVariableDetailsRequest(RequestPayload):
 
     Args:
         name: Variable name to lookup
-        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, parent flows, then global)
+        lookup_scope: Variable lookup strategy (default: hierarchical search through starting flow, ancestor flows, then global)
         starting_flow: Starting flow name (None for current flow in the Context Manager)
     """
 
     name: str
-    lookup_scope: VariableScope = VariableScope.PARENT_FLOWS
+    lookup_scope: VariableScope = VariableScope.HIERARCHICAL
     starting_flow: str | None = None
 
 
@@ -343,7 +343,7 @@ class VariableDetails:
     """Lightweight variable details without heavy values."""
 
     name: str
-    scope: VariableScope
+    owning_flow_name: str | None  # None for global variables
     type: str
 
 

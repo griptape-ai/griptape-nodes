@@ -5,7 +5,7 @@ from typing import Any
 
 class VariableScope(StrEnum):
     CURRENT_FLOW_ONLY = "current_flow_only"
-    PARENT_FLOWS = "parent_flows"
+    HIERARCHICAL = "hierarchical"
     GLOBAL_ONLY = "global_only"
     ALL = "all"  # For ListVariables to get all variables from all flows
 
@@ -13,6 +13,6 @@ class VariableScope(StrEnum):
 @dataclass
 class FlowVariable:
     name: str
-    scope: VariableScope
+    owning_flow_name: str | None  # None for global variables
     type: str
     value: Any

@@ -11,7 +11,7 @@ from griptape_nodes.traits.options import Options
 class ScopeOption(StrEnum):
     NOT_SPECIFIED = "<not specified>"
     CURRENT_FLOW_ONLY = "current flow only"
-    PARENT_FLOWS = "parent flows"
+    HIERARCHICAL = "hierarchical"
     GLOBAL_ONLY = "global only"
     ALL = "all flows"
 
@@ -61,7 +61,7 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope":
         scope_str: The scope option string value
 
     Returns:
-        VariableScope enum value, with PARENT_FLOWS as default for "not specified"
+        VariableScope enum value, with HIERARCHICAL as default for "not specified"
     """
     # Lazy import to avoid circular import issues
     from griptape_nodes.retained_mode.variable_types import VariableScope
@@ -69,14 +69,14 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope":
     match scope_str:
         case ScopeOption.CURRENT_FLOW_ONLY.value:
             return VariableScope.CURRENT_FLOW_ONLY
-        case ScopeOption.PARENT_FLOWS.value:
-            return VariableScope.PARENT_FLOWS
+        case ScopeOption.HIERARCHICAL.value:
+            return VariableScope.HIERARCHICAL
         case ScopeOption.GLOBAL_ONLY.value:
             return VariableScope.GLOBAL_ONLY
         case ScopeOption.ALL.value:
             return VariableScope.ALL
         case ScopeOption.NOT_SPECIFIED.value:
-            return VariableScope.PARENT_FLOWS
+            return VariableScope.HIERARCHICAL
         case _:
             msg = f"Invalid scope option: {scope_str}"
             raise ValueError(msg)
