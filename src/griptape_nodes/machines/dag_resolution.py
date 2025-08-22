@@ -209,6 +209,18 @@ class ExecuteDagState(State):
             return DagCompleteState
         # Is this the right move?
         context.execution_machine.update()
+        execution_complete_after_update = context.execution_machine.is_complete()
+        execution_error_after_update = context.execution_machine.is_error()
+        logger.debug(
+            f"After update - execution_complete: {execution_complete_after_update}, execution_error: {execution_error_after_update}"
+        )
+
+        if execution_complete_after_update:
+            logger.debug("DAG execution completed after update - transitioning to DagCompleteState")
+            return DagCompleteState
+        if execution_error_after_update:
+            logger.warning("DAG execution encountered error after update - transitioning to DagCompleteState")
+            return DagCompleteState
 
         return None
 
