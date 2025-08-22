@@ -4,6 +4,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
+    ParameterGroup,
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -63,6 +64,20 @@ class AddToList(ControlNode):
         )
         self.add_parameter(self.output)
 
+        # Advanced Behavior parameter group (collapsed by default)
+        advanced_group = ParameterGroup(name="Advanced", ui_options={"collapsed": True})
+
+        with advanced_group:
+            self.skip_empty_values = Parameter(
+                name="skip_empty_values",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                tooltip="If True, skip adding None values to the list. If False, add None values normally.",
+            )
+
+        self.add_node_element(advanced_group)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "position":
             if value in {"start", "end"}:
@@ -79,7 +94,9 @@ class AddToList(ControlNode):
             raise TypeError(error_msg)
 
         item = self.get_parameter_value("item")
-        if item is None:
+        skip_empty_values = self.get_parameter_value("skip_empty_values")
+
+        if item is None and skip_empty_values:
             logger.debug("AddToList node '%s' received None as item parameter, skipping addition to list", self.name)
             return
 
@@ -95,3 +112,4 @@ class AddToList(ControlNode):
         new_list.insert(index, item)
 
         self.parameter_output_values["output"] = new_list
+        self.parameter_output_values["skip_empty_values"] = skip_empty_values
