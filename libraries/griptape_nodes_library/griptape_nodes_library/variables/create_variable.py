@@ -217,3 +217,8 @@ class CreateVariable(ControlNode):
         self.parameter_output_values["variable_name"] = variable_name
         self.parameter_output_values["variable_type"] = variable_type
         self.parameter_output_values["value"] = value
+
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Variable nodes have side effects and need to execute every workflow run."""
+        self.make_node_unresolved(current_states_to_trigger_change_event=None)
+        return None

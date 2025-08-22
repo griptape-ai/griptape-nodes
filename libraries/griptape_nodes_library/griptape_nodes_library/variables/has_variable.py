@@ -79,3 +79,8 @@ class HasVariable(ControlNode):
         else:
             msg = f"Failed to check variable existence: {result.result_details}"
             raise TypeError(msg)
+
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Variable nodes have side effects and need to execute every workflow run."""
+        self.make_node_unresolved(current_states_to_trigger_change_event=None)
+        return None
