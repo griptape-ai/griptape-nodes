@@ -43,7 +43,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesRequest,
 )
 from griptape_nodes.retained_mode.events.node_events import (
-    BatchSetNodeMetadataRequest,
     CreateNodeRequest,
     DeleteNodeRequest,
     GetNodeMetadataRequest,

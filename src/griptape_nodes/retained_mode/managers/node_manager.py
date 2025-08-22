@@ -703,10 +703,10 @@ class NodeManager:
         # Return success if at least one node was updated, or if all nodes failed
         if updated_nodes:
             return BatchSetNodeMetadataResultSuccess(updated_nodes=updated_nodes, failed_nodes=failed_nodes)
-        else:
-            return BatchSetNodeMetadataResultFailure(
-                result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
-            )
+
+        return BatchSetNodeMetadataResultFailure(
+            result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
+        )
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
