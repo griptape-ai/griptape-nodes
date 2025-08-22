@@ -265,6 +265,50 @@ class SetNodeMetadataResultFailure(ResultPayloadFailure):
     """Metadata update failed. Common causes: node not found, no current context, invalid metadata format."""
 
 
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataRequest(RequestPayload):
+    """Update metadata for multiple nodes in a single request.
+
+    Use when: Updating positions for multiple nodes at once, applying bulk styling changes,
+    implementing multi-node selection operations, optimizing performance for UI updates.
+    Supports partial updates - only specified metadata fields are updated for each node.
+
+    Args:
+        node_metadata_updates: Dictionary mapping node names to their metadata updates.
+                              Each node's metadata is merged with existing metadata (partial update).
+                              If a node name is None, uses the current context node.
+
+    Results: BatchSetNodeMetadataResultSuccess | BatchSetNodeMetadataResultFailure (some nodes not found, update errors)
+    """
+
+    node_metadata_updates: dict[str | None, dict]
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Batch node metadata update completed successfully.
+
+    Args:
+        updated_nodes: List of node names that were successfully updated
+        failed_nodes: Dictionary mapping failed node names to error descriptions (if any)
+    """
+
+    updated_nodes: list[str]
+    failed_nodes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataResultFailure(ResultPayloadFailure):
+    """Batch metadata update failed.
+
+    Common causes: all nodes not found, no current context, invalid metadata format,
+    or other systemic errors preventing the batch operation.
+    """
+
+
 # Get all info via a "jumbo" node event. Batches multiple info requests for, say, a GUI.
 # ...jumbode?
 @dataclass
