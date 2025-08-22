@@ -672,7 +672,6 @@ class NodeManager:
         return result
 
     def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
-        """Handle batch metadata updates for multiple nodes."""
         updated_nodes = []
         failed_nodes = {}
 
