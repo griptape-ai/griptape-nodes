@@ -1931,10 +1931,13 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
+                        # If the node is a StartLoopNode, it may have an incoming hidden connection from it's EndLoopNode for iteration.
                         if isinstance(node, StartLoopNode):
                             connection_id = cn_mgr.incoming_index[node.name][param_name][0]
                             connection = cn_mgr.connections[connection_id]
                             connected_node = connection.get_source_node()
+                            # Check if the source node is the end loop node associated with this StartLoopNode.
+                            # If it is, then this could still be the first node in the control flow.
                             if connected_node == node.end_node:
                                 continue
                         has_control_connection = True
