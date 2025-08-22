@@ -333,8 +333,13 @@ async def _ahandle_event_request(event: EventRequest) -> None:
         # Emit success/failure events (existing logic)
         await _aemit_request_result(event, result_payload)
     except Exception as e:
-        logger.exception("Error handling request")
-        # Emit failure event
+        logger.exception(
+            "Error handling request of type %s (request_id: %s, response_topic: %s)",
+            type(event.request).__name__,
+            event.request_id,
+            event.response_topic,
+        )
+        # Emit failure event with preserved exception context
         await _aemit_request_failure(event, e)
 
 

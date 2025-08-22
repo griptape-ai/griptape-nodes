@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     WorkflowAlteredMixin,
 )
-from griptape_nodes.utils.events import put_event
+from griptape_nodes.utils.events import aput_event, put_event
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -142,7 +142,7 @@ class EventManager:
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
         if not callback:
-            msg = f"No manager found to handle request of type '{request_type.__name__}."
+            msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
         # Actually make the handler callback (support both sync and async):
@@ -159,10 +159,7 @@ class EventManager:
                 and isinstance(result_payload, WorkflowAlteredMixin)
                 and not self._flush_in_queue
             ):
-                from griptape_nodes.app.app import event_queue
-
-                if event_queue is not None:
-                    await event_queue.put(EventRequest(request=FlushParameterChangesRequest()))
+                await aput_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
         context = RequestContext(
@@ -195,7 +192,7 @@ class EventManager:
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
         if not callback:
-            msg = f"No manager found to handle request of type '{request_type.__name__}."
+            msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
         # Only support sync callbacks for sync method
