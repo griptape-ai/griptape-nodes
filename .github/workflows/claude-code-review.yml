@@ -10,7 +10,7 @@ jobs:
   code-review:
     # Run on PR events, or when someone comments "@claude review" on a PR
     if: |
-      contains(github.event.comment.body, '@claude review'))
+      contains(github.event.comment.body, '@claude review')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
