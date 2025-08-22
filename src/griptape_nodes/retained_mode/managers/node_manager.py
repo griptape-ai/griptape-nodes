@@ -677,6 +677,13 @@ class NodeManager:
         failed_nodes = {}
 
         for node_name, metadata_update in request.node_metadata_updates.items():
+            # Resolve the actual node name once at the top of the loop
+            if node_name is not None:
+                actual_node_name = node_name
+            else:
+                current_node = GriptapeNodes.ContextManager().get_current_node()
+                actual_node_name = current_node.name if current_node else "unknown"
+
             try:
                 # Create a single node metadata request for each node
                 single_request = SetNodeMetadataRequest(node_name=node_name, metadata=metadata_update)
@@ -685,19 +692,13 @@ class NodeManager:
                 result = self.on_set_node_metadata_request(single_request)
 
                 if isinstance(result, SetNodeMetadataResultSuccess):
-                    # Extract the actual node name that was updated
-                    actual_node_name = (
-                        node_name if node_name is not None else GriptapeNodes.ContextManager().get_current_node().name
-                    )
                     updated_nodes.append(actual_node_name)
                 else:
-                    # Handle failure
-                    actual_node_name = node_name if node_name is not None else "current_context"
-                    failed_nodes[actual_node_name] = getattr(result, "result_details", "Unknown error")
+                    # Handle failure - result_details is guaranteed to exist on failure results
+                    failed_nodes[actual_node_name] = result.result_details
 
             except Exception as e:
                 # Handle any exceptions
-                actual_node_name = node_name if node_name is not None else "current_context"
                 failed_nodes[actual_node_name] = str(e)
 
         # Return success if at least one node was updated, or if all nodes failed
