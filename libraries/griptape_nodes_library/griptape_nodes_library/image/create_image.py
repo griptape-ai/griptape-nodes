@@ -154,7 +154,7 @@ class GenerateImage(ControlNode):
 
         return super().after_value_set(parameter, value)
 
-    def process(self) -> AsyncResult:
+    def process(self) -> None:
         # Get the parameters from the node
         params = self.parameter_values
 
@@ -187,7 +187,7 @@ class GenerateImage(ControlNode):
             self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
-            result = yield lambda: agent.run(
+            result = agent.run(
                 [
                     """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
@@ -239,7 +239,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
-        yield lambda: self._create_image(agent, prompt)
+        self._create_image(agent, prompt)
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
         # Create a false memory for the agent
