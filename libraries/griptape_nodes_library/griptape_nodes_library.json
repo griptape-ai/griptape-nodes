@@ -238,7 +238,7 @@
       "variables": {
         "color": "border-orange-500",
         "title": "Variables",
-        "description": "Workflow variable management nodes",
+        "description": "Flow variable management nodes with hierarchical scoping",
         "icon": "Variable"
       }
     },
@@ -1567,7 +1567,7 @@
       "file_path": "griptape_nodes_library/variables/create_variable.py",
       "metadata": {
         "category": "variables",
-        "description": "Create a new variable with a specified name, scope, and initial value",
+        "description": "Create or update a variable with a specified name, type, and value. Creates new variables or updates existing ones intelligently.",
         "display_name": "Create Variable",
         "icon": "PlusCircle"
       }

@@ -189,7 +189,7 @@ class VariablesManager:
 
         # Get the target flow
         try:
-            target_flow = self._get_starting_flow(request.starting_flow)
+            target_flow = self._get_starting_flow(request.owning_flow)
         except ValueError as e:
             return CreateVariableResultFailure(
                 result_details=f"Attempted to create variable '{request.name}'. Failed to determine target flow: {e}"

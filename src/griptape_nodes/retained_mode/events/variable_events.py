@@ -23,14 +23,14 @@ class CreateVariableRequest(RequestPayload):
         type: The user-defined type (e.g., "JSON", "str", "int")
         is_global: Whether this is a global variable (True) or current flow variable (False)
         value: The initial value of the variable
-        starting_flow: Starting flow name (None for current flow in the Context Manager)
+        owning_flow: Flow that should own this variable (None for current flow in the Context Manager)
     """
 
     name: str
     type: str
     is_global: bool = False
     value: Any = None
-    starting_flow: str | None = None
+    owning_flow: str | None = None
 
 
 @dataclass

@@ -2,12 +2,12 @@ import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import ControlNode
 
 logger = logging.getLogger("griptape_nodes")
 
 
-class CreateVariable(DataNode):
+class CreateVariable(ControlNode):
     def __init__(
         self,
         name: str,
@@ -22,15 +22,6 @@ class CreateVariable(DataNode):
             tooltip="The name of the variable to create",
         )
         self.add_parameter(self.variable_name_param)
-
-        self.is_global_param = Parameter(
-            name="is_global",
-            type="bool",
-            default_value=False,
-            allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-            tooltip="Whether this is a global variable (true) or current flow variable (false)",
-        )
-        self.add_parameter(self.is_global_param)
 
         self.variable_type_param = Parameter(
             name="variable_type",
@@ -120,32 +111,109 @@ class CreateVariable(DataNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
+        from griptape_nodes.retained_mode.events.node_events import (
+            GetFlowForNodeRequest,
+            GetFlowForNodeResultSuccess,
+        )
         from griptape_nodes.retained_mode.events.variable_events import (
             CreateVariableRequest,
             CreateVariableResultSuccess,
+            GetVariableDetailsRequest,
+            GetVariableDetailsResultSuccess,
+            HasVariableRequest,
+            HasVariableResultSuccess,
+            SetVariableTypeRequest,
+            SetVariableTypeResultSuccess,
+            SetVariableValueRequest,
+            SetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.variable_types import VariableScope
 
         variable_name = self.get_parameter_value("variable_name")
-        is_global = self.get_parameter_value("is_global")
         variable_type = self.get_parameter_value("variable_type")
         value = self.get_parameter_value("value")
 
-        request = CreateVariableRequest(
-            name=variable_name,
-            type=variable_type,
-            is_global=is_global,
-            value=value,
-        )
+        # Get the flow that owns this node
+        flow_request = GetFlowForNodeRequest(node_name=self.name)
+        flow_result = GriptapeNodes.handle_request(flow_request)
 
-        result = GriptapeNodes.handle_request(request)
-
-        if isinstance(result, CreateVariableResultSuccess):
-            # Set output values
-            self.parameter_output_values["variable_name"] = variable_name
-            self.parameter_output_values["is_global"] = is_global
-            self.parameter_output_values["variable_type"] = variable_type
-            self.parameter_output_values["value"] = value
-        else:
-            error_msg = f"Failed to create variable: {result.result_details}"
+        if not isinstance(flow_result, GetFlowForNodeResultSuccess):
+            error_msg = f"Failed to get flow for node '{self.name}': {flow_result.result_details}"
             raise TypeError(error_msg)
+
+        current_flow_name = flow_result.flow_name
+
+        # Step 1: Check if the variable already exists in the current flow
+        has_request = HasVariableRequest(
+            name=variable_name,
+            lookup_scope=VariableScope.CURRENT_FLOW_ONLY,
+            starting_flow=current_flow_name,
+        )
+        has_result = GriptapeNodes.handle_request(has_request)
+
+        if not isinstance(has_result, HasVariableResultSuccess):
+            error_msg = f"Failed to check if variable '{variable_name}' exists: {has_result.result_details}"
+            raise TypeError(error_msg)
+
+        if has_result.exists:
+            # Variable exists - check if type needs updating
+            # Step 2a: Get variable details to check type
+            details_request = GetVariableDetailsRequest(
+                name=variable_name,
+                lookup_scope=VariableScope.CURRENT_FLOW_ONLY,
+                starting_flow=current_flow_name,
+            )
+            details_result = GriptapeNodes.handle_request(details_request)
+
+            if not isinstance(details_result, GetVariableDetailsResultSuccess):
+                error_msg = (
+                    f"Failed to get details for existing variable '{variable_name}': {details_result.result_details}"
+                )
+                raise TypeError(error_msg)
+
+            # Step 2b: Update type if it doesn't match
+            if details_result.details.type != variable_type:
+                type_request = SetVariableTypeRequest(
+                    name=variable_name,
+                    type=variable_type,
+                    lookup_scope=VariableScope.CURRENT_FLOW_ONLY,
+                    starting_flow=current_flow_name,
+                )
+                type_result = GriptapeNodes.handle_request(type_request)
+
+                if not isinstance(type_result, SetVariableTypeResultSuccess):
+                    error_msg = f"Failed to update type for variable '{variable_name}': {type_result.result_details}"
+                    raise TypeError(error_msg)
+
+            # Step 3: Update the value for existing variable
+            value_request = SetVariableValueRequest(
+                name=variable_name,
+                value=value,
+                lookup_scope=VariableScope.CURRENT_FLOW_ONLY,
+                starting_flow=current_flow_name,
+            )
+            value_result = GriptapeNodes.handle_request(value_request)
+
+            if not isinstance(value_result, SetVariableValueResultSuccess):
+                error_msg = f"Failed to set value for variable '{variable_name}': {value_result.result_details}"
+                raise TypeError(error_msg)
+        else:
+            # Variable doesn't exist - create it (creation includes setting the initial value)
+            create_request = CreateVariableRequest(
+                name=variable_name,
+                type=variable_type,
+                is_global=False,  # Always create flow-scoped variables
+                value=value,
+                owning_flow=current_flow_name,
+            )
+            create_result = GriptapeNodes.handle_request(create_request)
+
+            if not isinstance(create_result, CreateVariableResultSuccess):
+                error_msg = f"Failed to create variable '{variable_name}': {create_result.result_details}"
+                raise TypeError(error_msg)
+
+        # Set output values
+        self.parameter_output_values["variable_name"] = variable_name
+        self.parameter_output_values["variable_type"] = variable_type
+        self.parameter_output_values["value"] = value

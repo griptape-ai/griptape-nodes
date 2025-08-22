@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 from typing import Any
 
@@ -7,6 +8,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.options import Options
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class AddToList(ControlNode):
@@ -71,11 +74,13 @@ class AddToList(ControlNode):
     def process(self) -> None:
         # Get the list of items from the input parameter
         list_values = self.get_parameter_value("items")
-        if not list_values or not isinstance(list_values, list):
-            return
+        if not isinstance(list_values, list):
+            error_msg = f"AddToList node '{self.name}' expected 'items' parameter to be a list, but got {type(list_values).__name__}. Please ensure the input is a list."
+            raise TypeError(error_msg)
 
         item = self.get_parameter_value("item")
-        if not item:
+        if item is None:
+            logger.debug("AddToList node '%s' received None as item parameter, skipping addition to list", self.name)
             return
 
         position = self.get_parameter_value("position")

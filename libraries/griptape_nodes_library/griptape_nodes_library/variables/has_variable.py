@@ -1,14 +1,14 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes_library.variables.variable_utils import (
     create_advanced_parameter_group,
     scope_string_to_variable_scope,
 )
 
 
-class HasVariable(DataNode):
+class HasVariable(ControlNode):
     def __init__(
         self,
         name: str,
@@ -34,12 +34,15 @@ class HasVariable(DataNode):
 
         # Advanced parameters group (collapsed by default)
         advanced = create_advanced_parameter_group()
-        self.uuid_param = advanced.uuid_param
         self.scope_param = advanced.scope_param
         self.add_node_element(advanced.parameter_group)
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
+        from griptape_nodes.retained_mode.events.node_events import (
+            GetFlowForNodeRequest,
+            GetFlowForNodeResultSuccess,
+        )
         from griptape_nodes.retained_mode.events.variable_events import (
             HasVariableRequest,
             HasVariableResultSuccess,
@@ -52,9 +55,20 @@ class HasVariable(DataNode):
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
+        # Get the flow that owns this node
+        flow_request = GetFlowForNodeRequest(node_name=self.name)
+        flow_result = GriptapeNodes.handle_request(flow_request)
+
+        if not isinstance(flow_result, GetFlowForNodeResultSuccess):
+            error_msg = f"Failed to get flow for node '{self.name}': {flow_result.result_details}"
+            raise TypeError(error_msg)
+
+        current_flow_name = flow_result.flow_name
+
         request = HasVariableRequest(
             name=variable_name,
             lookup_scope=scope,
+            starting_flow=current_flow_name,
         )
 
         result = GriptapeNodes.handle_request(request)

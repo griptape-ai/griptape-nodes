@@ -71,6 +71,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
+    GetFlowForNodeRequest,
+    GetFlowForNodeResultFailure,
+    GetFlowForNodeResultSuccess,
     GetNodeMetadataRequest,
     GetNodeMetadataResultFailure,
     GetNodeMetadataResultSuccess,
@@ -192,6 +195,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
+        event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -2716,3 +2720,16 @@ class NodeManager:
             response=callback_result.response,
             altered_workflow_state=callback_result.altered_workflow_state,
         )
+
+    def on_get_flow_for_node_request(self, request: GetFlowForNodeRequest) -> ResultPayload:
+        """Get the flow name that contains a specific node."""
+        try:
+            flow_name = self.get_node_parent_flow_by_name(request.node_name)
+            return GetFlowForNodeResultSuccess(
+                flow_name=flow_name,
+                result_details=f"Successfully retrieved flow '{flow_name}' for node '{request.node_name}'.",
+            )
+        except KeyError:
+            return GetFlowForNodeResultFailure(
+                result_details=f"Node '{request.node_name}' not found or not assigned to any flow.",
+            )
