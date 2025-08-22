@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -25,8 +25,8 @@ class CreateVariable(ControlNode):
 
         self.variable_type_param = Parameter(
             name="variable_type",
-            type="str",
-            default_value="str",
+            type=ParameterTypeBuiltin.STR.value,
+            default_value=None,
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             tooltip="The user-defined type of the variable (e.g., 'JSON', 'str', 'int')",
         )
@@ -34,78 +34,172 @@ class CreateVariable(ControlNode):
 
         self.value_param = Parameter(
             name="value",
-            type="str",
-            input_types=["str"],
-            output_type="str",
+            type=ParameterTypeBuiltin.ANY.value,
+            input_types=[ParameterTypeBuiltin.ANY.value],
+            output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             tooltip="The initial value of the variable",
         )
         self.add_parameter(self.value_param)
 
-    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
-        """Handle dynamic type changes for the value parameter.
+    def after_incoming_connection(
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    ) -> None:
+        """Handle incoming connections, especially to the value parameter for auto-type detection."""
+        del source_node  # Not used but required by callback signature
+        if target_parameter.name == self.value_param.name:
+            detected_type = source_parameter.output_type
 
-        When the variable_type parameter changes, we need to:
-        1. Update the value parameter's type information to match the new variable type
-        2. Delete any existing connections to/from the value parameter since the type changed
-        3. Log a warning to inform the user that connections were broken due to type change
+            # Lock down the variable_type parameter since it's now controlled by the incoming connection
+            # Remove INPUT mode so users can't manually edit it while a connection exists
+            self.variable_type_param.allowed_modes = self.variable_type_param.allowed_modes - {ParameterMode.INPUT}
+            # Make it non-settable programmatically to prevent external interference
+            self.variable_type_param.settable = False
 
-        This ensures type safety and prevents invalid connections from persisting.
-        """
-        if parameter == self.variable_type_param and value != parameter.default_value:
-            current_type = self.parameter_values.get("variable_type", "str")
-            if value != current_type:
-                # Lazy imports to avoid circular import issues
-                from griptape_nodes.retained_mode.events.connection_events import (
-                    DeleteConnectionRequest,
-                    ListConnectionsForNodeRequest,
-                    ListConnectionsForNodeResultSuccess,
+            # Clean up any existing incoming connections to variable_type since we're now the authority
+            # This prevents conflicts between manual type setting and auto-detected type
+            self._delete_incoming_connections_to_parameter(self.variable_type_param.name)
+
+            # Set the detected type as the new value (moved to bottom)
+            self.set_parameter_value(self.variable_type_param.name, detected_type)
+
+    def after_incoming_connection_removed(
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    ) -> None:
+        """Handle removal of incoming connections, especially from the value parameter."""
+        del source_node, source_parameter  # Not used but required by callback signature
+        if target_parameter.name == self.value_param.name:
+            # Restore INPUT mode to variable_type parameter since auto-detection is no longer active
+            self.variable_type_param.allowed_modes = self.variable_type_param.allowed_modes | {ParameterMode.INPUT}
+            # Make it settable again for manual editing
+            self.variable_type_param.settable = True
+
+    def _delete_incoming_connections_to_parameter(self, parameter_name: str) -> None:
+        """Helper to delete all incoming connections to a specific parameter."""
+        from griptape_nodes.retained_mode.events.connection_events import (
+            DeleteConnectionRequest,
+            DeleteConnectionResultSuccess,
+            ListConnectionsForNodeRequest,
+            ListConnectionsForNodeResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections_request = ListConnectionsForNodeRequest(node_name=self.name)
+        connections_result = GriptapeNodes.handle_request(connections_request)
+
+        if not isinstance(connections_result, ListConnectionsForNodeResultSuccess):
+            error_msg = f"Failed to list connections for node '{self.name}': {connections_result.result_details}"
+            raise TypeError(error_msg)
+
+        for connection in connections_result.incoming_connections:
+            if connection.target_parameter_name == parameter_name:
+                delete_request = DeleteConnectionRequest(
+                    source_parameter_name=connection.source_parameter_name,
+                    target_parameter_name=connection.target_parameter_name,
+                    source_node_name=connection.source_node_name,
+                    target_node_name=self.name,
                 )
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                    error_msg = f"Failed to delete connection from {connection.source_node_name}.{connection.source_parameter_name} to {self.name}.{parameter_name}: {delete_result.result_details}"
+                    raise TypeError(error_msg)
 
-                # Get all connections for this node to find connections to/from the value parameter
-                connections_request = ListConnectionsForNodeRequest(node_name=self.name)
-                connections_result = GriptapeNodes.handle_request(connections_request)
+    def _cleanup_incompatible_value_connections(self) -> None:
+        """Remove all connections to/from value parameter that are incompatible with its current type."""
+        from griptape_nodes.retained_mode.events.connection_events import (
+            DeleteConnectionRequest,
+            DeleteConnectionResultSuccess,
+            ListConnectionsForNodeRequest,
+            ListConnectionsForNodeResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                connections_deleted = False
+        connections_request = ListConnectionsForNodeRequest(node_name=self.name)
+        connections_result = GriptapeNodes.handle_request(connections_request)
 
-                # Delete outgoing connections from the value parameter
-                # These are connections where our value parameter is the source
-                if isinstance(connections_result, ListConnectionsForNodeResultSuccess):
-                    for connection in connections_result.outgoing_connections:
-                        if connection.source_parameter_name == "value":
-                            delete_request = DeleteConnectionRequest(
-                                source_parameter_name=connection.source_parameter_name,
-                                target_parameter_name=connection.target_parameter_name,
-                                source_node_name=self.name,
-                                target_node_name=connection.target_node_name,
+        if isinstance(connections_result, ListConnectionsForNodeResultSuccess):
+            # Check incoming connections - we are the target
+            for connection in connections_result.incoming_connections:
+                if connection.target_parameter_name == self.value_param.name:
+                    source_node = GriptapeNodes.NodeManager().get_node_by_name(connection.source_node_name)
+                    source_parameter = source_node.get_parameter_by_name(connection.source_parameter_name)
+
+                    # Ask if we (target) accept the source parameter's output_type
+                    if source_parameter and not self.value_param.is_incoming_type_allowed(source_parameter.output_type):
+                        logger.debug(
+                            "Deleting incompatible incoming connection: %s.%s (%s) -> %s.%s (%s)",
+                            connection.source_node_name,
+                            connection.source_parameter_name,
+                            source_parameter.output_type,
+                            self.name,
+                            connection.target_parameter_name,
+                            self.value_param.type,
+                        )
+                        delete_request = DeleteConnectionRequest(
+                            source_node_name=connection.source_node_name,
+                            source_parameter_name=connection.source_parameter_name,
+                            target_node_name=self.name,
+                            target_parameter_name=connection.target_parameter_name,
+                        )
+                        delete_result = GriptapeNodes.handle_request(delete_request)
+                        if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                            error_msg = (
+                                f"Failed to delete incompatible incoming connection: {delete_result.result_details}"
                             )
-                            GriptapeNodes.handle_request(delete_request)
-                            connections_deleted = True
+                            raise TypeError(error_msg)
 
-                    # Delete incoming connections to the value parameter
-                    # These are connections where our value parameter is the target
-                    for connection in connections_result.incoming_connections:
-                        if connection.target_parameter_name == "value":
-                            delete_request = DeleteConnectionRequest(
-                                source_parameter_name=connection.source_parameter_name,
-                                target_parameter_name=connection.target_parameter_name,
-                                source_node_name=connection.source_node_name,
-                                target_node_name=self.name,
+            # Check outgoing connections - we are the source
+            for connection in connections_result.outgoing_connections:
+                if connection.source_parameter_name == self.value_param.name:
+                    target_node = GriptapeNodes.NodeManager().get_node_by_name(connection.target_node_name)
+                    target_parameter = target_node.get_parameter_by_name(connection.target_parameter_name)
+
+                    # Ask if the target accepts our output_type
+                    if target_parameter and not target_parameter.is_incoming_type_allowed(self.value_param.output_type):
+                        logger.debug(
+                            "Deleting incompatible outgoing connection: %s.%s (%s) -> %s.%s (%s)",
+                            self.name,
+                            connection.source_parameter_name,
+                            self.value_param.output_type,
+                            connection.target_node_name,
+                            connection.target_parameter_name,
+                            target_parameter.type,
+                        )
+                        delete_request = DeleteConnectionRequest(
+                            source_node_name=self.name,
+                            source_parameter_name=connection.source_parameter_name,
+                            target_node_name=connection.target_node_name,
+                            target_parameter_name=connection.target_parameter_name,
+                        )
+                        delete_result = GriptapeNodes.handle_request(delete_request)
+                        if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                            error_msg = (
+                                f"Failed to delete incompatible outgoing connection: {delete_result.result_details}"
                             )
-                            GriptapeNodes.handle_request(delete_request)
-                            connections_deleted = True
+                            raise TypeError(error_msg)
 
-                    if connections_deleted:
-                        warning_msg = f"Variable type changed from '{current_type}' to '{value}', deleted connections from value parameter"
-                        logger.warning(warning_msg)
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        """Handle changes to the variable_type parameter."""
+        if parameter == self.variable_type_param:
+            # Step 1: If variable_type_param is set to None or "", assign it to None
+            if value is None or value == "":
+                value = None
 
-                # Update the value parameter's type information to match the new variable type
-                # This ensures type compatibility for future connections
-                self.value_param.input_types = [value]
-                self.value_param.output_type = value
+            # Step 2: If variable_type_param is being set to None, reset value_param to defaults
+            if value is None:
+                # Leave all outgoing connections from value_param intact
+                # Change value_param's type to ANY and output_type to ALL
+                self.value_param.type = ParameterTypeBuiltin.ANY.value
+                self.value_param.output_type = ParameterTypeBuiltin.ALL.value
+            else:
+                # Step 3: If variable_type_param is NOT being set to None, delete incompatible connections
+                # Update value_param type information first
                 self.value_param.type = value
+                self.value_param.output_type = value
+
+                # Clean up incompatible connections
+                self._cleanup_incompatible_value_connections()
 
         return value
 
@@ -221,6 +315,7 @@ class CreateVariable(ControlNode):
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Variable nodes have side effects and need to execute every workflow run."""
         from griptape_nodes.exe_types.node_types import NodeResolutionState
+
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )
@@ -229,6 +324,7 @@ class CreateVariable(ControlNode):
     def validate_before_node_run(self) -> list[Exception] | None:
         """Variable nodes have side effects and need to execute every time they run."""
         from griptape_nodes.exe_types.node_types import NodeResolutionState
+
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )

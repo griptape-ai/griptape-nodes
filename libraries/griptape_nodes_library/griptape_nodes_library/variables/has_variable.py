@@ -83,6 +83,7 @@ class HasVariable(ControlNode):
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Variable nodes have side effects and need to execute every workflow run."""
         from griptape_nodes.exe_types.node_types import NodeResolutionState
+
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )
@@ -91,6 +92,7 @@ class HasVariable(ControlNode):
     def validate_before_node_run(self) -> list[Exception] | None:
         """Variable nodes have side effects and need to execute every time they run."""
         from griptape_nodes.exe_types.node_types import NodeResolutionState
+
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )
