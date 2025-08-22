@@ -1931,10 +1931,16 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
+                        if isinstance(node, StartLoopNode):
+                            connection_id = cn_mgr.incoming_index[node.name][param_name][0]
+                            connection = cn_mgr.connections[connection_id]
+                            connected_node = connection.get_source_node()
+                            if connected_node == node.end_node:
+                                continue
                         has_control_connection = True
                         break
             # if there is a connection coming in, isn't a start.
-            if has_control_connection and not isinstance(node, StartLoopNode):
+            if has_control_connection:
                 continue
             # Does it have an outgoing connection?
             if node.name in cn_mgr.outgoing_index:
