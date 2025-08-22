@@ -677,11 +677,11 @@ class NodeManager:
 
         for node_name, metadata_update in request.node_metadata_updates.items():
             # Resolve the actual node name once at the top of the loop
-            if node_name is not None:
-                actual_node_name = node_name
-            else:
+            if node_name is None:
                 current_node = GriptapeNodes.ContextManager().get_current_node()
                 actual_node_name = current_node.name if current_node else "unknown"
+            else:
+                actual_node_name = node_name
 
             try:
                 # Create a single node metadata request for each node
