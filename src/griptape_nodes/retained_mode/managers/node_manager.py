@@ -53,6 +53,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeMetadataRequest,
+    BatchSetNodeMetadataResultFailure,
+    BatchSetNodeMetadataResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -152,6 +155,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(GetNodeMetadataRequest, self.on_get_node_metadata_request)
         event_manager.assign_manager_to_request_type(SetNodeMetadataRequest, self.on_set_node_metadata_request)
+        event_manager.assign_manager_to_request_type(BatchSetNodeMetadataRequest, self.on_batch_set_node_metadata_request)
         event_manager.assign_manager_to_request_type(
             ListConnectionsForNodeRequest, self.on_list_connections_for_node_request
         )
@@ -664,6 +668,47 @@ class NodeManager:
 
         result = SetNodeMetadataResultSuccess()
         return result
+
+    def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
+        """Handle batch metadata updates for multiple nodes."""
+        updated_nodes = []
+        failed_nodes = {}
+
+        for node_name, metadata_update in request.node_metadata_updates.items():
+            try:
+                # Create a single node metadata request for each node
+                single_request = SetNodeMetadataRequest(
+                    node_name=node_name,
+                    metadata=metadata_update
+                )
+                
+                # Process the single request
+                result = self.on_set_node_metadata_request(single_request)
+                
+                if isinstance(result, SetNodeMetadataResultSuccess):
+                    # Extract the actual node name that was updated
+                    actual_node_name = node_name if node_name is not None else GriptapeNodes.ContextManager().get_current_node().name
+                    updated_nodes.append(actual_node_name)
+                else:
+                    # Handle failure
+                    actual_node_name = node_name if node_name is not None else "current_context"
+                    failed_nodes[actual_node_name] = getattr(result, 'result_details', 'Unknown error')
+                    
+            except Exception as e:
+                # Handle any exceptions
+                actual_node_name = node_name if node_name is not None else "current_context"
+                failed_nodes[actual_node_name] = str(e)
+
+        # Return success if at least one node was updated, or if all nodes failed
+        if updated_nodes:
+            return BatchSetNodeMetadataResultSuccess(
+                updated_nodes=updated_nodes,
+                failed_nodes=failed_nodes
+            )
+        else:
+            return BatchSetNodeMetadataResultFailure(
+                result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
+            )
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
