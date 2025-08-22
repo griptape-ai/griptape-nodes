@@ -1,40 +1,35 @@
-name: Claude Code Review
+name: Claude Auto Review
 
 on:
   pull_request:
     types: [opened, synchronize]
 
 jobs:
-  claude-review:
-    
+  auto-review:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
-      issues: read
       id-token: write
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code Review
-        id: claude-review
+      - name: Automatic PR Review
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-
-          
+          timeout_minutes: "60"
           direct_prompt: |
-            Please review this pull request and provide feedback on:
+            Please review this pull request and provide comprehensive feedback.
+
+            Focus on:
             - Code quality and best practices
             - Potential bugs or issues
 
             Do not provide feedback on what is done well, only comment on areas for improvement.
             Be concise and actionable in your comments.
-
-          # Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
-          use_sticky_comment: true
-          allowed_tools: "Bash(make check)"
+            Use inline comments to highlight specific areas of concern.
+          allowed_tools: "mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__get_pull_request_diff,Bash(make check)"
