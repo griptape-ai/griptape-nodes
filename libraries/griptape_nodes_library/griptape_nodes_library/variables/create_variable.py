@@ -63,7 +63,9 @@ class CreateVariable(ControlNode):
             # This prevents conflicts between manual type setting and auto-detected type
             self._delete_incoming_connections_to_parameter(self.variable_type_param.name)
 
-            # Set the detected type as the new value (moved to bottom)
+            # Set the detected type as the new value
+            # Note: this call will trigger the before_value_set callback,
+            # which will setup the value_param's types properly.
             self.set_parameter_value(self.variable_type_param.name, detected_type)
 
     def after_incoming_connection_removed(
