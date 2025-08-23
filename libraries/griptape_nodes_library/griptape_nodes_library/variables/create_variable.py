@@ -44,10 +44,12 @@ class CreateVariable(ControlNode):
         self.add_parameter(self.value_param)
 
     def after_incoming_connection(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,
+        target_parameter: Parameter,
     ) -> None:
         """Handle incoming connections, especially to the value parameter for auto-type detection."""
-        del source_node  # Not used but required by callback signature
         if target_parameter.name == self.value_param.name:
             detected_type = source_parameter.output_type
 
@@ -65,10 +67,12 @@ class CreateVariable(ControlNode):
             self.set_parameter_value(self.variable_type_param.name, detected_type)
 
     def after_incoming_connection_removed(
-        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
     ) -> None:
         """Handle removal of incoming connections, especially from the value parameter."""
-        del source_node, source_parameter  # Not used but required by callback signature
         if target_parameter.name == self.value_param.name:
             # Restore INPUT mode to variable_type parameter since auto-detection is no longer active
             self.variable_type_param.allowed_modes = self.variable_type_param.allowed_modes | {ParameterMode.INPUT}
