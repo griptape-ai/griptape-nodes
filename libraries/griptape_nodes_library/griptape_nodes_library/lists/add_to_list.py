@@ -86,30 +86,69 @@ class AddToList(ControlNode):
                 self.show_parameter_by_name("index")
         return super().after_value_set(parameter, value)
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate inputs before processing."""
+        exceptions = []
+
+        # Validate list input - let upstream handle type checking, we just need to handle None gracefully
+        list_values = self.get_parameter_value("items")
+        if list_values is not None and not isinstance(list_values, list):
+            exceptions.append(
+                TypeError(
+                    f"AddToList node '{self.name}' expected 'items' parameter to be a list, but got {type(list_values).__name__}"
+                )
+            )
+
+        # Validate index parameter when position is "index"
+        position = self.get_parameter_value("position")
+        if position == "index":
+            index = self.get_parameter_value("index")
+            if index is None:
+                exceptions.append(
+                    ValueError(
+                        f"AddToList node '{self.name}' requires an 'index' value when position is set to 'index'"
+                    )
+                )
+            elif not isinstance(index, int):
+                exceptions.append(
+                    TypeError(
+                        f"AddToList node '{self.name}' expected 'index' parameter to be an integer, but got {type(index).__name__}"
+                    )
+                )
+
+        return exceptions if exceptions else None
+
     def process(self) -> None:
         # Get the list of items from the input parameter
         list_values = self.get_parameter_value("items")
-        if not isinstance(list_values, list):
-            error_msg = f"AddToList node '{self.name}' expected 'items' parameter to be a list, but got {type(list_values).__name__}. Please ensure the input is a list."
-            raise TypeError(error_msg)
+        if list_values is None:
+            # Generate a new list for the user.
+            list_values = []
+            logger.debug("AddToList node '%s' received None as 'items' parameter, creating new empty list", self.name)
 
         item = self.get_parameter_value("item")
         skip_empty_values = self.get_parameter_value("skip_empty_values")
 
-        if item is None and skip_empty_values:
-            logger.debug("AddToList node '%s' received None as item parameter, skipping addition to list", self.name)
-            return
-
-        position = self.get_parameter_value("position")
-        if position == "start":
-            index = 0
-        elif position == "end":
-            index = len(list_values)
-        else:
-            index = self.get_parameter_value("index")
-
         new_list = deepcopy(list_values)
-        new_list.insert(index, item)
 
+        # Only add item if it's not None or if we're not skipping empty values
+        if item is not None or not skip_empty_values:
+            position = self.get_parameter_value("position")
+            if position == "start":
+                index = 0
+            elif position == "end":
+                index = len(new_list)
+            else:
+                index = self.get_parameter_value("index")
+
+            # Let insert handle any index errors naturally
+            new_list.insert(index, item)
+        else:
+            logger.debug(
+                "AddToList node '%s' received None as 'item' parameter, skipping addition due to skip_empty_values=True",
+                self.name,
+            )
+
+        # Single path to success - always set outputs at the bottom
         self.parameter_output_values["output"] = new_list
         self.parameter_output_values["skip_empty_values"] = skip_empty_values
