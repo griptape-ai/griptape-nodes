@@ -282,7 +282,7 @@ class BatchSetNodeMetadataRequest(RequestPayload):
     Results: BatchSetNodeMetadataResultSuccess | BatchSetNodeMetadataResultFailure (some nodes not found, update errors)
     """
 
-    node_metadata_updates: dict[str | None, dict]
+    node_metadata_updates: dict[str | None, dict[str, Any]]
 
 
 @dataclass
