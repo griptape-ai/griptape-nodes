@@ -1502,12 +1502,43 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
+        # Validate upstream connection fields consistency
+        upstream_node_set = request.upstream_connection_node_name is not None
+        upstream_param_set = request.upstream_connection_parameter_name is not None
+        if upstream_node_set != upstream_param_set:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because upstream connection fields must both be None or both be set. Got upstream_connection_node_name={request.upstream_connection_node_name}, upstream_connection_parameter_name={request.upstream_connection_parameter_name}."
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
         if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure(result_details=details)
             return result
+
+        # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
+        # When a parameter can accept both input connections AND manual property values, having an active connection should 
+        # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
+        # Skip this check if: initial_setup (workflow loading), or upstream_connection fields are set (system passing upstream values)
+        if (
+            not request.initial_setup
+            and not upstream_node_set  # If upstream fields are set, this is a legitimate upstream value pass
+            and ParameterMode.INPUT in parameter.allowed_modes
+            and ParameterMode.PROPERTY in parameter.allowed_modes
+        ):
+            # Check if this parameter has any incoming connections
+            connections = GriptapeNodes.FlowManager().get_connections()
+            target_connections = connections.incoming_index.get(node_name)
+            if target_connections is not None:
+                param_connections = target_connections.get(request.parameter_name)
+                if param_connections:  # Has incoming connections
+                    # TODO: Consider emitting UI events when parameters become settable/unsettable due to connection changes
+                    details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because this parameter has incoming connections and cannot be set as a property while connected."
+                    logger.error(details)
+                    result = SetParameterValueResultFailure(result_details=details)
+                    return result
 
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
