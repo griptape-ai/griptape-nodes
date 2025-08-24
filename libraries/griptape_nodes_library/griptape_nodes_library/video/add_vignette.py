@@ -77,15 +77,6 @@ class AddVignette(BaseVideoProcessor):
             self.add_parameter(mode_parameter)
             mode_parameter.add_trait(Options(choices=["forward", "backward"]))
 
-            # Dither parameter
-            dither_parameter = Parameter(
-                name="dither",
-                type="bool",
-                default_value=True,
-                tooltip="Enable dithering for smoother vignette gradients",
-            )
-            self.add_parameter(dither_parameter)
-
         self.add_node_element(vignette_group)
 
     def _get_processing_description(self) -> str:
@@ -99,7 +90,6 @@ class AddVignette(BaseVideoProcessor):
         center_y = kwargs.get("center_y", self.DEFAULT_CENTER_OFFSET)
         aspect = kwargs.get("aspect", self.DEFAULT_ASPECT)
         mode = kwargs.get("mode", "forward")
-        dither = kwargs.get("dither", True)
 
         # Calculate center position based on offset
         if center_x == 0:
@@ -120,10 +110,7 @@ class AddVignette(BaseVideoProcessor):
         mode_value = "1" if mode == "backward" else "0"
 
         # Build vignette filter with all parameters
-        dither_value = "true" if dither else "false"
-        filter_complex = (
-            f"vignette=angle={angle}:x0={x0}:y0={y0}:aspect={aspect}:mode={mode_value}:dither={dither_value}"
-        )
+        filter_complex = f"vignette=angle={angle}:x0={x0}:y0={y0}:aspect={aspect}:mode={mode_value}:dither=false"
 
         return [
             "ffmpeg",
@@ -183,7 +170,6 @@ class AddVignette(BaseVideoProcessor):
             "center_y": self.get_parameter_value("center_y"),
             "aspect": self.get_parameter_value("aspect"),
             "mode": self.get_parameter_value("mode"),
-            "dither": self.get_parameter_value("dither"),
         }
 
     def _get_output_suffix(self, **kwargs) -> str:

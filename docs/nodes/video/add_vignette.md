@@ -59,7 +59,7 @@ Use the AddVignette node when:
     - "forward" = darken edges (traditional vignette)
     - "backward" = lighten edges (inverse vignette)
 
-- **dither**: Enable dithering for smoother vignette gradients (default: true)
+
 
 ### Outputs
 
@@ -75,7 +75,7 @@ Imagine you want to add a subtle vignette to a portrait video to draw attention 
 1. Keep "center_x" and "center_y" at 0.0 to center the vignette
 1. Set "aspect" to 1.0 for a circular vignette
 1. Choose "forward" mode to darken the edges
-1. Enable "dither" for smooth gradients
+
 1. Run the workflow - the video will have a subtle vignette effect
 1. The output filename will be `{original_filename}_vignette_a0.50_x0.00_y0.00_r1.00_forward.{format}`
 
@@ -83,7 +83,6 @@ Imagine you want to add a subtle vignette to a portrait video to draw attention 
 
 - The AddVignette node uses FFmpeg with high-quality vignette algorithms
 - The effect creates smooth, gradual transitions from center to edges
-- Dithering helps reduce banding artifacts in the vignette gradient
 - The original audio track is preserved
 - Processing time depends on video length and resolution
 - Logs are available for debugging processing issues
@@ -92,7 +91,7 @@ Imagine you want to add a subtle vignette to a portrait video to draw attention 
 
 - **For portraits**: Use angle 0.4-0.6, center at (0,0), aspect 1.0
 - **For landscapes**: Use angle 0.3-0.5, center at (0,0), aspect 1.5-2.0
-- **For cinematic look**: Use angle 0.5-0.8, forward mode with dither enabled
+- **For cinematic look**: Use angle 0.5-0.8, forward mode
 - **For subtle enhancement**: Use angle 0.8-1.2 for very gentle vignette
 - **For dramatic effect**: Use angle 2.0-3.0 for strong vignette
 - **For off-center subjects**: Adjust center_x and center_y to match subject position

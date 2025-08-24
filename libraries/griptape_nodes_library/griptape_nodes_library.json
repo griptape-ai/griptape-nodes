@@ -694,6 +694,17 @@
       }
     },
     {
+      "class_name": "ChangeSpeed",
+      "file_path": "griptape_nodes_library/video/change_speed.py",
+      "metadata": {
+        "category": "video",
+        "description": "Change the playback speed of a video using FFmpeg's setpts filter with automatic audio speed adjustment",
+        "display_name": "Change Speed",
+        "icon": "zap",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
