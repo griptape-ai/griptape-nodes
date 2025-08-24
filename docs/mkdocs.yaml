@@ -13,4 +13,17 @@ nav:
       - Get List Length: nodes/lists/get_list_length.md
       - Remove From List: nodes/lists/remove_from_list.md
       - Replace In List: nodes/lists/replace_in_list.md
-      - Split List: nodes/lists/split_list.md 
+      - Split List: nodes/lists/split_list.md
+    - Video:
+      - Load Video: nodes/video/load_video.md
+      - Display Video: nodes/video/display_video.md
+      - Save Video: nodes/video/save_video.md
+      - Resize Video: nodes/video/resize_video.md
+      - Add Film Grain: nodes/video/add_film_grain.md
+      - Add RGB Shift: nodes/video/add_rgb_shift.md
+      - Add Vignette: nodes/video/add_vignette.md
+      - Split Video: nodes/video/split_video.md
+      - Adjust Video EQ: nodes/video/adjust_video_eq.md
+      - Hold Video Frames: nodes/video/hold_video_frames.md
+      - Reverse Video: nodes/video/reverse_video.md
+      - Flip Video: nodes/video/flip_video.md 
