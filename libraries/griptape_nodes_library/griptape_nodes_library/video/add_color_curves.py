@@ -25,15 +25,14 @@ class AddColorCurves(BaseVideoProcessor):
 
     def _setup_custom_parameters(self) -> None:
         """Setup color curves parameters."""
-        self.add_parameter(
-            Parameter(
-                name="curve_preset",
-                type="str",
-                default_value="none",
-                tooltip="Built-in curve preset for color grading effects",
-                traits={Options(choices=self.CURVE_PRESETS)},
-            )
+        parameter = Parameter(
+            name="curve_preset",
+            type="str",
+            default_value="none",
+            tooltip="Built-in curve preset for color grading effects",
         )
+        parameter.add_trait(Options(choices=self.CURVE_PRESETS))
+        self.add_parameter(parameter)
 
     def _get_processing_description(self) -> str:
         """Get description of what this processor does."""
@@ -50,6 +49,9 @@ class AddColorCurves(BaseVideoProcessor):
             # No curves applied
             filter_complex = "null"
 
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         return [
             "ffmpeg",
             "-i",
@@ -59,11 +61,11 @@ class AddColorCurves(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
             "-pix_fmt",
-            "yuv420p",
+            pix_fmt,
             "-movflags",
             "+faststart",
             "-c:a",

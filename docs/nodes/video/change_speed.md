@@ -42,6 +42,12 @@ Use the ChangeSpeed node when:
     - When enabled: Audio is speed-adjusted to match video speed
     - When disabled: Creates a silent video (no audio track)
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The video with changed playback speed, available as output to connect to other nodes

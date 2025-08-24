@@ -37,6 +37,9 @@ class FlipVideo(BaseVideoProcessor):
         else:  # "both"
             filter_complex = "hflip,vflip"
 
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         return [
             "ffmpeg",
             "-i",
@@ -46,9 +49,13 @@ class FlipVideo(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             "-c:a",
             "copy",
             "-y",

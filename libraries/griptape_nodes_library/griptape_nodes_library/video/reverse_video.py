@@ -48,7 +48,24 @@ class ReverseVideo(BaseVideoProcessor):
             cmd.extend(["-vf", video_filter, "-c:a", "copy"])
 
         # Add encoding settings
-        cmd.extend(["-c:v", "libx264", "-preset", "veryslow", "-crf", "12", "-y", output_path])
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+        cmd.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                preset,
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                pix_fmt,
+                "-movflags",
+                "+faststart",
+                "-y",
+                output_path,
+            ]
+        )
 
         return cmd
 

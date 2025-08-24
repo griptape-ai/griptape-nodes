@@ -8,6 +8,7 @@ import static_ffmpeg.run
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact, validate_url
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
@@ -38,6 +39,16 @@ class BaseVideoProcessor(ControlNode, ABC):
         )
 
         self._setup_custom_parameters()
+
+        # Add processing speed parameter
+        speed_param = Parameter(
+            name="processing_speed",
+            type="str",
+            default_value="balanced",
+            tooltip="Processing speed vs quality trade-off",
+        )
+        speed_param.add_trait(Options(choices=["fast", "balanced", "quality"]))
+        self.add_parameter(speed_param)
 
         self.add_parameter(
             Parameter(
@@ -84,6 +95,17 @@ class BaseVideoProcessor(ControlNode, ABC):
         except Exception as e:
             error_msg = f"FFmpeg not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
             raise ValueError(error_msg) from e
+
+    def _get_processing_speed_settings(self) -> tuple[str, str, int]:
+        """Get FFmpeg settings based on processing speed preference."""
+        speed = self.get_parameter_value("processing_speed") or "balanced"
+
+        if speed == "fast":
+            return "ultrafast", "yuv420p", 30  # Fastest encoding, lower quality
+        if speed == "quality":
+            return "slow", "yuv420p", 18  # Slowest encoding, highest quality
+        # balanced
+        return "medium", "yuv420p", 23  # Balanced speed and quality
 
     def _detect_video_properties(self, input_url: str, ffprobe_path: str) -> tuple[float, tuple[int, int], float]:
         """Detect video frame rate, resolution, and duration."""

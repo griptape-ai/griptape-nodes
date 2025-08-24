@@ -42,7 +42,11 @@ Use the AddColorCurves node when:
     - **strong_contrast**: High contrast dramatic look
     - **vintage**: Classic vintage film look
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
 
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
 
 ### Outputs
 
@@ -82,13 +86,11 @@ Use the AddColorCurves node when:
 ## Parameter Recommendations
 
 ### For Cinematic Look
+
 - Use "vintage" or "cross_process" presets
 - Try "color_negative" for a unique film look
 
 ### For High Contrast
+
 - Use "strong_contrast" or "negative"
 - Try "increase_contrast" for subtle enhancement
-
-
-
-

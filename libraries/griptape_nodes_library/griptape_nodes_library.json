@@ -716,6 +716,17 @@
       }
     },
     {
+      "class_name": "AddOverlay",
+      "file_path": "griptape_nodes_library/video/add_overlay.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add an overlay video on top of a base video using FFmpeg's overlay filter with alpha channel control",
+        "display_name": "Add Overlay",
+        "icon": "layers",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {

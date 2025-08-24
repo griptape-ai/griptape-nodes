@@ -59,7 +59,11 @@ Use the AddVignette node when:
     - "forward" = darken edges (traditional vignette)
     - "backward" = lighten edges (inverse vignette)
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
 
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
 
 ### Outputs
 
@@ -70,13 +74,19 @@ Use the AddVignette node when:
 Imagine you want to add a subtle vignette to a portrait video to draw attention to the subject:
 
 1. Add an AddVignette node to your workflow
+
 1. Connect the video output from a LoadVideo node to the AddVignette's "video" input
+
 1. Set the "angle" to 0.5 for a moderate vignette effect
+
 1. Keep "center_x" and "center_y" at 0.0 to center the vignette
+
 1. Set "aspect" to 1.0 for a circular vignette
+
 1. Choose "forward" mode to darken the edges
 
 1. Run the workflow - the video will have a subtle vignette effect
+
 1. The output filename will be `{original_filename}_vignette_a0.50_x0.00_y0.00_r1.00_forward.{format}`
 
 ## Important Notes

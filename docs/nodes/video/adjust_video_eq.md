@@ -52,6 +52,12 @@ Use the AdjustVideoEQ node when:
     - 1.0 = normal gamma (default)
     - 10.0 = very dark mid-tones
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The video with EQ adjustments applied, available as output to connect to other nodes

@@ -34,6 +34,12 @@ Use the FlipVideo node when:
     - "vertical" = flip top to bottom (upside down)
     - "both" = flip both horizontally and vertically
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The flipped video, available as output to connect to other nodes

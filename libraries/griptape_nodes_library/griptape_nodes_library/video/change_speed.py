@@ -67,6 +67,9 @@ class ChangeSpeed(BaseVideoProcessor):
                     else f"atempo={self.ATEMPO_MIN_SPEED},atempo={self.ATEMPO_MIN_SPEED}"
                 )
 
+            # Get processing speed settings
+            preset, pix_fmt, crf = self._get_processing_speed_settings()
+
             # Build the command with audio speed adjustment
             return [
                 "ffmpeg",
@@ -79,12 +82,23 @@ class ChangeSpeed(BaseVideoProcessor):
                 "-c:v",
                 "libx264",
                 "-preset",
-                "veryslow",
+                preset,
                 "-crf",
-                "12",
+                str(crf),
+                "-pix_fmt",
+                pix_fmt,
+                "-movflags",
+                "+faststart",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
                 "-y",
                 output_path,
             ]
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         # Build the command without audio (silent video)
         return [
             "ffmpeg",
@@ -96,9 +110,13 @@ class ChangeSpeed(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             "-y",
             output_path,
         ]

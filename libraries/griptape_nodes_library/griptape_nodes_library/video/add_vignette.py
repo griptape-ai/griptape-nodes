@@ -112,6 +112,9 @@ class AddVignette(BaseVideoProcessor):
         # Build vignette filter with all parameters
         filter_complex = f"vignette=angle={angle}:x0={x0}:y0={y0}:aspect={aspect}:mode={mode_value}:dither=false"
 
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         return [
             "ffmpeg",
             "-i",
@@ -121,9 +124,13 @@ class AddVignette(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             "-c:a",
             "copy",
             "-y",

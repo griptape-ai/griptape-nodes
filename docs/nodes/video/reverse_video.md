@@ -34,6 +34,12 @@ Use the ReverseVideo node when:
     - "mute" = reverse video only, no audio
     - "keep" = reverse video, keep original audio (not recommended)
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The reversed video, available as output to connect to other nodes

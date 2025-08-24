@@ -87,6 +87,9 @@ class AdjustVideoEQ(BaseVideoProcessor):
         # EQ filter: brightness, contrast, saturation, gamma
         filter_complex = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}:gamma={gamma}"
 
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         return [
             "ffmpeg",
             "-i",
@@ -96,9 +99,13 @@ class AdjustVideoEQ(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             "-c:a",
             "copy",
             "-y",
