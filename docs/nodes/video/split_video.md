@@ -31,20 +31,23 @@ Use the SplitVideo node when:
 - **timecodes**: Timecodes to split the video at (required)
 
     Supports various formats:
-    
+
     **Simple timecode ranges:**
+
     ```
     00:00:00:00-00:01:00:00
     00:01:00:00-00:02:30:00
     ```
-    
+
     **Timecodes with titles:**
+
     ```
     00:00:00:00-00:00:04:07|Segment 1: Introduction
     00:00:04:08-00:00:08:15|Segment 2: Main Content
     ```
-    
+
     **JSON format:**
+
     ```json
     [
       {"start": "00:00:00:00", "end": "00:01:00:00", "title": "Intro"},
@@ -64,11 +67,11 @@ Imagine you want to split a 10-minute video into three segments:
 1. Add a SplitVideo node to your workflow
 1. Connect the video output from a LoadVideo node to the SplitVideo's "video" input
 1. Enter timecodes in the "timecodes" parameter:
-   ```
-   00:00:00:00-00:02:30:00|Segment 1: Introduction
-   00:02:30:00-00:07:30:00|Segment 2: Main Content
-   00:07:30:00-00:10:00:00|Segment 3: Conclusion
-   ```
+    ```
+    00:00:00:00-00:02:30:00|Segment 1: Introduction
+    00:02:30:00-00:07:30:00|Segment 2: Main Content
+    00:07:30:00-00:10:00:00|Segment 3: Conclusion
+    ```
 1. Run the workflow - the video will be split into three separate files
 1. Each segment will be available as a separate output in the split_videos list
 
