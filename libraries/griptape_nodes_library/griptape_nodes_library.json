@@ -617,6 +617,83 @@
       }
     },
     {
+      "class_name": "HoldVideoFrames",
+      "file_path": "griptape_nodes_library/video/hold_video_frames.py",
+      "metadata": {
+        "category": "video",
+        "description": "Hold video frames for a specified number of frames, creating a stepped video effect",
+        "display_name": "Hold Video Frames",
+        "icon": "pause-circle",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddFilmGrain",
+      "file_path": "griptape_nodes_library/video/add_film_grain.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add realistic film grain to video using sophisticated noise generation and luminance masking",
+        "display_name": "Add Film Grain",
+        "icon": "film",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddVignette",
+      "file_path": "griptape_nodes_library/video/add_vignette.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add a vignette effect to video with adjustable lens angle, center position, and aspect ratio",
+        "display_name": "Add Vignette",
+        "icon": "circle-dot",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ReverseVideo",
+      "file_path": "griptape_nodes_library/video/reverse_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Reverse video playback with options to reverse, mute, or keep original audio",
+        "display_name": "Reverse Video",
+        "icon": "rewind",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "FlipVideo",
+      "file_path": "griptape_nodes_library/video/flip_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Flip video horizontally, vertically, or both directions",
+        "display_name": "Flip Video",
+        "icon": "flip-horizontal",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AdjustVideoEQ",
+      "file_path": "griptape_nodes_library/video/adjust_video_eq.py",
+      "metadata": {
+        "category": "video",
+        "description": "Adjust video brightness, contrast, saturation, and gamma with precise controls",
+        "display_name": "Adjust Video EQ",
+        "icon": "sliders",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddRGBShift",
+      "file_path": "griptape_nodes_library/video/add_rgb_shift.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add RGB shift (chromatic aberration) effect with individual channel control, static or animated glitches, and VHS-style base effects with configurable noise, chroma shift, blur, and motion trails",
+        "display_name": "Add RGB Shift",
+        "icon": "palette",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
