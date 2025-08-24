@@ -6,6 +6,14 @@ from urllib.parse import urlparse
 
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
+RATE_TOLERANCE = 0.1
+NOMINAL_30FPS = 30
+NOMINAL_60FPS = 60
+DROP_FRAMES_30FPS = 2
+DROP_FRAMES_60FPS = 4
+ACTUAL_RATE_30FPS = 30000 / 1001
+ACTUAL_RATE_60FPS = 60000 / 1001
+
 
 def detect_video_format(video: Any | dict) -> str | None:
     """Detect the video format from the video data.
@@ -103,17 +111,23 @@ def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) ->
         return (hh * 3600) + (mm * 60) + ss + (ff / rate)
 
     # Drop-frame: only valid for 29.97 and 59.94
-    nominal = 30 if abs(rate - 29.97) < 0.1 else 60 if abs(rate - 59.94) < 0.1 else None
+    nominal = (
+        NOMINAL_30FPS
+        if abs(rate - 29.97) < RATE_TOLERANCE
+        else NOMINAL_60FPS
+        if abs(rate - 59.94) < RATE_TOLERANCE
+        else None
+    )
     if nominal is None:
         # Fallback (treat as non-drop rather than guessing)
         return (hh * 3600) + (mm * 60) + ss + (ff / rate)
 
-    drop_per_min = 2 if nominal == 30 else 4
+    drop_per_min = DROP_FRAMES_30FPS if nominal == NOMINAL_30FPS else DROP_FRAMES_60FPS
     total_minutes = hh * 60 + mm
     # Drop every minute except every 10th minute
     dropped = drop_per_min * (total_minutes - total_minutes // 10)
     frame_number = (hh * 3600 + mm * 60 + ss) * nominal + ff - dropped
-    actual_rate = 30000 / 1001 if nominal == 30 else 60000 / 1001
+    actual_rate = ACTUAL_RATE_30FPS if nominal == NOMINAL_30FPS else ACTUAL_RATE_60FPS
     return frame_number / actual_rate
 
 
