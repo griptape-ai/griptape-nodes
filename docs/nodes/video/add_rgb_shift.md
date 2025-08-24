@@ -40,7 +40,9 @@ Use the AddRGBShift node when:
 #### Tear Effect Settings
 
 - **tear_enabled**: Enable tear effect (default: False)
+
 - **tear_position**: Vertical position of tear (0.0-1.0, where 0.5 is center, default: 0.5)
+
 - **tear_offset**: Horizontal offset amount for tear effect (-50 to 50 pixels, default: 10)
 
 - **processing_speed**: Balance between processing speed and output quality (default: "balanced")
