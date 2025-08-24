@@ -162,6 +162,9 @@ class AddRGBShift(BaseVideoProcessor):
                 f"bh={blue_h_scaled}:bv={blue_v_scaled}"
             )
 
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
         return [
             "ffmpeg",
             "-i",
@@ -171,11 +174,13 @@ class AddRGBShift(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "12",
+            str(crf),
             "-pix_fmt",
-            "yuv420p",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             "-c:a",
             "copy",
             "-y",

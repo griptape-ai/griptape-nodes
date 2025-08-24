@@ -29,23 +29,32 @@ class ReverseVideo(BaseVideoProcessor):
         """Build FFmpeg command for video reversal."""
         audio_handling = kwargs.get("audio_handling", "reverse")
 
+        # Check if video has audio stream
+        ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+        has_audio = self._detect_audio_stream(input_url, ffprobe_path)
+
         # Base command
         cmd = ["ffmpeg", "-i", input_url]
 
         # Handle video reversal
         video_filter = "reverse"
 
-        # Handle audio based on setting
-        if audio_handling == "reverse":
-            # Reverse both video and audio
+        # Handle audio based on setting and whether audio exists
+        if audio_handling == "reverse" and has_audio:
+            # Reverse both video and audio (only if audio exists)
             filter_complex = "[0:v]reverse[v];[0:a]areverse[a]"
             cmd.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
+        elif audio_handling == "reverse" and not has_audio:
+            # Reverse video only, no audio stream exists
+            cmd.extend(["-vf", video_filter, "-an"])
         elif audio_handling == "mute":
             # Reverse video only, no audio
             cmd.extend(["-vf", video_filter, "-an"])
-        else:  # "keep"
-            # Reverse video, keep original audio (not recommended but possible)
+        # Reverse video, keep original audio (only if audio exists)
+        elif has_audio:
             cmd.extend(["-vf", video_filter, "-c:a", "copy"])
+        else:
+            cmd.extend(["-vf", video_filter, "-an"])
 
         # Add encoding settings
         # Get processing speed settings

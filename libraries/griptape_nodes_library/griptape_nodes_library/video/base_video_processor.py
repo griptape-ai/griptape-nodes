@@ -154,6 +154,32 @@ class BaseVideoProcessor(ControlNode, ABC):
             self.append_value_to_parameter("logs", f"Warning: Could not detect video properties, using defaults: {e}\n")
             return self.DEFAULT_FRAME_RATE, (self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT), self.DEFAULT_DURATION
 
+    def _detect_audio_stream(self, input_url: str, ffprobe_path: str) -> bool:
+        """Detect if the video has an audio stream."""
+        try:
+            cmd = [
+                ffprobe_path,
+                "-v",
+                "quiet",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                input_url,
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
+            # If there are audio streams, ffprobe will return "audio" for each stream
+            return "audio" in result.stdout.strip()
+        except subprocess.CalledProcessError:
+            # If ffprobe fails, assume no audio
+            return False
+        except Exception:
+            # If any other error, assume no audio
+            return False
+
     def _validate_video_input(self) -> list[Exception] | None:
         """Common video input validation."""
         exceptions = []

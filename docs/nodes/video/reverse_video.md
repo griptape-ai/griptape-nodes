@@ -62,6 +62,8 @@ Imagine you want to create a backwards playback effect:
 - The "keep" option may create audio sync issues
 - Processing time depends on video length
 - Logs are available for debugging processing issues
+- The node automatically detects if the video has audio and handles it appropriately
+- Videos without audio will be processed correctly without errors
 
 ## Audio Handling Recommendations
 

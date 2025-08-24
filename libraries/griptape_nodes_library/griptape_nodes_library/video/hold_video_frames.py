@@ -43,7 +43,10 @@ class HoldVideoFrames(BaseVideoProcessor):
         self.append_value_to_parameter("logs", f"Reduced frame rate for holding: {reduced_fps} fps\n")
         base_filter = f"fps=fps={reduced_fps},fps=fps={original_fps}"
 
-        # Build ffmpeg command using filter with high-quality settings
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
+        # Build ffmpeg command using filter with processing speed settings
         cmd = [
             ffmpeg_path,
             "-y",
@@ -56,11 +59,13 @@ class HoldVideoFrames(BaseVideoProcessor):
             "-c:v",
             "libx264",
             "-preset",
-            "veryslow",
+            preset,
             "-crf",
-            "16",
-            "-x264-params",
-            "ref=6:deblock=-1,-1:me=umh:subme=9:chroma-qp-offset=-2:bframes=16:b-adapt=2:direct=auto:rc-lookahead=90",
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             output_path,
         ]
 

@@ -35,6 +35,12 @@ Use the HoldVideoFrames node when:
     - 5 = each frame held for 5 frames (much slower playback)
     - 10 = each frame held for 10 frames (very slow playback)
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The video with frame holding effect applied, available as output to connect to other nodes

@@ -104,7 +104,10 @@ class AddFilmGrain(BaseVideoProcessor):
         [b][c] overlay
         """.replace("\n", "").replace(" ", "")
 
-        # Build FFmpeg command with high-quality settings (matching the gist)
+        # Get processing speed settings
+        preset, pix_fmt, crf = self._get_processing_speed_settings()
+
+        # Build FFmpeg command with processing speed settings
         cmd = [
             ffmpeg_path,
             "-y",
@@ -121,9 +124,13 @@ class AddFilmGrain(BaseVideoProcessor):
             "-tune",
             "grain",
             "-preset",
-            "veryslow",  # Original uses veryslow for quality
+            preset,
             "-crf",
-            "12",  # Original uses crf 12 for high quality
+            str(crf),
+            "-pix_fmt",
+            pix_fmt,
+            "-movflags",
+            "+faststart",
             output_path,
         ]
 

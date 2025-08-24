@@ -43,6 +43,12 @@ Use the AddRGBShift node when:
 - **tear_position**: Vertical position of tear (0.0-1.0, where 0.5 is center, default: 0.5)
 - **tear_offset**: Horizontal offset amount for tear effect (-50 to 50 pixels, default: 10)
 
+- **processing_speed**: Balance between processing speed and output quality (default: "balanced")
+
+    - **fast**: Fastest processing, lower quality (ultrafast preset, CRF 30)
+    - **balanced**: Good balance of speed and quality (medium preset, CRF 23)
+    - **quality**: Highest quality, slower processing (slow preset, CRF 18)
+
 ### Outputs
 
 - **video**: The video with RGB shift effects added, available as output to connect to other nodes

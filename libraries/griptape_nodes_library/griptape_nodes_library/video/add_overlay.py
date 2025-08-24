@@ -98,6 +98,9 @@ class AddOverlay(BaseVideoProcessor):
         amount = kwargs.get("amount", self.DEFAULT_AMOUNT)
 
         if not overlay_video:
+            # Get processing speed settings
+            preset, pix_fmt, crf = self._get_processing_speed_settings()
+
             # No overlay video provided, just copy the input
             return [
                 "ffmpeg",
@@ -106,11 +109,11 @@ class AddOverlay(BaseVideoProcessor):
                 "-c:v",
                 "libx264",
                 "-preset",
-                "veryslow",
+                preset,
                 "-crf",
-                "12",
+                str(crf),
                 "-pix_fmt",
-                "yuv420p",
+                pix_fmt,
                 "-movflags",
                 "+faststart",
                 "-c:a",
