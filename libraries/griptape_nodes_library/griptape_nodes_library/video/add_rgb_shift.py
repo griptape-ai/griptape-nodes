@@ -366,7 +366,7 @@ class AddRGBShift(BaseVideoProcessor):
                 f"chromashift=cbh={chroma_shift_h}:crh={chroma_shift_v}:edge=smear,"
                 f"gblur=sigma={blur_strength},"
                 f"tmix=frames={motion_trails}:weights='1 2 1',"
-                f"noise=alls={noise_strength}:allf=t+u,"
+                f"noise=alls={noise_strength}:allf=t+u,"  # typos: disable-line
                 f"split=3[main][tear_top][tear_bottom];"
                 f"[main]rgbashift=rh={red_h_scaled}:rv={red_v_scaled}:"
                 f"gh={green_h_scaled}:gv={green_v_scaled}:"
