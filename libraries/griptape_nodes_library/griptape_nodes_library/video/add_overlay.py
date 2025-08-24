@@ -96,7 +96,6 @@ class AddOverlay(BaseVideoProcessor):
         overlay_video = kwargs.get("overlay_video")
         blend_mode = kwargs.get("blend_mode", "overlay")
         amount = kwargs.get("amount", self.DEFAULT_AMOUNT)
-        sizing = kwargs.get("sizing", "Scale to cover")
 
         if not overlay_video:
             # No overlay video provided, just copy the input
@@ -143,9 +142,6 @@ class AddOverlay(BaseVideoProcessor):
         else:
             # Use blend filter for other blend modes - blend all components
             filter_complex = f"[0]loop=loop=-1,trim=duration={base_duration}[fg];[1][fg]blend=all_mode={blend_mode}:all_opacity={amount}[out]"
-
-        # Debug: print the filter complex
-        print(f"Filter complex: {filter_complex}")
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()
