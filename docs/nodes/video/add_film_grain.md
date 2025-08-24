@@ -37,7 +37,7 @@ Use the AddFilmGrain node when:
 - **luminance_threshold**: Luminance level where grain is most visible (50-100, default: 75)
 
     - 50 = grain visible in darker areas
-    - 75 = grain visible in mid-tones (default, good for faces)
+    - 75 = grain visible in mid-tones (default, good for lighter areas)
     - 100 = grain visible in brighter areas
 
 - **grain_scale**: Grain scale factor (1.0-4.0, default: 2.0)
@@ -57,7 +57,7 @@ Imagine you want to add a subtle film grain to a digital video to give it a cine
 1. Add an AddFilmGrain node to your workflow
 1. Connect the video output from a LoadVideo node to the AddFilmGrain's "video" input
 1. Set the "grain_intensity" to 0.12 for subtle grain
-1. Set the "luminance_threshold" to 75 for optimal grain visibility on faces
+1. Set the "luminance_threshold" to 75 for optimal grain visibility on lighter areas
 1. Set the "grain_scale" to 2.0 for medium-sized grain particles
 1. Run the workflow - the video will have realistic film grain added
 1. The output filename will be `{original_filename}_grain_0.12.{format}`
@@ -76,7 +76,7 @@ Imagine you want to add a subtle film grain to a digital video to give it a cine
 - **For subtle film look**: Use grain_intensity 0.08-0.15, luminance_threshold 75
 - **For vintage/retro effect**: Use grain_intensity 0.3-0.6, grain_scale 2.5-3.0
 - **For heavy film grain**: Use grain_intensity 0.7-1.0, grain_scale 3.0-4.0
-- **For portraits**: Use luminance_threshold 70-80 for optimal grain on faces
+- **For portraits**: Use luminance_threshold 70-80 for optimal grain on lighter areas
 - **For landscapes**: Use luminance_threshold 60-70 for grain in mid-tones
 
 ## Common Issues

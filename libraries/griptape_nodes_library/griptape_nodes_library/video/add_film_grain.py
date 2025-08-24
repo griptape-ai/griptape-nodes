@@ -43,7 +43,7 @@ class AddFilmGrain(BaseVideoProcessor):
             type="int",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=self.DEFAULT_LUMINANCE_THRESHOLD,
-            tooltip=f"Luminance level where grain is most visible (typically {self.DEFAULT_LUMINANCE_THRESHOLD} for faces)",
+            tooltip=f"Luminance level where grain is most visible (typically {self.DEFAULT_LUMINANCE_THRESHOLD} for lighter areas)",
         )
         self.add_parameter(luminance_threshold_parameter)
         luminance_threshold_parameter.add_trait(
