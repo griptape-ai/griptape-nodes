@@ -13,7 +13,8 @@
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
-        "json-repair>=0.46.1"
+        "json-repair>=0.46.1",
+        "static-ffmpeg>=2.8"
       ]
     }
   },
@@ -602,6 +603,17 @@
         "display_name": "Save Video",
         "icon": "file-down",
         "group": "general"
+      }
+    },
+    {
+      "class_name": "SplitVideo",
+      "file_path": "griptape_nodes_library/video/split_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Split a video into multiple parts using ffmpeg with timecode support",
+        "display_name": "Split Video",
+        "icon": "scissors",
+        "group": "edit"
       }
     },
     {
