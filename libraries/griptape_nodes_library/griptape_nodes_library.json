@@ -705,6 +705,17 @@
       }
     },
     {
+      "class_name": "AddColorCurves",
+      "file_path": "griptape_nodes_library/video/add_color_curves.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add color curves (color grading) effect to video using FFmpeg's curves filter with presets and custom curve options",
+        "display_name": "Add Color Curves",
+        "icon": "palette",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
