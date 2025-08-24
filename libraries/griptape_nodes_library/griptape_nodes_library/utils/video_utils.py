@@ -1,6 +1,8 @@
 import base64
+import re
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
@@ -69,3 +71,65 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
     url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
 
     return VideoUrlArtifact(url)
+
+
+def to_video_artifact(video: Any | dict) -> Any:
+    """Convert a video or a dictionary to a VideoArtifact."""
+    if isinstance(video, dict):
+        return dict_to_video_url_artifact(video)
+    return video
+
+
+def validate_url(url: str) -> bool:
+    """Validate that the URL is safe for ffmpeg processing."""
+    try:
+        parsed = urlparse(url)
+        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
+    except Exception:
+        return False
+
+
+def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
+    """Convert SMPTE timecode to seconds."""
+    if not re.match(r"^\d{2}:\d{2}:\d{2}[:;]\d{2}$", tc):
+        error_msg = f"Bad SMPTE format: {tc!r}"
+        raise ValueError(error_msg)
+    sep = ";" if ";" in tc else ":"
+    hh, mm, ss, ff = map(int, re.split(r"[:;]", tc))
+    is_df = (sep == ";") if drop_frame is None else bool(drop_frame)
+
+    # Non-drop: straightforward
+    if not is_df:
+        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
+
+    # Drop-frame: only valid for 29.97 and 59.94
+    nominal = 30 if abs(rate - 29.97) < 0.1 else 60 if abs(rate - 59.94) < 0.1 else None
+    if nominal is None:
+        # Fallback (treat as non-drop rather than guessing)
+        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
+
+    drop_per_min = 2 if nominal == 30 else 4
+    total_minutes = hh * 60 + mm
+    # Drop every minute except every 10th minute
+    dropped = drop_per_min * (total_minutes - total_minutes // 10)
+    frame_number = (hh * 3600 + mm * 60 + ss) * nominal + ff - dropped
+    actual_rate = 30000 / 1001 if nominal == 30 else 60000 / 1001
+    return frame_number / actual_rate
+
+
+def seconds_to_ts(sec: float) -> str:
+    """Return HH:MM:SS.mmm for ffmpeg."""
+    sec = max(sec, 0)
+    whole = int(sec)
+    ms = round((sec - whole) * 1000)
+    h = whole // 3600
+    m = (whole % 3600) // 60
+    s = whole % 60
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+def sanitize_filename(name: str) -> str:
+    """Sanitize filename by removing invalid characters and replacing spaces with underscores."""
+    name = re.sub(r"[^\w\s\-.]+", "_", name.strip())
+    name = re.sub(r"\s+", "_", name)
+    return name or "segment"

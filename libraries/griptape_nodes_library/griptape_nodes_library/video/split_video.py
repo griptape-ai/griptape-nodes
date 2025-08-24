@@ -1,11 +1,9 @@
 import json
-import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import static_ffmpeg.run
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
@@ -15,97 +13,23 @@ from griptape.tasks import PromptTask
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes_library.utils.video_utils import detect_video_format, dict_to_video_url_artifact
+from griptape_nodes_library.utils.video_utils import (
+    detect_video_format,
+    sanitize_filename,
+    seconds_to_ts,
+    smpte_to_seconds,
+    to_video_artifact,
+    validate_url,
+)
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 MODEL = "gpt-4.1-mini"
 
-
-def to_video_artifact(video: Any | dict) -> Any:
-    """Convert a video or a dictionary to a VideoArtifact."""
-    if isinstance(video, dict):
-        return dict_to_video_url_artifact(video)
-    return video
-
-
-def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for ffmpeg processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
-
-
-# ----------------------------
-# Timecode utilities
-# ----------------------------
-
-# Constants for frame rates
-NOMINAL_30_FPS = 30
-NOMINAL_60_FPS = 60
-
-
-def _approx(v: float, target: float, tol: float = 0.02) -> bool:
-    return abs(v - target) <= tol
-
-
-def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
-    """Convert SMPTE timecode to seconds.
-
-    Accepts 'HH:MM:SS:FF' (non-DF) or 'HH:MM:SS;FF' (DF).
-    If drop_frame is None, semicolon implies DF; otherwise obey drop_frame flag.
-    DF supported for ~29.97 (30000/1001) and ~59.94 (60000/1001).
-    """
-    if not re.match(r"^\d{2}:\d{2}:\d{2}[:;]\d{2}$", tc):
-        error_msg = f"Bad SMPTE format: {tc!r}"
-        raise ValueError(error_msg)
-    sep = ";" if ";" in tc else ":"
-    hh, mm, ss, ff = map(int, re.split(r"[:;]", tc))
-    is_df = (sep == ";") if drop_frame is None else bool(drop_frame)
-
-    # Non-drop: straightforward
-    if not is_df:
-        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
-
-    # Drop-frame: only valid for 29.97 and 59.94
-    nominal = NOMINAL_30_FPS if _approx(rate, 29.97) else NOMINAL_60_FPS if _approx(rate, 59.94) else None
-    if nominal is None:
-        # Fallback (treat as non-drop rather than guessing)
-        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
-
-    drop_per_min = 2 if nominal == NOMINAL_30_FPS else 4
-    total_minutes = hh * 60 + mm
-    # Drop every minute except every 10th minute
-    dropped = drop_per_min * (total_minutes - total_minutes // 10)
-    frame_number = (hh * 3600 + mm * 60 + ss) * nominal + ff - dropped
-    actual_rate = 30000 / 1001 if nominal == NOMINAL_30_FPS else 60000 / 1001
-    return frame_number / actual_rate
-
-
-def frames_to_seconds(frames: int, rate: float) -> float:
-    """Convert frame number to seconds based on frame rate."""
-    return frames / rate
-
-
-def seconds_to_ts(sec: float) -> str:
-    """Return HH:MM:SS.mmm for ffmpeg."""
-    sec = max(sec, 0)
-    whole = int(sec)
-    ms = round((sec - whole) * 1000)
-    h = whole // 3600
-    m = (whole % 3600) // 60
-    s = whole % 60
-    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
-
-
-def sanitize_filename(name: str) -> str:
-    """Sanitize filename by removing invalid characters and replacing spaces with underscores."""
-    name = re.sub(r"[^\w\s\-.]+", "_", name.strip())
-    name = re.sub(r"\s+", "_", name)
-    return name or "segment"
+# Constants
+TIMECODE_SEGMENT_PARTS = 2
+FRAME_RATE_TOLERANCE = 0.1
 
 
 # ----------------------------
@@ -249,7 +173,7 @@ class SplitVideo(ControlNode):
             msg = f"{self.name}: Timecodes parameter is required"
             exceptions.append(ValueError(msg))
 
-        return exceptions if exceptions else None
+        return exceptions
 
     def _clear_list(self) -> None:
         """Clear the parameter list."""
@@ -285,7 +209,7 @@ and return ONLY the exact segments provided, with no additional segments or gap-
             if hasattr(response, "output") and hasattr(response.output, "value"):
                 return response.output.value
             error_msg = f"Unexpected agent response format: {response}"
-            raise ValueError(error_msg)
+            raise ValueError(error_msg)  # noqa: TRY301
 
         except Exception as e:
             error_msg = f"Agent failed to parse timecodes: {e!s}"
@@ -294,27 +218,22 @@ and return ONLY the exact segments provided, with no additional segments or gap-
 
     def _parse_agent_response(self, agent_response: str, frame_rate: float, *, drop_frame: bool) -> list[Segment]:
         """Parse the agent's response string into segments."""
-        self.append_value_to_parameter("logs", f"Parsing agent response: '{agent_response}'\n")
         segments = []
         for line_raw in agent_response.strip().split("\n"):
             line = line_raw.strip()
             if not line:
                 continue
 
-            self.append_value_to_parameter("logs", f"Processing line: '{line}'\n")
-
             # Parse format: HH:MM:SS:FF-HH:MM:SS:FF|Title
             parts = line.split("|", 1)
-            if len(parts) != 2:
-                self.append_value_to_parameter("logs", f"Skipping line - no pipe separator: '{line}'\n")
+            if len(parts) != TIMECODE_SEGMENT_PARTS:
                 continue
 
             time_range, title = parts
 
             # Parse time range: HH:MM:SS:FF-HH:MM:SS:FF
             time_parts = time_range.split("-")
-            if len(time_parts) != 2:
-                self.append_value_to_parameter("logs", f"Skipping line - no dash separator: '{line}'\n")
+            if len(time_parts) != TIMECODE_SEGMENT_PARTS:
                 continue
 
             start_tc, end_tc = time_parts
@@ -325,18 +244,10 @@ and return ONLY the exact segments provided, with no additional segments or gap-
 
                 if end_sec > start_sec:
                     segments.append(Segment(start_sec, end_sec, title.strip()))
-                    self.append_value_to_parameter(
-                        "logs", f"Added segment: {start_sec}s to {end_sec}s - '{title.strip()}'\n"
-                    )
-                else:
-                    self.append_value_to_parameter(
-                        "logs", f"Skipping segment - end time <= start time: {start_sec}s to {end_sec}s\n"
-                    )
             except Exception as e:
                 self.append_value_to_parameter("logs", f"Warning: Could not parse line '{line}': {e}\n")
                 continue
 
-        self.append_value_to_parameter("logs", f"Total segments parsed: {len(segments)}\n")
         return segments
 
     def _parse_timecodes(self, timecodes_str: str, frame_rate: float, *, drop_frame: bool) -> list[Segment]:
@@ -351,8 +262,8 @@ and return ONLY the exact segments provided, with no additional segments or gap-
 
             if not segments:
                 error_msg = "No valid segments found in agent response"
-                raise ValueError(error_msg)
-            return segments
+                raise ValueError(error_msg)  # noqa: TRY301
+            return segments  # noqa: TRY300
 
         except Exception as e:
             error_msg = f"Error parsing timecodes with agent: {e!s}"
@@ -362,7 +273,7 @@ and return ONLY the exact segments provided, with no additional segments or gap-
         """Validate and return FFmpeg and FFprobe paths."""
         try:
             ffmpeg_path, ffprobe_path = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
-            return ffmpeg_path, ffprobe_path
+            return ffmpeg_path, ffprobe_path  # noqa: TRY300
         except Exception as e:
             error_msg = f"FFmpeg not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
             raise ValueError(error_msg) from e
@@ -382,7 +293,7 @@ and return ONLY the exact segments provided, with no additional segments or gap-
                 input_url,
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
             data = json.loads(result.stdout)
 
             if not data.get("streams"):
@@ -399,9 +310,11 @@ and return ONLY the exact segments provided, with no additional segments or gap-
                 frame_rate = float(r_frame_rate)
 
             # Determine if drop frame based on frame rate
-            drop_frame = abs(frame_rate - 29.97) < 0.1 or abs(frame_rate - 59.94) < 0.1
+            drop_frame = (
+                abs(frame_rate - 29.97) < FRAME_RATE_TOLERANCE or abs(frame_rate - 59.94) < FRAME_RATE_TOLERANCE
+            )
 
-            return frame_rate, drop_frame
+            return frame_rate, drop_frame  # noqa: TRY300
 
         except Exception as e:
             self.append_value_to_parameter("logs", f"Warning: Could not detect video properties, using defaults: {e}\n")
