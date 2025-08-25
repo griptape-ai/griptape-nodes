@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from dotenv import load_dotenv
 
-from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
+from griptape_nodes.bootstrap.workflow_executors.async_workflow_executor import AsyncWorkflowExecutor
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 
 
@@ -93,6 +93,6 @@ def clear_state_before_each_test() -> Generator[None, Any, None]:
 @pytest.mark.asyncio
 async def test_workflow_runs(workflow_path: str) -> None:
     """Simple test to check if the workflow runs without errors."""
-    # Run in subprocess - it will load the workflow in the subprocess
-    runner = SubprocessWorkflowExecutor()
-    runner.run(workflow_name="main", flow_input={}, workflow_path=workflow_path)
+    # Run in async context - it will load the workflow with API server
+    runner = AsyncWorkflowExecutor()
+    await runner.run(workflow_name="main", flow_input={}, workflow_path=workflow_path)

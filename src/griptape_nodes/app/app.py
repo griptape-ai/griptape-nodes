@@ -37,6 +37,9 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+# Configure the utils.events module to use this queue
+from griptape_nodes.utils.events import set_event_queue
+
 # Global async event queue - created in async context
 event_queue: asyncio.Queue | None = None
 
@@ -120,6 +123,8 @@ async def start_async_app() -> None:
 
     # Create async queue in event loop context
     event_queue = asyncio.Queue()
+
+    set_event_queue(event_queue)
 
     # Prepare and start tasks
     tasks = _create_app_tasks(api_key, event_queue)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from asyncio import get_running_loop
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
-from griptape_nodes.utils.events import put_event
+from griptape_nodes.utils.events import put_event, put_event_threadsafe
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -409,6 +410,9 @@ class ExecuteNodeState(State):
         Returns:
             bool: True if work has been scheduled, False if the node is done processing.
         """
+        # Used in the callback to put event in a thread-safe manner
+        # https://stackoverflow.com/questions/32889527/is-there-a-way-to-use-asyncio-queue-in-multiple-threads
+        loop = get_running_loop()
 
         def on_future_done(future: Future) -> None:
             """Called when the future is done.
@@ -423,10 +427,11 @@ class ExecuteNodeState(State):
             finally:
                 # If it hasn't been cancelled.
                 if current_focus.process_generator:
-                    put_event(
+                    put_event_threadsafe(
+                        loop,
                         ExecutionGriptapeNodeEvent(
                             wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
-                        )
+                        ),
                     )
 
         current_node = current_focus.node

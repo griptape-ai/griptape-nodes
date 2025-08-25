@@ -29,9 +29,6 @@ logger = logging.getLogger("griptape_nodes_api")
 logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
-# Global async event queue - for async FastAPI endpoints
-async_event_queue: asyncio.Queue | None = None
-
 # Global static directory - initialized as None and set when starting the API
 static_dir: Path | None = None
 
@@ -147,14 +144,13 @@ async def _delete_static_file(file_path: str, static_directory: Annotated[Path, 
 
 @app.post("/engines/request")
 async def _create_event(request: Request) -> None:
-    """Create event using async queue directly."""
+    """Create event using centralized event utilities."""
     from .app import _aprocess_api_event
 
     body = await request.json()
 
-    if async_event_queue is not None:
-        # Use async queue directly
-        await _aprocess_api_event(body)
+    # Use centralized event processing
+    await _aprocess_api_event(body)
 
 
 def _setup_app(static_directory: Path) -> None:
@@ -186,9 +182,10 @@ def _setup_app(static_directory: Path) -> None:
 
 async def start_api_async(static_directory: Path, async_queue: asyncio.Queue) -> None:
     """Run uvicorn server directly in the event loop."""
-    # Set the global async queue reference for the FastAPI endpoints
-    global async_event_queue  # noqa: PLW0603
-    async_event_queue = async_queue
+    from griptape_nodes.utils.events import set_event_queue
+
+    # Set the centralized event queue for this execution context
+    set_event_queue(async_queue)
 
     # Setup the FastAPI app
     _setup_app(static_directory)

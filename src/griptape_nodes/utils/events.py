@@ -1,12 +1,28 @@
 """Event utilities for publishing events to the global event queue.
 
 This module provides clean wrapper functions around the event queue functionality
-while handling the lazy import internally to avoid circular imports.
+with configurable queue support for different execution contexts.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import asyncio
+
+# Module-level event queue - must be set by the application
+_event_queue: asyncio.Queue | None = None
+
+
+def set_event_queue(queue: asyncio.Queue | None) -> None:
+    """Set the event queue for this module.
+
+    Args:
+        queue: The asyncio.Queue to use for events, or None to clear
+    """
+    global _event_queue  # noqa: PLW0603
+    _event_queue = queue
 
 
 def put_event(event: Any) -> None:
@@ -15,10 +31,23 @@ def put_event(event: Any) -> None:
     Args:
         event: The event to publish to the queue
     """
-    # Lazy import to avoid circular imports
-    from griptape_nodes.app.app import put_event as _put_event
+    if _event_queue is None:
+        return
 
-    _put_event(event)
+    _event_queue.put_nowait(event)
+
+
+def put_event_threadsafe(loop: Any, event: Any) -> None:
+    """Put event into async queue from sync context in a thread-safe manner.
+
+    Args:
+        loop: The asyncio event loop to use for thread-safe operation
+        event: The event to publish to the queue
+    """
+    if _event_queue is None:
+        return
+
+    loop.call_soon_threadsafe(_event_queue.put_nowait, event)
 
 
 async def aput_event(event: Any) -> None:
@@ -27,7 +56,7 @@ async def aput_event(event: Any) -> None:
     Args:
         event: The event to publish to the queue
     """
-    # Lazy import to avoid circular imports
-    from griptape_nodes.app.app import aput_event as _aput_event
+    if _event_queue is None:
+        return
 
-    await _aput_event(event)
+    await _event_queue.put(event)

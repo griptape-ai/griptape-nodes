@@ -2,21 +2,20 @@ import asyncio
 import logging
 from typing import Any
 
-from griptape.events import BaseEvent, EventBus, EventListener
-
 from griptape_nodes.bootstrap.workflow_executors.workflow_executor import WorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
 from griptape_nodes.retained_mode.events.base_events import (
-    AppEvent,
     EventRequest,
     ExecutionGriptapeNodeEvent,
-    GriptapeNodeEvent,
-    ProgressEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepRequest, StartFlowRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.workflow_events import (
+    RunWorkflowFromScratchRequest,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.events import aput_event, set_event_queue
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +26,11 @@ class LocalExecutorError(Exception):
 
 class LocalWorkflowExecutor(WorkflowExecutor):
     def __init__(self) -> None:
-        self.queue: asyncio.Queue = asyncio.Queue()
         self.output: dict | None = None
+
+        # Get the centralized event queue
+        self.queue = asyncio.Queue()
+        set_event_queue(self.queue)
 
     def _load_flow_for_workflow(self) -> str:
         try:
@@ -52,65 +54,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             msg = f"Failed to set storage backend: {e}"
             logger.exception(msg)
             raise LocalExecutorError(msg) from e
-
-    def _handle_event(self, event: BaseEvent) -> None:
-        try:
-            match event:
-                case GriptapeNodeEvent():
-                    self.__handle_node_event(event)
-                case ExecutionGriptapeNodeEvent():
-                    self.__handle_execution_node_event(event)
-                case ProgressEvent():
-                    self.__handle_progress_event(event)
-                case AppEvent():
-                    self.__handle_app_event(event)
-                case _:
-                    msg = f"Unknown event type: {type(event)}"
-                    logger.info(msg)
-                    self.queue.put_nowait(event)
-        except Exception as e:
-            logger.info(e)
-
-    def __handle_node_event(self, event: GriptapeNodeEvent) -> None:
-        result_event = event.wrapped_event
-        event_json = result_event.json()
-        event_log = f"GriptapeNodeEvent: {event_json}"
-        logger.info(event_log)
-
-    def __handle_execution_node_event(self, event: ExecutionGriptapeNodeEvent) -> None:
-        result_event = event.wrapped_event
-        if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-            event_log = f"NodeStartProcessEvent: {result_event.payload}"
-            logger.info(event_log)
-
-        elif type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
-            event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
-            logger.info(event_log)
-
-            # Here we need to handle the resume event since this is the callback mechanism
-            # for the flow to be resumed for any Node that yields a generator in its process method.
-            node_name = result_event.payload.node_name
-            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-            event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            self.queue.put_nowait(event_request)
-
-        elif type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-            event_log = f"NodeFinishProcessEvent: {result_event.payload}"
-            logger.info(event_log)
-
-        else:
-            event_log = f"ExecutionGriptapeNodeEvent: {result_event.payload}"
-            logger.info(event_log)
-
-        self.queue.put_nowait(event)
-
-    def __handle_progress_event(self, gt_event: ProgressEvent) -> None:
-        event_log = f"ProgressEvent: {gt_event}"
-        logger.info(event_log)
-
-    def __handle_app_event(self, event: AppEvent) -> None:
-        event_log = f"AppEvent: {event.payload}"
-        logger.info(event_log)
 
     def _submit_output(self, output: dict) -> None:
         self.output = output
@@ -144,12 +87,29 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         return output
 
+    async def _load_workflow_from_path(self, workflow_path: str) -> None:
+        """Load a workflow from a file path."""
+        try:
+            # Use the RunWorkflowFromScratchRequest to load the workflow
+            request = RunWorkflowFromScratchRequest(file_path=workflow_path)
+            result = await GriptapeNodes.ahandle_request(request)
+
+            if result.failed():
+                msg = f"Failed to load workflow from path {workflow_path}"
+                raise LocalExecutorError(msg)
+
+            logger.info("Successfully loaded workflow from %s", workflow_path)
+        except Exception as e:
+            msg = f"Error loading workflow from path {workflow_path}: {e}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg) from e
+
     async def run(
         self,
         workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
-        **kwargs: Any,  # noqa: ARG002
+        **kwargs: Any,
     ) -> None:
         """Executes a local workflow.
 
@@ -166,14 +126,14 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         """
         logger.info("Executing workflow: %s", workflow_name)
 
-        EventBus.add_event_listener(
-            event_listener=EventListener(
-                on_event=self._handle_event,
-            )
-        )
-
         # Set the storage backend
         self._set_storage_backend(storage_backend=storage_backend)
+
+        # Load workflow from file if workflow_path is provided
+        workflow_path = kwargs.get("workflow_path")
+        if workflow_path:
+            await self._load_workflow_from_path(workflow_path)
+
         # Load the flow
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
@@ -192,6 +152,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         # Wait for the control flow to finish
         is_flow_finished = False
         error: Exception | None = None
+
         while not is_flow_finished:
             try:
                 event = await self.queue.get()
@@ -199,9 +160,11 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 if isinstance(event, EventRequest):
                     # Handle EventRequest objects by processing them through GriptapeNodes
                     request_payload = event.request
-                    await GriptapeNodes.ahandle_request(
+                    result = await GriptapeNodes.ahandle_request(
                         request_payload, response_topic=event.response_topic, request_id=event.request_id
                     )
+                    # Send result back through centralized event system
+                    await aput_event(result)
                 elif isinstance(event, ExecutionGriptapeNodeEvent):
                     result_event = event.wrapped_event
 
@@ -214,8 +177,16 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                         is_flow_finished = True
                         logger.error(msg)
                         error = LocalExecutorError(msg)
-                else:
-                    logger.info("Unknown event type encountered: %s", type(event))
+                    elif type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
+                        event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
+                        logger.info(event_log)
+
+                        # Here we need to handle the resume event since this is the callback mechanism
+                        # for the flow to be resumed for any Node that yields a generator in its process method.
+                        node_name = result_event.payload.node_name
+                        flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+                        event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
+                        await aput_event(event_request)
 
                 self.queue.task_done()
 
