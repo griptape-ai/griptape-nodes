@@ -1502,11 +1502,11 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
-        # Validate upstream connection fields consistency
-        upstream_node_set = request.upstream_connection_node_name is not None
-        upstream_param_set = request.upstream_connection_parameter_name is not None
-        if upstream_node_set != upstream_param_set:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because upstream connection fields must both be None or both be set. Got upstream_connection_node_name={request.upstream_connection_node_name}, upstream_connection_parameter_name={request.upstream_connection_parameter_name}."
+        # Validate incoming connection source fields consistency
+        incoming_node_set = request.incoming_connection_source_node_name is not None
+        incoming_param_set = request.incoming_connection_source_parameter_name is not None
+        if incoming_node_set != incoming_param_set:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because incoming connection source fields must both be None or both be set. Got incoming_connection_source_node_name={request.incoming_connection_source_node_name}, incoming_connection_source_parameter_name={request.incoming_connection_source_parameter_name}."
             logger.error(details)
             result = SetParameterValueResultFailure(result_details=details)
             return result
@@ -1519,12 +1519,12 @@ class NodeManager:
             return result
 
         # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
-        # When a parameter can accept both input connections AND manual property values, having an active connection should 
+        # When a parameter can accept both input connections AND manual property values, having an active connection should
         # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
-        # Skip this check if: initial_setup (workflow loading), or upstream_connection fields are set (system passing upstream values)
+        # Skip this check if: initial_setup (workflow loading), or incoming_connection_source fields are set (system passing upstream values)
         if (
             not request.initial_setup
-            and not upstream_node_set  # If upstream fields are set, this is a legitimate upstream value pass
+            and not incoming_node_set  # If incoming connection source fields are set, this is a legitimate upstream value pass
             and ParameterMode.INPUT in parameter.allowed_modes
             and ParameterMode.PROPERTY in parameter.allowed_modes
         ):
@@ -1534,7 +1534,7 @@ class NodeManager:
             if target_connections is not None:
                 param_connections = target_connections.get(request.parameter_name)
                 if param_connections:  # Has incoming connections
-                    # TODO: Consider emitting UI events when parameters become settable/unsettable due to connection changes
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1965 Consider emitting UI events when parameters become settable/unsettable due to connection changes
                     details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because this parameter has incoming connections and cannot be set as a property while connected."
                     logger.error(details)
                     result = SetParameterValueResultFailure(result_details=details)

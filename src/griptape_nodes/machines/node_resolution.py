@@ -235,8 +235,8 @@ class ExecuteNodeState(State):
                         node_name=current_node.name,
                         value=output_value,
                         data_type=upstream_parameter.output_type,
-                        upstream_connection_node_name=upstream_node.name,
-                        upstream_connection_parameter_name=upstream_parameter.name,
+                        incoming_connection_source_node_name=upstream_node.name,
+                        incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
                 )
 
