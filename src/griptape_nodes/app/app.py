@@ -97,25 +97,14 @@ console = Console()
 def start_app() -> None:
     """Legacy sync entry point - runs async app."""
     try:
-        asyncio.run(start_async_app())
+        asyncio.run(astart_app())
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
         logger.error("Application error: %s", e)
 
 
-def _handle_task_exception(task: asyncio.Task) -> None:
-    """Handle exceptions from background tasks."""
-    try:
-        task.result()
-    except asyncio.CancelledError:
-        # Expected during shutdown, ignore
-        pass
-    except Exception:
-        logger.exception("Uncaught exception in task %s", task.get_name())
-
-
-async def start_async_app() -> None:
+async def astart_app() -> None:
     """New async app entry point."""
     global event_queue  # noqa: PLW0603
 
@@ -128,40 +117,13 @@ async def start_async_app() -> None:
 
     # Prepare and start tasks
     tasks = _create_app_tasks(api_key, event_queue)
-    task_objects = []
-
-    for i, task in enumerate(tasks):
-        task_obj = asyncio.create_task(task, name=f"task-{i}")
-        task_obj.add_done_callback(_handle_task_exception)
-        task_objects.append(task_obj)
 
     try:
-        # Run all tasks concurrently
-        await asyncio.gather(*task_objects)
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received, shutting down...")
-        # Cancel all running tasks
-        for task in task_objects:
-            if not task.done():
-                task.cancel()
-
-        # Wait for tasks to complete cancellation
-        if task_objects:
-            await asyncio.gather(*task_objects, return_exceptions=True)
-
-        logger.info("Graceful shutdown complete")
-        raise
+        async with asyncio.TaskGroup() as tg:
+            for task in tasks:
+                tg.create_task(task)
     except Exception as e:
         logger.error("Application startup failed: %s", e)
-        # Cancel all running tasks
-        for task in task_objects:
-            if not task.done():
-                task.cancel()
-
-        # Wait for tasks to complete cancellation
-        if task_objects:
-            await asyncio.gather(*task_objects, return_exceptions=True)
-
         raise
 
 
@@ -176,7 +138,7 @@ def _create_app_tasks(api_key: str, event_queue: asyncio.Queue) -> list:
     # Add static server if enabled
     if STATIC_SERVER_ENABLED:
         static_dir = _build_static_dir()
-        tasks.append(_astart_api_server(static_dir, event_queue))
+        tasks.append(_astart_api_server(static_dir))
 
     return tasks
 
@@ -195,13 +157,13 @@ async def _arun_mcp_server(api_key: str) -> None:
         raise
 
 
-async def _astart_api_server(static_dir: Path, event_queue: asyncio.Queue) -> None:
+async def _astart_api_server(static_dir: Path) -> None:
     """Run API server directly in event loop."""
     from .api import start_api_async
 
     try:
         # Run API server - it will handle shutdown gracefully when cancelled
-        await start_api_async(static_dir, event_queue)
+        await start_api_async(static_dir)
     except asyncio.CancelledError:
         # Clean shutdown when task is cancelled
         logger.info("API server shutdown complete")
@@ -298,6 +260,7 @@ async def _aprocess_event_queue(event_queue: asyncio.Queue) -> None:
     """Process events concurrently - multiple requests can run simultaneously."""
     # Wait for WebSocket connection (convert to async)
     await _await_websocket_ready()
+    background_tasks = set()
 
     try:
         while True:
@@ -306,8 +269,8 @@ async def _aprocess_event_queue(event_queue: asyncio.Queue) -> None:
             if isinstance(event, EventRequest):
                 # Create task for concurrent processing
                 task = asyncio.create_task(_ahandle_event_request(event))
-                # Store reference to prevent garbage collection
-                task.add_done_callback(lambda _: None)
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
             elif isinstance(event, AppEvent):
                 # App events processed immediately
                 await _aprocess_app_event(event)

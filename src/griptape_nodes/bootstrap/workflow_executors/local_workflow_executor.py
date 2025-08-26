@@ -89,14 +89,14 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
     async def _load_workflow_from_path(self, workflow_path: str) -> None:
         """Load a workflow from a file path."""
+
+        def _raise_load_error(msg: str) -> None:
+            raise LocalExecutorError(msg)
+
         try:
             # Use the RunWorkflowFromScratchRequest to load the workflow
             request = RunWorkflowFromScratchRequest(file_path=workflow_path)
             result = await GriptapeNodes.ahandle_request(request)
-
-            if result.failed():
-                msg = f"Failed to load workflow from path {workflow_path}"
-                raise LocalExecutorError(msg)
 
             logger.info("Successfully loaded workflow from %s", workflow_path)
         except Exception as e:
@@ -104,7 +104,47 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             logger.exception(msg)
             raise LocalExecutorError(msg) from e
 
-    async def run(
+        if result.failed():
+            msg = f"Failed to load workflow from path {workflow_path}"
+            _raise_load_error(msg)
+
+    async def _handle_event_request(self, event: EventRequest) -> None:
+        """Handle EventRequest objects by processing them through GriptapeNodes."""
+        request_payload = event.request
+        result = await GriptapeNodes.ahandle_request(
+            request_payload, response_topic=event.response_topic, request_id=event.request_id
+        )
+        # Send result back through centralized event system
+        await aput_event(result)
+
+    async def _handle_execution_event(
+        self, event: ExecutionGriptapeNodeEvent, flow_name: str
+    ) -> tuple[bool, Exception | None]:
+        """Handle ExecutionGriptapeNodeEvent and return (is_finished, error)."""
+        result_event = event.wrapped_event
+
+        if type(result_event.payload).__name__ == "ControlFlowResolvedEvent":
+            self._submit_output(self._get_output_for_flow(flow_name=flow_name))
+            logger.info("Workflow finished!")
+            return True, None
+        if type(result_event.payload).__name__ == "ControlFlowCancelledEvent":
+            msg = "Control flow cancelled"
+            logger.error(msg)
+            return True, LocalExecutorError(msg)
+        if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
+            event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
+            logger.info(event_log)
+
+            # Here we need to handle the resume event since this is the callback mechanism
+            # for the flow to be resumed for any Node that yields a generator in its process method.
+            node_name = result_event.payload.node_name
+            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+            event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
+            await aput_event(event_request)
+
+        return False, None
+
+    async def arun(
         self,
         workflow_name: str,
         flow_input: Any,
@@ -158,35 +198,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
                 event = await self.queue.get()
 
                 if isinstance(event, EventRequest):
-                    # Handle EventRequest objects by processing them through GriptapeNodes
-                    request_payload = event.request
-                    result = await GriptapeNodes.ahandle_request(
-                        request_payload, response_topic=event.response_topic, request_id=event.request_id
-                    )
-                    # Send result back through centralized event system
-                    await aput_event(result)
+                    await self._handle_event_request(event)
                 elif isinstance(event, ExecutionGriptapeNodeEvent):
-                    result_event = event.wrapped_event
-
-                    if type(result_event.payload).__name__ == "ControlFlowResolvedEvent":
-                        self._submit_output(self._get_output_for_flow(flow_name=flow_name))
-                        is_flow_finished = True
-                        logger.info("Workflow finished!")
-                    elif type(result_event.payload).__name__ == "ControlFlowCancelledEvent":
-                        msg = "Control flow cancelled"
-                        is_flow_finished = True
-                        logger.error(msg)
-                        error = LocalExecutorError(msg)
-                    elif type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
-                        event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
-                        logger.info(event_log)
-
-                        # Here we need to handle the resume event since this is the callback mechanism
-                        # for the flow to be resumed for any Node that yields a generator in its process method.
-                        node_name = result_event.payload.node_name
-                        flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-                        event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-                        await aput_event(event_request)
+                    is_flow_finished, error = await self._handle_execution_event(event, flow_name)
 
                 self.queue.task_done()
 

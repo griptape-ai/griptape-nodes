@@ -43,6 +43,10 @@ def get_static_dir() -> Path:
 
 """Create and configure the FastAPI application."""
 app = FastAPI()
+config = uvicorn.Config(
+    app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
+)
+server = uvicorn.Server(config)
 
 
 @app.post("/static-upload-urls")
@@ -180,21 +184,17 @@ def _setup_app(static_directory: Path) -> None:
     )
 
 
-async def start_api_async(static_directory: Path, async_queue: asyncio.Queue) -> None:
-    """Run uvicorn server directly in the event loop."""
-    from griptape_nodes.utils.events import set_event_queue
+def shutdown_server() -> None:
+    """Gracefully shutdown the server instance."""
+    server.should_exit = True
 
-    # Set the centralized event queue for this execution context
-    set_event_queue(async_queue)
+
+async def start_api_async(static_directory: Path) -> None:
+    """Run uvicorn server directly in the event loop."""
+    global _server_instance  # noqa: PLW0603
 
     # Setup the FastAPI app
     _setup_app(static_directory)
-
-    # Create uvicorn config and server
-    config = uvicorn.Config(
-        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
-    )
-    server = uvicorn.Server(config)
 
     try:
         # Run server directly in the event loop
@@ -203,8 +203,13 @@ async def start_api_async(static_directory: Path, async_queue: asyncio.Queue) ->
         # Ensure server is properly shutdown when cancelled
         if not server.should_exit:
             server.should_exit = True
-            await server.shutdown()
+            try:
+                await asyncio.wait_for(server.shutdown(), timeout=2.0)
+            except TimeoutError:
+                logger.warning("Server shutdown timed out")
         raise
     except Exception as e:
         logger.error("API server failed: %s", e)
         raise
+    finally:
+        _server_instance = None
