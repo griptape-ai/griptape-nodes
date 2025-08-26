@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState, StartLoopNode, StartNode
+from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -684,6 +684,18 @@ class FlowManager:
 
         # Cross-flow connections are now supported via global connection storage
 
+        # Call before_connection callbacks to allow nodes to prepare parameters
+        source_node.before_outgoing_connection(
+            source_parameter_name=request.source_parameter_name,
+            target_node=target_node,
+            target_parameter_name=request.target_parameter_name,
+        )
+        target_node.before_incoming_connection(
+            source_node=source_node,
+            source_parameter_name=request.source_parameter_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+
         # Now validate the parameters.
         source_param = source_node.get_parameter_by_name(request.source_parameter_name)
         if source_param is None:
@@ -855,6 +867,13 @@ class FlowManager:
                 )
             )
 
+        # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
+        if not request.initial_setup:
+            if isinstance(source_node, ErrorProxyNode):
+                source_node.set_post_init_connections_modified()
+            if isinstance(target_node, ErrorProxyNode):
+                target_node.set_post_init_connections_modified()
+
         result = CreateConnectionResultSuccess()
 
         return result
@@ -997,6 +1016,12 @@ class FlowManager:
 
         details = f'Connection "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}" deleted.'
         logger.debug(details)
+
+        # Check if either node is ErrorProxyNode and mark connection modification (deletes are always user-initiated)
+        if isinstance(source_node, ErrorProxyNode):
+            source_node.set_post_init_connections_modified()
+        if isinstance(target_node, ErrorProxyNode):
+            target_node.set_post_init_connections_modified()
 
         result = DeleteConnectionResultSuccess()
         return result
@@ -1883,6 +1908,7 @@ class FlowManager:
         valid_data_nodes = []
         start_nodes = []
         control_nodes = []
+        cn_mgr = self.get_connections()
         for node in all_nodes:
             # if it's a start node, start here! Return the first one!
             if isinstance(node, StartNode):
@@ -1893,15 +1919,21 @@ class FlowManager:
             control_param = False
             for parameter in node.parameters:
                 if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
-                    control_param = True
-                    break
+                    # Check if the control parameters are being used at all. If they are not, treat it as a data node.
+                    incoming_control = (
+                        node.name in cn_mgr.incoming_index and parameter.name in cn_mgr.incoming_index[node.name]
+                    )
+                    outgoing_control = (
+                        node.name in cn_mgr.outgoing_index and parameter.name in cn_mgr.outgoing_index[node.name]
+                    )
+                    if incoming_control or outgoing_control:
+                        control_param = True
+                        break
             if not control_param:
                 # saving this for later
                 data_nodes.append(node)
                 # If this node doesn't have a control connection..
                 continue
-
-            cn_mgr = self.get_connections()
             # check if it has an incoming connection. If it does, it's not a start node
             has_control_connection = False
             if node.name in cn_mgr.incoming_index:
@@ -1909,10 +1941,19 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
+                        # If the node is a StartLoopNode, it may have an incoming hidden connection from it's EndLoopNode for iteration.
+                        if isinstance(node, StartLoopNode):
+                            connection_id = cn_mgr.incoming_index[node.name][param_name][0]
+                            connection = cn_mgr.connections[connection_id]
+                            connected_node = connection.get_source_node()
+                            # Check if the source node is the end loop node associated with this StartLoopNode.
+                            # If it is, then this could still be the first node in the control flow.
+                            if connected_node == node.end_node:
+                                continue
                         has_control_connection = True
                         break
             # if there is a connection coming in, isn't a start.
-            if has_control_connection and not isinstance(node, StartLoopNode):
+            if has_control_connection:
                 continue
             # Does it have an outgoing connection?
             if node.name in cn_mgr.outgoing_index:

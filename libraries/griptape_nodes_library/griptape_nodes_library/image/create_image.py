@@ -95,8 +95,9 @@ class GenerateImage(ControlNode):
                 type="ImageUrlArtifact",
                 tooltip="None",
                 default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 ui_options={"pulse_on_run": True},
+                settable=False,  # Ensures this serializes on save, but don't let user set it.
             )
         )
         # Group for logging information.
@@ -146,11 +147,19 @@ class GenerateImage(ControlNode):
                 self.hide_parameter_by_name("output_compression")
 
         if parameter.name == "model":
-            # If the model is gpt-image-1, update the size options accordingly
-            if value == "gpt-image-1":
-                self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
-            elif value == "dall-e-3":
-                self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
+            # "model" supports either a string OR an Image Generation Driver. We can serialize strings, but not driver objects.
+            if isinstance(value, str):
+                # If the model is gpt-image-1, update the size options accordingly
+                if value == "gpt-image-1":
+                    self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
+                elif value == "dall-e-3":
+                    self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
+
+                # Strings can serialize.
+                parameter.serializable = True
+            else:
+                # It's an Image Generation Driver, which we canNOT serialize.
+                parameter.serializable = False
 
         return super().after_value_set(parameter, value)
 

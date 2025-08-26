@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,71 @@ logger = logging.getLogger(__name__)
 DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
+
+# Common PIL-supported image formats
+SUPPORTED_PIL_FORMATS = {
+    "PNG",
+    "JPEG",
+    "JPG",
+    "WEBP",
+    "GIF",
+    "BMP",
+    "TIFF",
+    "TGA",
+    "ICO",
+    "PPM",
+    "PBM",
+    "PGM",
+    "XBM",
+    "XPM",
+    "PCX",
+    "SGI",
+    "SPIDER",
+    "EPS",
+    "IM",
+    "MSP",
+    "PALM",
+    "PDF",
+    "PCD",
+    "PIXAR",
+}
+
+
+def get_supported_pil_formats() -> set[str]:
+    """Get a set of supported PIL image formats.
+
+    Returns:
+        Set of supported format strings (e.g., "PNG", "JPEG", etc.)
+    """
+    return SUPPORTED_PIL_FORMATS.copy()
+
+
+def is_valid_pil_format(format_str: str) -> bool:
+    """Check if a format string is supported by PIL.
+
+    Args:
+        format_str: Format string to validate (e.g., "PNG", "JPEG")
+
+    Returns:
+        True if the format is supported, False otherwise
+    """
+    return format_str.upper() in SUPPORTED_PIL_FORMATS
+
+
+def validate_pil_format(format_str: str, param_name: str = "format") -> None:
+    """Validate that a format string is supported by PIL.
+
+    Args:
+        format_str: Format string to validate
+        param_name: Name of the parameter for error messages
+
+    Raises:
+        ValueError: If the format is not supported
+    """
+    if not is_valid_pil_format(format_str):
+        supported = ", ".join(sorted(SUPPORTED_PIL_FORMATS))
+        msg = f"Unsupported {param_name}: '{format_str}'. Supported formats: {supported}"
+        raise ValueError(msg)
 
 
 def is_local(url: str) -> bool:
@@ -57,7 +123,7 @@ def parse_hex_color(color: str) -> tuple[int, int, int]:
 def create_background_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create background image with specified color and transparency."""
     if transparent_bg:
-        return Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        return Image.new("RGBA", (width, height), NAMED_COLORS["transparent"])
     rgb_color = parse_hex_color(background_color)
     return Image.new("RGB", (width, height), rgb_color)
 
@@ -132,6 +198,9 @@ def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None
 
 def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG") -> ImageUrlArtifact:
     """Save a PIL image to the static file system and return an ImageUrlArtifact."""
+    # Validate the image format
+    validate_pil_format(image_format, "image_format")
+
     buffer = io.BytesIO()
     image.save(buffer, format=image_format)
     image_bytes = buffer.getvalue()
@@ -182,8 +251,8 @@ def create_alpha_mask(image: Image.Image) -> Image.Image:
     mask = image.getchannel("A")
 
     # Convert to RGB (black background with white mask)
-    mask_rgb = Image.new("RGB", mask.size, (0, 0, 0))
-    mask_rgb.paste((255, 255, 255), mask=mask)
+    mask_rgb = Image.new("RGB", mask.size, NAMED_COLORS["black"])
+    mask_rgb.paste(NAMED_COLORS["white"], mask=mask)
 
     return mask_rgb
 
@@ -284,7 +353,7 @@ def extract_channel_from_image(image: Image.Image, channel: str, context_name: s
 def create_placeholder_image(width: int, height: int, background_color: str, *, transparent_bg: bool) -> Image.Image:
     """Create a placeholder image with specified dimensions and background."""
     if transparent_bg:
-        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        image = Image.new("RGBA", (width, height), NAMED_COLORS["transparent"])
     else:
         # Convert hex color to RGB
         background_color = background_color.removeprefix("#")
@@ -307,6 +376,9 @@ def create_default_placeholder(
 
 def image_to_bytes(image: Image.Image, output_format: str) -> bytes:
     """Convert PIL image to bytes in specified format."""
+    # Validate the output format
+    validate_pil_format(output_format, "output_format")
+
     buffer = io.BytesIO()
     image.save(buffer, format=output_format.upper())
     return buffer.getvalue()
