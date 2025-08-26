@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
@@ -11,8 +12,8 @@ class AddVignette(BaseVideoProcessor):
 
     # Vignette angle constants (lens angle) - this controls intensity
     MIN_ANGLE = 0.1
-    MAX_ANGLE = 3.14
-    DEFAULT_ANGLE = 0.628  # PI/5
+    MAX_ANGLE = math.pi
+    DEFAULT_ANGLE = math.pi / 5
 
     # Vignette center position constants
     MIN_CENTER_OFFSET = -1.0
