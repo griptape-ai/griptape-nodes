@@ -107,11 +107,11 @@ def validate_url(url: str) -> bool:
 
 def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
     """Convert SMPTE timecode to seconds.
-    
+
     Drop-frame timecode is used for NTSC video (29.97/59.94 fps) to keep timecode
     synchronized with real time. It drops frames at specific intervals to compensate
     for the slight difference between nominal and actual frame rates.
-    
+
     Examples:
     - Non-drop: "01:23:45:12" (standard timecode)
     - Drop-frame: "01:23:45;12" (NTSC drop-frame timecode)
