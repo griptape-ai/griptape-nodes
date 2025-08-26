@@ -216,8 +216,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
-        if isinstance(self._context.resolution_machine, DagResolutionMachine):
-            self._process_data_nodes_for_dag()
+        self._process_data_nodes_for_dag()
 
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
@@ -280,17 +279,23 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         from griptape_nodes.exe_types.node_types import NodeResolutionState
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        if not isinstance(self._context.resolution_machine, DagResolutionMachine):
+            return
         # Get the global flow queue
         flow_manager = GriptapeNodes.FlowManager()
         queue_items = list(flow_manager._global_flow_queue.queue)
 
-        # Find and process data_nodes
-        data_nodes = [item.node for item in queue_items if item.node_type == "data_node"]
+        # Find data_nodes and remove them from queue
+        data_nodes = []
+        for item in queue_items:
+            if item.node_type == "data_node":
+                data_nodes.append(item.node)
+                flow_manager._global_flow_queue.queue.remove(item)
 
         # Build DAG for each data node
         for node in data_nodes:
             node.state = NodeResolutionState.UNRESOLVED
-            self._context.resolution_machine.resolve_node(node)
+            self._context.resolution_machine.resolve_node(node, build_only=True)
 
             # Run resolution until complete for this node's subgraph
             while not self._context.resolution_machine.is_complete():

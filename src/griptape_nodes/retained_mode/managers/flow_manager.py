@@ -1100,7 +1100,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         # By now, it has been validated with no exceptions.
         try:
-            self.start_flow(flow, start_node, debug_mode, request.in_parallel)
+            self.start_flow(flow, start_node, debug_mode = request.debug_mode, in_parallel=request.in_parallel)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)

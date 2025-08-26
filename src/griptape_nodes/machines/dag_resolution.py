@@ -34,11 +34,13 @@ class DagResolutionContext:
     paused: bool
     execution_machine: DagExecutionMachine
     flow_name: str
+    build_only: bool
 
     def __init__(self, flow_name: str) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
+        self.build_only = False
         # Get the DAG instance that will be used throughout resolution and execution
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -187,9 +189,12 @@ class BuildDagNodeState(State):
         if len(context.focus_stack):
             return EvaluateDagParameterState
 
+        if context.build_only:
+            return DagCompleteState
         return ExecuteDagState
 
 
+# TODO: This state shouldn't be accessed if we're just appending nodes to a graph. But it's necessary for real node resolution.
 class ExecuteDagState(State):
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
@@ -227,7 +232,9 @@ class ExecuteDagState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
+    def on_enter(context: DagResolutionContext) -> type[State] | None:
+        # Set build_only back to False.
+        context.build_only = False
         return None
 
     @staticmethod
@@ -242,9 +249,10 @@ class DagResolutionMachine(FSM[DagResolutionContext]):
         resolution_context = DagResolutionContext(flow_name)
         super().__init__(resolution_context)
 
-    def resolve_node(self, node: BaseNode) -> None:
+    def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
         """Build DAG structure starting from the given node."""
         self._context.focus_stack.append(Focus(node=node))
+        self._context.build_only = build_only
         self.start(InitializeDagSpotlightState)
 
     def build_dag_for_node(self, node: BaseNode) -> None:
