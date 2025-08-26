@@ -2,7 +2,7 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import static_ffmpeg.run
 
@@ -23,7 +23,7 @@ class BaseVideoProcessor(ControlNode, ABC):
     DEFAULT_DURATION = 0.0
 
     # Common frame rate options for different platforms
-    FRAME_RATE_OPTIONS = {
+    FRAME_RATE_OPTIONS: ClassVar[dict[str, str]] = {
         "auto": "Auto (use input frame rate)",
         "24": "24 fps (Film)",
         "25": "25 fps (PAL)",
@@ -33,6 +33,9 @@ class BaseVideoProcessor(ControlNode, ABC):
         "59.94": "59.94 fps (NTSC HD)",
         "60": "60 fps (YouTube, Web HD)",
     }
+
+    # Frame rate tolerance for comparison (in fps)
+    FRAME_RATE_TOLERANCE: ClassVar[float] = 0.01
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -140,7 +143,7 @@ class BaseVideoProcessor(ControlNode, ABC):
         target_fps = float(output_frame_rate)
 
         # If target is same as input (within tolerance), no conversion needed
-        if abs(target_fps - input_frame_rate) < 0.01:
+        if abs(target_fps - input_frame_rate) < self.FRAME_RATE_TOLERANCE:
             return ""
 
         # Return fps filter for frame rate conversion

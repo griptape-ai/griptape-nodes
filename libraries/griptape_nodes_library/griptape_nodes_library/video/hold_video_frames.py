@@ -29,7 +29,7 @@ class HoldVideoFrames(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "video frame holding"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:  # noqa: ARG002
         """Build the FFmpeg command for frame holding."""
         hold_frames = kwargs.get("hold_frames", 2)
 
