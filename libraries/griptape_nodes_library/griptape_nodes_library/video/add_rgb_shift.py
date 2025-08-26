@@ -9,8 +9,8 @@ class AddRGBShift(BaseVideoProcessor):
     """Add RGB shift (chromatic aberration) effect to video."""
 
     # RGB shift constants
-    MIN_SHIFT = -20
-    MAX_SHIFT = 20
+    MIN_SHIFT = -50
+    MAX_SHIFT = 50
     DEFAULT_SHIFT = 6
 
     # RGB shift intensity constants
@@ -128,13 +128,13 @@ class AddRGBShift(BaseVideoProcessor):
         tear_position = kwargs.get("tear_position", 0.5)
         tear_offset = kwargs.get("tear_offset", 10)
 
-        # Apply intensity scaling to all shifts
-        red_h_scaled = int(red_h * intensity)
-        red_v_scaled = int(red_v * intensity)
-        green_h_scaled = int(green_h * intensity)
-        green_v_scaled = int(green_v * intensity)
-        blue_h_scaled = int(blue_h * intensity)
-        blue_v_scaled = int(blue_v * intensity)
+        # Apply intensity scaling to all shifts and clamp to FFmpeg's valid range (-255 to 255)
+        red_h_scaled = max(-255, min(255, int(red_h * intensity)))
+        red_v_scaled = max(-255, min(255, int(red_v * intensity)))
+        green_h_scaled = max(-255, min(255, int(green_h * intensity)))
+        green_v_scaled = max(-255, min(255, int(green_v * intensity)))
+        blue_h_scaled = max(-255, min(255, int(blue_h * intensity)))
+        blue_v_scaled = max(-255, min(255, int(blue_v * intensity)))
 
         if tear_enabled:
             # Create tear effect by splitting the video and applying different RGB shifts
