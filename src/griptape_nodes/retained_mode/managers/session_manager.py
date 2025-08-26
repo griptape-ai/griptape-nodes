@@ -8,12 +8,19 @@ Storage structure: ~/.local/state/griptape_nodes/engines/{engine_id}/sessions.js
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from xdg_base_dirs import xdg_state_home
 
-from griptape_nodes.retained_mode.events.base_events import BaseEvent
+from griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.events.base_events import BaseEvent, ResultPayload
+from griptape_nodes.retained_mode.events.session_events import (
+    RegisterSessionClientRequest,
+    RegisterSessionClientResultFailure,
+    RegisterSessionClientResultSuccess,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -32,10 +39,55 @@ class SessionManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
+        # TODO (zach): Improve this: https://github.com/griptape-ai/griptape-nodes/issues/1961
+        self._registered_clients: dict[str, dict] = {}  # client_id -> client_info
         BaseEvent._session_id = self._active_session_id
         if event_manager is not None:
-            # Register event handlers here when session events are defined
-            pass
+            event_manager.assign_manager_to_response_type(
+                RegisterSessionClientResultSuccess, self.on_register_session_client_result_success
+            )
+            event_manager.assign_manager_to_request_type(
+                RegisterSessionClientRequest, self.on_register_session_client_request
+            )
+
+    def on_register_session_client_request(self, _request: RegisterSessionClientRequest) -> ResultPayload:
+        """Handle a client registration request from a worker.
+
+        Args:
+            request: The client registration request
+
+        Returns:
+            Success result with client_id or failure result
+        """
+        if GriptapeNodes.is_worker_mode():
+            msg = "Worker mode is not supported"
+            raise NotImplementedError(msg)
+        try:
+            # Generate a unique client ID
+            client_id = str(uuid.uuid4())[:8]
+
+            # Create client info record
+            client_info = {
+                "client_id": client_id,
+                "registered_at": datetime.now(tz=UTC).isoformat(),
+                "session_id": self.get_active_session_id(),
+                "status": "active",
+            }
+
+            # Store the client
+            self._registered_clients[client_id] = client_info
+
+            logger.info("Registered new client: %s for session: %s", client_id, client_info["session_id"])
+
+            return RegisterSessionClientResultSuccess(client_id=client_id)
+
+        except Exception as e:
+            logger.error("Failed to register client: %s", e)
+            return RegisterSessionClientResultFailure(result_details=f"Client registration failed: {e}")
+
+    def on_register_session_client_result_success(self, result: RegisterSessionClientResultSuccess) -> None:
+        if GriptapeNodes.is_worker_mode():
+            GriptapeNodes.set_worker_client_id(result.client_id)
 
     @classmethod
     def _get_session_state_dir(cls, engine_id: str | None = None) -> Path:

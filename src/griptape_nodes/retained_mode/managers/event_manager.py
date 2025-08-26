@@ -24,12 +24,15 @@ if TYPE_CHECKING:
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+ResP = TypeVar("ResP", bound=ResultPayload, default=ResultPayload)
 
 
 class EventManager:
     def __init__(self) -> None:
         # Dictionary to store the SPECIFIC manager for each request type
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
+        # Dictionary to store the SPECIFIC manager for each response type
+        self._response_type_to_manager: dict[type[ResultPayload], Callable] = {}
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
         self.current_active_node: str | None = None
@@ -64,6 +67,32 @@ class EventManager:
         """
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
+
+    def assign_manager_to_response_type(
+        self,
+        response_type: type[ResP],
+        callback: Callable[[ResP], None],
+    ) -> None:
+        """Assign a manager to handle a response.
+
+        Args:
+            response_type: The type of response to assign the manager to
+            callback: Function to be called when response occurs
+        """
+        existing_manager = self._response_type_to_manager.get(response_type)
+        if existing_manager is not None:
+            msg = f"Attempted to assign a response of type {response_type} to manager {callback.__name__}, but that response is already assigned to manager {existing_manager.__name__}."
+            raise ValueError(msg)
+        self._response_type_to_manager[response_type] = callback
+
+    def remove_manager_from_response_type(self, response_type: type[ResP]) -> None:
+        """Unsubscribe the manager from the response of a specific type.
+
+        Args:
+            response_type: The type of response to unsubscribe from
+        """
+        if response_type in self._response_type_to_manager:
+            del self._response_type_to_manager[response_type]
 
     def handle_request(
         self,
@@ -136,6 +165,20 @@ class EventManager:
                 raise TypeError(msg)
 
         return result_payload
+
+    def handle_response(self, response: ResP) -> None:
+        """Handle a response by calling the assigned manager.
+
+        Args:
+            response: The response to handle
+        """
+        response_type = type(response)
+        callback = self._response_type_to_manager.get(response_type)
+        if callback:
+            callback(response)
+        else:
+            # Unlike requests, responses are optional - no error if no handler found
+            pass
 
     def add_listener_to_app_event(self, app_event_type: type[AP], callback: Callable[[AP], None]) -> None:
         listener_set = self._app_event_listeners.get(app_event_type)

@@ -30,6 +30,7 @@ from griptape_nodes.retained_mode.events import app_events, execution_events
 from griptape_nodes.retained_mode.events.base_events import (
     AppEvent,
     EventRequest,
+    EventResult,
     EventResultFailure,
     EventResultSuccess,
     ExecutionEvent,
@@ -273,6 +274,9 @@ def _process_event_queue() -> None:
             GriptapeNodes.handle_request(
                 request_payload, response_topic=event.response_topic, request_id=event.request_id
             )
+        elif isinstance(event, EventResult):
+            result_payload = event.result
+            GriptapeNodes.handle_response(result_payload)
         elif isinstance(event, AppEvent):
             __process_app_event(event)
         else:
@@ -361,6 +365,19 @@ def unsubscribe_from_topic(topic: str) -> None:
     __schedule_async_task(_aunsubscribe_from_topic(topic))
 
 
+def send_message(payload: str, topic: str | None = None) -> None:
+    """Send a message payload to a specific topic.
+
+    Parameters
+    ----------
+    payload : str
+        The JSON-serialized request payload to send.
+    topic : str | None, optional
+        The topic to which the request should be sent (default is None).
+    """
+    __schedule_async_task(__emit_message("EventRequest", payload, topic=topic))
+
+
 async def _asubscribe_to_topic(topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
     if ws_connection_for_sending is None:
@@ -401,6 +418,19 @@ def __schedule_async_task(coro: Any) -> None:
         logger.warning("Event loop not available for scheduling async task")
 
 
+def _process_response_event(payload: Any, event_queue: Queue) -> None:
+    try:
+        result_event = deserialize_event(json_data=payload)
+        if not isinstance(result_event, EventResult):
+            msg = f"Deserialized event is not an EventResult: {type(result_event)}"
+            raise TypeError(msg)  # noqa: TRY301
+    except Exception as e:
+        msg = f"Unable to convert request JSON into a valid EventResult object. Error Message: '{e}'"
+        raise RuntimeError(msg) from None
+
+    event_queue.put(result_event)
+
+
 def _process_api_event(event: dict, event_queue: Queue) -> None:
     """Process API events and send them to the event queue."""
     payload = event.get("payload", {})
@@ -413,6 +443,9 @@ def _process_api_event(event: dict, event_queue: Queue) -> None:
 
     try:
         event_type = payload["event_type"]
+        if event_type in ["EventResultSuccess", "EventResultFailure"]:
+            _process_response_event(payload, event_queue)
+
         if event_type != "EventRequest":
             msg = "Error: 'event_type' was found on request, but did not match 'EventRequest' as expected."
             raise RuntimeError(msg) from None

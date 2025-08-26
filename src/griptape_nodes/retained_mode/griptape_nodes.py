@@ -141,6 +141,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _engine_identity_manager: EngineIdentityManager
     _sync_manager: SyncManager
 
+    # Worker mode configuration
+    _is_worker_mode: bool = False
+    _worker_client_id: str | None = None
+    _orchestrator_session_id: str | None = None
+
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
@@ -248,6 +253,20 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 type(request).__name__,
             )
             return ResultPayloadFailure(exception=e)
+
+    @classmethod
+    def handle_response(cls, result: ResultPayload) -> None:
+        event_mgr = GriptapeNodes.EventManager()
+        try:
+            event_mgr.handle_response(
+                response=result,
+            )
+
+        except Exception:
+            logger.exception(
+                "Unhandled exception while processing response of type %s.",
+                type(result).__name__,
+            )
 
     @classmethod
     def broadcast_app_event(cls, app_event: AppPayload) -> None:
@@ -360,23 +379,32 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
         from griptape_nodes.app.app import subscribe_to_topic
 
-        # Subscribe to request topic (engine discovery)
-        subscribe_to_topic("request")
-
-        # Get engine ID and subscribe to engine_id/request
-        engine_id = GriptapeNodes.get_engine_id()
-        if engine_id:
-            subscribe_to_topic(f"engines/{engine_id}/request")
+        # Handle worker mode subscriptions
+        if GriptapeNodes.is_worker_mode():
+            orchestrator_session_id = GriptapeNodes.get_orchestrator_session_id()
+            if orchestrator_session_id:
+                # Request a client ID from the orchestrator
+                self._request_client_id_for_worker_mode(orchestrator_session_id)
+            else:
+                logger.error("Worker mode enabled but no orchestrator session ID available")
         else:
-            logger.warning("Engine ID not available for subscription")
+            # Subscribe to request topic (engine discovery)
+            subscribe_to_topic("request")
 
-        # Get session ID and subscribe to session_id/request if available
-        session_id = GriptapeNodes.get_session_id()
-        if session_id:
-            topic = f"sessions/{session_id}/request"
-            subscribe_to_topic(topic)
-        else:
-            logger.info("No session ID available for subscription")
+            # Get engine ID and subscribe to engine_id/request
+            engine_id = GriptapeNodes.get_engine_id()
+            if engine_id:
+                subscribe_to_topic(f"engines/{engine_id}/request")
+            else:
+                logger.warning("Engine ID not available for subscription")
+
+            # Normal engine mode: subscribe to our own session
+            session_id = GriptapeNodes.get_session_id()
+            if session_id:
+                topic = f"sessions/{session_id}/request"
+                subscribe_to_topic(topic)
+            else:
+                logger.info("No session ID available for subscription")
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
@@ -566,3 +594,70 @@ class GriptapeNodes(metaclass=SingletonMeta):
             logger.warning("Failed to get current workflow info: %s", err)
 
         return workflow_info
+
+    @classmethod
+    def set_worker_mode(cls, orchestrator_session_id: str) -> None:
+        """Set this engine to worker mode for a specific orchestrator session.
+
+        Args:
+            orchestrator_session_id: Session ID of the orchestrator to connect to
+        """
+        instance = cls.get_instance()
+        instance._is_worker_mode = True
+        instance._orchestrator_session_id = orchestrator_session_id
+        logger.info("Set worker mode for orchestrator session: %s", orchestrator_session_id)
+
+    @classmethod
+    def is_worker_mode(cls) -> bool:
+        """Check if this engine is running in worker mode."""
+        return cls.get_instance()._is_worker_mode
+
+    @classmethod
+    def get_orchestrator_session_id(cls) -> str | None:
+        """Get the orchestrator session ID if running in worker mode."""
+        return cls.get_instance()._orchestrator_session_id
+
+    @classmethod
+    def get_worker_client_id(cls) -> str | None:
+        """Get the worker client ID."""
+        return cls.get_instance()._worker_client_id
+
+    @classmethod
+    def set_worker_client_id(cls, client_id: str) -> None:
+        """Set the worker client ID."""
+        from griptape_nodes.app.app import subscribe_to_topic, unsubscribe_from_topic
+
+        old_client_id = cls.get_instance()._worker_client_id
+        if old_client_id is not None:
+            unsubscribe_from_topic(f"sessions/{GriptapeNodes.get_orchestrator_session_id()}/{old_client_id}/result")
+        cls.get_instance()._worker_client_id = client_id
+        subscribe_to_topic(f"sessions/{GriptapeNodes.get_orchestrator_session_id()}/{client_id}/result")
+
+    def _request_client_id_for_worker_mode(self, orchestrator_session_id: str) -> None:
+        """Request a client ID from the orchestrator and set up worker subscriptions."""
+        import json
+        import random
+
+        from griptape_nodes.app.app import send_message, subscribe_to_topic
+        from griptape_nodes.retained_mode.events.session_events import (
+            RegisterSessionClientRequest,
+        )
+
+        try:
+            self._worker_client_id = str(random.randint(100000, 999999))  # noqa: S311
+            temporary_topic = f"sessions/{orchestrator_session_id}/{self._worker_client_id}/result"
+            subscribe_to_topic(temporary_topic)
+
+            event_type = "EventRequest"
+            payload = {
+                "event_type": event_type,
+                "request_id": self._worker_client_id,
+                "response_topic": temporary_topic,
+                "request_type": f"{RegisterSessionClientRequest.__name__}",
+                "request": {},
+            }
+
+            orchestrator_topic = f"sessions/{orchestrator_session_id}/request"
+            send_message(json.dumps(payload), topic=orchestrator_topic)
+        except Exception as e:
+            logger.error("Error requesting client ID from orchestrator: %s", e)
