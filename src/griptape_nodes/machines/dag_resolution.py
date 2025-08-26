@@ -35,12 +35,14 @@ class DagResolutionContext:
     execution_machine: DagExecutionMachine
     flow_name: str
     build_only: bool
+    batched_nodes: list[BaseNode]
 
     def __init__(self, flow_name: str) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
         self.build_only = False
+        self.batched_nodes = []
         # Get the DAG instance that will be used throughout resolution and execution
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -121,43 +123,24 @@ class EvaluateDagParameterState(State):
         next_node = connections.get_connected_node(current_node, current_parameter)
         if next_node:
             next_node, _ = next_node
-            # dag_instance = GriptapeNodes.get_instance().DagManager()
-            # dag_instance.network.add_edge(next_node.name, current_node.name)
-        if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
-            focus_stack_names = {focus.node.name for focus in context.focus_stack}
-            if next_node.name in focus_stack_names:
-                msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
-                raise RuntimeError(msg)
-            # TODO: maybe it should be here.
+        if next_node:
             dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
-            dag_instance.network.add_edge(next_node.name, current_node.name)
-            context.focus_stack.append(Focus(node=next_node))
-            return InitializeDagSpotlightState
-
+            if next_node.state == NodeResolutionState.UNRESOLVED:
+                focus_stack_names = {focus.node.name for focus in context.focus_stack}
+                if next_node.name in focus_stack_names:
+                    msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
+                    raise RuntimeError(msg)
+                dag_instance.network.add_edge(next_node.name, current_node.name)
+                context.focus_stack.append(Focus(node=next_node))
+                return InitializeDagSpotlightState
+            if next_node.state == NodeResolutionState.RESOLVED and next_node in context.batched_nodes:
+                dag_instance.network.add_edge(next_node.name, current_node.name)
         if current_node.advance_parameter():
             return InitializeDagSpotlightState
         return BuildDagNodeState
 
 
 class BuildDagNodeState(State):
-    @staticmethod
-    def collect_dag_connections(context: DagResolutionContext) -> None:
-        """Build DAG connections by analyzing upstream nodes without executing them."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        current_node = context.focus_stack[-1].node
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        for parameter in current_node.parameters:
-            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
-                continue
-
-            upstream_connection = connections.get_connected_node(current_node, parameter)
-            if upstream_connection:
-                upstream_node, upstream_parameter = upstream_connection
-
-                # Add the edge to the DAG if it is unresolved - this is the key DAG building step
-
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
@@ -171,9 +154,6 @@ class BuildDagNodeState(State):
         # Add node name to DAG (has to be a hashable value)
         dag_instance.network.add_node(node_for_adding=current_node.name)
 
-        # Build DAG connections
-        BuildDagNodeState.collect_dag_connections(context)
-
         if not context.paused:
             return BuildDagNodeState
         return None
@@ -184,6 +164,8 @@ class BuildDagNodeState(State):
 
         # Mark node as resolved for DAG building purposes
         current_node.state = NodeResolutionState.RESOLVED
+        # Add to batched nodes
+        context.batched_nodes.append(current_node)
 
         context.focus_stack.pop()
         if len(context.focus_stack):
@@ -199,8 +181,8 @@ class ExecuteDagState(State):
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
+        context.batched_nodes.clear()
         context.execution_machine.start_execution()
-
         if not context.paused:
             return ExecuteDagState
         return None
