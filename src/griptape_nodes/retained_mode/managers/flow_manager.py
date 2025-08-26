@@ -1905,6 +1905,7 @@ class FlowManager:
         valid_data_nodes = []
         start_nodes = []
         control_nodes = []
+        cn_mgr = self.get_connections()
         for node in all_nodes:
             # if it's a start node, start here! Return the first one!
             if isinstance(node, StartNode):
@@ -1915,15 +1916,21 @@ class FlowManager:
             control_param = False
             for parameter in node.parameters:
                 if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
-                    control_param = True
-                    break
+                    # Check if the control parameters are being used at all. If they are not, treat it as a data node.
+                    incoming_control = (
+                        node.name in cn_mgr.incoming_index and parameter.name in cn_mgr.incoming_index[node.name]
+                    )
+                    outgoing_control = (
+                        node.name in cn_mgr.outgoing_index and parameter.name in cn_mgr.outgoing_index[node.name]
+                    )
+                    if incoming_control or outgoing_control:
+                        control_param = True
+                        break
             if not control_param:
                 # saving this for later
                 data_nodes.append(node)
                 # If this node doesn't have a control connection..
                 continue
-
-            cn_mgr = self.get_connections()
             # check if it has an incoming connection. If it does, it's not a start node
             has_control_connection = False
             if node.name in cn_mgr.incoming_index:
