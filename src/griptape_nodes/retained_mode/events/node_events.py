@@ -774,3 +774,41 @@ class SendNodeMessageResultFailure(ResultPayloadFailure):
     """
 
     response: Any = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeRequest(RequestPayload):
+    """Get the flow name that contains a specific node.
+
+    Use when: Need to determine which flow a node belongs to for variable scoping,
+    flow-specific operations, or hierarchical lookups.
+
+    Args:
+        node_name: Name of the node to get the flow for
+
+    Results: GetFlowForNodeResultSuccess (with flow name) | GetFlowForNodeResultFailure (node not found)
+    """
+
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow for node retrieved successfully.
+
+    Args:
+        flow_name: Name of the flow that contains the node
+    """
+
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Flow for node retrieval failed.
+
+    Common causes: node not found, node not assigned to any flow.
+    """
