@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from queue import Queue
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from griptape.events import EventBus
 
@@ -121,13 +121,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
+class QueueItem(NamedTuple):
+    """Represents an item in the flow execution queue."""
+
+    node: BaseNode
+    node_type: str  # 'start_node', 'control_node', or 'data_node'
+
+
 class FlowManager:
     _name_to_parent_name: dict[str, str | None]
     _flow_to_referenced_workflow_name: dict[ControlFlow, str]
     _connections: Connections
 
     # Global execution state (moved from individual ControlFlows)
-    _global_flow_queue: Queue[BaseNode]
+    _global_flow_queue: Queue[QueueItem]
     _global_control_flow_machine: ControlFlowMachine | None
     _global_single_node_resolution: bool
 
@@ -170,7 +177,7 @@ class FlowManager:
         self._connections = Connections()
 
         # Initialize global execution state
-        self._global_flow_queue = Queue[BaseNode]()
+        self._global_flow_queue = Queue[QueueItem]()
         self._global_control_flow_machine = None  # Will be initialized when first flow starts
         self._global_single_node_resolution = False
 
@@ -1654,7 +1661,12 @@ class FlowManager:
         return FlushParameterChangesResultSuccess()
 
     def start_flow(
-        self, flow: ControlFlow, start_node: BaseNode | None = None, *, debug_mode: bool = False, in_parallel: bool = True
+        self,
+        flow: ControlFlow,
+        start_node: BaseNode | None = None,
+        *,
+        debug_mode: bool = False,
+        in_parallel: bool = True,
     ) -> None:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
@@ -1665,7 +1677,8 @@ class FlowManager:
             if self._global_flow_queue.empty():
                 errormsg = "No Flow exists. You must create at least one control connection."
                 raise RuntimeError(errormsg)
-            start_node = self._global_flow_queue.get()
+            queue_item = self._global_flow_queue.get()
+            start_node = queue_item.node
             self._global_flow_queue.task_done()
 
         # Initialize global control flow machine if needed
@@ -1732,9 +1745,9 @@ class FlowManager:
         """Get the next node from the global execution queue, or None if empty."""
         if self._global_flow_queue.empty():
             return None
-        node = self._global_flow_queue.get()
+        queue_item = self._global_flow_queue.get()
         self._global_flow_queue.task_done()
-        return node
+        return queue_item.node
 
     def clear_execution_queue(self) -> None:
         """Clear all nodes from the global execution queue."""
@@ -1756,7 +1769,8 @@ class FlowManager:
         if not self.check_for_existing_running_flow():
             if self._global_flow_queue.empty():
                 raise RuntimeError(error_message)
-            start_node = self._global_flow_queue.get()
+            queue_item = self._global_flow_queue.get()
+            start_node = queue_item.node
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name, False)  # Default to sequential
@@ -1765,7 +1779,8 @@ class FlowManager:
     def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
         if not self.check_for_existing_running_flow() and not self._global_flow_queue.empty():
-            start_node = self._global_flow_queue.get()
+            queue_item = self._global_flow_queue.get()
+            start_node = queue_item.node
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is not None:
                 self._global_control_flow_machine.start_flow(start_node, debug_mode)
@@ -2004,13 +2019,13 @@ class FlowManager:
             # check if it has an outgoing connection. We don't want it to (that means we get the most resolution)
             if node.name not in cn_mgr.outgoing_index:
                 valid_data_nodes.append(node)
-        # ok now - populate the global flow queue
+        # ok now - populate the global flow queue with node type information
         for node in start_nodes:
-            self._global_flow_queue.put(node)
+            self._global_flow_queue.put(QueueItem(node=node, node_type="start_node"))
         for node in control_nodes:
-            self._global_flow_queue.put(node)
+            self._global_flow_queue.put(QueueItem(node=node, node_type="control_node"))
         for node in valid_data_nodes:
-            self._global_flow_queue.put(node)
+            self._global_flow_queue.put(QueueItem(node=node, node_type="data_node"))
 
         return self._global_flow_queue
 

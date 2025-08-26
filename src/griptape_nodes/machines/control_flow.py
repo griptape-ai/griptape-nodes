@@ -215,6 +215,10 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         super().__init__(context)
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        # If using DAG resolution, process data_nodes from queue first
+        if isinstance(self._context.resolution_machine, DagResolutionMachine):
+            self._process_data_nodes_for_dag()
+
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
         start_node.set_entry_control_parameter(None)
@@ -266,6 +270,34 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
                 self.update()
+
+    def _process_data_nodes_for_dag(self) -> None:
+        """Process data_nodes from the global queue to build unified DAG.
+
+        This method identifies data_nodes in the execution queue and processes
+        their dependencies into the DAG resolution machine.
+        """
+        from griptape_nodes.exe_types.node_types import NodeResolutionState
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Get the global flow queue
+        flow_manager = GriptapeNodes.FlowManager()
+        queue_items = list(flow_manager._global_flow_queue.queue)
+
+        # Find and process data_nodes
+        data_nodes = [item.node for item in queue_items if item.node_type == "data_node"]
+
+        # Build DAG for each data node
+        for node in data_nodes:
+            node.state = NodeResolutionState.UNRESOLVED
+            self._context.resolution_machine.resolve_node(node)
+
+            # Run resolution until complete for this node's subgraph
+            while not self._context.resolution_machine.is_complete():
+                self._context.resolution_machine.update()
+
+            # Reset the machine state to allow adding more nodes
+            self._context.resolution_machine._current_state = None
 
     def reset_machine(self) -> None:
         self._context.reset()
