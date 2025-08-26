@@ -9,10 +9,18 @@ from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 RATE_TOLERANCE = 0.1
 NOMINAL_30FPS = 30
 NOMINAL_60FPS = 60
-DROP_FRAMES_30FPS = 2
-DROP_FRAMES_60FPS = 4
-ACTUAL_RATE_30FPS = 30000 / 1001
-ACTUAL_RATE_60FPS = 60000 / 1001
+
+# Drop-frame constants for NTSC timecode
+# NTSC uses 29.97 fps (not exactly 30) due to color subcarrier requirements
+# To keep timecode in sync with real time, drop-frame timecode drops 2 frames per minute
+# (except every 10th minute) for 29.97 fps, and 4 frames per minute for 59.94 fps
+# This ensures timecode matches wall clock time over long durations
+DROP_FRAMES_30FPS = 2  # Frames dropped per minute for 29.97 fps NTSC
+DROP_FRAMES_60FPS = 4  # Frames dropped per minute for 59.94 fps NTSC
+
+# Actual NTSC frame rates (precise values)
+ACTUAL_RATE_30FPS = 30000 / 1001  # ≈ 29.97 fps (NTSC)
+ACTUAL_RATE_60FPS = 60000 / 1001  # ≈ 59.94 fps (NTSC)
 
 
 def detect_video_format(video: Any | dict) -> str | None:
@@ -98,7 +106,16 @@ def validate_url(url: str) -> bool:
 
 
 def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
-    """Convert SMPTE timecode to seconds."""
+    """Convert SMPTE timecode to seconds.
+    
+    Drop-frame timecode is used for NTSC video (29.97/59.94 fps) to keep timecode
+    synchronized with real time. It drops frames at specific intervals to compensate
+    for the slight difference between nominal and actual frame rates.
+    
+    Examples:
+    - Non-drop: "01:23:45:12" (standard timecode)
+    - Drop-frame: "01:23:45;12" (NTSC drop-frame timecode)
+    """
     if not re.match(r"^\d{2}:\d{2}:\d{2}[:;]\d{2}$", tc):
         error_msg = f"Bad SMPTE format: {tc!r}"
         raise ValueError(error_msg)
@@ -106,11 +123,11 @@ def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) ->
     hh, mm, ss, ff = map(int, re.split(r"[:;]", tc))
     is_df = (sep == ";") if drop_frame is None else bool(drop_frame)
 
-    # Non-drop: straightforward
+    # Non-drop: straightforward calculation
     if not is_df:
         return (hh * 3600) + (mm * 60) + ss + (ff / rate)
 
-    # Drop-frame: only valid for 29.97 and 59.94
+    # Drop-frame: only valid for NTSC rates (29.97 and 59.94 fps)
     nominal = (
         NOMINAL_30FPS
         if abs(rate - 29.97) < RATE_TOLERANCE
