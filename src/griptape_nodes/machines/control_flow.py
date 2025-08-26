@@ -33,6 +33,7 @@ class NextNodeInfo:
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
+    from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -41,14 +42,19 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
-    resolution_machine: DagResolutionMachine
+    resolution_machine: DagResolutionMachine | NodeResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
 
-    def __init__(self, flow_name: str) -> None:
+    def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
         self.flow_name = flow_name
-        self.resolution_machine = DagResolutionMachine(flow_name)
+        if in_parallel:
+            self.resolution_machine = DagResolutionMachine(flow_name)
+        else:
+            from griptape_nodes.machines.node_resolution import NodeResolutionMachine
+
+            self.resolution_machine = NodeResolutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -117,8 +123,7 @@ class ResolveNodeState(State):
         if context.current_node is None:
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
-            # context.resolution_machine.resolve_node(context.current_node)
-            context.resolution_machine.build_dag_for_node(context.current_node)
+            context.resolution_machine.resolve_node(context.current_node)
 
         if context.resolution_machine.is_complete():
             return NextNodeState
@@ -205,8 +210,8 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str) -> None:
-        context = ControlFlowContext(flow_name)
+    def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
+        context = ControlFlowContext(flow_name, in_parallel)
         super().__init__(context)
 
     def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

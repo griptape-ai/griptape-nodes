@@ -242,10 +242,14 @@ class DagResolutionMachine(FSM[DagResolutionContext]):
         resolution_context = DagResolutionContext(flow_name)
         super().__init__(resolution_context)
 
-    def build_dag_for_node(self, node: BaseNode) -> None:
+    def resolve_node(self, node: BaseNode) -> None:
         """Build DAG structure starting from the given node."""
         self._context.focus_stack.append(Focus(node=node))
         self.start(InitializeDagSpotlightState)
+
+    def build_dag_for_node(self, node: BaseNode) -> None:
+        """Build DAG structure starting from the given node. (Deprecated: use resolve_node)."""
+        self.resolve_node(node)
 
     def change_debug_mode(self, debug_mode: bool) -> None:
         self._context.paused = debug_mode

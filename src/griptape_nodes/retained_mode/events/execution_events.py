@@ -31,6 +31,7 @@ class ResolveNodeRequest(RequestPayload):
 
     node_name: str
     debug_mode: bool = False
+    in_parallel: bool = False
 
 
 @dataclass
@@ -71,6 +72,7 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
+    in_parallel: bool = False
 
 
 @dataclass

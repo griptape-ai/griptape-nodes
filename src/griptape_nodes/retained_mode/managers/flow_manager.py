@@ -1093,7 +1093,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         # By now, it has been validated with no exceptions.
         try:
-            self.start_flow(flow, start_node, debug_mode)
+            self.start_flow(flow, start_node, debug_mode, request.in_parallel)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1653,7 +1653,9 @@ class FlowManager:
                 node.emit_parameter_changes()
         return FlushParameterChangesResultSuccess()
 
-    def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    def start_flow(
+        self, flow: ControlFlow, start_node: BaseNode | None = None, *, debug_mode: bool = False, in_parallel: bool = True
+    ) -> None:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
@@ -1668,7 +1670,7 @@ class FlowManager:
 
         # Initialize global control flow machine if needed
         if self._global_control_flow_machine is None:
-            self._global_control_flow_machine = ControlFlowMachine(flow.name)
+            self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel)
 
         try:
             self._global_control_flow_machine.start_flow(start_node, debug_mode)
@@ -1757,7 +1759,7 @@ class FlowManager:
             start_node = self._global_flow_queue.get()
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = ControlFlowMachine(flow.name)
+                self._global_control_flow_machine = ControlFlowMachine(flow.name, False)  # Default to sequential
             self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
@@ -1768,28 +1770,57 @@ class FlowManager:
             if self._global_control_flow_machine is not None:
                 self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
-    def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    def resolve_singular_node(
+        self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False, in_parallel: bool = False
+    ) -> None:
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
             errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
             raise RuntimeError(errormsg)
         self._global_single_node_resolution = True
-        # Initialize global control flow machine if needed
-        if self._global_control_flow_machine is None:
-            self._global_control_flow_machine = ControlFlowMachine(flow.name)
-        # Get the node resolution machine for the current flow!
-        self._global_control_flow_machine._context.current_node = node
-        resolution_machine = self._global_control_flow_machine._context.resolution_machine
-        # Set debug mode
-        resolution_machine.change_debug_mode(debug_mode)
-        # Resolve the node.
-        node.state = NodeResolutionState.UNRESOLVED
-        resolution_machine.resolve_node(node)
-        # decide if we can change it back to normal flow mode!
-        if resolution_machine.is_complete():
-            self._global_single_node_resolution = False
-            self._global_control_flow_machine._context.current_node = None
+
+        if in_parallel:
+            # Use DAG-based resolution + execution (like StartFlowRequest)
+            from griptape_nodes.machines.dag_resolution import DagResolutionMachine
+
+            # Initialize DAG resolution machine
+            dag_resolution_machine = DagResolutionMachine(flow.name)
+            dag_resolution_machine.change_debug_mode(debug_mode)
+
+            # Reset node state and build DAG
+            node.state = NodeResolutionState.UNRESOLVED
+            dag_resolution_machine.resolve_node(node)
+
+            # Run the resolution machine until complete
+            while not dag_resolution_machine.is_complete():
+                dag_resolution_machine.update()
+
+            # After DAG resolution completes, start the DAG execution machine
+            # but don't run it to completion - let stepping handle updates
+            execution_machine = dag_resolution_machine._context.execution_machine
+            execution_machine.start_execution()
+
+            # decide if we can change it back to normal flow mode!
+            if dag_resolution_machine.is_complete():
+                self._global_single_node_resolution = False
+        else:
+            # Use existing sequential resolution logic
+            if self._global_control_flow_machine is None:
+                self._global_control_flow_machine = ControlFlowMachine(flow.name, False)  # Sequential resolution
+            # Get the node resolution machine for the current flow!
+            self._global_control_flow_machine._context.current_node = node
+            resolution_machine = self._global_control_flow_machine._context.resolution_machine
+            # Set debug mode
+            resolution_machine.change_debug_mode(debug_mode)
+            # Resolve the node.
+            node.state = NodeResolutionState.UNRESOLVED
+            resolution_machine.resolve_node(node)
+
+            # decide if we can change it back to normal flow mode!
+            if resolution_machine.is_complete():
+                self._global_single_node_resolution = False
+                self._global_control_flow_machine._context.current_node = None
 
     def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
