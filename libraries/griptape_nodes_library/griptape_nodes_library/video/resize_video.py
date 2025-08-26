@@ -2,7 +2,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import imageio_ffmpeg
 
@@ -11,24 +10,12 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from griptape_nodes_library.utils.video_utils import detect_video_format, dict_to_video_url_artifact
+from griptape_nodes_library.utils.video_utils import (
+    detect_video_format,
+    to_video_artifact,
+    validate_url,
+)
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
-
-
-def to_video_artifact(video: Any | dict) -> Any:
-    """Convert a video or a dictionary to a VideoArtifact."""
-    if isinstance(video, dict):
-        return dict_to_video_url_artifact(video)
-    return video
-
-
-def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for ffmpeg processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
 
 
 class ResizeVideo(ControlNode):

@@ -24,6 +24,7 @@ dependencies = [
   "binaryornot>=0.4.4",
   "pillow>=11.3.0",
   "watchfiles>=1.1.0",
+  "static-ffmpeg>=2.8",
 ]
 
 [project.optional-dependencies]
@@ -100,6 +101,14 @@ mypy-init-return = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.typos]
+default.extend-ignore-re = [
+  # Ignore any line that ends with this comment:
+  "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+  # Or: ignore the *next* line after this comment:
+  "(?m)(#|//)\\s*spellchecker:ignore-next-line\\n.*"
+]
 
 [tool.pyright]
 venvPath = "."
