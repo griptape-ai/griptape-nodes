@@ -25,17 +25,20 @@ class FlipVideo(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "video flipping"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for video flipping."""
         direction = kwargs.get("direction", "horizontal")
 
         # Determine flip filter based on direction
         if direction == "horizontal":
-            filter_complex = "hflip"
+            custom_filter = "hflip"
         elif direction == "vertical":
-            filter_complex = "vflip"
+            custom_filter = "vflip"
         else:  # "both"
-            filter_complex = "hflip,vflip"
+            custom_filter = "hflip,vflip"
+
+        # Combine with frame rate filter if needed
+        filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

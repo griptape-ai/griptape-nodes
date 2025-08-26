@@ -22,6 +22,18 @@ class BaseVideoProcessor(ControlNode, ABC):
     DEFAULT_HEIGHT = 1080
     DEFAULT_DURATION = 0.0
 
+    # Common frame rate options for different platforms
+    FRAME_RATE_OPTIONS = {
+        "auto": "Auto (use input frame rate)",
+        "24": "24 fps (Film)",
+        "25": "25 fps (PAL)",
+        "29.97": "29.97 fps (NTSC)",
+        "30": "30 fps (YouTube, Web)",
+        "50": "50 fps (PAL HD)",
+        "59.94": "59.94 fps (NTSC HD)",
+        "60": "60 fps (YouTube, Web HD)",
+    }
+
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.add_parameter(
@@ -39,6 +51,16 @@ class BaseVideoProcessor(ControlNode, ABC):
         )
 
         self._setup_custom_parameters()
+
+        # Add frame rate parameter
+        frame_rate_param = Parameter(
+            name="output_frame_rate",
+            type="str",
+            default_value="auto",
+            tooltip="Output frame rate. Choose 'auto' to preserve input frame rate, or select a specific rate for your target platform.",
+        )
+        frame_rate_param.add_trait(Options(choices=list(self.FRAME_RATE_OPTIONS.keys())))
+        self.add_parameter(frame_rate_param)
 
         # Add processing speed parameter
         speed_param = Parameter(
@@ -71,7 +93,7 @@ class BaseVideoProcessor(ControlNode, ABC):
         """Get a description of what this processor does. Override in subclasses."""
 
     @abstractmethod
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build the FFmpeg command for this processor. Override in subclasses."""
 
     def _setup_logging_group(self) -> None:
@@ -106,6 +128,36 @@ class BaseVideoProcessor(ControlNode, ABC):
             return "slow", "yuv420p", 18  # Slowest encoding, highest quality
         # balanced
         return "medium", "yuv420p", 23  # Balanced speed and quality
+
+    def _get_frame_rate_filter(self, input_frame_rate: float) -> str:
+        """Get frame rate filter based on output frame rate setting."""
+        output_frame_rate = self.get_parameter_value("output_frame_rate") or "auto"
+
+        if output_frame_rate == "auto":
+            return ""  # No frame rate conversion needed
+
+        # Convert string to float
+        target_fps = float(output_frame_rate)
+
+        # If target is same as input (within tolerance), no conversion needed
+        if abs(target_fps - input_frame_rate) < 0.01:
+            return ""
+
+        # Return fps filter for frame rate conversion
+        return f"fps=fps={target_fps}:round=up"
+
+    def _combine_video_filters(self, custom_filter: str, input_frame_rate: float) -> str:
+        """Combine custom video filter with frame rate filter if needed."""
+        frame_rate_filter = self._get_frame_rate_filter(input_frame_rate)
+
+        if not frame_rate_filter:
+            return custom_filter
+
+        if not custom_filter or custom_filter == "null":
+            return frame_rate_filter
+
+        # Combine filters with comma separator
+        return f"{custom_filter},{frame_rate_filter}"
 
     def _detect_video_properties(self, input_url: str, ffprobe_path: str) -> tuple[float, tuple[int, int], float]:
         """Detect video frame rate, resolution, and duration."""
@@ -299,8 +351,11 @@ class BaseVideoProcessor(ControlNode, ABC):
             # Get FFmpeg paths
             ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
 
+            # Detect input video properties for frame rate handling
+            input_frame_rate, _, _ = self._detect_video_properties(input_url, ffprobe_path)
+
             # Build the FFmpeg command using the subclass implementation
-            cmd = self._build_ffmpeg_command(input_url, output_path, **kwargs)
+            cmd = self._build_ffmpeg_command(input_url, output_path, input_frame_rate=input_frame_rate, **kwargs)
 
             # Use base class method to run FFmpeg command
             self._run_ffmpeg_command(cmd, timeout=300)

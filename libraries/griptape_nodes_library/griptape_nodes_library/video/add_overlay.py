@@ -91,7 +91,7 @@ class AddOverlay(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "video overlay"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for video overlay."""
         overlay_video = kwargs.get("overlay_video")
         blend_mode = kwargs.get("blend_mode", "overlay")
@@ -141,10 +141,19 @@ class AddOverlay(BaseVideoProcessor):
 
         if blend_mode == "overlay":
             # Use overlay filter for alpha blending
-            filter_complex = f"[0]loop=loop=-1,trim=duration={base_duration},format=rgba,colorchannelmixer=aa={amount}[fg];[1][fg]overlay={overlay_position}[out]"
+            custom_filter = f"[0]loop=loop=-1,trim=duration={base_duration},format=rgba,colorchannelmixer=aa={amount}[fg];[1][fg]overlay={overlay_position}[out]"
         else:
             # Use blend filter for other blend modes - blend all components
-            filter_complex = f"[0]loop=loop=-1,trim=duration={base_duration}[fg];[1][fg]blend=all_mode={blend_mode}:all_opacity={amount}[out]"
+            custom_filter = f"[0]loop=loop=-1,trim=duration={base_duration}[fg];[1][fg]blend=all_mode={blend_mode}:all_opacity={amount}[out]"
+
+        # Add frame rate filter if needed (after the overlay effect)
+        frame_rate_filter = self._get_frame_rate_filter(input_frame_rate)
+        if frame_rate_filter:
+            # For complex filters, we need to add the frame rate filter to the output
+            custom_filter = custom_filter.replace("[out]", "[out_temp]")
+            custom_filter = f"{custom_filter};[out_temp]{frame_rate_filter}[out]"
+
+        filter_complex = custom_filter
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

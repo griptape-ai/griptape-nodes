@@ -113,7 +113,7 @@ class AddRGBShift(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "RGB shift (chromatic aberration) addition"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for RGB shift effect."""
         red_h = kwargs.get("red_horizontal", -self.DEFAULT_SHIFT)
         red_v = kwargs.get("red_vertical", 0)
@@ -140,7 +140,7 @@ class AddRGBShift(BaseVideoProcessor):
             # Create tear effect by splitting the video and applying different RGB shifts
             tear_y = f"ih*{tear_position}"
 
-            filter_complex = (
+            custom_filter = (
                 f"split=3[main][tear_top][tear_bottom];"
                 f"[main]rgbashift=rh={red_h_scaled}:rv={red_v_scaled}:"
                 f"gh={green_h_scaled}:gv={green_v_scaled}:"
@@ -156,11 +156,14 @@ class AddRGBShift(BaseVideoProcessor):
             )
         else:
             # Simple RGB shift without tear effect
-            filter_complex = (
+            custom_filter = (
                 f"rgbashift=rh={red_h_scaled}:rv={red_v_scaled}:"
                 f"gh={green_h_scaled}:gv={green_v_scaled}:"
                 f"bh={blue_h_scaled}:bv={blue_v_scaled}"
             )
+
+        # Combine with frame rate filter if needed
+        filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

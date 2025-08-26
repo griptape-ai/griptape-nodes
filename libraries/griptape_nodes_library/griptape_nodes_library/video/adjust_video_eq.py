@@ -77,7 +77,7 @@ class AdjustVideoEQ(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "video EQ adjustment"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for video EQ adjustment."""
         brightness = kwargs.get("brightness", self.DEFAULT_BRIGHTNESS)
         contrast = kwargs.get("contrast", self.DEFAULT_CONTRAST)
@@ -85,7 +85,10 @@ class AdjustVideoEQ(BaseVideoProcessor):
         gamma = kwargs.get("gamma", self.DEFAULT_GAMMA)
 
         # EQ filter: brightness, contrast, saturation, gamma
-        filter_complex = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}:gamma={gamma}"
+        custom_filter = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}:gamma={gamma}"
+
+        # Combine with frame rate filter if needed
+        filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

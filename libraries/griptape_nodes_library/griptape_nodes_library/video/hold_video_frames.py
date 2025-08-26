@@ -29,7 +29,7 @@ class HoldVideoFrames(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "video frame holding"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build the FFmpeg command for frame holding."""
         hold_frames = kwargs.get("hold_frames", 2)
 
@@ -42,6 +42,11 @@ class HoldVideoFrames(BaseVideoProcessor):
         reduced_fps = original_fps / hold_frames
         self.append_value_to_parameter("logs", f"Reduced frame rate for holding: {reduced_fps} fps\n")
         base_filter = f"fps=fps={reduced_fps},fps=fps={original_fps}"
+
+        # Add output frame rate filter if needed (after the hold effect)
+        frame_rate_filter = self._get_frame_rate_filter(original_fps)
+        if frame_rate_filter:
+            base_filter = f"{base_filter},{frame_rate_filter}"
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

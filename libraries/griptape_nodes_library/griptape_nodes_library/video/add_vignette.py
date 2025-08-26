@@ -84,7 +84,7 @@ class AddVignette(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "vignette effect addition"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for vignette effect."""
         angle = kwargs.get("angle", self.DEFAULT_ANGLE)
         center_x = kwargs.get("center_x", self.DEFAULT_CENTER_OFFSET)
@@ -111,7 +111,10 @@ class AddVignette(BaseVideoProcessor):
         mode_value = "1" if mode == "backward" else "0"
 
         # Build vignette filter with all parameters
-        filter_complex = f"vignette=angle={angle}:x0={x0}:y0={y0}:aspect={aspect}:mode={mode_value}:dither=false"
+        custom_filter = f"vignette=angle={angle}:x0={x0}:y0={y0}:aspect={aspect}:mode={mode_value}:dither=false"
+
+        # Combine with frame rate filter if needed
+        filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()

@@ -42,7 +42,7 @@ class ChangeSpeed(BaseVideoProcessor):
         """Get description of what this processor does."""
         return "speed change"
 
-    def _build_ffmpeg_command(self, input_url: str, output_path: str, **kwargs) -> list[str]:
+    def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:
         """Build FFmpeg command for speed change."""
         speed = kwargs.get("speed", self.DEFAULT_SPEED)
         include_audio = kwargs.get("include_audio", True)
@@ -50,7 +50,10 @@ class ChangeSpeed(BaseVideoProcessor):
         # Use setpts filter to change video speed
         # PTS (Presentation Time Stamp) controls when each frame is displayed
         # Dividing by speed makes the video play faster/slower
-        filter_complex = f"setpts=PTS/{speed}"
+        custom_filter = f"setpts=PTS/{speed}"
+
+        # Combine with frame rate filter if needed
+        filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
         if include_audio:
             # Audio needs to be speed-adjusted to match the video speed change
