@@ -1580,8 +1580,9 @@ class NodeManager:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
-            # Pass the value through!
-            # Optional data_type parameter for internal handling!
+            # Pass the value through to connected downstream parameters!
+            # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
+            # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.handle_request(
@@ -1590,6 +1591,8 @@ class NodeManager:
                         node_name=target_node.name,
                         value=finalized_value,
                         data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                        incoming_connection_source_node_name=node.name,
+                        incoming_connection_source_parameter_name=parameter.name,
                     )
                 )
 
