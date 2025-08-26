@@ -53,6 +53,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeMetadataRequest,
+    BatchSetNodeMetadataResultFailure,
+    BatchSetNodeMetadataResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -152,6 +155,9 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(GetNodeMetadataRequest, self.on_get_node_metadata_request)
         event_manager.assign_manager_to_request_type(SetNodeMetadataRequest, self.on_set_node_metadata_request)
+        event_manager.assign_manager_to_request_type(
+            BatchSetNodeMetadataRequest, self.on_batch_set_node_metadata_request
+        )
         event_manager.assign_manager_to_request_type(
             ListConnectionsForNodeRequest, self.on_list_connections_for_node_request
         )
@@ -664,6 +670,46 @@ class NodeManager:
 
         result = SetNodeMetadataResultSuccess()
         return result
+
+    def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
+        updated_nodes = []
+        failed_nodes = {}
+
+        for node_name, metadata_update in request.node_metadata_updates.items():
+            # Resolve node name and get node object
+            node = None
+            if node_name is None:
+                # Get from current context
+                if not GriptapeNodes.ContextManager().has_current_node():
+                    failed_nodes["current_context"] = "No current context node available"
+                    continue
+                node = GriptapeNodes.ContextManager().get_current_node()
+                actual_node_name = node.name
+            else:
+                actual_node_name = node_name
+
+            # Look up node if we don't have it yet
+            if node is None:
+                obj_mgr = GriptapeNodes.ObjectManager()
+                node = obj_mgr.attempt_get_object_by_name_as_type(actual_node_name, BaseNode)
+                if node is None:
+                    failed_nodes[actual_node_name] = f"Node '{actual_node_name}' not found"
+                    continue
+
+            single_request = SetNodeMetadataRequest(node_name=actual_node_name, metadata=metadata_update)
+            result = self.on_set_node_metadata_request(single_request)
+
+            if isinstance(result, SetNodeMetadataResultSuccess):
+                updated_nodes.append(actual_node_name)
+            else:
+                failed_nodes[actual_node_name] = result.result_details
+
+        if not updated_nodes:
+            return BatchSetNodeMetadataResultFailure(
+                result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
+            )
+
+        return BatchSetNodeMetadataResultSuccess(updated_nodes=updated_nodes, failed_nodes=failed_nodes)
 
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
