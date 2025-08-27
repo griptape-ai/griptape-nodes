@@ -14,6 +14,7 @@ from griptape_nodes.app.api import shutdown_server, start_api_async
 from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger(__name__)
 
@@ -50,31 +51,34 @@ def get_workflows() -> list[str]:
     return workflows
 
 
-def set_libraries(libraries: list[str]) -> None:
-    """Set the libraries to be registered for testing if not already set.
+load_dotenv()
 
-    Parameters
-    ----------
-    libraries : list[str]
-        List of library paths to register.
-    """
-    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
-    config_manager = ConfigManager()
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_libraries() -> Generator[None, Any, None]:
+    """Set up libraries for testing and restore original state afterwards."""
+    config_manager = GriptapeNodes.ConfigManager()
 
-    libraries_to_register = config_manager.get_config_value(
+    # Save the original libraries state
+    original_libraries = config_manager.get_config_value(
         key="app_events.on_app_initialization_complete.libraries_to_register", default=[]
     )
 
-    if len(libraries_to_register) < 1:
-        config_manager.set_config_value(
-            key="app_events.on_app_initialization_complete.libraries_to_register",
-            value=libraries,
-        )
+    # Set the test libraries
+    test_libraries = [str(lib) for lib in get_libraries()]
+    config_manager.set_config_value(
+        key="app_events.on_app_initialization_complete.libraries_to_register",
+        value=test_libraries,
+    )
+    logger.info(config_manager.get_config_value("app_events.on_app_initialization_complete.libraries_to_register"))
 
+    yield  # Run all tests
 
-load_dotenv()
-set_libraries([str(lib) for lib in get_libraries()])
+    # Restore original libraries state
+    config_manager.set_config_value(
+        key="app_events.on_app_initialization_complete.libraries_to_register",
+        value=original_libraries,
+    )
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -116,7 +120,7 @@ def clear_state_before_each_test() -> Generator[None, Any, None]:
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
     GriptapeNodes.handle_request(clear_request)
 
-    GriptapeNodes.ConfigManager()._set_log_level("INFO")
+    GriptapeNodes.ConfigManager()._set_log_level("DEBUG")
 
     yield  # Run the test
 
