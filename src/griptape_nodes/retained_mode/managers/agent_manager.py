@@ -1,7 +1,7 @@
+import asyncio
 import json
 import logging
 import os
-import threading
 import uuid
 from typing import TYPE_CHECKING
 
@@ -129,14 +129,14 @@ class AgentManager:
         }
         return MCPTool(connection=connection)
 
-    def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+    async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         if self.prompt_driver is None:
             self.prompt_driver = self._initialize_prompt_driver()
         if self.image_tool is None:
             self.image_tool = self._initialize_image_tool()
         if self.mcp_tool is None:
             self.mcp_tool = self._initialize_mcp_tool()
-        threading.Thread(target=self._on_handle_run_agent_request, args=(request,)).start()
+        await asyncio.to_thread(self._on_handle_run_agent_request, request)
         return RunAgentResultStarted()
 
     def _create_agent(self) -> Agent:
