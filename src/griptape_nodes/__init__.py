@@ -259,6 +259,41 @@ def _start_engine(*, no_update: bool = False) -> None:
     start_app()
 
 
+def _start_worker(*, session_id: str, no_update: bool = False) -> None:
+    """Starts the Griptape Nodes worker for a specific orchestrator session.
+
+    Args:
+        session_id (str): Session ID of the orchestrator to connect to.
+        no_update (bool): If True, skips the auto-update check.
+    """
+    if not CONFIG_DIR.exists():
+        # Default init flow if there is no config directory
+        console.print("[bold green]Config directory not found. Initializing...[/bold green]")
+        _run_init(
+            InitConfig(
+                workspace_directory=ENV_WORKSPACE_DIRECTORY,
+                api_key=ENV_API_KEY,
+                storage_backend=ENV_STORAGE_BACKEND,
+                register_advanced_library=ENV_REGISTER_ADVANCED_LIBRARY,
+                interactive=True,
+                config_values=None,
+                secret_values=None,
+                libraries_sync=ENV_LIBRARIES_SYNC,
+                bucket_name=ENV_GTN_BUCKET_NAME,
+            )
+        )
+
+    # Confusing double negation -- If `no_update` is set, we want to skip the update
+    if not no_update:
+        _auto_update_self()
+
+    console.print(f"[bold green]Starting Griptape Nodes worker for session {session_id}...[/bold green]")
+
+    # Set worker mode configuration
+    GriptapeNodes.set_worker_mode(session_id)
+    start_app()
+
+
 def _get_args() -> argparse.Namespace:
     """Parse CLI arguments for the *griptape-nodes* entry-point."""
     parser = argparse.ArgumentParser(
@@ -331,6 +366,14 @@ def _get_args() -> argparse.Namespace:
 
     # engine
     subparsers.add_parser("engine", help="Run the Griptape Nodes engine.")
+
+    # worker
+    worker_parser = subparsers.add_parser("worker", help="Run as a worker executor for another engine.")
+    worker_parser.add_argument(
+        "--session-id",
+        required=True,
+        help="Session ID of the orchestrator engine to connect to as a worker.",
+    )
 
     # config
     config_parser = subparsers.add_parser("config", help="Manage configuration.")
@@ -888,6 +931,8 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
         )
     elif args.command == "engine":
         _start_engine(no_update=args.no_update)
+    elif args.command == "worker":
+        _start_worker(session_id=args.session_id, no_update=args.no_update)
     elif args.command == "config":
         if args.subcommand == "list":
             _list_user_configs()

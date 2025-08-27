@@ -308,8 +308,12 @@ class EventRequest[P: Payload](BaseEvent):
         # Create and attach the request payload
         if payload_type:
             if is_dataclass(payload_type):
-                # Create dataclass instance
-                request_payload = payload_type(**request_data)
+                # Filter out fields that have init=False to avoid constructor errors
+                from dataclasses import fields
+
+                init_fields = {f.name for f in fields(payload_type) if f.init}
+                filtered_request_data = {k: v for k, v in request_data.items() if k in init_fields}
+                request_payload = payload_type(**filtered_request_data)
             elif issubclass(payload_type, BaseModel):
                 # Handle Pydantic models
                 request_payload = payload_type.model_validate(request_data)
@@ -405,7 +409,12 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         # Process request payload
         if req_payload_type:
             if is_dataclass(req_payload_type):
-                request_payload = req_payload_type(**request_data)
+                # Filter out fields that have init=False to avoid constructor errors
+                from dataclasses import fields
+
+                init_fields = {f.name for f in fields(req_payload_type) if f.init}
+                filtered_request_data = {k: v for k, v in request_data.items() if k in init_fields}
+                request_payload = req_payload_type(**filtered_request_data)
             elif issubclass(req_payload_type, BaseModel):
                 request_payload = req_payload_type.model_validate(request_data)
             else:
@@ -419,7 +428,12 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         # Process result payload
         if res_payload_type:
             if is_dataclass(res_payload_type):
-                result_payload = res_payload_type(**result_data)
+                # Filter out fields that have init=False to avoid constructor errors
+                from dataclasses import fields
+
+                init_fields = {f.name for f in fields(res_payload_type) if f.init}
+                filtered_result_data = {k: v for k, v in result_data.items() if k in init_fields}
+                result_payload = res_payload_type(**filtered_result_data)
             elif issubclass(res_payload_type, BaseModel):
                 result_payload = res_payload_type.model_validate(result_data)
             else:
