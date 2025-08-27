@@ -8,7 +8,7 @@ The ExtractLastFrame node extaracts the last frame from a video as an image for 
 
 Use the ExtractLastFrame node when:
 
-- You need to extract the final frame from a video for use in your worflow.
+- You need to extract the final frame from a video for use in your workflow.
 
 ## How to use it
 
