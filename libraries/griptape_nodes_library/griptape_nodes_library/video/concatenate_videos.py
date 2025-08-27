@@ -134,7 +134,8 @@ class ConcatenateVideos(BaseVideoProcessor):
         concat_list_file = kwargs.get("concat_list_file", "")
 
         if not concat_list_file:
-            raise ValueError("concat_list_file is required for concatenation")
+            error_msg = "concat_list_file is required for concatenation"
+            raise ValueError(error_msg)
 
         # Build FFmpeg command for concatenation
         cmd = [
@@ -251,20 +252,14 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
             raise ValueError(msg) from e
 
+    def _raise_download_error(self, message: str, cause: Exception | None = None) -> None:
+        """Raise a download error with proper formatting."""
+        if cause:
+            raise ValueError(message) from cause
+        raise ValueError(message)
+
     def _process_concatenation(self, video_inputs: list, output_format: str, **kwargs) -> None:
         """Process video concatenation."""
-
-        def _validate_output_file(file_path: Path) -> None:
-            """Validate that the output file was created successfully."""
-            if not file_path.exists() or file_path.stat().st_size == 0:
-                error_msg = "FFmpeg did not create output file or file is empty"
-                raise ValueError(error_msg)
-
-        def _create_input_validation_error(video_type: type) -> ValueError:
-            """Create input validation error."""
-            msg = f"Invalid video input type: {video_type}"
-            return ValueError(msg)
-
         # Create temporary output file
         output_path, output_path_obj = self._create_temp_output_file(output_format)
         temp_files = []
@@ -273,84 +268,15 @@ class ConcatenateVideos(BaseVideoProcessor):
         try:
             self.append_value_to_parameter("logs", f"{self._get_processing_description()}\n")
 
-            # Create temporary directory for processing
-            temp_dir = Path(tempfile.mkdtemp())
-            concat_list_file = temp_dir / f"concat_list_{uuid.uuid4()}.txt"
-
-            # Download videos and create concat list
-            self.append_value_to_parameter("logs", "Downloading and preparing videos for concatenation...\n")
-
-            with concat_list_file.open("w") as f:
-                for i, video_input in enumerate(video_inputs):
-                    # Convert video input to VideoUrlArtifact (handles both VideoArtifact and VideoUrlArtifact)
-                    video_artifact = to_video_artifact(video_input)
-
-                    # Extract video URL from the normalized artifact
-                    if isinstance(video_input, str):
-                        video_url = video_input
-                    elif isinstance(video_artifact, VideoUrlArtifact) or hasattr(video_artifact, "value"):
-                        video_url = video_artifact.value
-                    else:
-                        raise _create_input_validation_error(type(video_input))
-
-                    # Validate URL
-                    self._validate_url_safety(video_url)
-
-                    # Create temporary file for each video
-                    temp_video_file = temp_dir / f"video_{i}_{uuid.uuid4()}.mp4"
-                    temp_files.append(temp_video_file)
-
-                    # Download video to temp file
-                    self._download_video(video_url, str(temp_video_file))
-
-                    # Add to concat list - use single quotes to avoid escaping issues
-                    file_path = str(temp_video_file)
-                    concat_line = f"file '{file_path}'\n"
-                    f.write(concat_line)
-
-                    # Debug logging
-                    self.append_value_to_parameter("logs", f"Added to concat list: {concat_line.strip()}\n")
-                    self.append_value_to_parameter("logs", f"Prepared video {i + 1}/{len(video_inputs)}\n")
-
-            # Debug: Log concat file contents
-            self.append_value_to_parameter("logs", f"Concat list file path: {concat_list_file}\n")
-            try:
-                with concat_list_file.open("r") as debug_f:
-                    concat_contents = debug_f.read()
-                    self.append_value_to_parameter("logs", f"Concat file contents:\n{concat_contents}\n")
-            except Exception as e:
-                self.append_value_to_parameter("logs", f"Could not read concat file for debugging: {e}\n")
-
-            # Detect properties from first video for frame rate handling
-            ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
-            first_video_url = str(temp_files[0]) if temp_files else ""
-            input_frame_rate, _, _ = self._detect_video_properties(first_video_url, ffprobe_path)
-
-            # Build the FFmpeg command for concatenation
-            cmd = self._build_ffmpeg_command(
-                "", output_path, input_frame_rate, concat_list_file=str(concat_list_file), **kwargs
+            # Prepare video inputs and create concat list
+            temp_files, concat_list_file = self._prepare_video_inputs(video_inputs)
+            # Execute FFmpeg concatenation
+            output_artifact = self._execute_ffmpeg_concatenation(
+                temp_files, concat_list_file, output_path, output_path_obj, output_format, **kwargs
             )
 
-            # Use base class method to run FFmpeg command
-            self.append_value_to_parameter("logs", "Running FFmpeg concatenation...\n")
-            self.append_value_to_parameter("logs", f"FFmpeg command: {' '.join(cmd)}\n")
-            self._run_ffmpeg_command(cmd, timeout=600)  # 10 minute timeout for large videos
-
-            # Validate output file was created
-            _validate_output_file(output_path_obj)
-
-            # Read concatenated video
-            with output_path_obj.open("rb") as f:
-                output_bytes = f.read()
-
-            # Get output suffix
-            suffix = self._get_output_suffix(**kwargs)
-
-            # Save video artifact
-            output_artifact = self._save_video_artifact(output_bytes, output_format, suffix)
-
             self.append_value_to_parameter(
-                "logs", f"Successfully concatenated {len(video_inputs)} videos into {suffix}.{output_format}\n"
+                "logs", f"Successfully concatenated {len(video_inputs)} videos\n"
             )
 
             # Save to parameter
@@ -362,29 +288,130 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
             raise ValueError(msg) from e
         finally:
-            # Clean up temporary files
-            for temp_file in temp_files:
-                if isinstance(temp_file, Path):
-                    self._cleanup_temp_file(temp_file)
+            self._cleanup_temp_files(temp_files, concat_list_file, output_path_obj)
+
+    def _prepare_video_inputs(self, video_inputs: list) -> tuple[list[Path], Path]:
+        """Prepare video inputs by downloading and creating concat list file."""
+        def _create_input_validation_error(video_type: type) -> ValueError:
+            """Create input validation error."""
+            msg = f"Invalid video input type: {video_type}"
+            return ValueError(msg)
+
+        # Create temporary directory for processing
+        temp_dir = Path(tempfile.mkdtemp())
+        concat_list_file = temp_dir / f"concat_list_{uuid.uuid4()}.txt"
+        temp_files = []
+
+        # Download videos and create concat list
+        self.append_value_to_parameter("logs", "Downloading and preparing videos for concatenation...\n")
+
+        with concat_list_file.open("w") as f:
+            for i, video_input in enumerate(video_inputs):
+                # Convert video input to VideoUrlArtifact (handles both VideoArtifact and VideoUrlArtifact)
+                video_artifact = to_video_artifact(video_input)
+
+                # Extract video URL from the normalized artifact
+                if isinstance(video_input, str):
+                    video_url = video_input
+                elif isinstance(video_artifact, VideoUrlArtifact) or hasattr(video_artifact, "value"):
+                    video_url = video_artifact.value
                 else:
-                    self._cleanup_temp_file(Path(temp_file))
+                    raise _create_input_validation_error(type(video_input))
 
-            if concat_list_file and concat_list_file.exists():
-                try:
-                    concat_list_file.unlink()
-                except Exception as e:
-                    self.append_value_to_parameter("logs", f"Warning: Failed to clean up concat list file: {e}\n")
+                # Validate URL
+                self._validate_url_safety(video_url)
 
-            # Clean up main output file
-            self._cleanup_temp_file(output_path_obj)
+                # Create temporary file for each video
+                temp_video_file = temp_dir / f"video_{i}_{uuid.uuid4()}.mp4"
+                temp_files.append(temp_video_file)
+
+                # Download video to temp file
+                self._download_video(video_url, str(temp_video_file))
+
+                # Add to concat list - use single quotes to avoid escaping issues
+                file_path = str(temp_video_file)
+                concat_line = f"file '{file_path}'\n"
+                f.write(concat_line)
+
+                # Debug logging
+                self.append_value_to_parameter("logs", f"Added to concat list: {concat_line.strip()}\n")
+                self.append_value_to_parameter("logs", f"Prepared video {i + 1}/{len(video_inputs)}\n")
+
+        # Debug: Log concat file contents
+        self._log_concat_file_debug(concat_list_file)
+        return temp_files, concat_list_file
+
+    def _log_concat_file_debug(self, concat_list_file: Path) -> None:
+        """Log concat file contents for debugging."""
+        self.append_value_to_parameter("logs", f"Concat list file path: {concat_list_file}\n")
+        try:
+            with concat_list_file.open("r") as debug_f:
+                concat_contents = debug_f.read()
+                self.append_value_to_parameter("logs", f"Concat file contents:\n{concat_contents}\n")
+        except Exception as e:
+            self.append_value_to_parameter("logs", f"Could not read concat file for debugging: {e}\n")
+
+    def _execute_ffmpeg_concatenation(
+        self, temp_files: list[Path], concat_list_file: Path, output_path: str,
+        output_path_obj: Path, output_format: str, **kwargs
+    ) -> VideoUrlArtifact:
+        """Execute FFmpeg concatenation and return output artifact."""
+        def _validate_output_file(file_path: Path) -> None:
+            """Validate that the output file was created successfully."""
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                error_msg = "FFmpeg did not create output file or file is empty"
+                raise ValueError(error_msg)
+
+        # Detect properties from first video for frame rate handling
+        ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+        first_video_url = str(temp_files[0]) if temp_files else ""
+        input_frame_rate, _, _ = self._detect_video_properties(first_video_url, ffprobe_path)
+
+        # Build the FFmpeg command for concatenation
+        cmd = self._build_ffmpeg_command(
+            "", output_path, input_frame_rate, concat_list_file=str(concat_list_file), **kwargs
+        )
+
+        # Use base class method to run FFmpeg command
+        self.append_value_to_parameter("logs", "Running FFmpeg concatenation...\n")
+        self.append_value_to_parameter("logs", f"FFmpeg command: {' '.join(cmd)}\n")
+        self._run_ffmpeg_command(cmd, timeout=600)  # 10 minute timeout for large videos
+
+        # Validate output file was created
+        _validate_output_file(output_path_obj)
+
+        # Read concatenated video
+        with output_path_obj.open("rb") as f:
+            output_bytes = f.read()
+
+        # Get output suffix
+        suffix = self._get_output_suffix(**kwargs)
+
+        # Save video artifact
+        return self._save_video_artifact(output_bytes, output_format, suffix)
+
+    def _cleanup_temp_files(
+        self, temp_files: list[Path], concat_list_file: Path | None, output_path_obj: Path
+    ) -> None:
+        """Clean up temporary files after processing."""
+        # Clean up temporary files
+        for temp_file in temp_files:
+            if isinstance(temp_file, Path):
+                self._cleanup_temp_file(temp_file)
+            else:
+                self._cleanup_temp_file(Path(temp_file))
+
+        if concat_list_file and concat_list_file.exists():
+            try:
+                concat_list_file.unlink()
+            except Exception as e:
+                self.append_value_to_parameter("logs", f"Warning: Failed to clean up concat list file: {e}\n")
+
+        # Clean up main output file
+        self._cleanup_temp_file(output_path_obj)
 
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL to local file."""
-
-        def _create_download_error(message: str) -> ValueError:
-            """Create download error."""
-            return ValueError(message)
-
         try:
             response = httpx.get(video_url, timeout=30.0)
             response.raise_for_status()
@@ -396,12 +423,11 @@ class ConcatenateVideos(BaseVideoProcessor):
 
             # Verify file was downloaded
             if not output_file.exists() or output_file.stat().st_size == 0:
-                error_msg = "Downloaded video file is empty or does not exist"
-                raise _create_download_error(error_msg)
+                self._raise_download_error("Downloaded video file is empty or does not exist")
 
         except httpx.HTTPError as e:
             msg = f"Error downloading video from {video_url}: {e!s}"
-            raise _create_download_error(msg) from e
+            self._raise_download_error(msg, e)
         except Exception as e:
             msg = f"Error saving video to {output_path}: {e!s}"
-            raise _create_download_error(msg) from e
+            self._raise_download_error(msg, e)
