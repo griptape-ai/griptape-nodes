@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     WorkflowAlteredMixin,
 )
+from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -200,11 +201,7 @@ class EventManager:
             raise TypeError(msg)
 
         # Actually make the handler callback (support both sync and async):
-        result_payload: ResultPayload
-        if inspect.iscoroutinefunction(callback):
-            result_payload = await callback(request)
-        else:
-            result_payload = callback(request)
+        result_payload: ResultPayload = await call_function(callback, request)
 
         # Handle workflow alteration events for async context
         with operation_depth_mgr:
@@ -295,8 +292,4 @@ class EventManager:
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
             for listener_callback in listener_set:
-                # Support both sync and async callbacks
-                if inspect.iscoroutinefunction(listener_callback):
-                    await listener_callback(app_event)
-                else:
-                    listener_callback(app_event)
+                await call_function(listener_callback, app_event)
