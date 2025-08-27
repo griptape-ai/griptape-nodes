@@ -31,7 +31,7 @@ Use the ExtractLastFrame node when:
 When working with image to video models you might want to chain several short video clips together to make one longer video.
 
 1. Add a ExtractLastFrame node to your workflow
-1. Connect the ouput from an image to video node to the **video** input on the ExtractLastFrame node
+1. Connect the output from an image to video node to the **video** input on the ExtractLastFrame node
 1. When the ExtractLastFrame node or workflow runs, the last frame from the video will be displayed in the node
 
 ## Important Notes
