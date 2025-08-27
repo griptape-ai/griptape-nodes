@@ -275,9 +275,7 @@ class ConcatenateVideos(BaseVideoProcessor):
                 temp_files, concat_list_file, output_path, output_path_obj, output_format, **kwargs
             )
 
-            self.append_value_to_parameter(
-                "logs", f"Successfully concatenated {len(video_inputs)} videos\n"
-            )
+            self.append_value_to_parameter("logs", f"Successfully concatenated {len(video_inputs)} videos\n")
 
             # Save to parameter
             self.parameter_output_values["output"] = output_artifact
@@ -292,6 +290,7 @@ class ConcatenateVideos(BaseVideoProcessor):
 
     def _prepare_video_inputs(self, video_inputs: list) -> tuple[list[Path], Path]:
         """Prepare video inputs by downloading and creating concat list file."""
+
         def _create_input_validation_error(video_type: type) -> ValueError:
             """Create input validation error."""
             msg = f"Invalid video input type: {video_type}"
@@ -352,10 +351,16 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.append_value_to_parameter("logs", f"Could not read concat file for debugging: {e}\n")
 
     def _execute_ffmpeg_concatenation(
-        self, temp_files: list[Path], concat_list_file: Path, output_path: str,
-        output_path_obj: Path, output_format: str, **kwargs
+        self,
+        temp_files: list[Path],
+        concat_list_file: Path,
+        output_path: str,
+        output_path_obj: Path,
+        output_format: str,
+        **kwargs,
     ) -> VideoUrlArtifact:
         """Execute FFmpeg concatenation and return output artifact."""
+
         def _validate_output_file(file_path: Path) -> None:
             """Validate that the output file was created successfully."""
             if not file_path.exists() or file_path.stat().st_size == 0:
@@ -390,9 +395,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         # Save video artifact
         return self._save_video_artifact(output_bytes, output_format, suffix)
 
-    def _cleanup_temp_files(
-        self, temp_files: list[Path], concat_list_file: Path | None, output_path_obj: Path
-    ) -> None:
+    def _cleanup_temp_files(self, temp_files: list[Path], concat_list_file: Path | None, output_path_obj: Path) -> None:
         """Clean up temporary files after processing."""
         # Clean up temporary files
         for temp_file in temp_files:
