@@ -4,8 +4,6 @@ import logging
 from queue import Queue
 from typing import TYPE_CHECKING, cast
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -1699,7 +1697,7 @@ class FlowManager:
         self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
 
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
         )
 

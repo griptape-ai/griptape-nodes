@@ -971,7 +971,6 @@ class NodeManager:
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
             else:
-                logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"

@@ -35,12 +35,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     SetEngineNameResultFailure,
     SetEngineNameResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import (
-    AppPayload,
-    RequestPayload,
-    ResultPayload,
-    ResultPayloadFailure,
-)
+from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
@@ -48,6 +43,11 @@ from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.base_events import (
+        AppPayload,
+        RequestPayload,
+        ResultPayload,
+    )
     from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
     from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
         ArbitraryCodeExecManager,
@@ -238,9 +238,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
         response_topic: str | None = None,
         request_id: str | None = None,
     ) -> ResultPayload:
+        """Synchronous request handler."""
         event_mgr = GriptapeNodes.EventManager()
         obj_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
+
         try:
             return event_mgr.handle_request(
                 request=request,
@@ -252,15 +254,48 @@ class GriptapeNodes(metaclass=SingletonMeta):
         except Exception as e:
             logger.exception(
                 "Unhandled exception while processing request of type %s. "
-                "Consider saving your work and restarting the engine if issues persist.",
+                "Consider saving your work and restarting the engine if issues persist."
+                "Request: %s",
                 type(request).__name__,
+                request,
             )
             return ResultPayloadFailure(exception=e)
 
     @classmethod
-    def broadcast_app_event(cls, app_event: AppPayload) -> None:
+    async def ahandle_request(
+        cls,
+        request: RequestPayload,
+        *,
+        response_topic: str | None = None,
+        request_id: str | None = None,
+    ) -> ResultPayload:
+        """Asynchronous request handler."""
+        event_mgr = GriptapeNodes.EventManager()
+        obj_depth_mgr = GriptapeNodes.OperationDepthManager()
+        workflow_mgr = GriptapeNodes.WorkflowManager()
+
+        try:
+            return await event_mgr.ahandle_request(
+                request=request,
+                operation_depth_mgr=obj_depth_mgr,
+                workflow_mgr=workflow_mgr,
+                response_topic=response_topic,
+                request_id=request_id,
+            )
+        except Exception as e:
+            logger.exception(
+                "Unhandled exception while processing async request of type %s. "
+                "Consider saving your work and restarting the engine if issues persist."
+                "Request: %s",
+                type(request).__name__,
+                request,
+            )
+            return ResultPayloadFailure(exception=e)
+
+    @classmethod
+    async def broadcast_app_event(cls, app_event: AppPayload) -> None:
         event_mgr = GriptapeNodes.get_instance()._event_manager
-        return event_mgr.broadcast_app_event(app_event)
+        await event_mgr.broadcast_app_event(app_event)
 
     @classmethod
     def get_session_id(cls) -> str | None:
@@ -369,16 +404,16 @@ class GriptapeNodes(metaclass=SingletonMeta):
             msg = "Failed to successfully delete all objects"
             raise ValueError(msg)
 
-    def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
+    async def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
         from griptape_nodes.app.app import subscribe_to_topic
 
         # Subscribe to request topic (engine discovery)
-        subscribe_to_topic("request")
+        await subscribe_to_topic("request")
 
         # Get engine ID and subscribe to engine_id/request
         engine_id = GriptapeNodes.get_engine_id()
         if engine_id:
-            subscribe_to_topic(f"engines/{engine_id}/request")
+            await subscribe_to_topic(f"engines/{engine_id}/request")
         else:
             logger.warning("Engine ID not available for subscription")
 
@@ -386,7 +421,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         session_id = GriptapeNodes.get_session_id()
         if session_id:
             topic = f"sessions/{session_id}/request"
-            subscribe_to_topic(topic)
+            await subscribe_to_topic(topic)
         else:
             logger.info("No session ID available for subscription")
 
@@ -407,7 +442,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             logger.error(details)
             return GetEngineVersionResultFailure(result_details=details)
 
-    def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
+    async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
         from griptape_nodes.app.app import subscribe_to_topic
 
         current_session_id = GriptapeNodes.SessionManager().get_active_session_id()
@@ -421,12 +456,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
             details = f"Session '{current_session_id}' already active. Joining..."
 
         topic = f"sessions/{current_session_id}/request"
-        subscribe_to_topic(topic)
+        await subscribe_to_topic(topic)
         logger.info("Subscribed to new session topic: %s", topic)
 
         return AppStartSessionResultSuccess(current_session_id)
 
-    def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
+    async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
         from griptape_nodes.app.app import unsubscribe_from_topic
 
         try:
@@ -440,7 +475,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 GriptapeNodes.SessionManager().clear_saved_session()
 
             unsubscribe_topic = f"sessions/{previous_session_id}/request"
-            unsubscribe_from_topic(unsubscribe_topic)
+            await unsubscribe_from_topic(unsubscribe_topic)
 
             return AppEndSessionResultSuccess(session_id=previous_session_id)
         except Exception as err:
