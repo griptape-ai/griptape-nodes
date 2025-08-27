@@ -43,6 +43,30 @@ class BaseStorageDriver(ABC):
         ...
 
     @abstractmethod
+    def create_asset_url(self, file_name: str) -> str:
+        """Create a persistent asset URL for the given file name.
+
+        Args:
+            file_name: The name of the file to create an asset URL for.
+
+        Returns:
+            str: The persistent asset URL for the file.
+        """
+        ...
+
+    @abstractmethod
+    def extract_file_name_from_url(self, url: str) -> str | None:
+        """Extract the file name from a URL that matches this storage driver's URL patterns.
+
+        Args:
+            url: The URL to extract the file name from.
+
+        Returns:
+            str | None: The extracted file name, or None if the URL doesn't match this driver's patterns.
+        """
+        ...
+
+    @abstractmethod
     def delete_file(self, file_name: str) -> None:
         """Delete a file from storage.
 

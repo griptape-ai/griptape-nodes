@@ -1,6 +1,6 @@
 import logging
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -54,6 +54,17 @@ class LocalStorageDriver(BaseStorageDriver):
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
 
+    def create_asset_url(self, file_name: str) -> str:
+        """Create a persistent asset URL for the given file name.
+
+        Args:
+            file_name: The name of the file to create an asset URL for.
+
+        Returns:
+            str: The persistent asset URL for the file.
+        """
+        return f"{self.base_url}/{file_name}"
+
     def delete_file(self, file_name: str) -> None:
         """Delete a file from local storage.
 
@@ -90,3 +101,30 @@ class LocalStorageDriver(BaseStorageDriver):
 
         response_data = response.json()
         return response_data.get("files", [])
+
+    def extract_file_name_from_url(self, url: str) -> str | None:
+        """Extract the file name from a local storage URL.
+
+        Handles URL formats like:
+        - /static/{filename}
+        - /static/staticfiles/{filename}
+        - http://host/static/{filename}
+        - http://host/static/staticfiles/{filename}
+
+        Args:
+            url: The URL to extract the file name from.
+
+        Returns:
+            str | None: The extracted file name, or None if the URL doesn't match local storage patterns.
+        """
+        try:
+            parsed = urlparse(url)
+
+            # Handle static URLs: /static/{filename} or /static/staticfiles/{filename}
+            if "/static/" in parsed.path:
+                return parsed.path.split("/static/", 1)[1]
+
+        except Exception as e:
+            logger.debug("Failed to extract filename from URL: %s", e)
+
+        return None

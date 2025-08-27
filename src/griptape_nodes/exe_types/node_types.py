@@ -648,15 +648,28 @@ class BaseNode(ABC):
         for child in parameter.find_elements_by_type(Parameter):
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
-    def get_parameter_value(self, param_name: str) -> Any:
+    def get_parameter_value(self, param_name: str, *, run_read_converters: bool = True) -> Any:
         param = self.get_parameter_by_name(param_name)
-        if param and isinstance(param, ParameterContainer):
+        if run_read_converters and param and isinstance(param, ParameterContainer):
             value = handle_container_parameter(self, param)
             if value is not None:
+                # Apply read converters to container parameter value
+                for converter in param.read_converters:
+                    value = converter(value)
                 return value
+
+        # Get the raw value
         if param_name in self.parameter_values:
-            return self.parameter_values[param_name]
-        return param.default_value if param else None
+            value = self.parameter_values[param_name]
+        else:
+            value = param.default_value if param else None
+
+        # Apply read converters if parameter exists
+        if run_read_converters and param and value is not None:
+            for converter in param.read_converters:
+                value = converter(value)
+
+        return value
 
     def get_parameter_list_value(self, param: str) -> list:
         """Flattens the given param from self.params into a single list.

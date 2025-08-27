@@ -125,8 +125,10 @@ class StaticFilesManager:
             logger.error(msg)
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
+        asset_url = self.storage_driver.create_asset_url(file_name)
+
         return CreateStaticFileUploadUrlResultSuccess(
-            url=response["url"], headers=response["headers"], method=response["method"]
+            url=response["url"], headers=response["headers"], method=response["method"], asset_url=asset_url
         )
 
     def on_handle_create_static_file_download_url_request(
@@ -136,12 +138,29 @@ class StaticFilesManager:
         """Handle the request to create a presigned URL for downloading a static file.
 
         Args:
-            request: The request object containing the file name.
+            request: The request object containing either file_name or asset_url.
 
         Returns:
             A result object indicating success or failure.
         """
         file_name = request.file_name
+
+        # If asset_url is provided, try to extract file_name from it
+        if request.asset_url:
+            extracted_file_name = self.storage_driver.extract_file_name_from_url(request.asset_url)
+            if extracted_file_name:
+                file_name = extracted_file_name
+            else:
+                msg = f"Failed to extract file name from asset URL: {request.asset_url}"
+                logger.error(msg)
+                return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        # Ensure we have a file_name to work with
+        if not file_name:
+            msg = "Neither file_name nor valid asset_url provided"
+            logger.error(msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
         try:
             url = self.storage_driver.create_signed_download_url(file_name)
         except ValueError as e:
