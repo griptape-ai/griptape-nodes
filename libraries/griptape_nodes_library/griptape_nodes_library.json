@@ -625,6 +625,17 @@
       }
     },
     {
+      "class_name": "ConcatenateVideos",
+      "file_path": "griptape_nodes_library/video/concatenate_videos.py",
+      "metadata": {
+        "category": "video",
+        "description": "Concatenate multiple videos into a single video file with configurable format and codec options",
+        "display_name": "Concatenate Videos",
+        "icon": "link",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "HoldVideoFrames",
       "file_path": "griptape_nodes_library/video/hold_video_frames.py",
       "metadata": {
