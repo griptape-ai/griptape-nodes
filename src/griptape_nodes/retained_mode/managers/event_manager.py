@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import inspect
 from collections import defaultdict
 from dataclasses import dataclass, fields
@@ -68,7 +67,14 @@ class EventManager:
         Args:
             queue: The asyncio.Queue to use for events, or None to clear
         """
-        self._event_queue = queue if queue is not None else asyncio.Queue()
+        if queue is not None:
+            self._event_queue = queue
+        else:
+            try:
+                self._event_queue = asyncio.Queue()
+            except RuntimeError:
+                # Defer queue creation until we're in an event loop
+                self._event_queue = None
 
     def put_event(self, event: Any) -> None:
         """Put event into async queue from sync context (non-blocking).
@@ -79,9 +85,7 @@ class EventManager:
         if self._event_queue is None:
             return
 
-        # Use put_nowait and suppress full queue errors
-        with contextlib.suppress(asyncio.QueueFull):
-            self._event_queue.put_nowait(event)
+        self._event_queue.put_nowait(event)
 
     async def aput_event(self, event: Any) -> None:
         """Put event into async queue from async context.

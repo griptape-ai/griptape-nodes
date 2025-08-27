@@ -47,6 +47,9 @@ ws_ready_event = asyncio.Event()
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 
+# Semaphore to limit concurrent requests
+REQUEST_SEMAPHORE = asyncio.Semaphore(100)
+
 
 # Important to bootstrap singleton here so that we don't
 # get any weird circular import issues from the EventLogHandler
@@ -249,6 +252,11 @@ async def _process_event_queue() -> None:
     await _await_websocket_ready()
     background_tasks = set()
 
+    def _handle_task_result(task: asyncio.Task) -> None:
+        background_tasks.discard(task)
+        if task.exception() and not task.cancelled():
+            logger.exception("Background task failed", exc_info=task.exception())
+
     try:
         event_queue = griptape_nodes.EventManager().event_queue
         while True:
@@ -256,9 +264,10 @@ async def _process_event_queue() -> None:
 
             if isinstance(event, EventRequest):
                 # Create task for concurrent processing
-                task = asyncio.create_task(_process_event_request(event))
+                async with REQUEST_SEMAPHORE:
+                    task = asyncio.create_task(_process_event_request(event))
                 background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
+                task.add_done_callback(_handle_task_result)
             elif isinstance(event, AppEvent):
                 # App events processed immediately
                 await _process_app_event(event)
