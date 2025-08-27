@@ -313,31 +313,31 @@ class LibraryLifecycleFSM(FSM[LibraryLifecycleContext]):
         context = LibraryLifecycleContext(provenance=provenance)
         super().__init__(context)
 
-    def start_lifecycle(self) -> None:
+    async def start_lifecycle(self) -> None:
         """Start the library lifecycle from CandidateState."""
         if self._current_state is not None:
             raise InvalidStateTransitionError(self._current_state, CandidateState, "Lifecycle has already been started")
-        self.start(CandidateState)
+        await self.start(CandidateState)
 
-    def begin_inspection(self) -> None:
+    async def begin_inspection(self) -> None:
         """Explicitly transition from Candidate to Inspecting."""
         self._validate_state_transition(InspectingState)
-        self.transition_state(InspectingState)
+        await self.transition_state(InspectingState)
 
-    def begin_evaluation(self) -> None:
+    async def begin_evaluation(self) -> None:
         """Explicitly transition from Inspected to Evaluating."""
         self._validate_state_transition(EvaluatingState)
-        self.transition_state(EvaluatingState)
+        await self.transition_state(EvaluatingState)
 
-    def begin_installation(self) -> None:
+    async def begin_installation(self) -> None:
         """Explicitly transition from Evaluated to Installing."""
         self._validate_state_transition(InstallingState)
-        self.transition_state(InstallingState)
+        await self.transition_state(InstallingState)
 
-    def begin_loading(self) -> None:
+    async def begin_loading(self) -> None:
         """Explicitly transition from Installed to Loading."""
         self._validate_state_transition(LoadingState)
-        self.transition_state(LoadingState)
+        await self.transition_state(LoadingState)
 
     def get_context(self) -> LibraryLifecycleContext:
         """Get the current context."""
