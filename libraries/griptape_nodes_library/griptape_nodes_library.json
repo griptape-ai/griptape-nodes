@@ -735,6 +735,17 @@
       }
     },
     {
+      "class_name": "ExtractLastFrame",
+      "file_path": "griptape_nodes_library/video/extract_last_frame.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract the last frame from a video and output it as an Image",
+        "display_name": "Extract Last Frame",
+        "icon": "film",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
