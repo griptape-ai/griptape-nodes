@@ -149,12 +149,12 @@ async def _delete_static_file(file_path: str, static_directory: Annotated[Path, 
 @app.post("/engines/request")
 async def _create_event(request: Request) -> None:
     """Create event using centralized event utilities."""
-    from .app import _aprocess_api_event
+    from .app import _process_api_event
 
     body = await request.json()
 
     # Use centralized event processing
-    await _aprocess_api_event(body)
+    await _process_api_event(body)
 
 
 def _setup_app(static_directory: Path) -> None:

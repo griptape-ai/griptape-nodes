@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from urllib.parse import urljoin
 
 from rich.align import Align
@@ -30,15 +31,17 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
     GriptapeNodeEvent,
     ProgressEvent,
-    RequestPayload,
     SkipTheLineMixin,
     deserialize_event,
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-# Global WebSocket connection for sending events
-ws_connection_for_sending = None
+# Context variable for WebSocket connection - avoids global state
+ws_connection_context: contextvars.ContextVar[Any | None] = contextvars.ContextVar("ws_connection", default=None)
+
+# Event to signal when WebSocket connection is ready
+ws_ready_event = asyncio.Event()
 
 
 # Whether to enable the static server
@@ -92,13 +95,17 @@ async def astart_app() -> None:
 
     griptape_nodes.EventManager().initialize_queue()
 
+    # Create shared context for all tasks to inherit WebSocket connection
+    shared_context = contextvars.copy_context()
+
     # Prepare and start tasks
     tasks = _create_app_tasks(api_key)
 
     try:
         async with asyncio.TaskGroup() as tg:
             for task in tasks:
-                tg.create_task(task)
+                # Context is supposed to be copied automatically, but it isn't working for some reason so we do it manually here
+                tg.create_task(task, context=shared_context)
     except Exception as e:
         logger.error("Application startup failed: %s", e)
         raise
@@ -107,20 +114,20 @@ async def astart_app() -> None:
 def _create_app_tasks(api_key: str) -> list:
     """Create all application tasks."""
     tasks = [
-        _alisten_for_api_requests(api_key),
-        _aprocess_event_queue(),
-        _arun_mcp_server(api_key),
+        _listen_for_api_requests(api_key),
+        _process_event_queue(),
+        _run_mcp_server(api_key),
     ]
 
     # Add static server if enabled
     if STATIC_SERVER_ENABLED:
         static_dir = _build_static_dir()
-        tasks.append(_astart_api_server(static_dir))
+        tasks.append(_start_api_server(static_dir))
 
     return tasks
 
 
-async def _arun_mcp_server(api_key: str) -> None:
+async def _run_mcp_server(api_key: str) -> None:
     """Run MCP server directly in event loop."""
     try:
         # Run MCP server - it will handle shutdown gracefully when cancelled
@@ -134,7 +141,7 @@ async def _arun_mcp_server(api_key: str) -> None:
         raise
 
 
-async def _astart_api_server(static_dir: Path) -> None:
+async def _start_api_server(static_dir: Path) -> None:
     """Run API server directly in event loop."""
     from .api import start_api_async
 
@@ -176,7 +183,7 @@ def _build_static_dir() -> Path:
     return Path(config_manager.workspace_path) / config_manager.merged_config["static_files_directory"]
 
 
-async def _alisten_for_api_requests(api_key: str) -> None:
+async def _listen_for_api_requests(api_key: str) -> None:
     """Listen for events and add to async queue."""
     logger.info("Listening for events from Nodes API via async WebSocket")
 
@@ -201,10 +208,9 @@ async def _alisten_for_api_requests(api_key: str) -> None:
 
 async def _handle_websocket_connection(ws_connection: Any, *, initialized: bool) -> None:
     """Handle a single WebSocket connection."""
-    global ws_connection_for_sending  # noqa: PLW0603
-
     try:
-        ws_connection_for_sending = ws_connection
+        ws_connection_context.set(ws_connection)
+        ws_ready_event.set()
 
         if not initialized:
             await griptape_nodes.EventManager().aput_event(AppEvent(payload=app_events.AppInitializationComplete()))
@@ -214,7 +220,7 @@ async def _handle_websocket_connection(ws_connection: Any, *, initialized: bool)
         async for message in ws_connection:
             try:
                 data = json.loads(message)
-                await _aprocess_api_event(data)
+                await _process_api_event(data)
             except Exception:
                 logger.exception("Error processing event, skipping.")
 
@@ -223,17 +229,21 @@ async def _handle_websocket_connection(ws_connection: Any, *, initialized: bool)
     except Exception as e:
         logger.error("Error in WebSocket connection. Retrying in 2 seconds... %s", e)
         await asyncio.sleep(2.0)
+    finally:
+        ws_connection_context.set(None)
+        ws_ready_event.clear()
 
 
 async def _cleanup_websocket_connection() -> None:
     """Clean up WebSocket connection on shutdown."""
-    if ws_connection_for_sending:
+    ws_connection = ws_connection_context.get()
+    if ws_connection:
         with contextlib.suppress(Exception):
-            await ws_connection_for_sending.close()
+            await ws_connection.close()
     logger.info("WebSocket listener shutdown complete")
 
 
-async def _aprocess_event_queue() -> None:
+async def _process_event_queue() -> None:
     """Process events concurrently - multiple requests can run simultaneously."""
     # Wait for WebSocket connection (convert to async)
     await _await_websocket_ready()
@@ -246,21 +256,21 @@ async def _aprocess_event_queue() -> None:
 
             if isinstance(event, EventRequest):
                 # Create task for concurrent processing
-                task = asyncio.create_task(_ahandle_event_request(event))
+                task = asyncio.create_task(_process_event_request(event))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
             elif isinstance(event, AppEvent):
                 # App events processed immediately
-                await _aprocess_app_event(event)
+                await _process_app_event(event)
             elif isinstance(event, GriptapeNodeEvent):
                 # Process GriptapeNodeEvents
-                await _aprocess_node_event(event)
+                await _process_node_event(event)
             elif isinstance(event, ExecutionGriptapeNodeEvent):
                 # Process ExecutionGriptapeNodeEvents
-                await _aprocess_execution_node_event(event)
+                await _process_execution_node_event(event)
             elif isinstance(event, ProgressEvent):
                 # Process ProgressEvents
-                await _aprocess_progress_event(event)
+                await _process_progress_event(event)
             else:
                 logger.warning("Unknown event type: %s", type(event))
 
@@ -270,39 +280,13 @@ async def _aprocess_event_queue() -> None:
         raise
 
 
-async def _ahandle_event_request(event: EventRequest) -> None:
-    """Handle individual request asynchronously."""
-    try:
-        result_payload = await griptape_nodes.ahandle_request(
-            event.request, response_topic=event.response_topic, request_id=event.request_id
-        )
-        # Emit success/failure events (existing logic)
-        await _aemit_request_result(event, result_payload)
-    except Exception as e:
-        logger.exception(
-            "Error handling request of type %s (request_id: %s, response_topic: %s)",
-            type(event.request).__name__,
-            event.request_id,
-            event.response_topic,
-        )
-        # Emit failure event with preserved exception context
-        await _aemit_request_failure(event, e)
+async def _process_event_request(event: EventRequest) -> None:
+    """Handle request and emit success/failure events based on result."""
+    result_payload = await griptape_nodes.ahandle_request(
+        event.request, response_topic=event.response_topic, request_id=event.request_id
+    )
 
-
-async def _await_websocket_ready() -> None:
-    """Async version of WebSocket ready check."""
-    start_time = asyncio.get_event_loop().time()
-    while not ws_connection_for_sending:
-        websocket_timeout = 15
-        if asyncio.get_event_loop().time() - start_time > websocket_timeout:
-            console.print("[red]WebSocket connection timeout[/red]")
-            sys.exit(1)
-        await asyncio.sleep(0.1)
-
-
-async def _aemit_request_result(event: EventRequest, result_payload: Any) -> None:
-    """Emit request result events."""
-    if callable(getattr(result_payload, "succeeded", None)) and result_payload.succeeded():
+    if result_payload.succeeded():
         dest_socket = "success_result"
         result_event = EventResultSuccess(
             request=event.request,
@@ -322,18 +306,17 @@ async def _aemit_request_result(event: EventRequest, result_payload: Any) -> Non
     await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
 
 
-async def _aemit_request_failure(event: EventRequest, exception: Exception) -> None:
-    """Emit request failure events."""
-    from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
+async def _await_websocket_ready() -> None:
+    """Wait for WebSocket connection to be ready using event coordination."""
+    websocket_timeout = 15
+    try:
+        await asyncio.wait_for(ws_ready_event.wait(), timeout=websocket_timeout)
+    except TimeoutError:
+        console.print("[red]WebSocket connection timeout[/red]")
+        raise
 
-    result_payload = ResultPayloadFailure(exception=exception)
-    result_event = EventResultFailure(
-        request=event.request, result=result_payload, response_topic=event.response_topic, request_id=event.request_id
-    )
-    await __emit_message("failure_result", result_event.json(), topic=result_event.response_topic)
 
-
-async def _aprocess_app_event(event: AppEvent) -> None:
+async def _process_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
     await griptape_nodes.broadcast_app_event(event.payload)
@@ -341,7 +324,7 @@ async def _aprocess_app_event(event: AppEvent) -> None:
     await __emit_message("app_event", event.json())
 
 
-async def _aprocess_node_event(event: GriptapeNodeEvent) -> None:
+async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
     # Emit the result back to the GUI
     result_event = event.wrapped_event
@@ -356,7 +339,7 @@ async def _aprocess_node_event(event: GriptapeNodeEvent) -> None:
     await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
 
 
-async def _aprocess_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
+async def _process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API (async version)."""
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
@@ -377,7 +360,7 @@ async def _aprocess_execution_node_event(event: ExecutionGriptapeNodeEvent) -> N
     await __emit_message("execution_event", result_event.json())
 
 
-async def _aprocess_progress_event(gt_event: ProgressEvent) -> None:
+async def _process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API (async version)."""
     node_name = gt_event.node_name
     if node_name:
@@ -404,25 +387,26 @@ def _create_websocket_connection(api_key: str) -> Any:
 
 async def __emit_message(event_type: str, payload: str, topic: str | None = None) -> None:
     """Send a message via WebSocket asynchronously."""
-    if ws_connection_for_sending is None:
+    ws_connection = ws_connection_context.get()
+    if ws_connection is None:
         logger.warning("WebSocket connection not available for sending message")
         return
 
     try:
         # Determine topic based on session_id and engine_id in the payload
         if topic is None:
-            topic = _determine_response_topic()
+            topic = determine_response_topic()
 
         body = {"type": event_type, "payload": json.loads(payload), "topic": topic}
 
-        await ws_connection_for_sending.send(json.dumps(body))
+        await ws_connection.send(json.dumps(body))
     except WebSocketException as e:
         logger.error("Error sending event to Nodes API: %s", e)
     except Exception as e:
         logger.error("Unexpected error while sending event to Nodes API: %s", e)
 
 
-def _determine_response_topic() -> str | None:
+def determine_response_topic() -> str | None:
     """Determine the response topic based on session_id and engine_id in the payload."""
     engine_id = griptape_nodes.get_engine_id()
     session_id = griptape_nodes.get_session_id()
@@ -458,15 +442,16 @@ def determine_request_topic() -> str | None:
     return "request"
 
 
-async def asubscribe_to_topic(topic: str) -> None:
+async def subscribe_to_topic(topic: str) -> None:
     """Subscribe to a specific topic in the message bus."""
-    if ws_connection_for_sending is None:
+    ws_connection = ws_connection_context.get()
+    if ws_connection is None:
         logger.warning("WebSocket connection not available for subscribing to topic")
         return
 
     try:
         body = {"type": "subscribe", "topic": topic, "payload": {}}
-        await ws_connection_for_sending.send(json.dumps(body))
+        await ws_connection.send(json.dumps(body))
         logger.info("Subscribed to topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error subscribing to topic %s: %s", topic, e)
@@ -474,15 +459,16 @@ async def asubscribe_to_topic(topic: str) -> None:
         logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
 
 
-async def aunsubscribe_from_topic(topic: str) -> None:
+async def unsubscribe_from_topic(topic: str) -> None:
     """Unsubscribe from a specific topic in the message bus."""
-    if ws_connection_for_sending is None:
+    ws_connection = ws_connection_context.get()
+    if ws_connection is None:
         logger.warning("WebSocket connection not available for unsubscribing from topic")
         return
 
     try:
         body = {"type": "unsubscribe", "topic": topic, "payload": {}}
-        await ws_connection_for_sending.send(json.dumps(body))
+        await ws_connection.send(json.dumps(body))
         logger.info("Unsubscribed from topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error unsubscribing from topic %s: %s", topic, e)
@@ -490,7 +476,7 @@ async def aunsubscribe_from_topic(topic: str) -> None:
         logger.error("Unexpected error while unsubscribing from topic %s: %s", topic, e)
 
 
-async def _aprocess_api_event(event: dict) -> None:
+async def _process_api_event(event: dict) -> None:
     """Process API events and add to async queue."""
     payload = event.get("payload", {})
 
@@ -512,43 +498,18 @@ async def _aprocess_api_event(event: dict) -> None:
     # Now attempt to convert it into an EventRequest.
     try:
         request_event = deserialize_event(json_data=payload)
-        if not isinstance(request_event, EventRequest):
-            msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
-            raise TypeError(msg)  # noqa: TRY301
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None
 
+    if not isinstance(request_event, EventRequest):
+        msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
+        raise TypeError(msg)
+
     # Check if the event implements SkipTheLineMixin for priority processing
     if isinstance(request_event.request, SkipTheLineMixin):
         # Handle the event immediately without queuing
-        # The request is guaranteed to be a RequestPayload since it passed earlier validation
-        result_payload = await griptape_nodes.ahandle_request(
-            cast("RequestPayload", request_event.request),
-            response_topic=request_event.response_topic,
-            request_id=request_event.request_id,
-        )
-
-        # Create the result event and emit response immediately
-        if result_payload.succeeded():
-            result_event = EventResultSuccess(
-                request=cast("RequestPayload", request_event.request),
-                request_id=request_event.request_id,
-                result=result_payload,
-                response_topic=request_event.response_topic,
-            )
-            dest_socket = "success_result"
-        else:
-            result_event = EventResultFailure(
-                request=cast("RequestPayload", request_event.request),
-                request_id=request_event.request_id,
-                result=result_payload,
-                response_topic=request_event.response_topic,
-            )
-            dest_socket = "failure_result"
-
-        # Emit the response immediately
-        await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
+        await _process_event_request(request_event)
     else:
         # Add the event to the async queue for normal processing
         await griptape_nodes.EventManager().aput_event(request_event)

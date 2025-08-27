@@ -388,15 +388,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             raise ValueError(msg)
 
     async def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
-        from griptape_nodes.app.app import asubscribe_to_topic
+        from griptape_nodes.app.app import subscribe_to_topic
 
         # Subscribe to request topic (engine discovery)
-        await asubscribe_to_topic("request")
+        await subscribe_to_topic("request")
 
         # Get engine ID and subscribe to engine_id/request
         engine_id = GriptapeNodes.get_engine_id()
         if engine_id:
-            await asubscribe_to_topic(f"engines/{engine_id}/request")
+            await subscribe_to_topic(f"engines/{engine_id}/request")
         else:
             logger.warning("Engine ID not available for subscription")
 
@@ -404,7 +404,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         session_id = GriptapeNodes.get_session_id()
         if session_id:
             topic = f"sessions/{session_id}/request"
-            await asubscribe_to_topic(topic)
+            await subscribe_to_topic(topic)
         else:
             logger.info("No session ID available for subscription")
 
@@ -426,7 +426,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return GetEngineVersionResultFailure(result_details=details)
 
     async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
-        from griptape_nodes.app.app import asubscribe_to_topic
+        from griptape_nodes.app.app import subscribe_to_topic
 
         current_session_id = GriptapeNodes.SessionManager().get_active_session_id()
         if current_session_id is None:
@@ -439,13 +439,13 @@ class GriptapeNodes(metaclass=SingletonMeta):
             details = f"Session '{current_session_id}' already active. Joining..."
 
         topic = f"sessions/{current_session_id}/request"
-        await asubscribe_to_topic(topic)
+        await subscribe_to_topic(topic)
         logger.info("Subscribed to new session topic: %s", topic)
 
         return AppStartSessionResultSuccess(current_session_id)
 
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
-        from griptape_nodes.app.app import aunsubscribe_from_topic
+        from griptape_nodes.app.app import unsubscribe_from_topic
 
         try:
             previous_session_id = GriptapeNodes.SessionManager().get_active_session_id()
@@ -458,7 +458,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 GriptapeNodes.SessionManager().clear_saved_session()
 
             unsubscribe_topic = f"sessions/{previous_session_id}/request"
-            await aunsubscribe_from_topic(unsubscribe_topic)
+            await unsubscribe_from_topic(unsubscribe_topic)
 
             return AppEndSessionResultSuccess(session_id=previous_session_id)
         except Exception as err:
