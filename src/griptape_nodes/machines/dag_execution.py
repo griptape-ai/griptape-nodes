@@ -156,7 +156,7 @@ class ExecutionState(State):
         return ExecutionState
 
     @staticmethod
-    def on_update(context: ExecutionContext) -> type[State] | None:
+    def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: C901
         # Do we have any Leaf Nodes not in canceled state?
         network = context.current_dag.network
         # Check and see if there are leaf nodes that are cancelled.
