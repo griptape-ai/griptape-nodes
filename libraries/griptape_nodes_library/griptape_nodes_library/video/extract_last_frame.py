@@ -53,14 +53,20 @@ class ExtractLastFrame(BaseVideoProcessor):
         # -update 1: overwrite output file if it exists
         cmd = [
             ffmpeg_path,
-            "-sseof", "-3",            # Seek to 3 seconds before end (BEFORE input)
-            "-i", input_url,           # Input video URL
-            "-vsync", "0",             # Extract 1 frame
-            "-q:v", "0",               # Set quality to 0 (highest quality)
-            "-f", "image2",            # Output as image
-            "-update", "1",            # Overwrite existing file
-            "-y",                      # Overwrite output file without asking
-            output_path                # Output path
+            "-sseof",
+            "-3",  # Seek to 3 seconds before end (BEFORE input)
+            "-i",
+            input_url,  # Input video URL
+            "-vsync",
+            "0",  # Extract 1 frame
+            "-q:v",
+            "0",  # Set quality to 0 (highest quality)
+            "-f",
+            "image2",  # Output as image
+            "-update",
+            "1",  # Overwrite existing file
+            "-y",  # Overwrite output file without asking
+            output_path,  # Output path
         ]
 
         return cmd
