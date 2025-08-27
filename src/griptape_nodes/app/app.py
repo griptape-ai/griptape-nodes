@@ -37,12 +37,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-# Configure the utils.events module to use this queue
-from griptape_nodes.utils.events import set_event_queue
-
-# Global async event queue - created in async context
-event_queue: asyncio.Queue | None = None
-
 # Global WebSocket connection for sending events
 ws_connection_for_sending = None
 
@@ -51,22 +45,10 @@ ws_connection_for_sending = None
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
 
 
-def put_event(event: Any) -> None:
-    """Put event into async queue from sync context (non-blocking)."""
-    if event_queue is None:
-        return
-
-    # Use put_nowait and suppress full queue errors
-    with contextlib.suppress(asyncio.QueueFull):
-        event_queue.put_nowait(event)
-
-
-async def aput_event(event: Any) -> None:
-    """Put event into async queue from async context."""
-    if event_queue is None:
-        return
-
-    await event_queue.put(event)
+# Important to bootstrap singleton here so that we don't
+# get any weird circular import issues from the EventLogHandler
+# initializing it from a log during it's own initialization.
+griptape_nodes = GriptapeNodes()
 
 
 class EventLogHandler(logging.Handler):
@@ -79,7 +61,7 @@ class EventLogHandler(logging.Handler):
         log_event = AppEvent(
             payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
         )
-        put_event(log_event)
+        griptape_nodes.EventManager().put_event(log_event)
 
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
@@ -106,17 +88,12 @@ def start_app() -> None:
 
 async def astart_app() -> None:
     """New async app entry point."""
-    global event_queue  # noqa: PLW0603
-
     api_key = _ensure_api_key()
 
-    # Create async queue in event loop context
-    event_queue = asyncio.Queue()
-
-    set_event_queue(event_queue)
+    griptape_nodes.EventManager().initialize_queue()
 
     # Prepare and start tasks
-    tasks = _create_app_tasks(api_key, event_queue)
+    tasks = _create_app_tasks(api_key)
 
     try:
         async with asyncio.TaskGroup() as tg:
@@ -127,11 +104,11 @@ async def astart_app() -> None:
         raise
 
 
-def _create_app_tasks(api_key: str, event_queue: asyncio.Queue) -> list:
+def _create_app_tasks(api_key: str) -> list:
     """Create all application tasks."""
     tasks = [
         _alisten_for_api_requests(api_key),
-        _aprocess_event_queue(event_queue),
+        _aprocess_event_queue(),
         _arun_mcp_server(api_key),
     ]
 
@@ -174,7 +151,7 @@ async def _astart_api_server(static_dir: Path) -> None:
 
 
 def _ensure_api_key() -> str:
-    secrets_manager = GriptapeNodes.SecretsManager()
+    secrets_manager = griptape_nodes.SecretsManager()
     api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
     if api_key is None:
         message = Panel(
@@ -195,7 +172,7 @@ def _ensure_api_key() -> str:
 
 def _build_static_dir() -> Path:
     """Build the static directory path based on the workspace configuration."""
-    config_manager = GriptapeNodes.ConfigManager()
+    config_manager = griptape_nodes.ConfigManager()
     return Path(config_manager.workspace_path) / config_manager.merged_config["static_files_directory"]
 
 
@@ -230,9 +207,9 @@ async def _handle_websocket_connection(ws_connection: Any, *, initialized: bool)
         ws_connection_for_sending = ws_connection
 
         if not initialized:
-            await aput_event(AppEvent(payload=app_events.AppInitializationComplete()))
+            await griptape_nodes.EventManager().aput_event(AppEvent(payload=app_events.AppInitializationComplete()))
 
-        await aput_event(AppEvent(payload=app_events.AppConnectionEstablished()))
+        await griptape_nodes.EventManager().aput_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
         async for message in ws_connection:
             try:
@@ -256,13 +233,14 @@ async def _cleanup_websocket_connection() -> None:
     logger.info("WebSocket listener shutdown complete")
 
 
-async def _aprocess_event_queue(event_queue: asyncio.Queue) -> None:
+async def _aprocess_event_queue() -> None:
     """Process events concurrently - multiple requests can run simultaneously."""
     # Wait for WebSocket connection (convert to async)
     await _await_websocket_ready()
     background_tasks = set()
 
     try:
+        event_queue = griptape_nodes.EventManager().event_queue
         while True:
             event = await event_queue.get()
 
@@ -295,7 +273,7 @@ async def _aprocess_event_queue(event_queue: asyncio.Queue) -> None:
 async def _ahandle_event_request(event: EventRequest) -> None:
     """Handle individual request asynchronously."""
     try:
-        result_payload = await GriptapeNodes.ahandle_request(
+        result_payload = await griptape_nodes.ahandle_request(
             event.request, response_topic=event.response_topic, request_id=event.request_id
         )
         # Emit success/failure events (existing logic)
@@ -358,7 +336,7 @@ async def _aemit_request_failure(event: EventRequest, exception: Exception) -> N
 async def _aprocess_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
-    await GriptapeNodes.broadcast_app_event(event.payload)
+    await griptape_nodes.broadcast_app_event(event.payload)
 
     await __emit_message("app_event", event.json())
 
@@ -382,20 +360,20 @@ async def _aprocess_execution_node_event(event: ExecutionGriptapeNodeEvent) -> N
     """Process ExecutionGriptapeNodeEvents and send them to the API (async version)."""
     result_event = event.wrapped_event
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-        GriptapeNodes.EventManager().current_active_node = result_event.payload.node_name
+        griptape_nodes.EventManager().current_active_node = result_event.payload.node_name
 
     if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
         node_name = result_event.payload.node_name
         logger.info("Resuming Node '%s'", node_name)
-        flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+        flow_name = griptape_nodes.NodeManager().get_node_parent_flow_by_name(node_name)
         request = EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name))
-        await aput_event(request)
+        await griptape_nodes.EventManager().aput_event(request)
 
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-        if result_event.payload.node_name != GriptapeNodes.EventManager().current_active_node:
+        if result_event.payload.node_name != griptape_nodes.EventManager().current_active_node:
             msg = "Node start and finish do not match."
             raise KeyError(msg) from None
-        GriptapeNodes.EventManager().current_active_node = None
+        griptape_nodes.EventManager().current_active_node = None
     await __emit_message("execution_event", result_event.json())
 
 
@@ -446,8 +424,8 @@ async def __emit_message(event_type: str, payload: str, topic: str | None = None
 
 def _determine_response_topic() -> str | None:
     """Determine the response topic based on session_id and engine_id in the payload."""
-    engine_id = GriptapeNodes.get_engine_id()
-    session_id = GriptapeNodes.get_session_id()
+    engine_id = griptape_nodes.get_engine_id()
+    session_id = griptape_nodes.get_session_id()
 
     # Normal topic determination logic
     # Check for session_id first (highest priority)
@@ -464,8 +442,8 @@ def _determine_response_topic() -> str | None:
 
 def determine_request_topic() -> str | None:
     """Determine the request topic based on session_id and engine_id in the payload."""
-    engine_id = GriptapeNodes.get_engine_id()
-    session_id = GriptapeNodes.get_session_id()
+    engine_id = griptape_nodes.get_engine_id()
+    session_id = griptape_nodes.get_session_id()
 
     # Normal topic determination logic
     # Check for session_id first (highest priority)
@@ -545,7 +523,7 @@ async def _aprocess_api_event(event: dict) -> None:
     if isinstance(request_event.request, SkipTheLineMixin):
         # Handle the event immediately without queuing
         # The request is guaranteed to be a RequestPayload since it passed earlier validation
-        result_payload = await GriptapeNodes.ahandle_request(
+        result_payload = await griptape_nodes.ahandle_request(
             cast("RequestPayload", request_event.request),
             response_topic=request_event.response_topic,
             request_id=request_event.request_id,
@@ -573,4 +551,4 @@ async def _aprocess_api_event(event: dict) -> None:
         await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
     else:
         # Add the event to the async queue for normal processing
-        await aput_event(request_event)
+        await griptape_nodes.EventManager().aput_event(request_event)

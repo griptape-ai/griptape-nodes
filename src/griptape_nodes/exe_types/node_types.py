@@ -36,7 +36,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.events import put_event
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -119,12 +118,14 @@ class BaseNode(ABC):
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # See if the current state is in the set of states to trigger a change event.
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
 
-            put_event(
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeUnresolvedEvent(node_name=self.name))
                 )
@@ -764,6 +765,8 @@ class BaseNode(ABC):
         self.current_spotlight_parameter = None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Add the value to the node
         if parameter_name in self.parameter_output_values:
             try:
@@ -778,9 +781,13 @@ class BaseNode(ABC):
             self.parameter_output_values[parameter_name] = value
         # Publish the event up!
 
-        put_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+        GriptapeNodes.EventManager().put_event(
+            ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name)
+        )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         parameter = self.get_parameter_by_name(parameter_name)
         if parameter:
             data_type = parameter.type
@@ -792,7 +799,9 @@ class BaseNode(ABC):
                 value=TypeValidator.safe_serialize(value),
             )
 
-            put_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
+            )
         else:
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
@@ -905,6 +914,7 @@ class BaseNode(ABC):
         """Emit an AlterElementEvent for parameter add/remove operations."""
         from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
         from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Create event data using the parameter's to_event method
         if remove:
@@ -919,7 +929,7 @@ class BaseNode(ABC):
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
 
-        put_event(event)
+        GriptapeNodes.EventManager().put_event(event)
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.
@@ -1060,6 +1070,7 @@ class TrackedParameterOutputValues(dict[str, Any]):
         if parameter is not None:
             from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
             from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             # Create event data using the parameter's to_event method
             event_data = parameter.to_event(self._node)
@@ -1073,7 +1084,7 @@ class TrackedParameterOutputValues(dict[str, Any]):
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
 
-            put_event(event)
+            GriptapeNodes.EventManager().put_event(event)
 
 
 class ControlNode(BaseNode):

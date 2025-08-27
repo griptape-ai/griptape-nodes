@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any
 
@@ -15,7 +14,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowFromScratchRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.events import aput_event, set_event_queue
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +25,6 @@ class LocalExecutorError(Exception):
 class LocalWorkflowExecutor(WorkflowExecutor):
     def __init__(self) -> None:
         self.output: dict | None = None
-
-        # Get the centralized event queue
-        self.queue = asyncio.Queue()
-        set_event_queue(self.queue)
 
     def _load_flow_for_workflow(self) -> str:
         try:
@@ -115,7 +109,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             request_payload, response_topic=event.response_topic, request_id=event.request_id
         )
         # Send result back through centralized event system
-        await aput_event(result)
+        await GriptapeNodes.EventManager().aput_event(result)
 
     async def _handle_execution_event(
         self, event: ExecutionGriptapeNodeEvent, flow_name: str
@@ -140,7 +134,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             node_name = result_event.payload.node_name
             flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
             event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            await aput_event(event_request)
+            await GriptapeNodes.EventManager().aput_event(event_request)
 
         return False, None
 
@@ -165,6 +159,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             None
         """
         logger.info("Executing workflow: %s", workflow_name)
+        GriptapeNodes.EventManager().initialize_queue()
 
         # Set the storage backend
         self._set_storage_backend(storage_backend=storage_backend)
@@ -193,16 +188,17 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         is_flow_finished = False
         error: Exception | None = None
 
+        event_queue = GriptapeNodes.EventManager().event_queue
         while not is_flow_finished:
             try:
-                event = await self.queue.get()
+                event = await event_queue.get()
 
                 if isinstance(event, EventRequest):
                     await self._handle_event_request(event)
                 elif isinstance(event, ExecutionGriptapeNodeEvent):
                     is_flow_finished, error = await self._handle_execution_event(event, flow_name)
 
-                self.queue.task_done()
+                event_queue.task_done()
 
             except Exception as e:
                 msg = f"Error handling queue event: {e}"

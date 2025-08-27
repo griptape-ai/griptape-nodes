@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.utils.events import put_event
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -255,6 +254,8 @@ class BaseNodeElement:
 
     def _emit_alter_element_event_if_possible(self) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         if self._node_context is None:
             return
 
@@ -283,7 +284,7 @@ class BaseNodeElement:
             wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
         )
 
-        put_event(event)
+        GriptapeNodes.EventManager().put_event(event)
         self._changes.clear()
 
     def to_dict(self) -> dict[str, Any]:

@@ -38,13 +38,13 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.managers.static_files_manager import (
     StaticFilesManager,
 )
-from griptape_nodes.utils.events import put_event
 
 if TYPE_CHECKING:
     from griptape.tools.mcp.sessions import StreamableHttpConnection
@@ -189,7 +189,7 @@ class AgentManager:
                         if "conversation_output" in result_json:
                             new_conversation_output = result_json["conversation_output"]
                             if new_conversation_output != last_conversation_output:
-                                put_event(
+                                GriptapeNodes.EventManager().put_event(
                                     ExecutionGriptapeNodeEvent(
                                         wrapped_event=ExecutionEvent(
                                             payload=AgentStreamEvent(

@@ -24,7 +24,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowsFromConfigRequest,
     RegisterWorkflowsFromConfigResultSuccess,
 )
-from griptape_nodes.utils.events import put_event
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -168,8 +168,6 @@ class SyncManager:
             sync_request = StartSyncAllCloudWorkflowsRequest()
 
             # Use handle_request to process through normal event system
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             result = GriptapeNodes.handle_request(sync_request)
 
             if isinstance(result, StartSyncAllCloudWorkflowsResultSuccess):
@@ -194,8 +192,6 @@ class SyncManager:
         Raises:
             RuntimeError: If required cloud configuration is missing.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         secrets_manager = GriptapeNodes.SecretsManager()
 
         # Get cloud storage configuration from secrets
@@ -470,14 +466,12 @@ class SyncManager:
             total_workflows=total_workflows,
         )
 
-        put_event(AppEvent(payload=sync_complete_event))
+        GriptapeNodes.EventManager().put_event(AppEvent(payload=sync_complete_event))
 
         # Register workflows from the synced directory
         if synced_workflows:
             logger.info("Registering %d synced workflows from configuration", len(synced_workflows))
             try:
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
                 register_request = RegisterWorkflowsFromConfigRequest(
                     config_section="app_events.on_app_initialization_complete.workflows_to_register"
                 )

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import inspect
 from collections import defaultdict
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import TypeVar
 
@@ -18,7 +20,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
     WorkflowAlteredMixin,
 )
-from griptape_nodes.utils.events import aput_event, put_event
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -47,9 +48,62 @@ class EventManager:
         self.current_active_node: str | None = None
         # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
         self._flush_in_queue: bool = False
+        # Event queue for publishing events
+        self._event_queue: asyncio.Queue | None = None
+
+    @property
+    def event_queue(self) -> asyncio.Queue:
+        if self._event_queue is None:
+            msg = "Event queue has not been initialized. Please call 'initialize_queue' with an asyncio.Queue instance before accessing the event queue."
+            raise ValueError(msg)
+        return self._event_queue
 
     def clear_flush_in_queue(self) -> None:
         self._flush_in_queue = False
+
+    def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
+        """Set the event queue for this manager.
+
+        Args:
+            queue: The asyncio.Queue to use for events, or None to clear
+        """
+        self._event_queue = queue if queue is not None else asyncio.Queue()
+
+    def put_event(self, event: Any) -> None:
+        """Put event into async queue from sync context (non-blocking).
+
+        Args:
+            event: The event to publish to the queue
+        """
+        if self._event_queue is None:
+            return
+
+        # Use put_nowait and suppress full queue errors
+        with contextlib.suppress(asyncio.QueueFull):
+            self._event_queue.put_nowait(event)
+
+    async def aput_event(self, event: Any) -> None:
+        """Put event into async queue from async context.
+
+        Args:
+            event: The event to publish to the queue
+        """
+        if self._event_queue is None:
+            return
+
+        await self._event_queue.put(event)
+
+    def put_event_threadsafe(self, loop: Any, event: Any) -> None:
+        """Put event into async queue from sync context in a thread-safe manner.
+
+        Args:
+            loop: The asyncio event loop to use for thread-safe operation
+            event: The event to publish to the queue
+        """
+        if self._event_queue is None:
+            return
+
+        loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
 
     def assign_manager_to_request_type(
         self,
@@ -116,7 +170,7 @@ class EventManager:
                     retained_mode=retained_mode_str,
                     response_topic=context.response_topic,
                 )
-            put_event(GriptapeNodeEvent(wrapped_event=result_event))
+            self.put_event(GriptapeNodeEvent(wrapped_event=result_event))
 
         return callback_result
 
@@ -159,7 +213,7 @@ class EventManager:
                 and isinstance(result_payload, WorkflowAlteredMixin)
                 and not self._flush_in_queue
             ):
-                await aput_event(EventRequest(request=FlushParameterChangesRequest()))
+                await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
         context = RequestContext(
@@ -209,9 +263,7 @@ class EventManager:
                 and isinstance(result_payload, WorkflowAlteredMixin)
                 and not self._flush_in_queue
             ):
-                from griptape_nodes.utils.events import put_event
-
-                put_event(EventRequest(request=FlushParameterChangesRequest()))
+                self.put_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
         context = RequestContext(
