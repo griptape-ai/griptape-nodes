@@ -51,7 +51,7 @@ When creating a longer video from multiple AI-generated clips:
 ### Format and Codec Selection
 
 - **mp4 + libx264**: Best for web compatibility and general use
-- **mov + libx264**: Good for professional video editing workflows  
+- **mov + libx264**: Good for professional video editing workflows
 - **mkv + libx265**: Excellent compression for storage efficiency
 - **webm + libvpx-vp9**: Optimized for web streaming
 - **copy codecs**: Fastest processing when all inputs have the same codec

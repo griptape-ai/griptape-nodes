@@ -19,6 +19,7 @@ class ConcatenateVideos(BaseVideoProcessor):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         # Initialize the base ControlNode first (skip BaseVideoProcessor custom init)
         from griptape_nodes.exe_types.node_types import ControlNode
+
         ControlNode.__init__(self, name, metadata)
 
         # Add our custom video_inputs parameter first
@@ -138,11 +139,16 @@ class ConcatenateVideos(BaseVideoProcessor):
         # Build FFmpeg command for concatenation
         cmd = [
             ffmpeg_path,
-            "-f", "concat",              # Use concat demuxer
-            "-safe", "0",                # Allow unsafe file names
-            "-i", concat_list_file,      # Input concat list file
-            "-c:v", video_codec,         # Video codec
-            "-c:a", audio_codec,         # Audio codec
+            "-f",
+            "concat",  # Use concat demuxer
+            "-safe",
+            "0",  # Allow unsafe file names
+            "-i",
+            concat_list_file,  # Input concat list file
+            "-c:v",
+            video_codec,  # Video codec
+            "-c:a",
+            audio_codec,  # Audio codec
         ]
 
         # Add frame rate filter if needed (from base class)
@@ -153,18 +159,26 @@ class ConcatenateVideos(BaseVideoProcessor):
         # Add processing speed settings if not copying
         if video_codec != "copy":
             preset, pix_fmt, crf = self._get_processing_speed_settings()
-            cmd.extend([
-                "-preset", preset,
-                "-crf", str(crf),
-                "-pix_fmt", pix_fmt,
-            ])
+            cmd.extend(
+                [
+                    "-preset",
+                    preset,
+                    "-crf",
+                    str(crf),
+                    "-pix_fmt",
+                    pix_fmt,
+                ]
+            )
 
         # Add common options
-        cmd.extend([
-            "-movflags", "+faststart",   # Optimize for web streaming
-            "-y",                        # Overwrite output file
-            output_path                  # Output file
-        ])
+        cmd.extend(
+            [
+                "-movflags",
+                "+faststart",  # Optimize for web streaming
+                "-y",  # Overwrite output file
+                output_path,  # Output file
+            ]
+        )
 
         return cmd
 
@@ -189,7 +203,9 @@ class ConcatenateVideos(BaseVideoProcessor):
         if not video_inputs:
             exceptions.append(_create_video_validation_error("At least one video input is required"))
         elif len(video_inputs) < min_video_count:
-            exceptions.append(_create_video_validation_error(f"At least {min_video_count} videos are required for concatenation"))
+            exceptions.append(
+                _create_video_validation_error(f"At least {min_video_count} videos are required for concatenation")
+            )
 
         # Validate format
         output_format = self.get_parameter_value("output_format")
@@ -291,10 +307,10 @@ class ConcatenateVideos(BaseVideoProcessor):
                     file_path = str(temp_video_file)
                     concat_line = f"file '{file_path}'\n"
                     f.write(concat_line)
-                    
+
                     # Debug logging
                     self.append_value_to_parameter("logs", f"Added to concat list: {concat_line.strip()}\n")
-                    self.append_value_to_parameter("logs", f"Prepared video {i+1}/{len(video_inputs)}\n")
+                    self.append_value_to_parameter("logs", f"Prepared video {i + 1}/{len(video_inputs)}\n")
 
             # Debug: Log concat file contents
             self.append_value_to_parameter("logs", f"Concat list file path: {concat_list_file}\n")
@@ -312,8 +328,7 @@ class ConcatenateVideos(BaseVideoProcessor):
 
             # Build the FFmpeg command for concatenation
             cmd = self._build_ffmpeg_command(
-                "", output_path, input_frame_rate, 
-                concat_list_file=str(concat_list_file), **kwargs
+                "", output_path, input_frame_rate, concat_list_file=str(concat_list_file), **kwargs
             )
 
             # Use base class method to run FFmpeg command
@@ -365,11 +380,11 @@ class ConcatenateVideos(BaseVideoProcessor):
 
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL to local file."""
-        
+
         def _create_download_error(message: str) -> ValueError:
             """Create download error."""
             return ValueError(message)
-            
+
         try:
             response = httpx.get(video_url, timeout=30.0)
             response.raise_for_status()
