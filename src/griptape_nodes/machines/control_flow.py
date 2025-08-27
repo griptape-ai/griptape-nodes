@@ -78,7 +78,7 @@ class ControlFlowContext:
 # GOOD!
 class ResolveNodeState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         # The state machine has started, but it hasn't began to execute yet.
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
@@ -105,12 +105,12 @@ class ResolveNodeState(State):
 
     # This is necessary to transition to the next step.
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:
+    async def on_update(context: ControlFlowContext) -> type[State] | None:
         # If node has not already been resolved!
         if context.current_node is None:
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
-            context.resolution_machine.resolve_node(context.current_node)
+            await context.resolution_machine.resolve_node(context.current_node)
 
         if context.resolution_machine.is_complete():
             return NextNodeState
@@ -119,7 +119,7 @@ class ResolveNodeState(State):
 
 class NextNodeState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is None:
             return CompleteState
         # I did define this on the ControlNode.
@@ -164,13 +164,13 @@ class NextNodeState(State):
         return None
 
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
         return ResolveNodeState
 
 
 class CompleteState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -188,7 +188,7 @@ class CompleteState(State):
         return None
 
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
@@ -198,46 +198,46 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         context = ControlFlowContext()
         super().__init__(context)
 
-    def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
         start_node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
-        self.start(ResolveNodeState)  # Begins the flow
+        await self.start(ResolveNodeState)  # Begins the flow
 
-    def update(self) -> None:
+    async def update(self) -> None:
         if self._current_state is None:
             msg = "Attempted to run the next step of a workflow that was either already complete or has not started."
             raise RuntimeError(msg)
-        super().update()
+        await super().update()
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
         self._context.resolution_machine.change_debug_mode(debug_mode)
 
-    def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
+    async def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
         if change_debug_mode:
             resolution_machine.change_debug_mode(True)
-        resolution_machine.update()
+        await resolution_machine.update()
 
         # Tick the control flow if the resolution machine inside it isn't busy.
         if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
-                self.update()
+                await self.update()
 
-    def node_step(self) -> None:
+    async def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
         resolution_machine.change_debug_mode(False)
-        resolution_machine.update()
+        await resolution_machine.update()
 
         # Tick the control flow if the resolution machine inside it isn't busy.
         if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
-                self.update()
+                await self.update()
 
     def reset_machine(self) -> None:
         self._context.reset()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, TypeVar
 
@@ -706,6 +708,38 @@ class BaseNode(ABC):
     @abstractmethod
     def process[T](self) -> AsyncResult | None:
         pass
+
+    async def aprocess(self) -> None:
+        """Async version of process().
+
+        Default implementation wraps the existing process() method to maintain backwards compatibility.
+        Subclasses can override this method to provide direct async implementation.
+        """
+        result = self.process()
+
+        if result is None:
+            # Simple synchronous node - nothing to do
+            return
+
+        if isinstance(result, Generator):
+            # Handle generator pattern asynchronously using the same logic as before
+            loop = asyncio.get_running_loop()
+
+            try:
+                while True:
+                    # Get the next callable from generator
+                    func = next(result)
+                    # Run it in thread pool (preserving existing behavior)
+                    with ThreadPoolExecutor() as executor:
+                        future_result = await loop.run_in_executor(executor, func)
+                    # Send result back to generator
+                    result.send(future_result)
+            except StopIteration:
+                # Generator is done
+                return
+        else:
+            # Some other return type - log warning but continue
+            logger.warning("Node %s process() returned unexpected type: %s", self.name, type(result))
 
     # if not implemented, it will return no issues.
     def validate_before_workflow_run(self) -> list[Exception] | None:

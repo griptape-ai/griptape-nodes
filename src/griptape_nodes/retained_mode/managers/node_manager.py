@@ -1867,7 +1867,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
+    async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -1935,7 +1935,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
+            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)

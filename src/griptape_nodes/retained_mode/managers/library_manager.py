@@ -1603,7 +1603,7 @@ class LibraryManager:
         )
         console.print(message)
 
-    def _load_libraries_from_provenance_system(self) -> None:
+    async def _load_libraries_from_provenance_system(self) -> None:
         """Load libraries using the new provenance-based system with FSM.
 
         This method converts libraries_to_register entries into LibraryProvenanceLocalFile
@@ -1632,7 +1632,7 @@ class LibraryManager:
 
             # Add to directory as user candidate (defaults to active=True)
             # This automatically creates FSM and runs evaluation
-            self._library_directory.add_user_candidate(provenance)
+            await self._library_directory.add_user_candidate(provenance)
 
             logger.debug("Added library provenance: %s", provenance.get_display_name())
 
@@ -1661,8 +1661,8 @@ class LibraryManager:
 
         # Process installable candidates through installation and loading
         for candidate in installable_candidates:
-            if self._library_directory.install_library(candidate.provenance):
-                self._library_directory.load_library(candidate.provenance)
+            if await self._library_directory.install_library(candidate.provenance):
+                await self._library_directory.load_library(candidate.provenance)
 
     def _report_library_name_conflicts(self) -> None:
         """Report on library name conflicts found during evaluation."""

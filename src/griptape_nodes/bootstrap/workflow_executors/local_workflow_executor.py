@@ -8,7 +8,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     ExecutionGriptapeNodeEvent,
 )
-from griptape_nodes.retained_mode.events.execution_events import SingleExecutionStepRequest, StartFlowRequest
+from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowFromScratchRequest,
@@ -125,16 +125,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             msg = "Control flow cancelled"
             logger.error(msg)
             return True, LocalExecutorError(msg)
-        if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
-            event_log = f"ResumeNodeProcessingEvent: {result_event.payload}"
-            logger.info(event_log)
-
-            # Here we need to handle the resume event since this is the callback mechanism
-            # for the flow to be resumed for any Node that yields a generator in its process method.
-            node_name = result_event.payload.node_name
-            flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-            event_request = EventRequest(request=SingleExecutionStepRequest(flow_name=flow_name))
-            await GriptapeNodes.EventManager().aput_event(event_request)
 
         return False, None
 

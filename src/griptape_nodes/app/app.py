@@ -354,13 +354,6 @@ async def _process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> No
     if type(result_event.payload).__name__ == "NodeStartProcessEvent":
         griptape_nodes.EventManager().current_active_node = result_event.payload.node_name
 
-    if type(result_event.payload).__name__ == "ResumeNodeProcessingEvent":
-        node_name = result_event.payload.node_name
-        logger.info("Resuming Node '%s'", node_name)
-        flow_name = griptape_nodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        request = EventRequest(request=execution_events.SingleExecutionStepRequest(flow_name=flow_name))
-        await griptape_nodes.EventManager().aput_event(request)
-
     if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
         if result_event.payload.node_name != griptape_nodes.EventManager().current_active_node:
             msg = "Node start and finish do not match."
