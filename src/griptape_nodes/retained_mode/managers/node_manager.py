@@ -964,6 +964,7 @@ class NodeManager:
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
             parent_container_name=request.parent_container_name,
+            settable=request.settable,
         )
         try:
             if request.parent_container_name and request.initial_setup:
@@ -1170,6 +1171,7 @@ class NodeManager:
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
             is_user_defined=getattr(element, "user_defined", False),
+            settable=getattr(element, "settable", None),
             ui_options=getattr(element, "ui_options", None),
         )
         return result
@@ -1259,7 +1261,7 @@ class NodeManager:
         if request.ui_options is not None and hasattr(parameter, "ui_options"):
             parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
-    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:  # noqa: C901, PLR0912
         if request.type is not None:
             parameter.type = request.type
         if request.input_types is not None:
@@ -1284,6 +1286,8 @@ class NodeManager:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
+        if request.settable is not None:
+            parameter.settable = request.settable
 
     def _validate_and_break_invalid_connections(
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
