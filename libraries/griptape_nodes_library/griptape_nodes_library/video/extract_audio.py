@@ -21,7 +21,7 @@ class ExtractAudio(BaseVideoProcessor):
         "high": "128k",
         "medium": "96k",
         "low": "64k",
-        "copy": "copy"  # Copy original audio stream without re-encoding
+        "copy": "copy",  # Copy original audio stream without re-encoding
     }
     DEFAULT_AUDIO_QUALITY = "high"
 
@@ -110,10 +110,12 @@ class ExtractAudio(BaseVideoProcessor):
             cmd.extend(["-acodec", "aac", "-b:a", bitrate])
 
         # Add output file
-        cmd.extend([
-            "-y",  # Overwrite output file without asking
-            output_path,  # Output path
-        ])
+        cmd.extend(
+            [
+                "-y",  # Overwrite output file without asking
+                output_path,  # Output path
+            ]
+        )
 
         return cmd
 
@@ -224,8 +226,13 @@ class ExtractAudio(BaseVideoProcessor):
             self.append_value_to_parameter("logs", "✅ Audio stream detected in video\n")
 
             # Build the FFmpeg command for extracting audio
-            cmd = self._build_ffmpeg_command(input_url, str(temp_audio_path), input_frame_rate,
-                                           audio_format=audio_format, audio_quality=audio_quality)
+            cmd = self._build_ffmpeg_command(
+                input_url,
+                str(temp_audio_path),
+                input_frame_rate,
+                audio_format=audio_format,
+                audio_quality=audio_quality,
+            )
 
             # Use base class method to run FFmpeg command
             self._run_ffmpeg_command(cmd, timeout=300)
