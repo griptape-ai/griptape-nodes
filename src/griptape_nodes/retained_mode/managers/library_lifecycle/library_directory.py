@@ -35,7 +35,7 @@ class LibraryDirectory:
         # Own all FSM instances for library lifecycle management
         self._provenance_to_fsm: dict[LibraryProvenance, LibraryLifecycleFSM] = {}
 
-    def discover_library(self, provenance: LibraryProvenance) -> None:
+    async def discover_library(self, provenance: LibraryProvenance) -> None:
         """Discover a library and its provenance.
 
         Discovery is purely about cataloging - activation state is handled separately.
@@ -49,26 +49,26 @@ class LibraryDirectory:
         self._discovered_libraries[provenance] = entry
 
         # Create FSM and run evaluation automatically
-        self._create_fsm_and_evaluate(provenance)
+        await self._create_fsm_and_evaluate(provenance)
 
-    def add_curated_candidate(self, provenance: LibraryProvenance) -> None:
+    async def add_curated_candidate(self, provenance: LibraryProvenance) -> None:
         """Add a curated library candidate.
 
         Curated libraries default to inactive and need to be activated by user.
         """
-        self.discover_library(provenance)
+        await self.discover_library(provenance)
 
         # Set curated library as inactive by default
         if provenance in self._discovered_libraries:
             entry = self._discovered_libraries[provenance]
             entry.active = False
 
-    def add_user_candidate(self, provenance: LibraryProvenance) -> None:
+    async def add_user_candidate(self, provenance: LibraryProvenance) -> None:
         """Add a user-supplied library candidate.
 
         User libraries default to active.
         """
-        self.discover_library(provenance)
+        await self.discover_library(provenance)
 
         # Set user library as active by default
         if provenance in self._discovered_libraries:
@@ -202,7 +202,7 @@ class LibraryDirectory:
 
         return blockers
 
-    def _create_fsm_and_evaluate(self, provenance: LibraryProvenance) -> None:
+    async def _create_fsm_and_evaluate(self, provenance: LibraryProvenance) -> None:
         """Create FSM for provenance and run through evaluation phase.
 
         This method is called automatically when a library is discovered.
@@ -214,11 +214,11 @@ class LibraryDirectory:
         self._provenance_to_fsm[provenance] = fsm
 
         # Start the lifecycle and run through evaluation
-        fsm.start_lifecycle()
+        await fsm.start_lifecycle()
 
         # Progress through inspection
         if fsm.can_begin_inspection():
-            fsm.begin_inspection()
+            await fsm.begin_inspection()
         else:
             logger.error(
                 "Cannot inspect library '%s' - inspection step cannot proceed",
@@ -228,7 +228,7 @@ class LibraryDirectory:
 
         # Progress through evaluation
         if fsm.can_begin_evaluation():
-            fsm.begin_evaluation()
+            await fsm.begin_evaluation()
         else:
             logger.error(
                 "Cannot evaluate library '%s' - evaluation step cannot proceed",
@@ -247,7 +247,7 @@ class LibraryDirectory:
 
         logger.debug("Completed FSM evaluation for library: %s", provenance.get_display_name())
 
-    def install_library(self, provenance: LibraryProvenance) -> bool:
+    async def install_library(self, provenance: LibraryProvenance) -> bool:
         """Install a library by running its FSM through the installation phase.
 
         Returns True if installation was successful, False otherwise.
@@ -272,7 +272,7 @@ class LibraryDirectory:
 
         # Proceed with installation
         if fsm.can_begin_installation():
-            fsm.begin_installation()
+            await fsm.begin_installation()
             logger.info("Installation completed for library: %s", provenance.get_display_name())
             return True
         logger.error(
@@ -281,7 +281,7 @@ class LibraryDirectory:
         )
         return False
 
-    def load_library(self, provenance: LibraryProvenance) -> bool:
+    async def load_library(self, provenance: LibraryProvenance) -> bool:
         """Load a library by running its FSM through the loading phase.
 
         Returns True if loading was successful, False otherwise.
@@ -299,7 +299,7 @@ class LibraryDirectory:
             return False
 
         # Proceed with loading
-        fsm.begin_loading()
+        await fsm.begin_loading()
 
         if not fsm.is_loaded():
             logger.error(

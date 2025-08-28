@@ -13,7 +13,8 @@
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
-        "json-repair>=0.46.1"
+        "json-repair>=0.46.1",
+        "static-ffmpeg>=2.8"
       ]
     }
   },
@@ -232,6 +233,14 @@
         "title": "Workflows",
         "description": "Nodes for executing Workflows",
         "icon": "Workflow"
+      }
+    },
+    {
+      "variables": {
+        "color": "border-amber-500",
+        "title": "Variables",
+        "description": "Flow variable management nodes with hierarchical scoping",
+        "icon": "Variable"
       }
     },
     {
@@ -602,6 +611,138 @@
         "display_name": "Save Video",
         "icon": "file-down",
         "group": "general"
+      }
+    },
+    {
+      "class_name": "SplitVideo",
+      "file_path": "griptape_nodes_library/video/split_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Split a video into multiple parts using ffmpeg with timecode support",
+        "display_name": "Split Video",
+        "icon": "scissors",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "HoldVideoFrames",
+      "file_path": "griptape_nodes_library/video/hold_video_frames.py",
+      "metadata": {
+        "category": "video",
+        "description": "Hold video frames for a specified number of frames, creating a stepped video effect",
+        "display_name": "Hold Video Frames",
+        "icon": "pause-circle",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddFilmGrain",
+      "file_path": "griptape_nodes_library/video/add_film_grain.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add realistic film grain to video using sophisticated noise generation and luminance masking",
+        "display_name": "Add Film Grain",
+        "icon": "film",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddVignette",
+      "file_path": "griptape_nodes_library/video/add_vignette.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add a vignette effect to video with adjustable lens angle, center position, and aspect ratio",
+        "display_name": "Add Vignette",
+        "icon": "circle-dot",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ReverseVideo",
+      "file_path": "griptape_nodes_library/video/reverse_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Reverse video playback with options to reverse, mute, or keep original audio",
+        "display_name": "Reverse Video",
+        "icon": "rewind",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "FlipVideo",
+      "file_path": "griptape_nodes_library/video/flip_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Flip video horizontally, vertically, or both directions",
+        "display_name": "Flip Video",
+        "icon": "flip-horizontal",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AdjustVideoEQ",
+      "file_path": "griptape_nodes_library/video/adjust_video_eq.py",
+      "metadata": {
+        "category": "video",
+        "description": "Adjust video brightness, contrast, saturation, and gamma with precise controls",
+        "display_name": "Adjust Video EQ",
+        "icon": "sliders",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddRGBShift",
+      "file_path": "griptape_nodes_library/video/add_rgb_shift.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add RGB shift (chromatic aberration) effect with individual channel control, static or animated glitches, and VHS-style base effects with configurable noise, chroma shift, blur, and motion trails",
+        "display_name": "Add RGB Shift",
+        "icon": "palette",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ChangeSpeed",
+      "file_path": "griptape_nodes_library/video/change_speed.py",
+      "metadata": {
+        "category": "video",
+        "description": "Change the playback speed of a video using FFmpeg's setpts filter with automatic audio speed adjustment",
+        "display_name": "Change Speed",
+        "icon": "zap",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddColorCurves",
+      "file_path": "griptape_nodes_library/video/add_color_curves.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add color curves (color grading) effect to video using FFmpeg's curves filter with presets and custom curve options",
+        "display_name": "Add Color Curves",
+        "icon": "palette",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AddOverlay",
+      "file_path": "griptape_nodes_library/video/add_overlay.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add an overlay video on top of a base video using FFmpeg's overlay filter with alpha channel control",
+        "display_name": "Add Overlay",
+        "icon": "layers",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractLastFrame",
+      "file_path": "griptape_nodes_library/video/extract_last_frame.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract the last frame from a video and output it as an Image",
+        "display_name": "Extract Last Frame",
+        "icon": "film",
+        "group": "edit"
       }
     },
     {
@@ -1552,6 +1693,46 @@
         "display_name": "For Loop End",
         "icon": "repeat",
         "group": "iteration"
+      }
+    },
+    {
+      "class_name": "CreateVariable",
+      "file_path": "griptape_nodes_library/variables/create_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Create or update a variable with a specified name, type, and value. Creates new variables or updates existing ones intelligently.",
+        "display_name": "Create Variable",
+        "icon": "PlusCircle"
+      }
+    },
+    {
+      "class_name": "GetVariable",
+      "file_path": "griptape_nodes_library/variables/get_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Retrieve the value of an existing variable",
+        "display_name": "Get Variable",
+        "icon": "ArrowDown"
+      }
+    },
+    {
+      "class_name": "SetVariable",
+      "file_path": "griptape_nodes_library/variables/set_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Set the value of an existing variable",
+        "display_name": "Set Variable",
+        "icon": "ArrowUp"
+      }
+    },
+    {
+      "class_name": "HasVariable",
+      "file_path": "griptape_nodes_library/variables/has_variable.py",
+      "metadata": {
+        "category": "variables",
+        "description": "Check whether a variable exists",
+        "display_name": "Has Variable",
+        "icon": "QuestionMarkCircle"
       }
     }
   ],

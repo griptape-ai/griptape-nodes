@@ -7,17 +7,10 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes_library.utils.video_utils import detect_video_format, dict_to_video_url_artifact
+from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 DEFAULT_FILENAME = "griptape_nodes.mp4"
-
-
-def to_video_artifact(video: Any | dict) -> Any:
-    """Convert a video or a dictionary to a VideoArtifact."""
-    if isinstance(video, dict):
-        return dict_to_video_url_artifact(video)
-    return video
 
 
 def auto_determine_filename(base_filename: str, detected_format: str | None) -> str:

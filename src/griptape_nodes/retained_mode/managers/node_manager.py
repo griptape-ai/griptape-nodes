@@ -53,6 +53,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeMetadataRequest,
+    BatchSetNodeMetadataResultFailure,
+    BatchSetNodeMetadataResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -71,6 +74,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
+    GetFlowForNodeRequest,
+    GetFlowForNodeResultFailure,
+    GetFlowForNodeResultSuccess,
     GetNodeMetadataRequest,
     GetNodeMetadataResultFailure,
     GetNodeMetadataResultSuccess,
@@ -153,6 +159,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(GetNodeMetadataRequest, self.on_get_node_metadata_request)
         event_manager.assign_manager_to_request_type(SetNodeMetadataRequest, self.on_set_node_metadata_request)
         event_manager.assign_manager_to_request_type(
+            BatchSetNodeMetadataRequest, self.on_batch_set_node_metadata_request
+        )
+        event_manager.assign_manager_to_request_type(
             ListConnectionsForNodeRequest, self.on_list_connections_for_node_request
         )
         event_manager.assign_manager_to_request_type(
@@ -192,6 +201,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
+        event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -665,6 +675,46 @@ class NodeManager:
         result = SetNodeMetadataResultSuccess()
         return result
 
+    def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
+        updated_nodes = []
+        failed_nodes = {}
+
+        for node_name, metadata_update in request.node_metadata_updates.items():
+            # Resolve node name and get node object
+            node = None
+            if node_name is None:
+                # Get from current context
+                if not GriptapeNodes.ContextManager().has_current_node():
+                    failed_nodes["current_context"] = "No current context node available"
+                    continue
+                node = GriptapeNodes.ContextManager().get_current_node()
+                actual_node_name = node.name
+            else:
+                actual_node_name = node_name
+
+            # Look up node if we don't have it yet
+            if node is None:
+                obj_mgr = GriptapeNodes.ObjectManager()
+                node = obj_mgr.attempt_get_object_by_name_as_type(actual_node_name, BaseNode)
+                if node is None:
+                    failed_nodes[actual_node_name] = f"Node '{actual_node_name}' not found"
+                    continue
+
+            single_request = SetNodeMetadataRequest(node_name=actual_node_name, metadata=metadata_update)
+            result = self.on_set_node_metadata_request(single_request)
+
+            if isinstance(result, SetNodeMetadataResultSuccess):
+                updated_nodes.append(actual_node_name)
+            else:
+                failed_nodes[actual_node_name] = result.result_details
+
+        if not updated_nodes:
+            return BatchSetNodeMetadataResultFailure(
+                result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
+            )
+
+        return BatchSetNodeMetadataResultSuccess(updated_nodes=updated_nodes, failed_nodes=failed_nodes)
+
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -921,7 +971,6 @@ class NodeManager:
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
             else:
-                logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
@@ -1818,7 +1867,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
+    async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -1886,7 +1935,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode, request.in_parallel)
+            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode, request.in_parallel)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)
@@ -2716,3 +2765,16 @@ class NodeManager:
             response=callback_result.response,
             altered_workflow_state=callback_result.altered_workflow_state,
         )
+
+    def on_get_flow_for_node_request(self, request: GetFlowForNodeRequest) -> ResultPayload:
+        """Get the flow name that contains a specific node."""
+        try:
+            flow_name = self.get_node_parent_flow_by_name(request.node_name)
+            return GetFlowForNodeResultSuccess(
+                flow_name=flow_name,
+                result_details=f"Successfully retrieved flow '{flow_name}' for node '{request.node_name}'.",
+            )
+        except KeyError:
+            return GetFlowForNodeResultFailure(
+                result_details=f"Node '{request.node_name}' not found or not assigned to any flow.",
+            )

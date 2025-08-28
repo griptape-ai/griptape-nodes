@@ -5,8 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape.events import EventBus
-
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -18,8 +16,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     SelectedControlOutputEvent,
 )
-
-# from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 @dataclass
@@ -64,8 +61,6 @@ class ControlFlowContext:
             NextNodeInfo | None: Information about the next node or None if no connection
         """
         if self.current_node is not None:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             node_connection = (
                 GriptapeNodes.FlowManager().get_connections().get_connected_node(self.current_node, output_parameter)
             )
@@ -91,7 +86,7 @@ class ControlFlowContext:
 # GOOD!
 class ResolveNodeState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         # The state machine has started, but it hasn't began to execute yet.
         if context.current_node is None:
             # We don't have anything else to do. Move back to Complete State so it has to restart.
@@ -105,7 +100,7 @@ class ResolveNodeState(State):
                 )
             )
         # Now broadcast that we have a current control node.
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
             )
@@ -118,12 +113,12 @@ class ResolveNodeState(State):
 
     # This is necessary to transition to the next step.
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:
+    async def on_update(context: ControlFlowContext) -> type[State] | None:
         # If node has not already been resolved!
         if context.current_node is None:
             return CompleteState
         if context.current_node.state != NodeResolutionState.RESOLVED:
-            context.resolution_machine.resolve_node(context.current_node)
+            await context.resolution_machine.resolve_node(context.current_node)
 
         if context.resolution_machine.is_complete():
             return NextNodeState
@@ -132,7 +127,7 @@ class ResolveNodeState(State):
 
 class NextNodeState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is None:
             return CompleteState
         # I did define this on the ControlNode.
@@ -146,7 +141,7 @@ class NextNodeState(State):
         if next_output is not None:
             context.selected_output = next_output
             next_node_info = context.get_next_node(context.selected_output)
-            EventBus.publish_event(
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=SelectedControlOutputEvent(
@@ -157,8 +152,6 @@ class NextNodeState(State):
                 )
             )
         else:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             # Get the next node in the execution queue, or None if queue is empty
             next_node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if next_node is not None:
@@ -179,15 +172,15 @@ class NextNodeState(State):
         return None
 
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
         return ResolveNodeState
 
 
 class CompleteState(State):
     @staticmethod
-    def on_enter(context: ControlFlowContext) -> type[State] | None:
+    async def on_enter(context: ControlFlowContext) -> type[State] | None:
         if context.current_node is not None:
-            EventBus.publish_event(
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
@@ -204,7 +197,7 @@ class CompleteState(State):
         return None
 
     @staticmethod
-    def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
@@ -214,7 +207,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         context = ControlFlowContext(flow_name, in_parallel)
         super().__init__(context)
 
-    def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
         self._process_data_nodes_for_dag()
 
@@ -223,27 +216,24 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         start_node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
-        self.start(ResolveNodeState)  # Begins the flow
+        await self.start(ResolveNodeState)  # Begins the flow
 
-    def update(self) -> None:
+    async def update(self) -> None:
         if self._current_state is None:
             msg = "Attempted to run the next step of a workflow that was either already complete or has not started."
             raise RuntimeError(msg)
-        super().update()
+        await super().update()
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
         self._context.resolution_machine.change_debug_mode(debug_mode)
 
-    def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
+    async def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
 
         if change_debug_mode:
             resolution_machine.change_debug_mode(True)
-
-        # If we're in the resolution phase, step the resolution machine
-        if self._current_state is ResolveNodeState:
-            resolution_machine.update()
+        await resolution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
         if self._current_state is ResolveNodeState and (
@@ -251,16 +241,16 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
-                self.update()
+                await self.update()
 
-    def node_step(self) -> None:
+    async def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
 
         resolution_machine.change_debug_mode(False)
 
         # If we're in the resolution phase, step the resolution machine
         if self._current_state is ResolveNodeState:
-            resolution_machine.update()
+            await resolution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
         if self._current_state is ResolveNodeState and (
@@ -268,7 +258,41 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
-                self.update()
+                await self.update()
+
+    def _process_data_nodes_for_dag(self) -> None:
+        """Process data_nodes from the global queue to build unified DAG.
+
+        This method identifies data_nodes in the execution queue and processes
+        their dependencies into the DAG resolution machine.
+        """
+        from griptape_nodes.exe_types.node_types import NodeResolutionState
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        if not isinstance(self._context.resolution_machine, DagResolutionMachine):
+            return
+        # Get the global flow queue
+        flow_manager = GriptapeNodes.FlowManager()
+        queue_items = list(flow_manager._global_flow_queue.queue)
+
+        # Find data_nodes and remove them from queue
+        data_nodes = []
+        for item in queue_items:
+            if item.node_type == "data_node":
+                data_nodes.append(item.node)
+                flow_manager._global_flow_queue.queue.remove(item)
+
+        # Build DAG for each data node
+        for node in data_nodes:
+            node.state = NodeResolutionState.UNRESOLVED
+            self._context.resolution_machine.resolve_node(node, build_only=True)
+
+            # Run resolution until complete for this node's subgraph
+            while not self._context.resolution_machine.is_complete():
+                await self._context.resolution_machine.update()
+
+            # Reset the machine state to allow adding more nodes
+            self._context.resolution_machine._current_state = None
 
     def _process_data_nodes_for_dag(self) -> None:
         """Process data_nodes from the global queue to build unified DAG.
