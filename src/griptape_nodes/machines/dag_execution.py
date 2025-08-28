@@ -234,19 +234,22 @@ class ExecutionState(State):
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
+                logger.error("Task done")
                 node = context.current_dag.task_to_node.pop(task)
                 node.node_state = NodeState.DONE
+                logger.error("Task done: %s", node.node_reference.name)
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(
-                ExecutionState.execute_node(node_reference, context.current_dag.async_semaphore)
-            )
+                ExecutionState.execute_node(node_reference, context.current_dag.async_semaphore))
             # Add a callback to set node to done when task has finished.
             context.current_dag.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
+            node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
-            node_task.add_done_callback(lambda t: on_task_done(t))
+            # Wait for a task to finish; 
+            done, running_tasks = await asyncio.wait(context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Infinite loop? let's see how this goes.
         return ExecutionState
 

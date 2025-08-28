@@ -56,7 +56,7 @@ class DagOrchestrator:
         self.node_to_reference = {}
         # Prevents a worker queue from developing
         # Async execution setup
-        #max_workers = max_workers or asyncio.get_event_loop().get_task_factory()
+        # max_workers = max_workers or asyncio.get_event_loop().get_task_factory()
         self.async_semaphore = asyncio.Semaphore(5)
         self.task_to_node = {}
 

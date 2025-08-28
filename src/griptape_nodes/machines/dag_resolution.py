@@ -58,7 +58,7 @@ class DagResolutionContext:
 
 class InitializeDagSpotlightState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
@@ -70,7 +70,7 @@ class InitializeDagSpotlightState(State):
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagResolutionContext) -> type[State] | None:
         if not len(context.focus_stack):
             return DagCompleteState
         current_node = context.focus_stack[-1].node
@@ -89,7 +89,7 @@ class InitializeDagSpotlightState(State):
 
 class EvaluateDagParameterState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
@@ -109,7 +109,7 @@ class EvaluateDagParameterState(State):
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -140,7 +140,7 @@ class EvaluateDagParameterState(State):
 
 class BuildDagNodeState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -157,7 +157,7 @@ class BuildDagNodeState(State):
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
         # Mark node as resolved for DAG building purposes
@@ -214,13 +214,13 @@ class ExecuteDagState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagResolutionContext) -> type[State] | None:
         # Set build_only back to False.
         context.build_only = False
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 

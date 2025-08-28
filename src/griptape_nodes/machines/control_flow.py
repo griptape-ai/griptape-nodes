@@ -285,7 +285,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         # Build DAG for each data node
         for node in data_nodes:
             node.state = NodeResolutionState.UNRESOLVED
-            self._context.resolution_machine.resolve_node(node, build_only=True)
+            await self._context.resolution_machine.resolve_node(node, build_only=True)
 
             # Run resolution until complete for this node's subgraph
             while not self._context.resolution_machine.is_complete():
