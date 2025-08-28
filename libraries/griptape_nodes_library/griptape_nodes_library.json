@@ -1254,6 +1254,72 @@
       }
     },
     {
+      "class_name": "AdjustImageEQ",
+      "file_path": "griptape_nodes_library/image/adjust_image_eq.py",
+      "metadata": {
+        "category": "image",
+        "description": "Adjust brightness, contrast, and saturation of an image using PIL's ImageEnhance",
+        "display_name": "Adjust Image EQ",
+        "icon": "sliders",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ApplyBlur",
+      "file_path": "griptape_nodes_library/image/apply_blur.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply blur effects to an image using PIL's ImageFilter (Gaussian, Box, Unsharp Mask)",
+        "display_name": "Apply Blur",
+        "icon": "blur",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ConvertGrayscale",
+      "file_path": "griptape_nodes_library/image/convert_grayscale.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert an image to grayscale using PIL",
+        "display_name": "Convert Grayscale",
+        "icon": "image-minus",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "RotateImage",
+      "file_path": "griptape_nodes_library/image/rotate_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Rotate an image using PIL with predefined angles or custom rotation",
+        "display_name": "Rotate Image",
+        "icon": "rotate-cw",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "FlipImage",
+      "file_path": "griptape_nodes_library/image/flip_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Flip an image horizontally, vertically, or both directions using PIL",
+        "display_name": "Flip Image",
+        "icon": "flip-horizontal",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ResizeImage",
+      "file_path": "griptape_nodes_library/image/resize_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Resize an image using PIL with multiple modes (exact, fit, fill, percentage)",
+        "display_name": "Resize Image",
+        "icon": "picture-in-picture",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "Note",
       "file_path": "griptape_nodes_library/note.py",
       "metadata": {
