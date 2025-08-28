@@ -185,7 +185,6 @@ nav:
         - Flip Video: nodes/video/flip_video.md
         - Reverse Video: nodes/video/reverse_video.md
         - Split Video: nodes/video/split_video.md
-        - Concatenate Videos: nodes/video/concatenate_videos.md
         - Extract Last Frame: nodes/video/extract_last_frame.md
         - Extract Audio: nodes/video/extract_audio.md
         - Hold Video Frames: nodes/video/hold_video_frames.md
