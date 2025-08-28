@@ -26,22 +26,26 @@ Use the ExtractAudio node when:
 ### Parameters
 
 #### Input
+
 - **video**: The video content to extract audio from (supports VideoArtifact and VideoUrlArtifact)
 
 #### Audio Settings
+
 - **audio_format**: Output audio format
-  - `mp3` (default) - Widely compatible, good compression
-  - `wav` - Uncompressed, highest quality
-  - `aac` - Good compression, modern standard
-  - `flac` - Lossless compression
-  - `ogg` - Open-source alternative with good compression
-  - `m4a` - Apple's audio format, similar to AAC
+
+    - `mp3` (default) - Widely compatible, good compression
+    - `wav` - Uncompressed, highest quality
+    - `aac` - Good compression, modern standard
+    - `flac` - Lossless compression
+    - `ogg` - Open-source alternative with good compression
+    - `m4a` - Apple's audio format, similar to AAC
 
 - **audio_quality**: Audio quality/bitrate setting
-  - `high` (128k) - High quality for most purposes (default)
-  - `medium` (96k) - Balanced quality and file size
-  - `low` (64k) - Smaller files, lower quality
-  - `copy` - Copy original audio without re-encoding (fastest, preserves original quality)
+
+    - `high` (128k) - High quality for most purposes (default)
+    - `medium` (96k) - Balanced quality and file size
+    - `low` (64k) - Smaller files, lower quality
+    - `copy` - Copy original audio without re-encoding (fastest, preserves original quality)
 
 ### Outputs
 
