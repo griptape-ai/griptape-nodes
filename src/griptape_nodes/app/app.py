@@ -53,7 +53,7 @@ REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 # Important to bootstrap singleton here so that we don't
 # get any weird circular import issues from the EventLogHandler
 # initializing it from a log during it's own initialization.
-griptape_nodes = GriptapeNodes()
+griptape_nodes: GriptapeNodes = GriptapeNodes()
 
 
 class EventLogHandler(logging.Handler):
@@ -285,7 +285,7 @@ async def _process_event_queue() -> None:
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
     result_payload = await griptape_nodes.ahandle_request(
-        event.request, response_topic=event.response_topic, request_id=event.request_id
+        event.request, response_topic=event.response_topic, request_id=event.request_id, enqueue_result=False
     )
 
     if result_payload.succeeded():
@@ -492,19 +492,19 @@ async def _process_api_event(event: dict) -> None:
 
     # Now attempt to convert it into an EventRequest.
     try:
-        request_event = deserialize_event(json_data=payload)
+        event_request = deserialize_event(json_data=payload)
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None
 
-    if not isinstance(request_event, EventRequest):
-        msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
+    if not isinstance(event_request, EventRequest):
+        msg = f"Deserialized event is not an EventRequest: {type(event_request)}"
         raise TypeError(msg)
 
     # Check if the event implements SkipTheLineMixin for priority processing
-    if isinstance(request_event.request, SkipTheLineMixin):
+    if isinstance(event_request.request, SkipTheLineMixin):
         # Handle the event immediately without queuing
-        await _process_event_request(request_event)
+        await _process_event_request(event_request)
     else:
         # Add the event to the async queue for normal processing
-        await griptape_nodes.EventManager().aput_event(request_event)
+        await griptape_nodes.EventManager().aput_event(event_request)

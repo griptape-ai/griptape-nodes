@@ -141,6 +141,8 @@ class EventManager:
         request: RP,
         callback_result: ResultPayload,
         context: RequestContext,
+        *,
+        enqueue_result: bool = True,
     ) -> ResultPayload:
         """Core logic for handling requests, shared between sync and async methods."""
         with context.operation_depth_mgr as depth_manager:
@@ -175,11 +177,12 @@ class EventManager:
                     retained_mode=retained_mode_str,
                     response_topic=context.response_topic,
                 )
-            self.put_event(GriptapeNodeEvent(wrapped_event=result_event))
+            if enqueue_result:
+                self.put_event(GriptapeNodeEvent(wrapped_event=result_event))
 
         return callback_result
 
-    async def ahandle_request(
+    async def ahandle_request(  # noqa: PLR0913
         self,
         request: RP,
         *,
@@ -187,6 +190,7 @@ class EventManager:
         workflow_mgr: WorkflowManager,
         response_topic: str | None = None,
         request_id: str | None = None,
+        enqueue_result: bool = True,
     ) -> ResultPayload:
         """Publish an event to the manager assigned to its type.
 
@@ -196,6 +200,7 @@ class EventManager:
             workflow_mgr: The workflow manager to use
             response_topic: The topic to send the response to (optional)
             request_id: The ID of the request to correlate with the response (optional)
+            enqueue_result: Whether to enqueue the result event (defaults to True)
         """
         # Notify the manager of the event type
         request_type = type(request)
@@ -223,9 +228,11 @@ class EventManager:
             response_topic=response_topic,
             request_id=request_id,
         )
-        return self._handle_request_core(request, cast("ResultPayload", result_payload), context)
+        return self._handle_request_core(
+            request, cast("ResultPayload", result_payload), context, enqueue_result=enqueue_result
+        )
 
-    def handle_request(
+    def handle_request(  # noqa: PLR0913
         self,
         request: RP,
         *,
@@ -233,6 +240,7 @@ class EventManager:
         workflow_mgr: WorkflowManager,
         response_topic: str | None = None,
         request_id: str | None = None,
+        enqueue_result: bool = True,
     ) -> ResultPayload:
         """Publish an event to the manager assigned to its type (sync version).
 
@@ -242,6 +250,7 @@ class EventManager:
             workflow_mgr: The workflow manager to use
             response_topic: The topic to send the response to (optional)
             request_id: The ID of the request to correlate with the response (optional)
+            enqueue_result: Whether to enqueue the result event (defaults to True)
         """
         # Notify the manager of the event type
         request_type = type(request)
@@ -273,7 +282,9 @@ class EventManager:
             response_topic=response_topic,
             request_id=request_id,
         )
-        return self._handle_request_core(request, cast("ResultPayload", result_payload), context)
+        return self._handle_request_core(
+            request, cast("ResultPayload", result_payload), context, enqueue_result=enqueue_result
+        )
 
     def add_listener_to_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]

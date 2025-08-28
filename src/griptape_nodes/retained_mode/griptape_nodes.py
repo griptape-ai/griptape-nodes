@@ -237,6 +237,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         *,
         response_topic: str | None = None,
         request_id: str | None = None,
+        enqueue_result: bool = True,
     ) -> ResultPayload:
         """Synchronous request handler."""
         event_mgr = GriptapeNodes.EventManager()
@@ -250,6 +251,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 workflow_mgr=workflow_mgr,
                 response_topic=response_topic,
                 request_id=request_id,
+                enqueue_result=enqueue_result,
             )
         except Exception as e:
             logger.exception(
@@ -268,6 +270,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         *,
         response_topic: str | None = None,
         request_id: str | None = None,
+        enqueue_result: bool = True,
     ) -> ResultPayload:
         """Asynchronous request handler."""
         event_mgr = GriptapeNodes.EventManager()
@@ -281,6 +284,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 workflow_mgr=workflow_mgr,
                 response_topic=response_topic,
                 request_id=request_id,
+                enqueue_result=enqueue_result,
             )
         except Exception as e:
             logger.exception(
