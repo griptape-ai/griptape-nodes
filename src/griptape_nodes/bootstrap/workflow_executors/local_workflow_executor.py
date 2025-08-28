@@ -23,9 +23,6 @@ class LocalExecutorError(Exception):
 
 
 class LocalWorkflowExecutor(WorkflowExecutor):
-    def __init__(self) -> None:
-        self.output: dict | None = None
-
     def _load_flow_for_workflow(self) -> str:
         try:
             context_manager = GriptapeNodes.ContextManager()
