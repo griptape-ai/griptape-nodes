@@ -350,16 +350,7 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
 
 async def _process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API (async version)."""
-    result_event = event.wrapped_event
-    if type(result_event.payload).__name__ == "NodeStartProcessEvent":
-        griptape_nodes.EventManager().current_active_node = result_event.payload.node_name
-
-    if type(result_event.payload).__name__ == "NodeFinishProcessEvent":
-        if result_event.payload.node_name != griptape_nodes.EventManager().current_active_node:
-            msg = "Node start and finish do not match."
-            raise KeyError(msg) from None
-        griptape_nodes.EventManager().current_active_node = None
-    await __emit_message("execution_event", result_event.json())
+    await __emit_message("execution_event", event.wrapped_event.json())
 
 
 async def _process_progress_event(gt_event: ProgressEvent) -> None:

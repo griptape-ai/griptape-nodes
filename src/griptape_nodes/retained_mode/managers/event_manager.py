@@ -45,7 +45,6 @@ class EventManager:
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        self.current_active_node: str | None = None
         # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
         self._flush_in_queue: bool = False
         # Event queue for publishing events
