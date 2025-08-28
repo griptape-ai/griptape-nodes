@@ -587,12 +587,12 @@ class ConcatenateVideos(BaseVideoProcessor):
             # Get video stream information
             if not probe_data.get("streams"):
                 _raise_no_streams_error()
-            else:
-                video_stream = probe_data["streams"][0]
-                width = int(video_stream["width"])
-                height = int(video_stream["height"])
 
-                return (width, height)
+            video_stream = probe_data["streams"][0]
+            width = int(video_stream["width"])
+            height = int(video_stream["height"])
+
+            return (width, height)  # noqa: TRY300
 
         except json.JSONDecodeError as e:
             msg = f"Error parsing video information: {e!s}"
