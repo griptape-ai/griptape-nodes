@@ -853,12 +853,17 @@ class FlowManager:
                 target_node.kill_parameter_children(target_param)
         # if it existed somewhere and actually has a value - Set the parameter!
         if value and request.initial_setup is False:
+            # When creating a connection, pass the initial value from source to target parameter
+            # Set incoming_connection_source fields to identify this as legitimate connection value passing
+            # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
                     parameter_name=target_param.name,
                     node_name=target_node.name,
                     value=value,
                     data_type=source_param.type,
+                    incoming_connection_source_node_name=source_node.name,
+                    incoming_connection_source_parameter_name=source_param.name,
                 )
             )
 

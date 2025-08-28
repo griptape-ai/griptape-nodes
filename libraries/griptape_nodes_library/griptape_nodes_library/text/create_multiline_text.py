@@ -22,7 +22,7 @@ class TextInput(DataNode):
                 output_type="str",
                 type="str",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                tooltip="The text content to save to file",
+                tooltip="The text content to pass to another node.",
                 ui_options={"multiline": True},
             ),
         )

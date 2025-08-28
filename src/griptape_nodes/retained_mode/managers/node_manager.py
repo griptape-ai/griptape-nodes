@@ -1551,12 +1551,43 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
+        # Validate incoming connection source fields consistency
+        incoming_node_set = request.incoming_connection_source_node_name is not None
+        incoming_param_set = request.incoming_connection_source_parameter_name is not None
+        if incoming_node_set != incoming_param_set:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because incoming connection source fields must both be None or both be set. Got incoming_connection_source_node_name={request.incoming_connection_source_node_name}, incoming_connection_source_parameter_name={request.incoming_connection_source_parameter_name}."
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
         if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
             result = SetParameterValueResultFailure(result_details=details)
             return result
+
+        # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
+        # When a parameter can accept both input connections AND manual property values, having an active connection should
+        # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
+        # Skip this check if: initial_setup (workflow loading), or incoming_connection_source fields are set (system passing upstream values)
+        if (
+            not request.initial_setup
+            and not incoming_node_set  # If incoming connection source fields are set, this is a legitimate upstream value pass
+            and ParameterMode.INPUT in parameter.allowed_modes
+            and ParameterMode.PROPERTY in parameter.allowed_modes
+        ):
+            # Check if this parameter has any incoming connections
+            connections = GriptapeNodes.FlowManager().get_connections()
+            target_connections = connections.incoming_index.get(node_name)
+            if target_connections is not None:
+                param_connections = target_connections.get(request.parameter_name)
+                if param_connections:  # Has incoming connections
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1965 Consider emitting UI events when parameters become settable/unsettable due to connection changes
+                    details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because this parameter has incoming connections and cannot be set as a property while connected."
+                    logger.error(details)
+                    result = SetParameterValueResultFailure(result_details=details)
+                    return result
 
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
@@ -1598,8 +1629,9 @@ class NodeManager:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
-            # Pass the value through!
-            # Optional data_type parameter for internal handling!
+            # Pass the value through to connected downstream parameters!
+            # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
+            # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
                 GriptapeNodes.handle_request(
@@ -1608,6 +1640,8 @@ class NodeManager:
                         node_name=target_node.name,
                         value=finalized_value,
                         data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                        incoming_connection_source_node_name=node.name,
+                        incoming_connection_source_parameter_name=parameter.name,
                     )
                 )
 

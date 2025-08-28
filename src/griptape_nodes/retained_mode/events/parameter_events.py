@@ -160,6 +160,10 @@ class SetParameterValueRequest(RequestPayload):
     initial_setup: bool = False
     # is_output is true when the value being saved is from an output value. Used when loading a workflow from a file.
     is_output: bool = False
+    # incoming_connection_source fields identify when this request comes from upstream node value passing during resolution
+    # Both must be None (manual/user request) or both must be set (incoming connection source request)
+    incoming_connection_source_node_name: str | None = None
+    incoming_connection_source_parameter_name: str | None = None
 
 
 @dataclass
