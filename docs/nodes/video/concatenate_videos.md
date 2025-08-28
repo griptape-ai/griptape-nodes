@@ -45,10 +45,10 @@ The ConcatenateVideos node intelligently handles videos with different dimension
 ### How It Works
 
 1. **Dimension Detection**: The node checks the dimensions of all input videos using FFprobe
-2. **Reference Selection**: The first video's dimensions are used as the target size for all videos
-3. **Smart Resizing**: Videos that don't match the target dimensions are automatically resized using FFmpeg
-4. **Aspect Ratio Preservation**: Resizing maintains the original aspect ratio and adds black padding if needed
-5. **Detailed Logging**: All resizing operations are logged with before/after dimensions
+1. **Reference Selection**: The first video's dimensions are used as the target size for all videos
+1. **Smart Resizing**: Videos that don't match the target dimensions are automatically resized using FFmpeg
+1. **Aspect Ratio Preservation**: Resizing maintains the original aspect ratio and adds black padding if needed
+1. **Detailed Logging**: All resizing operations are logged with before/after dimensions
 
 ### Resizing Behavior
 
@@ -60,11 +60,13 @@ The ConcatenateVideos node intelligently handles videos with different dimension
 ### Log Examples
 
 When videos have matching dimensions:
+
 ```
 ✅ All videos have matching dimensions - no resizing needed
 ```
 
 When resizing is needed:
+
 ```
 🔄 Videos have different dimensions - resizing to match first video...
 Target dimensions (from first video): 1920x1080
