@@ -18,7 +18,6 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from griptape_nodes.mcp_server.server import main_async as mcp_server_async
 from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
@@ -101,12 +100,30 @@ async def astart_app() -> None:
     # Create shared context for all tasks to inherit WebSocket connection
     shared_context = contextvars.copy_context()
 
-    # Prepare and start tasks
-    tasks = _create_app_tasks(api_key)
-
     try:
+        # We need to run the servers in a separate thread otherwise
+        # blocking requests to them in the main thread would deadlock the event loop.
+        server_tasks = []
+
+        # Start MCP server in thread
+        server_tasks.append(asyncio.to_thread(_run_mcp_server_sync, api_key))
+
+        # Start static server in thread if enabled
+        if STATIC_SERVER_ENABLED:
+            static_dir = _build_static_dir()
+            server_tasks.append(asyncio.to_thread(_run_static_server_sync, static_dir))
+
+        # Run main event loop tasks
+        main_tasks = [
+            _listen_for_api_requests(api_key),
+            _process_event_queue(),
+        ]
+
+        # Combine server tasks and main tasks
+        all_tasks = server_tasks + main_tasks
+
         async with asyncio.TaskGroup() as tg:
-            for task in tasks:
+            for task in all_tasks:
                 # Context is supposed to be copied automatically, but it isn't working for some reason so we do it manually here
                 tg.create_task(task, context=shared_context)
     except Exception as e:
@@ -114,49 +131,25 @@ async def astart_app() -> None:
         raise
 
 
-def _create_app_tasks(api_key: str) -> list:
-    """Create all application tasks."""
-    tasks = [
-        _listen_for_api_requests(api_key),
-        _process_event_queue(),
-        _run_mcp_server(api_key),
-    ]
-
-    # Add static server if enabled
-    if STATIC_SERVER_ENABLED:
-        static_dir = _build_static_dir()
-        tasks.append(_start_api_server(static_dir))
-
-    return tasks
-
-
-async def _run_mcp_server(api_key: str) -> None:
-    """Run MCP server directly in event loop."""
+def _run_mcp_server_sync(api_key: str) -> None:
+    """Run MCP server in a separate thread."""
     try:
-        # Run MCP server - it will handle shutdown gracefully when cancelled
-        await mcp_server_async(api_key)
-    except asyncio.CancelledError:
-        # Clean shutdown when task is cancelled
-        logger.info("MCP server shutdown complete")
-        raise
+        from griptape_nodes.mcp_server.server import main_sync
+
+        main_sync(api_key)
     except Exception as e:
-        logger.error("MCP server error: %s", e)
+        logger.error("MCP server thread error: %s", e)
         raise
 
 
-async def _start_api_server(static_dir: Path) -> None:
-    """Run API server directly in event loop."""
-    from .api import start_api_async
-
+def _run_static_server_sync(static_dir: Path) -> None:
+    """Run static server in a separate thread."""
     try:
-        # Run API server - it will handle shutdown gracefully when cancelled
-        await start_api_async(static_dir)
-    except asyncio.CancelledError:
-        # Clean shutdown when task is cancelled
-        logger.info("API server shutdown complete")
-        raise
+        from .api import start_api
+
+        start_api(static_dir)
     except Exception as e:
-        logger.error("API server error: %s", e)
+        logger.error("Static server thread error: %s", e)
         raise
 
 
