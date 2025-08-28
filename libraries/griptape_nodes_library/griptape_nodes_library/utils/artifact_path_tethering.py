@@ -284,6 +284,36 @@ class ArtifactPathTethering:
         result = self.node.get_parameter_value(self.path_parameter.name) or ""
         return result
 
+    def on_incoming_connection(self, target_parameter: Parameter) -> None:
+        """Handle incoming connection establishment to a tethered parameter.
+
+        When either tethered parameter receives an incoming connection,
+        make both parameters read-only to prevent manual modifications
+        that could conflict with connected values.
+
+        Args:
+            target_parameter: The parameter that received the connection
+        """
+        if target_parameter in (self.artifact_parameter, self.path_parameter):
+            # Make both tethered parameters read-only
+            self.artifact_parameter.settable = False
+            self.path_parameter.settable = False
+
+    def on_incoming_connection_removed(self, target_parameter: Parameter) -> None:
+        """Handle incoming connection removal from a tethered parameter.
+
+        When a connection is removed from either tethered parameter,
+        make both parameters settable again since data parameters
+        only allow a single input connection.
+
+        Args:
+            target_parameter: The parameter that had its connection removed
+        """
+        if target_parameter in (self.artifact_parameter, self.path_parameter):
+            # Make both tethered parameters settable again
+            self.artifact_parameter.settable = True
+            self.path_parameter.settable = True
+
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter."""
         if isinstance(value, str):
