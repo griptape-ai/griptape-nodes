@@ -1034,7 +1034,6 @@ class FlowManager:
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
         flow_name = request.flow_name
-        debug_mode = request.debug_mode
         if not flow_name:
             details = "Must provide flow name to start a flow."
             logger.error(details)
@@ -1098,7 +1097,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         # By now, it has been validated with no exceptions.
         try:
-            await self.start_flow(flow, start_node, debug_mode = request.debug_mode, in_parallel=request.in_parallel)
+            await self.start_flow(flow, start_node, debug_mode=request.debug_mode, in_parallel=request.in_parallel)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             logger.error(details)
@@ -1764,7 +1763,7 @@ class FlowManager:
     # Internal execution queue helper methods to consolidate redundant operations
     async def _handle_flow_start_if_not_running(
         self,
-        flow: ControlFlow,  # noqa: ARG002
+        flow: ControlFlow,
         *,
         debug_mode: bool,
         error_message: str,
@@ -1809,16 +1808,12 @@ class FlowManager:
 
             # Reset node state and build DAG
             node.state = NodeResolutionState.UNRESOLVED
-            dag_resolution_machine.resolve_node(node)
-
-            # Run the resolution machine until complete
-            while not dag_resolution_machine.is_complete():
-                dag_resolution_machine.update()
+            await dag_resolution_machine.resolve_node(node)
 
             # After DAG resolution completes, start the DAG execution machine
             # but don't run it to completion - let stepping handle updates
             execution_machine = dag_resolution_machine._context.execution_machine
-            execution_machine.start_execution()
+            await execution_machine.start_execution()
 
             # decide if we can change it back to normal flow mode!
             if dag_resolution_machine.is_complete():

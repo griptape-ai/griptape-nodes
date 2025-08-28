@@ -4,9 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from griptape.events import EventBus
-
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.machines.dag_execution import DagExecutionMachine
 from griptape_nodes.machines.fsm import FSM, State
@@ -18,6 +15,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentDataNodeEvent,
     ParameterSpotlightEvent,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 logger = logging.getLogger("griptape_nodes")
@@ -62,7 +60,7 @@ class InitializeDagSpotlightState(State):
     @staticmethod
     def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
             )
@@ -96,7 +94,7 @@ class EvaluateDagParameterState(State):
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
             return BuildDagNodeState
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=ParameterSpotlightEvent(
@@ -179,27 +177,29 @@ class BuildDagNodeState(State):
 # TODO: This state shouldn't be accessed if we're just appending nodes to a graph. But it's necessary for real node resolution.
 class ExecuteDagState(State):
     @staticmethod
-    def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
         context.batched_nodes.clear()
-        context.execution_machine.start_execution()
+        await context.execution_machine.start_execution()
         if not context.paused:
             return ExecuteDagState
         return None
 
     @staticmethod
-    def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagResolutionContext) -> type[State] | None:
         # Check if DAG execution is complete
         if context.execution_machine.is_complete():
             return DagCompleteState
         if context.execution_machine.is_error():
             return DagCompleteState
         # Is this the right move?
-        context.execution_machine.update()
+        await context.execution_machine.update()
         execution_complete_after_update = context.execution_machine.is_complete()
         execution_error_after_update = context.execution_machine.is_error()
         logger.debug(
-            f"After update - execution_complete: {execution_complete_after_update}, execution_error: {execution_error_after_update}"
+            "After update - execution_complete: %s, execution_error: %s",
+            execution_complete_after_update,
+            execution_error_after_update,
         )
 
         if execution_complete_after_update:
@@ -231,15 +231,15 @@ class DagResolutionMachine(FSM[DagResolutionContext]):
         resolution_context = DagResolutionContext(flow_name)
         super().__init__(resolution_context)
 
-    def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
+    async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
         """Build DAG structure starting from the given node."""
         self._context.focus_stack.append(Focus(node=node))
         self._context.build_only = build_only
-        self.start(InitializeDagSpotlightState)
+        await self.start(InitializeDagSpotlightState)
 
-    def build_dag_for_node(self, node: BaseNode) -> None:
+    async def build_dag_for_node(self, node: BaseNode) -> None:
         """Build DAG structure starting from the given node. (Deprecated: use resolve_node)."""
-        self.resolve_node(node)
+        await self.resolve_node(node)
 
     def change_debug_mode(self, debug_mode: bool) -> None:
         self._context.paused = debug_mode

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from concurrent.futures import Future
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
-
-from griptape.events import EventBus
-from griptape.utils import with_contextvars
+import time
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -15,18 +12,11 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    ParameterValueUpdateEvent,
-    ResumeNodeProcessingEvent,
-)
+from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-
-if TYPE_CHECKING:
-    import threading
-    from concurrent.futures import Future
 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator, NodeState
 
 
@@ -139,16 +129,18 @@ class ExecutionState(State):
                 data_type=parameter_type,
                 value=None,
             )
-            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
+            )
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def execute_node(current_node: DagOrchestrator.DagNode, sem: threading.Semaphore) -> None:
-        with sem:
-            current_node.node_reference.process()
+    async def execute_node(current_node: DagOrchestrator.DagNode, semaphore: asyncio.Semaphore) -> None:
+        async with semaphore:
+            await current_node.node_reference.aprocess()
 
     @staticmethod
-    def on_enter(context: ExecutionContext) -> type[State] | None:
+    async def on_enter(context: ExecutionContext) -> type[State] | None:
         for node in context.current_dag.node_to_reference.values():
             # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
             node.node_state = NodeState.QUEUED
@@ -156,7 +148,7 @@ class ExecutionState(State):
         return ExecutionState
 
     @staticmethod
-    def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: C901
+    async def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: C901
         # Do we have any Leaf Nodes not in canceled state?
         network = context.current_dag.network
         # Check and see if there are leaf nodes that are cancelled.
@@ -214,92 +206,88 @@ class ExecutionState(State):
             return CompleteState
         # Are there any in the queued state?
         for node in queued_nodes:
-            # Do we have any threads available?
-            if context.current_dag.sem.acquire(blocking=False):
-                # we have threads available
-                node_reference = context.current_dag.node_to_reference[node]
+            # Process all queued nodes - the async semaphore will handle concurrency limits
+            node_reference = context.current_dag.node_to_reference[node]
 
-                # Collect parameter values from upstream nodes before executing
-                try:
-                    ExecutionState.collect_values_from_upstream_nodes(node_reference)
-                except Exception as e:
-                    logger.exception(
-                        "Error collecting parameter values for node '%s'", node_reference.node_reference.name
-                    )
-                    context.error_message = (
-                        f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
-                    )
-                    context.workflow_state = WorkflowState.ERRORED
-                    context.current_dag.sem.release()  # Release the semaphore we just acquired
-                    return ErrorState
-
-                # Clear parameter output values before execution
-                try:
-                    ExecutionState.clear_parameter_output_values(node_reference)
-                except Exception as e:
-                    logger.exception(
-                        "Error clearing parameter output values for node '%s'", node_reference.node_reference.name
-                    )
-                    context.error_message = (
-                        f"Parameter clearing failed for node '{node_reference.node_reference.name}': {e}"
-                    )
-                    context.workflow_state = WorkflowState.ERRORED
-                    context.current_dag.sem.release()  # Release the semaphore we just acquired
-                    return ErrorState
-
-                def on_future_done(future: Future) -> None:
-                    # TODO: Will this call the correct thing?
-                    node = context.current_dag.future_to_node.pop(future)
-                    node.node_state = NodeState.DONE
-                    # Publish event to resume DAG execution
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(
-                                payload=ResumeNodeProcessingEvent(node_name=node.node_reference.name)
-                            )
-                        )
-                    )
-
-                # Ensure thread pool is ready before submitting work
-                context.current_dag._ensure_thread_pool_alive()
-                node_future = context.current_dag.thread_executor.submit(
-                    with_contextvars(ExecutionState.execute_node), node_reference, context.current_dag.sem
+            # Collect parameter values from upstream nodes before executing
+            try:
+                ExecutionState.collect_values_from_upstream_nodes(node_reference)
+            except Exception as e:
+                logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
+                context.error_message = (
+                    f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
                 )
-                # Add a callback to set node to done when future has finished.
-                context.current_dag.future_to_node[node_future] = node_reference
-                node_reference.thread_reference = node_future
-                node_reference.node_state = NodeState.PROCESSING
-                node_reference.node_reference.state = NodeResolutionState.RESOLVING
-                node_future.add_done_callback(with_contextvars(on_future_done))
-                # Map futures to nodes.
-        # Exit out to None. Wait to reenter.
-        return None
+                context.workflow_state = WorkflowState.ERRORED
+                return ErrorState
+
+            # Clear parameter output values before execution
+            try:
+                ExecutionState.clear_parameter_output_values(node_reference)
+            except Exception as e:
+                logger.exception(
+                    "Error clearing parameter output values for node '%s'", node_reference.node_reference.name
+                )
+                context.error_message = (
+                    f"Parameter clearing failed for node '{node_reference.node_reference.name}': {e}"
+                )
+                context.workflow_state = WorkflowState.ERRORED
+                return ErrorState
+
+            def on_task_done(task: asyncio.Task) -> None:
+                node = context.current_dag.task_to_node.pop(task)
+                node.node_state = NodeState.DONE
+
+            # Execute the node asynchronously
+            node_task = asyncio.create_task(
+                ExecutionState.execute_node(node_reference, context.current_dag.async_semaphore)
+            )
+            # Add a callback to set node to done when task has finished.
+            context.current_dag.task_to_node[node_task] = node_reference
+            node_reference.task_reference = node_task
+            node_reference.node_state = NodeState.PROCESSING
+            node_reference.node_reference.state = NodeResolutionState.RESOLVING
+            node_task.add_done_callback(lambda t: on_task_done(t))
+        # Infinite loop? let's see how this goes.
+        return ExecutionState
 
 
 class ErrorState(State):
     @staticmethod
-    def on_enter(context: ExecutionContext) -> type[State] | None:
+    async def on_enter(context: ExecutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
         for node in context.current_dag.node_to_reference.values():
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
-        # Shut down and cancel all threads that haven't yet ran. Currently running threads will not be affected.
-        context.current_dag.thread_executor.shutdown(wait=False, cancel_futures=True)
+        # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
+        # Cancel async tasks
+        for task in list(context.current_dag.task_to_node.keys()):
+            if not task.done():
+                task.cancel()
         return ErrorState
 
     @staticmethod
-    def on_update(context: ExecutionContext) -> type[State] | None:
+    async def on_update(context: ExecutionContext) -> type[State] | None:
         # Don't modify lists while iterating through them.
-        future_to_node = context.current_dag.future_to_node
-        for future, node in future_to_node.copy().items():
-            if future.done():
+        task_to_node = context.current_dag.task_to_node
+        for task, node in task_to_node.copy().items():
+            if task.done():
                 node.node_state = NodeState.DONE
-            elif future.cancelled():
+            elif task.cancelled():
                 node.node_state = NodeState.CANCELED
-            future_to_node.pop(future)
-        if len(future_to_node) == 0:
+            task_to_node.pop(task)
+
+        # Handle async tasks
+        task_to_node = context.current_dag.task_to_node
+        for task, node in task_to_node.copy().items():
+            if task.done():
+                node.node_state = NodeState.DONE
+            elif task.cancelled():
+                node.node_state = NodeState.CANCELED
+            task_to_node.pop(task)
+
+        if len(task_to_node) == 0 and len(task_to_node) == 0:
             # Finish up. We failed.
             context.workflow_state = WorkflowState.ERRORED
             return CompleteState
@@ -309,12 +297,12 @@ class ErrorState(State):
 
 class CompleteState(State):
     @staticmethod
-    def on_enter(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_enter(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
         logger.info("DAG execution completed successfully")
         return None
 
     @staticmethod
-    def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
@@ -325,8 +313,8 @@ class DagExecutionMachine(FSM[ExecutionContext]):
         execution_context = ExecutionContext(flow_name, dag_instance)
         super().__init__(execution_context)
 
-    def start_execution(self) -> None:
-        self.start(ExecutionState)
+    async def start_execution(self) -> None:
+        await self.start(ExecutionState)
 
     def is_complete(self) -> bool:
         return self._current_state is CompleteState
