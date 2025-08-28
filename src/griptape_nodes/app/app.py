@@ -284,26 +284,15 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    result_payload = await griptape_nodes.ahandle_request(
-        event.request, response_topic=event.response_topic, request_id=event.request_id, enqueue_result=False
+    result_event = await griptape_nodes.EventManager().ahandle_request(
+        event.request,
+        result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
 
-    if result_payload.succeeded():
+    if result_event.result.succeeded():
         dest_socket = "success_result"
-        result_event = EventResultSuccess(
-            request=event.request,
-            result=result_payload,
-            response_topic=event.response_topic,
-            request_id=event.request_id,
-        )
     else:
         dest_socket = "failure_result"
-        result_event = EventResultFailure(
-            request=event.request,
-            result=result_payload,
-            response_topic=event.response_topic,
-            request_id=event.request_id,
-        )
 
     await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
 
@@ -492,19 +481,19 @@ async def _process_api_event(event: dict) -> None:
 
     # Now attempt to convert it into an EventRequest.
     try:
-        event_request = deserialize_event(json_data=payload)
+        request_event = deserialize_event(json_data=payload)
     except Exception as e:
         msg = f"Unable to convert request JSON into a valid EventRequest object. Error Message: '{e}'"
         raise RuntimeError(msg) from None
 
-    if not isinstance(event_request, EventRequest):
-        msg = f"Deserialized event is not an EventRequest: {type(event_request)}"
+    if not isinstance(request_event, EventRequest):
+        msg = f"Deserialized event is not an EventRequest: {type(request_event)}"
         raise TypeError(msg)
 
     # Check if the event implements SkipTheLineMixin for priority processing
-    if isinstance(event_request.request, SkipTheLineMixin):
+    if isinstance(request_event.request, SkipTheLineMixin):
         # Handle the event immediately without queuing
-        await _process_event_request(event_request)
+        await _process_event_request(request_event)
     else:
         # Add the event to the async queue for normal processing
-        await griptape_nodes.EventManager().aput_event(event_request)
+        await griptape_nodes.EventManager().aput_event(request_event)
