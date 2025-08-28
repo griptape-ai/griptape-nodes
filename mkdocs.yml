@@ -182,6 +182,13 @@ nav:
         - Resize Video: nodes/video/resize_video.md
         - Save Video: nodes/video/save_video.md
         - Change Speed: nodes/video/change_speed.md
+        - Flip Video: nodes/video/flip_video.md
+        - Reverse Video: nodes/video/reverse_video.md
+        - Split Video: nodes/video/split_video.md
+        - Concatenate Videos: nodes/video/concatenate_videos.md
+        - Extract Last Frame: nodes/video/extract_last_frame.md
+        - Hold Video Frames: nodes/video/hold_video_frames.md
+        - Adjust Video EQ: nodes/video/adjust_video_eq.md
         - Add Color Curves: nodes/video/add_color_curves.md
         - Add Overlay: nodes/video/add_overlay.md
     - Tools:
