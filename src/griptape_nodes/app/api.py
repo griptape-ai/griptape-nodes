@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import binascii
 import logging
 import os
@@ -43,10 +42,6 @@ def get_static_dir() -> Path:
 
 """Create and configure the FastAPI application."""
 app = FastAPI()
-config = uvicorn.Config(
-    app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
-)
-server = uvicorn.Server(config)
 
 
 @app.post("/static-upload-urls")
@@ -184,32 +179,20 @@ def _setup_app(static_directory: Path) -> None:
     )
 
 
-def shutdown_server() -> None:
-    """Gracefully shutdown the server instance."""
-    server.should_exit = True
-
-
-async def start_api_async(static_directory: Path) -> None:
-    """Run uvicorn server directly in the event loop."""
-    global _server_instance  # noqa: PLW0603
-
+def start_api(static_directory: Path) -> None:
+    """Run uvicorn server synchronously using uvicorn.run."""
     # Setup the FastAPI app
     _setup_app(static_directory)
 
     try:
-        # Run server directly in the event loop
-        await server.serve()
-    except asyncio.CancelledError:
-        # Ensure server is properly shutdown when cancelled
-        if not server.should_exit:
-            server.should_exit = True
-            try:
-                await asyncio.wait_for(server.shutdown(), timeout=2.0)
-            except TimeoutError:
-                logger.warning("Server shutdown timed out")
-        raise
+        # Run server using uvicorn.run
+        uvicorn.run(
+            app,
+            host=STATIC_SERVER_HOST,
+            port=STATIC_SERVER_PORT,
+            log_level=STATIC_SERVER_LOG_LEVEL,
+            log_config=None,
+        )
     except Exception as e:
         logger.error("API server failed: %s", e)
         raise
-    finally:
-        _server_instance = None
