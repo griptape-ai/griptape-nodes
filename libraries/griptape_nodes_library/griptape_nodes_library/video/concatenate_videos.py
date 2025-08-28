@@ -1,3 +1,5 @@
+import json
+import subprocess
 import tempfile
 import uuid
 from pathlib import Path
@@ -289,56 +291,156 @@ class ConcatenateVideos(BaseVideoProcessor):
             self._cleanup_temp_files(temp_files, concat_list_file, output_path_obj)
 
     def _prepare_video_inputs(self, video_inputs: list) -> tuple[list[Path], Path]:
-        """Prepare video inputs by downloading and creating concat list file."""
+        """Prepare video inputs by downloading, resizing if needed, and creating concat list file."""
+        # Create temporary directory for processing
+        temp_dir = Path(tempfile.mkdtemp())
+        concat_list_file = temp_dir / f"concat_list_{uuid.uuid4()}.txt"
+        temp_files = []
+
+        # Download all videos first
+        downloaded_videos = self._download_all_videos(video_inputs, temp_dir, temp_files)
+
+        # Check dimensions and resize if needed
+        processed_videos = self._process_video_dimensions(downloaded_videos, temp_dir, temp_files)
+
+        # Create concat list file
+        self._create_concat_list(processed_videos, concat_list_file)
+
+        # Debug: Log concat file contents
+        self._log_concat_file_debug(concat_list_file)
+        return temp_files, concat_list_file
+
+    def _download_all_videos(self, video_inputs: list, temp_dir: Path, temp_files: list[Path]) -> list[Path]:
+        """Download all input videos to temporary files."""
 
         def _create_input_validation_error(video_type: type) -> ValueError:
             """Create input validation error."""
             msg = f"Invalid video input type: {video_type}"
             return ValueError(msg)
 
-        # Create temporary directory for processing
-        temp_dir = Path(tempfile.mkdtemp())
-        concat_list_file = temp_dir / f"concat_list_{uuid.uuid4()}.txt"
-        temp_files = []
+        self.append_value_to_parameter("logs", "Downloading videos for concatenation...\n")
+        downloaded_videos = []
 
-        # Download videos and create concat list
-        self.append_value_to_parameter("logs", "Downloading and preparing videos for concatenation...\n")
+        for i, video_input in enumerate(video_inputs):
+            # Convert video input to VideoUrlArtifact (handles both VideoArtifact and VideoUrlArtifact)
+            video_artifact = to_video_artifact(video_input)
 
+            # Extract video URL from the normalized artifact
+            if isinstance(video_input, str):
+                video_url = video_input
+            elif isinstance(video_artifact, VideoUrlArtifact) or hasattr(video_artifact, "value"):
+                video_url = video_artifact.value
+            else:
+                raise _create_input_validation_error(type(video_input))
+
+            # Validate URL
+            self._validate_url_safety(video_url)
+
+            # Create temporary file for each video
+            temp_video_file = temp_dir / f"video_original_{i}_{uuid.uuid4()}.mp4"
+            temp_files.append(temp_video_file)
+
+            # Download video to temp file
+            self._download_video(video_url, str(temp_video_file))
+            downloaded_videos.append(temp_video_file)
+
+            self.append_value_to_parameter("logs", f"Downloaded video {i + 1}/{len(video_inputs)}\n")
+
+        return downloaded_videos
+
+    def _process_video_dimensions(
+        self, downloaded_videos: list[Path], temp_dir: Path, temp_files: list[Path]
+    ) -> list[Path]:
+        """Check video dimensions and resize if needed."""
+        self.append_value_to_parameter("logs", "Checking video dimensions...\n")
+
+        # Get dimensions of all videos
+        video_dimensions = []
+        for video_file in downloaded_videos:
+            dimensions = self._get_video_dimensions(str(video_file))
+            video_dimensions.append(dimensions)
+
+        # Use first video's dimensions as target
+        target_width, target_height = video_dimensions[0]
+        self.append_value_to_parameter(
+            "logs", f"Target dimensions (from first video): {target_width}x{target_height}\n"
+        )
+
+        # Check if all videos have the same dimensions
+        all_same_size = all(dims == (target_width, target_height) for dims in video_dimensions)
+
+        if all_same_size:
+            self.append_value_to_parameter("logs", "✅ All videos have matching dimensions - no resizing needed\n")
+            return downloaded_videos
+
+        # Some videos need resizing
+        self.append_value_to_parameter(
+            "logs", "🔄 Videos have different dimensions - resizing to match first video...\n"
+        )
+
+        # Create resize context to reduce parameter count
+        resize_context = {
+            "downloaded_videos": downloaded_videos,
+            "video_dimensions": video_dimensions,
+            "target_width": target_width,
+            "target_height": target_height,
+            "temp_dir": temp_dir,
+            "temp_files": temp_files,
+        }
+        return self._resize_mismatched_videos(resize_context)
+
+    def _resize_mismatched_videos(self, resize_context: dict) -> list[Path]:
+        """Resize videos that don't match the target dimensions."""
+        # Extract context variables
+        downloaded_videos = resize_context["downloaded_videos"]
+        video_dimensions = resize_context["video_dimensions"]
+        target_width = resize_context["target_width"]
+        target_height = resize_context["target_height"]
+        temp_dir = resize_context["temp_dir"]
+        temp_files = resize_context["temp_files"]
+
+        processed_videos = []
+
+        for i, (video_file, dimensions) in enumerate(zip(downloaded_videos, video_dimensions, strict=True)):
+            if i == 0:
+                # First video is the target, use as-is
+                processed_videos.append(video_file)
+                self.append_value_to_parameter(
+                    "logs", f"• Video {i + 1}: {dimensions[0]}x{dimensions[1]} (reference)\n"
+                )
+            elif dimensions == (target_width, target_height):
+                # Same size as target, use as-is
+                processed_videos.append(video_file)
+                self.append_value_to_parameter(
+                    "logs", f"• Video {i + 1}: {dimensions[0]}x{dimensions[1]} (no resize needed)\n"
+                )
+            else:
+                # Resize this video
+                resized_video_file = temp_dir / f"video_resized_{i}_{uuid.uuid4()}.mp4"
+                temp_files.append(resized_video_file)
+
+                self.append_value_to_parameter(
+                    "logs",
+                    f"• Video {i + 1}: {dimensions[0]}x{dimensions[1]} → {target_width}x{target_height} (resizing...)\n",
+                )
+                self._resize_video(str(video_file), str(resized_video_file), target_width, target_height)
+                processed_videos.append(resized_video_file)
+                self.append_value_to_parameter("logs", f"  ✅ Video {i + 1} resized successfully\n")
+
+        return processed_videos
+
+    def _create_concat_list(self, processed_videos: list[Path], concat_list_file: Path) -> None:
+        """Create concat list file for FFmpeg."""
+        self.append_value_to_parameter("logs", "Creating concatenation list...\n")
         with concat_list_file.open("w") as f:
-            for i, video_input in enumerate(video_inputs):
-                # Convert video input to VideoUrlArtifact (handles both VideoArtifact and VideoUrlArtifact)
-                video_artifact = to_video_artifact(video_input)
-
-                # Extract video URL from the normalized artifact
-                if isinstance(video_input, str):
-                    video_url = video_input
-                elif isinstance(video_artifact, VideoUrlArtifact) or hasattr(video_artifact, "value"):
-                    video_url = video_artifact.value
-                else:
-                    raise _create_input_validation_error(type(video_input))
-
-                # Validate URL
-                self._validate_url_safety(video_url)
-
-                # Create temporary file for each video
-                temp_video_file = temp_dir / f"video_{i}_{uuid.uuid4()}.mp4"
-                temp_files.append(temp_video_file)
-
-                # Download video to temp file
-                self._download_video(video_url, str(temp_video_file))
-
+            for video_file in processed_videos:
                 # Add to concat list - use single quotes to avoid escaping issues
-                file_path = str(temp_video_file)
+                file_path = str(video_file)
                 concat_line = f"file '{file_path}'\n"
                 f.write(concat_line)
 
                 # Debug logging
                 self.append_value_to_parameter("logs", f"Added to concat list: {concat_line.strip()}\n")
-                self.append_value_to_parameter("logs", f"Prepared video {i + 1}/{len(video_inputs)}\n")
-
-        # Debug: Log concat file contents
-        self._log_concat_file_debug(concat_list_file)
-        return temp_files, concat_list_file
 
     def _log_concat_file_debug(self, concat_list_file: Path) -> None:
         """Log concat file contents for debugging."""
@@ -434,3 +536,120 @@ class ConcatenateVideos(BaseVideoProcessor):
         except Exception as e:
             msg = f"Error saving video to {output_path}: {e!s}"
             self._raise_download_error(msg, e)
+
+    def _get_video_dimensions(self, video_path: str) -> tuple[int, int]:
+        """Get video dimensions using ffprobe.
+
+        Args:
+            video_path: Path to the video file
+
+        Returns:
+            Tuple of (width, height)
+        """
+
+        def _raise_ffprobe_error(stderr: str) -> None:
+            """Raise ffprobe command error."""
+            error_msg = f"ffprobe command failed: {stderr}"
+            raise ValueError(error_msg)
+
+        def _raise_no_streams_error() -> None:
+            """Raise no video streams error."""
+            error_msg = "No video streams found in file"
+            raise ValueError(error_msg)
+
+        try:
+            # Get FFmpeg paths from base class
+            _, ffprobe_path = self._get_ffmpeg_paths()
+
+            # Use ffprobe to get video information
+            cmd = [
+                ffprobe_path,
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-select_streams",
+                "v:0",  # Select first video stream
+                video_path,
+            ]
+
+            # Use subprocess directly for ffprobe since _run_ffmpeg_command is for ffmpeg only
+            # ruff: noqa: S603 - subprocess call with controlled ffprobe path and validated video_path
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+
+            if result.returncode != 0:
+                _raise_ffprobe_error(result.stderr)
+
+            # Parse JSON output
+            probe_data = json.loads(result.stdout)
+
+            # Get video stream information
+            if not probe_data.get("streams"):
+                _raise_no_streams_error()
+            else:
+                video_stream = probe_data["streams"][0]
+                width = int(video_stream["width"])
+                height = int(video_stream["height"])
+
+                return (width, height)
+
+        except json.JSONDecodeError as e:
+            msg = f"Error parsing video information: {e!s}"
+            raise ValueError(msg) from e
+        except (KeyError, ValueError) as e:
+            msg = f"Error extracting video dimensions: {e!s}"
+            raise ValueError(msg) from e
+        except Exception as e:
+            msg = f"Error getting video dimensions: {e!s}"
+            raise ValueError(msg) from e
+
+    def _resize_video(self, input_path: str, output_path: str, target_width: int, target_height: int) -> None:
+        """Resize a video to target dimensions using ffmpeg.
+
+        Args:
+            input_path: Path to the input video
+            output_path: Path for the resized output video
+            target_width: Target width in pixels
+            target_height: Target height in pixels
+        """
+
+        def _raise_resize_output_error() -> None:
+            """Raise resize output file error."""
+            error_msg = "ffmpeg did not create resized video file or file is empty"
+            raise ValueError(error_msg)
+
+        try:
+            # Get FFmpeg path from base class
+            ffmpeg_path, _ = self._get_ffmpeg_paths()
+
+            # Build ffmpeg command for resizing
+            # Use scale filter with force_original_aspect_ratio=decrease to maintain aspect ratio
+            # and pad with black bars if needed to reach exact target dimensions
+            scale_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease"
+            pad_filter = f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+            video_filter = f"{scale_filter},{pad_filter}"
+
+            cmd = [
+                ffmpeg_path,
+                "-i",
+                input_path,
+                "-vf",
+                video_filter,
+                "-c:a",
+                "copy",  # Copy audio without re-encoding
+                "-y",  # Overwrite output file
+                output_path,
+            ]
+
+            # Run ffmpeg command with 5 minute timeout for resizing
+            self._run_ffmpeg_command(cmd, timeout=300)
+
+            # Check if output file was created
+            output_file = Path(output_path)
+            if not output_file.exists() or output_file.stat().st_size == 0:
+                _raise_resize_output_error()
+
+        except Exception as e:
+            msg = f"Error resizing video: {e!s}"
+            raise ValueError(msg) from e
