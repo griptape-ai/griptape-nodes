@@ -271,8 +271,9 @@ class ArtifactPathTethering:
     def on_before_value_set(self, parameter: Parameter, value: Any) -> Any:
         """Handle parameter value setting for tethered parameters.
 
-        This allows legitimate upstream values to be set by temporarily
-        making parameters settable when the artifact parameter has connections.
+        This allows legitimate upstream values and internal synchronization
+        to be set by temporarily making parameters settable when the artifact
+        parameter has connections.
 
         Args:
             parameter: The parameter being set
@@ -291,7 +292,9 @@ class ArtifactPathTethering:
             has_artifact_connection = target_connections and target_connections.get(self.artifact_parameter.name)
 
             if has_artifact_connection:
-                # Temporarily make both parameters settable for upstream value propagation
+                # Always allow internal synchronization (when _updating_from_parameter is set)
+                # or legitimate upstream value propagation
+                # Temporarily make both parameters settable
                 self.artifact_parameter.settable = True
                 self.path_parameter.settable = True
 
@@ -437,10 +440,9 @@ class ArtifactPathTethering:
 
     def _sync_parameter_value(self, target_param_name: str, target_value: Any) -> None:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
-        # Use initial_setup=True to avoid triggering after_value_set() again, preventing infinite recursion
-        # This is the key to avoiding the lock: we bypass the normal parameter change notification
-        # that would call after_value_set() and potentially create an infinite loop
-        self.node.set_parameter_value(target_param_name, target_value, initial_setup=True)
+        # Use normal parameter setting flow to ensure before_value_set/after_value_set hooks are called
+        # The _updating_from_parameter lock prevents infinite recursion in on_after_value_set
+        self.node.set_parameter_value(target_param_name, target_value)
         self.node.publish_update_to_parameter(target_param_name, target_value)
         # Also update output values so they're ready for process()
         self.node.parameter_output_values[target_param_name] = target_value
