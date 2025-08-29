@@ -228,15 +228,87 @@ class ArtifactPathTethering:
         # This lock is critical: artifact change -> path update -> artifact change -> ...
         self._updating_from_parameter = None
 
-    def on_after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle parameter value changes - call from node's after_value_set().
+    def get_artifact_output(self) -> Any:
+        """Get the processed artifact for node output."""
+        return self.node.get_parameter_value(self.artifact_parameter.name)
+
+    def get_path_output(self) -> str:
+        """Get the path value for node output."""
+        result = self.node.get_parameter_value(self.path_parameter.name) or ""
+        return result
+
+    def on_incoming_connection(self, target_parameter: Parameter) -> None:
+        """Handle incoming connection establishment to the artifact parameter.
+
+        When the artifact parameter receives an incoming connection,
+        make both artifact and path parameters read-only to prevent
+        manual modifications that could conflict with connected values.
+
+        Note: Path parameter cannot receive connections (PROPERTY+OUTPUT only).
 
         Args:
-            parameter: The parameter that changed
-            value: The new value
+            target_parameter: The parameter that received the connection
         """
+        if target_parameter == self.artifact_parameter:
+            # Make both tethered parameters read-only
+            self.artifact_parameter.settable = False
+            self.path_parameter.settable = False
+
+    def on_incoming_connection_removed(self, target_parameter: Parameter) -> None:
+        """Handle incoming connection removal from the artifact parameter.
+
+        When a connection is removed from the artifact parameter,
+        make both parameters settable again.
+
+        Args:
+            target_parameter: The parameter that had its connection removed
+        """
+        if target_parameter == self.artifact_parameter:
+            # Make both tethered parameters settable again
+            self.artifact_parameter.settable = True
+            self.path_parameter.settable = True
+
+    def on_before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        """Handle parameter value setting for tethered parameters.
+
+        This allows legitimate upstream values to be set by temporarily
+        making parameters settable when the artifact parameter has connections.
+
+        Args:
+            parameter: The parameter being set
+            value: The value being set
+
+        Returns:
+            The value to actually set (unchanged in this case)
+        """
+        if parameter in (self.artifact_parameter, self.path_parameter):
+            # Check if the artifact parameter has incoming connections
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            connections = GriptapeNodes.FlowManager().get_connections()
+            target_connections = connections.incoming_index.get(self.node.name)
+
+            has_artifact_connection = target_connections and target_connections.get(self.artifact_parameter.name)
+
+            if has_artifact_connection:
+                # Temporarily make both parameters settable for upstream value propagation
+                self.artifact_parameter.settable = True
+                self.path_parameter.settable = True
+
+        return value
+
+    def on_after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle post-parameter value setting for tethered parameters.
+
+        This handles both the existing synchronization logic AND restores
+        read-only state when the artifact parameter has connections.
+
+        Args:
+            parameter: The parameter that was set
+            value: The value that was set
+        """
+        # First, handle existing synchronization logic (from original on_after_value_set)
         # Check the lock first: Skip if we're already in an update cycle to prevent infinite loops
-        # This happens when we programmatically update a parameter, which would trigger this method again
         if self._updating_from_parameter is not None:
             return
 
@@ -245,7 +317,6 @@ class ArtifactPathTethering:
             return
 
         # Acquire the lock: Set which parameter is driving the current update cycle
-        # This prevents the other parameter's update from triggering another cycle
         self._updating_from_parameter = parameter
         try:
             if parameter == self.artifact_parameter:
@@ -271,48 +342,22 @@ class ArtifactPathTethering:
             error_msg = f"Failed to process {param_type_for_error_str} parameter '{parameter.name}' in node '{self.node.__class__.__name__}': {e}{value_info}"
             raise ValueError(error_msg) from e
         finally:
-            # Always clear the update lock - critical for allowing future updates
-            # Even if an exception occurred, we must release the lock or tethering will be permanently broken
+            # Always clear the update lock
             self._updating_from_parameter = None
 
-    def get_artifact_output(self) -> Any:
-        """Get the processed artifact for node output."""
-        return self.node.get_parameter_value(self.artifact_parameter.name)
+        # Second, handle connection-aware settable restoration
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    def get_path_output(self) -> str:
-        """Get the path value for node output."""
-        result = self.node.get_parameter_value(self.path_parameter.name) or ""
-        return result
+        connections = GriptapeNodes.FlowManager().get_connections()
+        target_connections = connections.incoming_index.get(self.node.name)
 
-    def on_incoming_connection(self, target_parameter: Parameter) -> None:
-        """Handle incoming connection establishment to a tethered parameter.
+        has_artifact_connection = target_connections and target_connections.get(self.artifact_parameter.name)
 
-        When either tethered parameter receives an incoming connection,
-        make both parameters read-only to prevent manual modifications
-        that could conflict with connected values.
-
-        Args:
-            target_parameter: The parameter that received the connection
-        """
-        if target_parameter in (self.artifact_parameter, self.path_parameter):
-            # Make both tethered parameters read-only
+        # If artifact parameter has connections, make both read-only again
+        if has_artifact_connection:
             self.artifact_parameter.settable = False
             self.path_parameter.settable = False
 
-    def on_incoming_connection_removed(self, target_parameter: Parameter) -> None:
-        """Handle incoming connection removal from a tethered parameter.
-
-        When a connection is removed from either tethered parameter,
-        make both parameters settable again since data parameters
-        only allow a single input connection.
-
-        Args:
-            target_parameter: The parameter that had its connection removed
-        """
-        if target_parameter in (self.artifact_parameter, self.path_parameter):
-            # Make both tethered parameters settable again
-            self.artifact_parameter.settable = True
-            self.path_parameter.settable = True
 
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter."""
