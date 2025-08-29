@@ -9,7 +9,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -163,7 +163,7 @@ class GenerateImage(ControlNode):
 
         return super().after_value_set(parameter, value)
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult:
         # Get the parameters from the node
         params = self.parameter_values
 
@@ -196,7 +196,7 @@ class GenerateImage(ControlNode):
             self.append_value_to_parameter("logs", "Enhancing prompt...\n")
             # agent.run is a blocking operation that will hold up the rest of the engine.
             # By using `yield lambda`, the engine can run this in the background and resume when it's done.
-            result = agent.run(
+            result = yield lambda: agent.run(
                 [
                     """
 Enhance the following prompt for an image generation engine. Return only the image generation prompt.
@@ -248,7 +248,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         # Run the agent asynchronously
         self.append_value_to_parameter("logs", "Starting processing image..\n")
-        self._create_image(agent, prompt)
+        yield lambda: self._create_image(agent, prompt)
         self.append_value_to_parameter("logs", "Finished processing image.\n")
 
         # Create a false memory for the agent

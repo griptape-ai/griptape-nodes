@@ -1804,7 +1804,7 @@ class FlowManager:
 
             # Initialize DAG resolution machine
             dag_resolution_machine = DagResolutionMachine(flow.name)
-            dag_resolution_machine.change_debug_mode(debug_mode)
+            dag_resolution_machine.change_debug_mode(debug_mode=debug_mode)
 
             # Reset node state and build DAG
             node.state = NodeResolutionState.UNRESOLVED
@@ -1826,7 +1826,7 @@ class FlowManager:
             self._global_control_flow_machine._context.current_node = node
             resolution_machine = self._global_control_flow_machine._context.resolution_machine
             # Set debug mode
-            resolution_machine.change_debug_mode(debug_mode)
+            resolution_machine.change_debug_mode(debug_mode=debug_mode)
             # Resolve the node.
             node.state = NodeResolutionState.UNRESOLVED
             await resolution_machine.resolve_node(node)

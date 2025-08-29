@@ -6,7 +6,6 @@ but supports connecting custom prompt_model_configurations. It handles parameter
 for tools, rulesets, prompts, and streams output back to the user interface.
 """
 
-import threading
 from typing import Any
 
 from griptape.artifacts import BaseArtifact
@@ -18,7 +17,7 @@ from griptape.tasks import PromptTask
 from jinja2 import Template
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -346,7 +345,7 @@ class Agent(ControlNode):
         return prompt
 
     # --- Processing ---
-    def process(self) -> None:  # noqa: C901
+    def process(self) -> AsyncResult[Structure]:  # noqa: C901
         """Executes the main logic of the node asynchronously.
 
         Sets up the Griptape Agent (either new or from input), configures the
@@ -424,34 +423,14 @@ class Agent(ControlNode):
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
             self.append_value_to_parameter("logs", "[Started processing agent..]\n")
-            self._process(agent, prompt)
+            yield lambda: self._process(agent, prompt)
             self.append_value_to_parameter("logs", "\n[Finished processing agent.]\n")
             try_throw_error(agent.output)
-            logger.info(
-                "THREAD_DEBUG: Agent node '%s' completed processing with prompt in thread. Current thread: %s",
-                self.name,
-                threading.current_thread().name,
-            )
         else:
             self.append_value_to_parameter("logs", "[No prompt provided, creating Agent.]\n")
             self.parameter_output_values["output"] = "Agent created."
-            logger.info(
-                "THREAD_DEBUG: Agent node '%s' set parameter_output_values['output'] = 'Agent created.' in thread",
-                self.name,
-            )
-
         # Set the agent
         self.parameter_output_values["agent"] = agent.to_dict()
-        logger.info(
-            "THREAD_DEBUG: Agent node '%s' set parameter_output_values['agent'] in thread. Current thread: %s",
-            self.name,
-            threading.current_thread().name,
-        )
-        logger.info(
-            "THREAD_DEBUG: Agent node '%s' parameter_output_values keys after setting: %s",
-            self.name,
-            list(self.parameter_output_values.keys()),
-        )
 
     def _process(self, agent: GtAgent, prompt: BaseArtifact | str) -> Structure:
         """Performs the synchronous, streaming interaction with the Griptape Agent.

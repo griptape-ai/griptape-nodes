@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from enum import Enum
-import logging
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -196,16 +196,12 @@ class ExecutionState(State):
         return ExecutionState
 
     @staticmethod
-    async def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: C901
-        # Do we have any Leaf Nodes not in canceled state?
-        await asyncio.sleep(0.01)
+    def build_node_states(context:ExecutionContext) -> tuple[list[str],list[str],list[str], list[str]]:
         network = context.current_dag.network
-        # Check and see if there are leaf nodes that are cancelled.
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
         done_nodes = []
         canceled_nodes = []
         queued_nodes = []
-        # Get the status of all of the leaf nodes.
         for node in leaf_nodes:
             node_reference = context.current_dag.node_to_reference[node]
             # If the node is locked, mark it as done so it skips execution
@@ -220,6 +216,14 @@ class ExecutionState(State):
                 canceled_nodes.append(node)
             elif node_state == NodeState.QUEUED:
                 queued_nodes.append(node)
+        return done_nodes, canceled_nodes, queued_nodes, leaf_nodes
+
+    @staticmethod
+    async def on_update(context: ExecutionContext) -> type[State] | None:
+        # Do we have any Leaf Nodes not in canceled state?
+        network = context.current_dag.network
+        # Check and see if there are leaf nodes that are cancelled.
+        done_nodes, canceled_nodes, queued_nodes, leaf_nodes = ExecutionState.build_node_states(context)
         # Are there any nodes in Done state?
         for node in done_nodes:
             # We have nodes in done state.
@@ -230,20 +234,7 @@ class ExecutionState(State):
         # Reinitialize leaf nodes since maybe we changed things up.
         if len(done_nodes) > 0:
             # We removed nodes from the network. There may be new leaf nodes.
-            leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
-            canceled_nodes = []
-            queued_nodes = []
-            for node in leaf_nodes:
-                node_reference = context.current_dag.node_to_reference[node]
-                # If the node is locked, mark it as done so it skips execution
-                if node_reference.node_reference.lock:
-                    node_reference.node_state = NodeState.DONE
-                    continue
-                node_state = node_reference.node_state
-                if node_state == NodeState.CANCELED:
-                    canceled_nodes.append(node)
-                elif node_state == NodeState.QUEUED:
-                    queued_nodes.append(node)
+            done_nodes, canceled_nodes, queued_nodes, leaf_nodes = ExecutionState.build_node_states(context)
         # We have no more leaf nodes. Quit early.
         if not leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
@@ -299,9 +290,7 @@ class ExecutionState(State):
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
             # Wait for a task to finish
-        await asyncio.wait(
-            context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED
-        )
+        await asyncio.wait(context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Infinite loop? let's see how this goes.
         return ExecutionState
 

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, TypeVar
 
@@ -563,7 +564,13 @@ class BaseNode(ABC):
         return None
 
     def set_parameter_value(
-        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
     ) -> None:
         """Attempt to set a Parameter's value.
 
@@ -584,6 +591,7 @@ class BaseNode(ABC):
             value: the value intended to be set
             emit_change: whether to emit a parameter lifecycle event, defaults to True
             initial_setup: Whether this value is being set as the initial setup on the node, defaults to False. When True, the value is not given to any before/after hooks.
+            skip_before_value_set: Whether to skip the before_value_set hook, defaults to False. Used when before_value_set has already been called earlier in the flow.
 
         Returns:
             A set of parameter names within this node that were modified as a result
@@ -612,7 +620,10 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            if not skip_before_value_set:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            else:
+                final_value = candidate_value
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
@@ -711,13 +722,10 @@ class BaseNode(ABC):
     async def aprocess(self) -> None:
         """Async version of process().
 
-        Default implementation runs the existing process() method in a thread pool for true concurrency.
+        Default implementation wraps the existing process() method to maintain backwards compatibility.
         Subclasses can override this method to provide direct async implementation.
         """
-        loop = asyncio.get_running_loop()
-
-        # Run process() in thread pool for true concurrency
-        result = await loop.run_in_executor(None, self.process)
+        result = self.process()
 
         if result is None:
             # Simple synchronous node - nothing to do
@@ -725,12 +733,15 @@ class BaseNode(ABC):
 
         if isinstance(result, Generator):
             # Handle generator pattern asynchronously using the same logic as before
+            loop = asyncio.get_running_loop()
+
             try:
                 while True:
                     # Get the next callable from generator
                     func = next(result)
                     # Run it in thread pool (preserving existing behavior)
-                    future_result = await loop.run_in_executor(None, func)
+                    with ThreadPoolExecutor() as executor:
+                        future_result = await loop.run_in_executor(executor, func)
                     # Send result back to generator
                     result.send(future_result)
             except StopIteration:

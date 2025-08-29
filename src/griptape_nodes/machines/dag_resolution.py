@@ -174,8 +174,6 @@ class BuildDagNodeState(State):
             return DagCompleteState
         return ExecuteDagState
 
-
-# TODO: This state shouldn't be accessed if we're just appending nodes to a graph. But it's necessary for real node resolution.
 class ExecuteDagState(State):
     @staticmethod
     async def on_enter(context: DagResolutionContext) -> type[State] | None:
@@ -244,7 +242,7 @@ class DagResolutionMachine(FSM[DagResolutionContext]):
         """Build DAG structure starting from the given node. (Deprecated: use resolve_node)."""
         await self.resolve_node(node)
 
-    def change_debug_mode(self, debug_mode: bool) -> None:
+    def change_debug_mode(self, *, debug_mode: bool) -> None:
         self._context.paused = debug_mode
 
     def is_complete(self) -> bool:

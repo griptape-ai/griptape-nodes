@@ -226,17 +226,17 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
-        self._context.resolution_machine.change_debug_mode(debug_mode)
+        self._context.resolution_machine.change_debug_mode(debug_mode=debug_mode)
 
     async def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
 
         if change_debug_mode:
-            resolution_machine.change_debug_mode(True)
+            resolution_machine.change_debug_mode(debug_mode=True)
         await resolution_machine.update()
 
         # Tick the control flow if the current machine isn't busy
-        if self._current_state is ResolveNodeState and (
+        if self._current_state is ResolveNodeState and (  # noqa: SIM102
             resolution_machine.is_complete() or not resolution_machine.is_started()
         ):
             # Don't tick ourselves if we are already complete.
@@ -246,7 +246,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     async def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
 
-        resolution_machine.change_debug_mode(False)
+        resolution_machine.change_debug_mode(debug_mode=False)
 
         # If we're in the resolution phase, step the resolution machine
         if self._current_state is ResolveNodeState:
