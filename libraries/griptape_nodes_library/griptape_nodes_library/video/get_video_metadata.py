@@ -195,7 +195,7 @@ class GetVideoMetadata(DataNode):
         self.add_node_element(dimensions_group)
 
         # Color Details Parameter Group
-        with ParameterGroup(name="Color Details") as color_group:
+        with ParameterGroup(name="Color Details", ui_options={"collapsed": True}) as color_group:
             Parameter(
                 name="optional_color_space",
                 default_value=None,
@@ -220,7 +220,7 @@ class GetVideoMetadata(DataNode):
         self.add_node_element(color_group)
 
         # Frame Details Parameter Group
-        with ParameterGroup(name="Frame Details") as frame_group:
+        with ParameterGroup(name="Frame Details", ui_options={"collapsed": True}) as frame_group:
             Parameter(
                 name="frame_rate",
                 default_value=None,
