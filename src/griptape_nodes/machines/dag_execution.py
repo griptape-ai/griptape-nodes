@@ -196,7 +196,7 @@ class ExecutionState(State):
         return ExecutionState
 
     @staticmethod
-    def build_node_states(context:ExecutionContext) -> tuple[list[str],list[str],list[str], list[str]]:
+    def build_node_states(context: ExecutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
         network = context.current_dag.network
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
         done_nodes = []

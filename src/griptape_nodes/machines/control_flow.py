@@ -256,9 +256,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         if self._current_state is ResolveNodeState and (
             resolution_machine.is_complete() or not resolution_machine.is_started()
         ):
-            # Don't tick ourselves if we are already complete.
-            if self._current_state is not None:
-                await self.update()
+            await self.update()
 
     async def _process_data_nodes_for_dag(self) -> None:
         """Process data_nodes from the global queue to build unified DAG.

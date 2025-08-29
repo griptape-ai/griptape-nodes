@@ -174,6 +174,7 @@ class BuildDagNodeState(State):
             return DagCompleteState
         return ExecuteDagState
 
+
 class ExecuteDagState(State):
     @staticmethod
     async def on_enter(context: DagResolutionContext) -> type[State] | None:
