@@ -3,15 +3,18 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
+import logging
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
 )
-from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
+from griptape_nodes.retained_mode.events.execution_events import NodeResolvedEvent, ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
@@ -52,9 +55,55 @@ class ExecutionContext:
 class ExecutionState(State):
     @staticmethod
     def handle_done_nodes(done_node: DagOrchestrator.DagNode) -> None:
-        node = done_node.node_reference
+        current_node = done_node.node_reference
         # Publish all parameter updates.
-        node.state = NodeResolutionState.RESOLVED
+        current_node.state = NodeResolutionState.RESOLVED
+        # Serialization can be slow so only do it if the user wants debug details.
+        if logger.level <= logging.DEBUG:
+            logger.debug(
+                "INPUTS: %s\nOUTPUTS: %s",
+                TypeValidator.safe_serialize(current_node.parameter_values),
+                TypeValidator.safe_serialize(current_node.parameter_output_values),
+            )
+
+        for parameter_name, value in current_node.parameter_output_values.items():
+            parameter = current_node.get_parameter_by_name(parameter_name)
+            if parameter is None:
+                err = f"Canceling flow run. Node '{current_node.name}' specified a Parameter '{parameter_name}', but no such Parameter could be found on that Node."
+                raise KeyError(err)
+            data_type = parameter.type
+            if data_type is None:
+                data_type = ParameterTypeBuiltin.NONE.value
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=ParameterValueUpdateEvent(
+                            node_name=current_node.name,
+                            parameter_name=parameter_name,
+                            data_type=data_type,
+                            value=TypeValidator.safe_serialize(value),
+                        )
+                    ),
+                )
+            )
+        # Output values should already be saved!
+        library = LibraryRegistry.get_libraries_with_node_type(current_node.__class__.__name__)
+        if len(library) == 1:
+            library_name = library[0]
+        else:
+            library_name = None
+        GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(
+                    payload=NodeResolvedEvent(
+                        node_name=current_node.name,
+                        parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                        node_type=current_node.__class__.__name__,
+                        specific_library_name=library_name,
+                    )
+                )
+            )
+        )
 
     @staticmethod
     def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
@@ -250,7 +299,7 @@ class ExecutionState(State):
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
             # Wait for a task to finish
-        done, running_tasks = await asyncio.wait(
+        await asyncio.wait(
             context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED
         )
         # Infinite loop? let's see how this goes.
