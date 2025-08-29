@@ -1,0 +1,44 @@
+name: Version Bump on Release Branch
+
+on:
+  push:
+    branches:
+      - release/**
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout the release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine source branch name
+        id: branch
+        run: echo "name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+      - name: Check if PR already exists
+        id: check-pr
+        run: |
+          PR_EXISTS=$(gh pr list --base main --head ${{ steps.branch.outputs.name }} --json number --jq length)
+          echo "exists=$PR_EXISTS" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create pull request into main
+        if: steps.check-pr.outputs.exists == '0'
+        run: |
+          gh pr create \
+            --base main \
+            --head ${{ steps.branch.outputs.name }} \
+            --title "chore: ${{ steps.branch.outputs.name }} into main (version bump)" \
+            --body "This PR was automatically generated from a push to \`${{ steps.branch.outputs.name }}\`.
+          It likely includes a version bump or release updates."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

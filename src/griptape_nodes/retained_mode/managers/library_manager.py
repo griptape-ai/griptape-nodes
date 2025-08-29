@@ -240,10 +240,10 @@ class LibraryManager:
 
         # Status emojis mapping
         status_emoji = {
-            LibraryStatus.GOOD: "✅",
-            LibraryStatus.FLAWED: "🟡",
-            LibraryStatus.UNUSABLE: "❌",
-            LibraryStatus.MISSING: "❓",
+            LibraryStatus.GOOD: "[green]OK[/green]",
+            LibraryStatus.FLAWED: "[yellow]![/yellow]",
+            LibraryStatus.UNUSABLE: "[red]X[/red]",
+            LibraryStatus.MISSING: "[red]?[/red]",
         }
 
         # Add rows for each library info
@@ -256,7 +256,7 @@ class LibraryManager:
             # Library name column with emoji based on status
             emoji = status_emoji.get(lib_info.status, "ERROR: Unknown/Unexpected Library Status")
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
-            library_name = f"{emoji} {name}"
+            library_name = f"{emoji} - {name}"
 
             library_version = lib_info.library_version
             if library_version:
@@ -1596,14 +1596,14 @@ class LibraryManager:
                 f"[bold blue]Return to: [link={nodes_app_url}]{nodes_app_url}[/link] to access the Workflow Editor[/bold blue]",
                 vertical="middle",
             ),
-            title="🚀 Griptape Nodes Engine Started",
+            title="Griptape Nodes Engine Started",
             subtitle=f"[green]{engine_version}{session_info}[/green]",
             border_style="green",
             padding=(1, 4),
         )
         console.print(message)
 
-    def _load_libraries_from_provenance_system(self) -> None:
+    async def _load_libraries_from_provenance_system(self) -> None:
         """Load libraries using the new provenance-based system with FSM.
 
         This method converts libraries_to_register entries into LibraryProvenanceLocalFile
@@ -1632,7 +1632,7 @@ class LibraryManager:
 
             # Add to directory as user candidate (defaults to active=True)
             # This automatically creates FSM and runs evaluation
-            self._library_directory.add_user_candidate(provenance)
+            await self._library_directory.add_user_candidate(provenance)
 
             logger.debug("Added library provenance: %s", provenance.get_display_name())
 
@@ -1661,8 +1661,8 @@ class LibraryManager:
 
         # Process installable candidates through installation and loading
         for candidate in installable_candidates:
-            if self._library_directory.install_library(candidate.provenance):
-                self._library_directory.load_library(candidate.provenance)
+            if await self._library_directory.install_library(candidate.provenance):
+                await self._library_directory.load_library(candidate.provenance)
 
     def _report_library_name_conflicts(self) -> None:
         """Report on library name conflicts found during evaluation."""

@@ -93,19 +93,18 @@ class HuggingFaceModelParameter(ABC):
     def get_help_message(self) -> str:
         download_commands = "\n".join([f"  - `{cmd}`" for cmd in self.get_download_commands()])
         return (
-            "📥 How to download the models:\n"
+            "How to download the models:\n"
             "1. Setup huggingface-cli as per our docs: https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/ \n"
             "2. Download at least one model:\n"
             f"{download_commands}\n"
-            "3. Save, close, then open the again workflow. (❌ Do not just reload the page)\n"
+            "3. Save, close, then open the again workflow. ([red]X[/red] Do not just reload the page)\n"
             "\n"
-            "✅ If successful, you should see a dropdown with the available models.\n"
-            "❌ If not successful because download fails then check huggingface-cli docs.\n"
-            "❌ If not successful for some other reason then reach out to us on Discord or GitHub.\n"
+            "[green]OK[/green] If successful, you should see a dropdown with the available models.\n"
+            "[red]X[/red] If not successful because download fails then check huggingface-cli docs.\n"
+            "[red]X[/red] If not successful for some other reason then reach out to us on Discord or GitHub.\n"
             "\n"
             "Note: Currently this is the only supported method for downloading models. \n"
             "Hopefully this gets more intuitive (and customizable) soon!\n"
-            "- from ✊📼🍜 with ❤️\n"
         )
 
     @abstractmethod

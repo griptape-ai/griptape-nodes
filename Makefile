@@ -106,6 +106,14 @@ test/unit: ## Run unit tests.
 	@uv run pytest -n auto tests/unit
 	@uv run pytest -n auto libraries/griptape_nodes_library/tests/unit
 
+.PHONY: test/unit/coverage
+test/unit/coverage: ## Run unit tests with coverage.
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit
+
+.PHONY: test/coverage
+test/coverage: ## Run all tests with coverage.
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit tests/integration
+
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration

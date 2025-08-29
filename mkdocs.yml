@@ -181,6 +181,9 @@ nav:
         - Display Video: nodes/video/display_video.md
         - Resize Video: nodes/video/resize_video.md
         - Save Video: nodes/video/save_video.md
+        - Change Speed: nodes/video/change_speed.md
+        - Add Color Curves: nodes/video/add_color_curves.md
+        - Add Overlay: nodes/video/add_overlay.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md
         - Date Time: nodes/tools/date_time_tool.md

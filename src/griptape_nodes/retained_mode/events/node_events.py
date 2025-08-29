@@ -45,6 +45,7 @@ class CreateNodeRequest(RequestPayload):
         resolution: Initial resolution state (defaults to UNRESOLVED)
         initial_setup: Skip setup work when loading from file (defaults to False)
         set_as_new_context: Set this node as current context after creation (defaults to False)
+        create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -60,6 +61,8 @@ class CreateNodeRequest(RequestPayload):
     initial_setup: bool = False
     # When True, this Node will be pushed as the current Node within the Current Context.
     set_as_new_context: bool = False
+    # When True, create an Error Proxy node if the requested node type fails to create
+    create_error_proxy_on_failure: bool = True
 
 
 @dataclass
@@ -260,6 +263,50 @@ class SetNodeMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SetNodeMetadataResultFailure(ResultPayloadFailure):
     """Metadata update failed. Common causes: node not found, no current context, invalid metadata format."""
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataRequest(RequestPayload):
+    """Update metadata for multiple nodes in a single request.
+
+    Use when: Updating positions for multiple nodes at once, applying bulk styling changes,
+    implementing multi-node selection operations, optimizing performance for UI updates.
+    Supports partial updates - only specified metadata fields are updated for each node.
+
+    Args:
+        node_metadata_updates: Dictionary mapping node names to their metadata updates.
+                              Each node's metadata is merged with existing metadata (partial update).
+                              If a node name is None, uses the current context node.
+
+    Results: BatchSetNodeMetadataResultSuccess | BatchSetNodeMetadataResultFailure (some nodes not found, update errors)
+    """
+
+    node_metadata_updates: dict[str | None, dict[str, Any]]
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Batch node metadata update completed successfully.
+
+    Args:
+        updated_nodes: List of node names that were successfully updated
+        failed_nodes: Dictionary mapping failed node names to error descriptions (if any)
+    """
+
+    updated_nodes: list[str]
+    failed_nodes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeMetadataResultFailure(ResultPayloadFailure):
+    """Batch metadata update failed.
+
+    Common causes: all nodes not found, no current context, invalid metadata format,
+    or other systemic errors preventing the batch operation.
+    """
 
 
 # Get all info via a "jumbo" node event. Batches multiple info requests for, say, a GUI.
@@ -676,4 +723,92 @@ class DuplicateSelectedNodesResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
     Common causes: nodes not found, constraints/conflicts,
     insufficient resources, connection duplication failures.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageRequest(RequestPayload):
+    """Send a message to a specific node.
+
+    Use when: External systems need to signal or send data directly to individual nodes,
+    implementing custom communication patterns, triggering node-specific behaviors.
+
+    Args:
+        node_name: Name of the target node (None for current context node)
+        optional_element_name: Optional element name this message relates to
+        message_type: String indicating message type for receiver parsing
+        message: Message payload of any type
+
+    Results: SendNodeMessageResultSuccess (with response) | SendNodeMessageResultFailure (node not found, handler error)
+    """
+
+    message_type: str
+    message: Any
+    node_name: str | None = None
+    optional_element_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageResultSuccess(ResultPayloadSuccess):
+    """Node message sent and processed successfully.
+
+    Args:
+        response: Optional response data from the node's message handler
+    """
+
+    response: Any = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SendNodeMessageResultFailure(ResultPayloadFailure):
+    """Node message sending failed.
+
+    Common causes: node not found, no current context, message handler error,
+    unsupported message type.
+
+    Args:
+        response: Optional response data from the node's message handler (even on failure)
+    """
+
+    response: Any = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeRequest(RequestPayload):
+    """Get the flow name that contains a specific node.
+
+    Use when: Need to determine which flow a node belongs to for variable scoping,
+    flow-specific operations, or hierarchical lookups.
+
+    Args:
+        node_name: Name of the node to get the flow for
+
+    Results: GetFlowForNodeResultSuccess (with flow name) | GetFlowForNodeResultFailure (node not found)
+    """
+
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow for node retrieved successfully.
+
+    Args:
+        flow_name: Name of the flow that contains the node
+    """
+
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Flow for node retrieval failed.
+
+    Common causes: node not found, node not assigned to any flow.
     """

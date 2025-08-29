@@ -3,8 +3,10 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.traits.options import Options
 
 
 class GetFromList(ControlNode):
@@ -19,6 +21,17 @@ class GetFromList(ControlNode):
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
+
+        self.position = Parameter(
+            name="position",
+            tooltip="Position to get the value from the list",
+            input_types=["str"],
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value="index",
+        )
+        self.add_parameter(self.position)
+        self.position.add_trait(Options(choices=["index", "start", "end"]))
+
         self.index = Parameter(
             name="index",
             tooltip="Index to get the item from",
@@ -30,16 +43,26 @@ class GetFromList(ControlNode):
         self.item = Parameter(
             name="item",
             tooltip="Output the item at the specified index",
-            output_type="any",
+            output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.item)
 
     def _get_item(self) -> Any:
         list_items = self.get_parameter_value("items")
-        index = self.get_parameter_value("index")
-        if not list_items or index is None:
+        if not list_items:
             return None
+
+        position = self.get_parameter_value("position")
+        if position == "start":
+            index = 0
+        elif position == "end":
+            index = len(list_items) - 1
+        else:
+            index = self.get_parameter_value("index")
+            if index is None:
+                return None
+
         try:
             # Convert index to integer, handling both int and float inputs
             index = int(index)
@@ -48,7 +71,12 @@ class GetFromList(ControlNode):
             return None
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in ["items", "index"]:
+        if parameter.name == "position":
+            if value in {"start", "end"}:
+                self.hide_parameter_by_name("index")
+            elif value == "index":
+                self.show_parameter_by_name("index")
+        if parameter.name in ["items", "index", "position"]:
             item = self._get_item()
             self.parameter_output_values["item"] = item
             self.publish_update_to_parameter("item", item)

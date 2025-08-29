@@ -1,8 +1,26 @@
 import base64
+import re
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+
+RATE_TOLERANCE = 0.1
+NOMINAL_30FPS = 30
+NOMINAL_60FPS = 60
+
+# Drop-frame constants for NTSC timecode
+# NTSC uses 29.97 fps (not exactly 30) due to color subcarrier requirements
+# To keep timecode in sync with real time, drop-frame timecode drops 2 frames per minute
+# (except every 10th minute) for 29.97 fps, and 4 frames per minute for 59.94 fps
+# This ensures timecode matches wall clock time over long durations
+DROP_FRAMES_30FPS = 2  # Frames dropped per minute for 29.97 fps NTSC
+DROP_FRAMES_60FPS = 4  # Frames dropped per minute for 59.94 fps NTSC
+
+# Actual NTSC frame rates (precise values)
+ACTUAL_RATE_30FPS = 30000 / 1001  # ≈ 29.97 fps (NTSC)
+ACTUAL_RATE_60FPS = 60000 / 1001  # ≈ 59.94 fps (NTSC)
 
 
 def detect_video_format(video: Any | dict) -> str | None:
@@ -69,3 +87,80 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
     url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
 
     return VideoUrlArtifact(url)
+
+
+def to_video_artifact(video: Any | dict) -> Any:
+    """Convert a video or a dictionary to a VideoArtifact."""
+    if isinstance(video, dict):
+        return dict_to_video_url_artifact(video)
+    return video
+
+
+def validate_url(url: str) -> bool:
+    """Validate that the URL is safe for ffmpeg processing."""
+    try:
+        parsed = urlparse(url)
+        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
+    except Exception:
+        return False
+
+
+def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
+    """Convert SMPTE timecode to seconds.
+
+    Drop-frame timecode is used for NTSC video (29.97/59.94 fps) to keep timecode
+    synchronized with real time. It drops frames at specific intervals to compensate
+    for the slight difference between nominal and actual frame rates.
+
+    Examples:
+    - Non-drop: "01:23:45:12" (standard timecode)
+    - Drop-frame: "01:23:45;12" (NTSC drop-frame timecode)
+    """
+    if not re.match(r"^\d{2}:\d{2}:\d{2}[:;]\d{2}$", tc):
+        error_msg = f"Bad SMPTE format: {tc!r}"
+        raise ValueError(error_msg)
+    sep = ";" if ";" in tc else ":"
+    hh, mm, ss, ff = map(int, re.split(r"[:;]", tc))
+    is_df = (sep == ";") if drop_frame is None else bool(drop_frame)
+
+    # Non-drop: straightforward calculation
+    if not is_df:
+        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
+
+    # Drop-frame: only valid for NTSC rates (29.97 and 59.94 fps)
+    nominal = (
+        NOMINAL_30FPS
+        if abs(rate - 29.97) < RATE_TOLERANCE
+        else NOMINAL_60FPS
+        if abs(rate - 59.94) < RATE_TOLERANCE
+        else None
+    )
+    if nominal is None:
+        # Fallback (treat as non-drop rather than guessing)
+        return (hh * 3600) + (mm * 60) + ss + (ff / rate)
+
+    drop_per_min = DROP_FRAMES_30FPS if nominal == NOMINAL_30FPS else DROP_FRAMES_60FPS
+    total_minutes = hh * 60 + mm
+    # Drop every minute except every 10th minute
+    dropped = drop_per_min * (total_minutes - total_minutes // 10)
+    frame_number = (hh * 3600 + mm * 60 + ss) * nominal + ff - dropped
+    actual_rate = ACTUAL_RATE_30FPS if nominal == NOMINAL_30FPS else ACTUAL_RATE_60FPS
+    return frame_number / actual_rate
+
+
+def seconds_to_ts(sec: float) -> str:
+    """Return HH:MM:SS.mmm for ffmpeg."""
+    sec = max(sec, 0)
+    whole = int(sec)
+    ms = round((sec - whole) * 1000)
+    h = whole // 3600
+    m = (whole % 3600) // 60
+    s = whole % 60
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+def sanitize_filename(name: str) -> str:
+    """Sanitize filename by removing invalid characters and replacing spaces with underscores."""
+    name = re.sub(r"[^\w\s\-.]+", "_", name.strip())
+    name = re.sub(r"\s+", "_", name)
+    return name or "segment"

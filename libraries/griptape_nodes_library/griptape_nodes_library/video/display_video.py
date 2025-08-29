@@ -21,9 +21,9 @@ class DisplayVideo(DataNode):
             Parameter(
                 name="video",
                 default_value=value,
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
-                output_type="VideoArtifact",
-                type="VideoArtifact",
+                input_types=["VideoUrlArtifact", "VideoArtifact"],
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
                 tooltip="The video to display",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )

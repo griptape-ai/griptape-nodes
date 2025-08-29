@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import logging
 import pickle
 import pkgutil
@@ -389,19 +390,19 @@ class WorkflowManager:
 
         # Status emojis mapping
         status_emoji = {
-            self.WorkflowStatus.GOOD: "✅",
-            self.WorkflowStatus.FLAWED: "🟡",
-            self.WorkflowStatus.UNUSABLE: "❌",
-            self.WorkflowStatus.MISSING: "❓",
+            self.WorkflowStatus.GOOD: "[green]OK[/green]",
+            self.WorkflowStatus.FLAWED: "[yellow]![/yellow]",
+            self.WorkflowStatus.UNUSABLE: "[red]X[/red]",
+            self.WorkflowStatus.MISSING: "[red]?[/red]",
         }
 
         dependency_status_emoji = {
-            self.WorkflowDependencyStatus.PERFECT: "✅",
-            self.WorkflowDependencyStatus.GOOD: "👌",
-            self.WorkflowDependencyStatus.CAUTION: "🟡",
-            self.WorkflowDependencyStatus.BAD: "❌",
-            self.WorkflowDependencyStatus.MISSING: "❓",
-            self.WorkflowDependencyStatus.UNKNOWN: "❓",
+            self.WorkflowDependencyStatus.PERFECT: "[green]OK[/green]",
+            self.WorkflowDependencyStatus.GOOD: "[green]GOOD[/green]",
+            self.WorkflowDependencyStatus.CAUTION: "[yellow]CAUTION[/yellow]",
+            self.WorkflowDependencyStatus.BAD: "[red]BAD[/red]",
+            self.WorkflowDependencyStatus.MISSING: "[red]MISSING[/red]",
+            self.WorkflowDependencyStatus.UNKNOWN: "[red]UNKNOWN[/red]",
         }
 
         # Add rows for each workflow info
@@ -414,7 +415,7 @@ class WorkflowManager:
             # Workflow name column with emoji based on status
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
             name = wf_info.workflow_name if wf_info.workflow_name else "*UNKNOWN*"
-            workflow_name = f"{emoji} {name}"
+            workflow_name = f"{emoji} - {name}"
 
             # Problems column - format with numbers if there's more than one
             problems = "\n".join(wf_info.problems) if wf_info.problems else "No problems detected."
@@ -423,11 +424,11 @@ class WorkflowManager:
             if wf_info.status == self.WorkflowStatus.MISSING or (
                 wf_info.status == self.WorkflowStatus.UNUSABLE and not wf_info.workflow_dependencies
             ):
-                dependencies = "❓ UNKNOWN"
+                dependencies = "[red]?[/red] UNKNOWN"
             else:
                 dependencies = (
                     "\n".join(
-                        f"{dependency_status_emoji.get(dep.status, '?')} {dep.library_name} ({dep.version_requested}): {dep.status.value}"
+                        f"{dependency_status_emoji.get(dep.status, '?')} - {dep.library_name} ({dep.version_requested}): {dep.status.value}"
                         for dep in wf_info.workflow_dependencies
                     )
                     if wf_info.workflow_dependencies
@@ -1515,6 +1516,7 @@ class WorkflowManager:
 
         # === imports ===
         import_recorder.add_import("argparse")
+        import_recorder.add_import("asyncio")
         import_recorder.add_import("json")
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
@@ -1522,6 +1524,7 @@ class WorkflowManager:
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.workflow_executor", "WorkflowExecutor"
         )
+        import_recorder.add_from_import("griptape_nodes.drivers.storage.storage_backend", "StorageBackend")
 
         # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None) -> dict | None:` ===
         #   args
@@ -1554,6 +1557,16 @@ class WorkflowManager:
         # Generate the ensure flow context function call
         ensure_context_call = self._generate_ensure_flow_context_call()
 
+        # Convert string storage_backend to StorageBackend enum
+        storage_backend_convert = ast.Assign(
+            targets=[ast.Name(id="storage_backend_enum", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="StorageBackend", ctx=ast.Load()),
+                args=[ast.Name(id="storage_backend", ctx=ast.Load())],
+                keywords=[],
+            ),
+        )
+
         # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor()
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
@@ -1570,18 +1583,20 @@ class WorkflowManager:
             ),
         )
         run_call = ast.Expr(
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="workflow_executor", ctx=ast.Load()),
-                    attr="run",
-                    ctx=ast.Load(),
-                ),
-                args=[],
-                keywords=[
-                    ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
-                    ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                    ast.keyword(arg="storage_backend", value=ast.Name(id="storage_backend", ctx=ast.Load())),
-                ],
+            value=ast.Await(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                        attr="arun",
+                        ctx=ast.Load(),
+                    ),
+                    args=[],
+                    keywords=[
+                        ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
+                        ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                        ast.keyword(arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())),
+                    ],
+                )
             )
         )
         return_stmt = ast.Return(
@@ -1592,15 +1607,53 @@ class WorkflowManager:
             )
         )
 
-        func_def = ast.FunctionDef(
-            name="execute_workflow",
+        # === Generate async aexecute_workflow function ===
+        async_func_def = ast.AsyncFunctionDef(
+            name="aexecute_workflow",
             args=args,
-            body=[ensure_context_call, executor_assign, run_call, return_stmt],
+            body=[ensure_context_call, storage_backend_convert, executor_assign, run_call, return_stmt],
             decorator_list=[],
             returns=return_annotation,
             type_params=[],
         )
-        ast.fix_missing_locations(func_def)
+        ast.fix_missing_locations(async_func_def)
+
+        # === Generate sync execute_workflow function (backward compatibility wrapper) ===
+        sync_func_def = ast.FunctionDef(
+            name="execute_workflow",
+            args=args,
+            body=[
+                ast.Return(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="asyncio", ctx=ast.Load()),
+                            attr="run",
+                            ctx=ast.Load(),
+                        ),
+                        args=[
+                            ast.Call(
+                                func=ast.Name(id="aexecute_workflow", ctx=ast.Load()),
+                                args=[],
+                                keywords=[
+                                    ast.keyword(arg="input", value=ast.Name(id="input", ctx=ast.Load())),
+                                    ast.keyword(
+                                        arg="storage_backend", value=ast.Name(id="storage_backend", ctx=ast.Load())
+                                    ),
+                                    ast.keyword(
+                                        arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
+                                    ),
+                                ],
+                            )
+                        ],
+                        keywords=[],
+                    )
+                )
+            ],
+            decorator_list=[],
+            returns=return_annotation,
+            type_params=[],
+        )
+        ast.fix_missing_locations(sync_func_def)
 
         # === 2) build the `if __name__ == "__main__":` block ===
         main_test = ast.Compare(
@@ -1890,7 +1943,7 @@ class WorkflowManager:
         # Generate the ensure flow context function
         ensure_context_func = self._generate_ensure_flow_context_function(import_recorder)
 
-        return [ensure_context_func, func_def, if_node]
+        return [ensure_context_func, sync_func_def, async_func_def, if_node]
 
     def _generate_ensure_flow_context_function(
         self,
@@ -2954,7 +3007,8 @@ class WorkflowManager:
         set_parameter_value_asts.append(with_node_context)
         return set_parameter_value_asts
 
-    def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
+    @classmethod
+    def _convert_parameter_to_minimal_dict(cls, parameter: Parameter) -> dict[str, Any]:
         """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
         param_dict = parameter.to_dict()
         fields_to_include = [
@@ -2973,9 +3027,12 @@ class WorkflowManager:
             "traits",
             "ui_options",
             "settable",
-            "user_defined",
+            "is_user_defined",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
+        minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
+        minimal_dict["is_user_defined"] = bool(getattr(param_dict, "is_user_defined", True))
+
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
@@ -3053,7 +3110,7 @@ class WorkflowManager:
 
         return workflow_shape
 
-    def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
+    async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
             publisher_name = request.publisher_name
             event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
@@ -3065,7 +3122,7 @@ class WorkflowManager:
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
-            result = publishing_handler.handler(request)
+            result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
                 file = Path(result.published_workflow_file_path)
                 self._register_published_workflow_file(file)

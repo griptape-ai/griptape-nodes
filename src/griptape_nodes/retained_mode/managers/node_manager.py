@@ -10,13 +10,21 @@ from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterGroup,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, NodeResolutionState, StartLoopNode
+from griptape_nodes.exe_types.node_types import (
+    BaseNode,
+    EndLoopNode,
+    ErrorProxyNode,
+    NodeResolutionState,
+    StartLoopNode,
+)
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetails,
     ResultPayload,
     ResultPayloadFailure,
 )
@@ -46,6 +54,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeMetadataRequest,
+    BatchSetNodeMetadataResultFailure,
+    BatchSetNodeMetadataResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -64,6 +75,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetAllNodeInfoRequest,
     GetAllNodeInfoResultFailure,
     GetAllNodeInfoResultSuccess,
+    GetFlowForNodeRequest,
+    GetFlowForNodeResultFailure,
+    GetFlowForNodeResultSuccess,
     GetNodeMetadataRequest,
     GetNodeMetadataResultFailure,
     GetNodeMetadataResultSuccess,
@@ -73,6 +87,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    SendNodeMessageRequest,
+    SendNodeMessageResultFailure,
+    SendNodeMessageResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializedSelectedNodesCommands,
@@ -143,6 +160,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(GetNodeMetadataRequest, self.on_get_node_metadata_request)
         event_manager.assign_manager_to_request_type(SetNodeMetadataRequest, self.on_set_node_metadata_request)
         event_manager.assign_manager_to_request_type(
+            BatchSetNodeMetadataRequest, self.on_batch_set_node_metadata_request
+        )
+        event_manager.assign_manager_to_request_type(
             ListConnectionsForNodeRequest, self.on_list_connections_for_node_request
         )
         event_manager.assign_manager_to_request_type(
@@ -182,6 +202,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
+        event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -288,7 +309,30 @@ class NodeManager:
             traceback.print_exc()
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
             logger.error(details)
-            return CreateNodeResultFailure(result_details=details)
+
+            # Check if we should create an Error Proxy node instead of failing
+            if request.create_error_proxy_on_failure:
+                try:
+                    # Create ErrorProxyNode directly since it needs special initialization
+                    node = ErrorProxyNode(
+                        name=final_node_name,
+                        original_node_type=request.node_type,
+                        original_library_name=request.specific_library_name or "Unknown",
+                        failure_reason=str(err),
+                        metadata=request.metadata,
+                    )
+
+                    logger.warning(
+                        "Created Error Proxy (placeholder) node '%s' to substitute for failed '%s'",
+                        final_node_name,
+                        request.node_type,
+                    )
+                except Exception as proxy_err:
+                    details = f"Failed to create Error Proxy (placeholder) node: {proxy_err}"
+                    logger.error(details)
+                    return CreateNodeResultFailure(result_details=details)
+            else:
+                return CreateNodeResultFailure(result_details=details)
         # Add it to the Flow.
         parent_flow.add_node(node)
 
@@ -632,6 +676,46 @@ class NodeManager:
         result = SetNodeMetadataResultSuccess()
         return result
 
+    def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
+        updated_nodes = []
+        failed_nodes = {}
+
+        for node_name, metadata_update in request.node_metadata_updates.items():
+            # Resolve node name and get node object
+            node = None
+            if node_name is None:
+                # Get from current context
+                if not GriptapeNodes.ContextManager().has_current_node():
+                    failed_nodes["current_context"] = "No current context node available"
+                    continue
+                node = GriptapeNodes.ContextManager().get_current_node()
+                actual_node_name = node.name
+            else:
+                actual_node_name = node_name
+
+            # Look up node if we don't have it yet
+            if node is None:
+                obj_mgr = GriptapeNodes.ObjectManager()
+                node = obj_mgr.attempt_get_object_by_name_as_type(actual_node_name, BaseNode)
+                if node is None:
+                    failed_nodes[actual_node_name] = f"Node '{actual_node_name}' not found"
+                    continue
+
+            single_request = SetNodeMetadataRequest(node_name=actual_node_name, metadata=metadata_update)
+            result = self.on_set_node_metadata_request(single_request)
+
+            if isinstance(result, SetNodeMetadataResultSuccess):
+                updated_nodes.append(actual_node_name)
+            else:
+                failed_nodes[actual_node_name] = result.result_details
+
+        if not updated_nodes:
+            return BatchSetNodeMetadataResultFailure(
+                result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
+            )
+
+        return BatchSetNodeMetadataResultSuccess(updated_nodes=updated_nodes, failed_nodes=failed_nodes)
+
     def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
@@ -873,7 +957,7 @@ class NodeManager:
             input_types=request.input_types,
             output_type=request.output_type,
             default_value=request.default_value,
-            user_defined=True,
+            user_defined=request.is_user_defined,
             tooltip=request.tooltip,
             tooltip_as_input=request.tooltip_as_input,
             tooltip_as_property=request.tooltip_as_property,
@@ -881,6 +965,7 @@ class NodeManager:
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
             parent_container_name=request.parent_container_name,
+            settable=request.settable,
         )
         try:
             if request.parent_container_name and request.initial_setup:
@@ -888,7 +973,6 @@ class NodeManager:
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
             else:
-                logger.info(new_param.name)
                 node.add_parameter(new_param)
         except Exception as e:
             details = f"Couldn't add parameter with name {request.parameter_name} to Node '{node_name}'. Error: {e}"
@@ -1088,6 +1172,7 @@ class NodeManager:
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
             is_user_defined=getattr(element, "user_defined", False),
+            settable=getattr(element, "settable", None),
             ui_options=getattr(element, "ui_options", None),
         )
         return result
@@ -1177,7 +1262,7 @@ class NodeManager:
         if request.ui_options is not None and hasattr(parameter, "ui_options"):
             parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
-    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:  # noqa: C901, PLR0912
         if request.type is not None:
             parameter.type = request.type
         if request.input_types is not None:
@@ -1202,6 +1287,8 @@ class NodeManager:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
+        if request.settable is not None:
+            parameter.settable = request.settable
 
     def _validate_and_break_invalid_connections(
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
@@ -1263,7 +1350,7 @@ class NodeManager:
 
         return None
 
-    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_alter_parameter_details_request(self, request: AlterParameterDetailsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         node_name = request.node_name
         node = None
 
@@ -1289,6 +1376,24 @@ class NodeManager:
         # Is the node locked?
         if node.lock:
             details = f"Attempted to alter details for Parameter '{request.parameter_name}' from Node '{node_name}'. Failed because the Node was locked."
+            logger.error(details)
+            return AlterParameterDetailsResultFailure(result_details=details)
+
+        # Handle ErrorProxyNode parameter alteration requests
+        if isinstance(node, ErrorProxyNode):
+            if request.initial_setup:
+                # Record the alteration request for serialization replay
+                node.record_initialization_request(request)
+
+                # Early return with warning - we're just preserving the original changes
+                details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
+                logger.warning(details)
+
+                result_details = ResultDetails(message=details, level="WARNING")
+                return AlterParameterDetailsResultSuccess(result_details=result_details)
+
+            # Reject runtime parameter alterations on ErrorProxy
+            details = f"Cannot modify parameter '{request.parameter_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow parameter modifications, as they could cause issues when the original node is restored."
             logger.error(details)
             return AlterParameterDetailsResultFailure(result_details=details)
 
@@ -1426,6 +1531,22 @@ class NodeManager:
             logger.error(details)
             return SetParameterValueResultFailure(result_details=details)
 
+        # Handle ErrorProxyNode parameter value requests
+        if isinstance(node, ErrorProxyNode):
+            if request.initial_setup:
+                # For initial_setup, actually create the parameter and set the value
+                # This allows normal serialization to handle it, rather than recording the command
+                node.on_attempt_set_parameter_value(param_name)
+                # Continue with normal parameter value setting logic below
+                logger.debug(
+                    "Created parameter '%s' on ErrorProxyNode '%s' during initial setup", param_name, node_name
+                )
+            else:
+                # Reject runtime parameter value changes on ErrorProxy
+                details = f"Cannot set parameter '{param_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow parameter changes, as they could cause issues when the original node is restored."
+                logger.error(details)
+                return SetParameterValueResultFailure(result_details=details)
+
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
         if parameter is None:
@@ -1435,7 +1556,50 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
+        # Validate incoming connection source fields consistency
+        incoming_node_set = request.incoming_connection_source_node_name is not None
+        incoming_param_set = request.incoming_connection_source_parameter_name is not None
+        if incoming_node_set != incoming_param_set:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because incoming connection source fields must both be None or both be set. Got incoming_connection_source_node_name={request.incoming_connection_source_node_name}, incoming_connection_source_parameter_name={request.incoming_connection_source_parameter_name}."
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
+        # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
+        # When a parameter can accept both input connections AND manual property values, having an active connection should
+        # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
+        # Skip this check if: initial_setup (workflow loading), or incoming_connection_source fields are set (system passing upstream values)
+        if (
+            not request.initial_setup
+            and not incoming_node_set  # If incoming connection source fields are set, this is a legitimate upstream value pass
+            and ParameterMode.INPUT in parameter.allowed_modes
+            and ParameterMode.PROPERTY in parameter.allowed_modes
+        ):
+            # Check if this parameter has any incoming connections
+            connections = GriptapeNodes.FlowManager().get_connections()
+            target_connections = connections.incoming_index.get(node_name)
+            if target_connections is not None:
+                param_connections = target_connections.get(request.parameter_name)
+                if param_connections:  # Has incoming connections
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1965 Consider emitting UI events when parameters become settable/unsettable due to connection changes
+                    details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because this parameter has incoming connections and cannot be set as a property while connected."
+                    logger.error(details)
+                    result = SetParameterValueResultFailure(result_details=details)
+                    return result
+
+        # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
+        try:
+            modified_value = node.before_value_set(parameter, request.value)
+            if modified_value is not None:
+                request.value = modified_value
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because before_value_set hook raised exception: {err}"
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
+        # This check comes after before_value_set to allow nodes to temporarily modify settable state
         if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
@@ -1482,18 +1646,23 @@ class NodeManager:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
-            # Pass the value through!
-            # Optional data_type parameter for internal handling!
+            # Pass the value through to connected downstream parameters!
+            # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
+            # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                GriptapeNodes.handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=target_parameter.name,
-                        node_name=target_node.name,
-                        value=finalized_value,
-                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                # Skip propagation for Control Parameters as they should not receive values
+                if ParameterType.attempt_get_builtin(parameter.output_type) != ParameterTypeBuiltin.CONTROL_TYPE:
+                    GriptapeNodes.handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=target_parameter.name,
+                            node_name=target_node.name,
+                            value=finalized_value,
+                            data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                            incoming_connection_source_node_name=node.name,
+                            incoming_connection_source_parameter_name=parameter.name,
+                        )
                     )
-                )
 
         # Cool.
         details = f"Successfully set value on Node '{node_name}' Parameter '{request.parameter_name}'."
@@ -1517,8 +1686,11 @@ class NodeManager:
             node.parameter_output_values[request.parameter_name] = object_created
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
+        # Skip before_value_set since we already called it earlier in the flow
         old_value = node.get_parameter_value(request.parameter_name)
-        node.set_parameter_value(request.parameter_name, object_created, initial_setup=request.initial_setup)
+        node.set_parameter_value(
+            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+        )
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
         if old_value != finalized_value:
@@ -1751,7 +1923,7 @@ class NodeManager:
             raise KeyError(msg)
         return self._name_to_parent_flow_name[node_name]
 
-    def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
+    async def on_resolve_from_node_request(self, request: ResolveNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915, PLR0912
         node_name = request.node_name
         debug_mode = request.debug_mode
 
@@ -1819,7 +1991,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
+            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)
@@ -1885,20 +2057,42 @@ class NodeManager:
             library_used = node.metadata["library"]
             # Get the library metadata so we can get the version.
             library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-            library_metadata_result = GriptapeNodes().handle_request(library_metadata_request)
-            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                logger.error(details)
-                return SerializeNodeToCommandsResultFailure(result_details=details)
+            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
 
-            library_version = library_metadata_result.metadata.library_version
-            library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                if isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, use descriptive message when original library unavailable
+                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
+                    library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                    logger.warning(details)
+                else:
+                    # For regular nodes, this is still an error
+                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                    logger.error(details)
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+            else:
+                library_version = library_metadata_result.metadata.library_version
+                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+
+            # Handle ErrorProxyNode serialization - serialize as original node type
+
+            if isinstance(node, ErrorProxyNode):
+                serialized_node_type = node.original_node_type
+                serialized_library_name = node.original_library_name
+            else:
+                serialized_node_type = node.__class__.__name__
+                serialized_library_name = library_details.library_name
 
             # Get the creation details.
             create_node_request = CreateNodeRequest(
-                node_type=node.__class__.__name__,
+                node_type=serialized_node_type,
                 node_name=node_name,
-                specific_library_name=library_details.library_name,
+                specific_library_name=serialized_library_name,
                 metadata=copy.deepcopy(node.metadata),
                 # If it is actively resolving, mark as unresolved.
                 resolution=node.state.value,
@@ -1906,20 +2100,42 @@ class NodeManager:
             )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
-            reference_node = type(node)(name="REFERENCE NODE")
+            # For ErrorProxyNode, we can't create a reference node, so skip comparison
+            if isinstance(node, ErrorProxyNode):
+                reference_node = None
+            else:
+                reference_node = type(node)(name="REFERENCE NODE")
 
             # Now creation or alteration of all of the elements.
             element_modification_commands = []
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:
-                    # Add a user-defined Parameter.
+                    # Always serialize user-defined parameters regardless of node type
+                    param_dict = parameter.to_dict()
+                    param_dict["initial_setup"] = True
+                    add_param_request = AddParameterToNodeRequest.create(**param_dict)
+                    element_modification_commands.append(add_param_request)
+                elif isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, replay all recorded initialization requests for this parameter
+                    recorded_requests = node.get_recorded_initialization_requests()
+                    matching_requests = [
+                        recorded_request
+                        for recorded_request in recorded_requests
+                        if (
+                            hasattr(recorded_request, "parameter_name")
+                            and getattr(recorded_request, "parameter_name", None) == parameter.name
+                        )
+                    ]
+                    element_modification_commands.extend(matching_requests)
+                elif reference_node is None:
+                    # Normal node with no reference - treat all parameters as needing serialization
                     param_dict = parameter.to_dict()
                     param_dict["initial_setup"] = True
                     add_param_request = AddParameterToNodeRequest.create(**param_dict)
                     element_modification_commands.append(add_param_request)
                 else:
-                    # Not user defined. Get any deltas from the values on the reference node.
+                    # Normal node - compare against reference node
                     diff = NodeManager._manage_alter_details(parameter, reference_node)
                     relevant = False
                     for key in diff:
@@ -1934,6 +2150,10 @@ class NodeManager:
 
             # Now assignment of values to all of the parameters.
             set_value_commands = []
+
+            # ErrorProxyNode uses normal parameter serialization now since we create real parameters
+            # Only AlterParameterDetailsRequest commands are recorded and replayed
+            # Normal node - use current parameter values
             for parameter in node.parameters:
                 # SetParameterValueRequest event
                 set_param_value_requests = NodeManager._handle_parameter_value_saving(
@@ -2298,6 +2518,7 @@ class NodeManager:
         value: Any,
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         unique_parameter_uuid_to_values: dict,
+        parameter: Parameter,
         parameter_name: str,
         node_name: str,
         *,
@@ -2321,8 +2542,10 @@ class NodeManager:
             case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
                 # This value is new for us.
 
-                # Confirm that the author wants this parameter and/or class to be serialized.
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1179 ID a method for classes and/or parameters to be flagged for NOT serializability.
+                # Check if parameter is marked as non-serializable (e.g., ImageDrivers, PromptDrivers, file handles)
+                if not parameter.serializable:
+                    serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+                    return None
 
                 # Check if we can serialize it.
                 try:
@@ -2403,12 +2626,13 @@ class NodeManager:
                 value=internal_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=False,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if internal_command is None:
-                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(internal_command)
@@ -2417,12 +2641,13 @@ class NodeManager:
                 value=output_value,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=parameter,
                 is_output=True,
                 parameter_name=parameter.name,
                 node_name=node.name,
             )
             if output_command is None:
-                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable."
+                details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
             else:
                 commands.append(output_command)
@@ -2533,3 +2758,79 @@ class NodeManager:
                 return SetLockNodeStateResultFailure(result_details=details)
         node.lock = request.lock
         return SetLockNodeStateResultSuccess(node_name=node_name, locked=node.lock)
+
+    def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
+        """Handle a SendNodeMessageRequest by calling the node's message callback.
+
+        Args:
+            request: The SendNodeMessageRequest containing message details
+
+        Returns:
+            ResultPayload: Success or failure result with callback response
+        """
+        node_name = request.node_name
+        node = None
+
+        if node_name is None:
+            # Get from the current context
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to send message to Node from Current Context. Failed because the Current Context is empty."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            # Find the node by name
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to send message to Node '{node_name}', but no such Node was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details)
+
+        # Validate optional_element_name if specified
+        if request.optional_element_name is not None:
+            element = node.root_ui_element.find_element_by_name(request.optional_element_name)
+            if element is None:
+                details = f"Attempted to send message to Node '{node_name}' with element '{request.optional_element_name}', but no such element was found."
+                logger.error(details)
+                return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
+
+        # Call the node's message callback
+        callback_result = node.on_node_message_received(
+            optional_element_name=request.optional_element_name,
+            message_type=request.message_type,
+            message=request.message,
+        )
+
+        if not callback_result.success:
+            details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
+            logger.warning(details)
+            return SendNodeMessageResultFailure(
+                result_details=callback_result.details,
+                response=callback_result.response,
+                altered_workflow_state=callback_result.altered_workflow_state,
+            )
+
+        details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
+        logger.debug(details)
+        return SendNodeMessageResultSuccess(
+            result_details=callback_result.details,
+            response=callback_result.response,
+            altered_workflow_state=callback_result.altered_workflow_state,
+        )
+
+    def on_get_flow_for_node_request(self, request: GetFlowForNodeRequest) -> ResultPayload:
+        """Get the flow name that contains a specific node."""
+        try:
+            flow_name = self.get_node_parent_flow_by_name(request.node_name)
+            return GetFlowForNodeResultSuccess(
+                flow_name=flow_name,
+                result_details=f"Successfully retrieved flow '{flow_name}' for node '{request.node_name}'.",
+            )
+        except KeyError:
+            return GetFlowForNodeResultFailure(
+                result_details=f"Node '{request.node_name}' not found or not assigned to any flow.",
+            )

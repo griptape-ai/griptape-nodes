@@ -1,7 +1,7 @@
+import asyncio
 import json
 import logging
 import os
-import threading
 import uuid
 from typing import TYPE_CHECKING
 
@@ -10,7 +10,7 @@ from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
 from griptape.drivers.image_generation import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import EventBus, EventListener, FinishTaskEvent, TextChunkEvent
+from griptape.events import FinishTaskEvent, TextChunkEvent
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.rules import Rule, Ruleset
@@ -38,6 +38,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -128,14 +129,14 @@ class AgentManager:
         }
         return MCPTool(connection=connection)
 
-    def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+    async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         if self.prompt_driver is None:
             self.prompt_driver = self._initialize_prompt_driver()
         if self.image_tool is None:
             self.image_tool = self._initialize_image_tool()
         if self.mcp_tool is None:
             self.mcp_tool = self._initialize_mcp_tool()
-        threading.Thread(target=self._on_handle_run_agent_request, args=(request, EventBus.event_listeners)).start()
+        await asyncio.to_thread(self._on_handle_run_agent_request, request)
         return RunAgentResultStarted()
 
     def _create_agent(self) -> Agent:
@@ -168,10 +169,8 @@ class AgentManager:
             ],
         )
 
-    def _on_handle_run_agent_request(
-        self, request: RunAgentRequest, event_listeners: list[EventListener]
-    ) -> ResultPayload:
-        EventBus.event_listeners = event_listeners
+    def _on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
+        # EventBus functionality removed - events now go directly to event queue
         try:
             artifacts = [
                 ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes())
@@ -190,7 +189,7 @@ class AgentManager:
                         if "conversation_output" in result_json:
                             new_conversation_output = result_json["conversation_output"]
                             if new_conversation_output != last_conversation_output:
-                                EventBus.publish_event(
+                                GriptapeNodes.EventManager().put_event(
                                     ExecutionGriptapeNodeEvent(
                                         wrapped_event=ExecutionEvent(
                                             payload=AgentStreamEvent(
