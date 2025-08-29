@@ -168,8 +168,11 @@ class AddRGBShift(BaseVideoProcessor):
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()
 
+        # Get ffmpeg executable path
+        ffmpeg_path, _ = self._get_ffmpeg_paths()
+
         return [
-            "ffmpeg",
+            ffmpeg_path,
             "-i",
             input_url,
             "-vf",

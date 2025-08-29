@@ -34,7 +34,7 @@ class ReverseVideo(BaseVideoProcessor):
         has_audio = self._detect_audio_stream(input_url, ffprobe_path)
 
         # Base command
-        cmd = ["ffmpeg", "-i", input_url]
+        cmd = [ffmpeg_path, "-i", input_url]
 
         # Handle video reversal with frame rate consideration
         video_filter = "reverse"

@@ -32,7 +32,7 @@
         "accelerate>=1.6.0",
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
-        "imageio-ffmpeg>=0.6.0",
+        "static-ffmpeg>=2.8",
         "git+https://github.com/huggingface/diffusers.git@00f95b9755718aabb65456e791b8408526ae6e76",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
