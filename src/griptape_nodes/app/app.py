@@ -53,7 +53,7 @@ REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 # Important to bootstrap singleton here so that we don't
 # get any weird circular import issues from the EventLogHandler
 # initializing it from a log during it's own initialization.
-griptape_nodes = GriptapeNodes()
+griptape_nodes: GriptapeNodes = GriptapeNodes()
 
 
 class EventLogHandler(logging.Handler):
@@ -284,26 +284,15 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    result_payload = await griptape_nodes.ahandle_request(
-        event.request, response_topic=event.response_topic, request_id=event.request_id
+    result_event = await griptape_nodes.EventManager().ahandle_request(
+        event.request,
+        result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
 
-    if result_payload.succeeded():
+    if result_event.result.succeeded():
         dest_socket = "success_result"
-        result_event = EventResultSuccess(
-            request=event.request,
-            result=result_payload,
-            response_topic=event.response_topic,
-            request_id=event.request_id,
-        )
     else:
         dest_socket = "failure_result"
-        result_event = EventResultFailure(
-            request=event.request,
-            result=result_payload,
-            response_topic=event.response_topic,
-            request_id=event.request_id,
-        )
 
     await __emit_message(dest_socket, result_event.json(), topic=result_event.response_topic)
 

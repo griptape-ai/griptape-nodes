@@ -35,7 +35,10 @@ from griptape_nodes.retained_mode.events.app_events import (
     SetEngineNameResultFailure,
     SetEngineNameResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultPayloadFailure
+from griptape_nodes.retained_mode.events.base_events import (
+    GriptapeNodeEvent,
+    ResultPayloadFailure,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
@@ -234,23 +237,13 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def handle_request(
         cls,
         request: RequestPayload,
-        *,
-        response_topic: str | None = None,
-        request_id: str | None = None,
     ) -> ResultPayload:
         """Synchronous request handler."""
         event_mgr = GriptapeNodes.EventManager()
-        obj_depth_mgr = GriptapeNodes.OperationDepthManager()
-        workflow_mgr = GriptapeNodes.WorkflowManager()
 
         try:
-            return event_mgr.handle_request(
-                request=request,
-                operation_depth_mgr=obj_depth_mgr,
-                workflow_mgr=workflow_mgr,
-                response_topic=response_topic,
-                request_id=request_id,
-            )
+            result_event = event_mgr.handle_request(request=request)
+            event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
                 "Unhandled exception while processing request of type %s. "
@@ -260,28 +253,21 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 request,
             )
             return ResultPayloadFailure(exception=e)
+        else:
+            return result_event.result
 
     @classmethod
-    async def ahandle_request(
-        cls,
-        request: RequestPayload,
-        *,
-        response_topic: str | None = None,
-        request_id: str | None = None,
-    ) -> ResultPayload:
-        """Asynchronous request handler."""
+    async def ahandle_request(cls, request: RequestPayload) -> ResultPayload:
+        """Asynchronous request handler.
+
+        Args:
+            request: The request payload to handle.
+        """
         event_mgr = GriptapeNodes.EventManager()
-        obj_depth_mgr = GriptapeNodes.OperationDepthManager()
-        workflow_mgr = GriptapeNodes.WorkflowManager()
 
         try:
-            return await event_mgr.ahandle_request(
-                request=request,
-                operation_depth_mgr=obj_depth_mgr,
-                workflow_mgr=workflow_mgr,
-                response_topic=response_topic,
-                request_id=request_id,
-            )
+            result_event = await event_mgr.ahandle_request(request=request)
+            await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
                 "Unhandled exception while processing async request of type %s. "
@@ -291,6 +277,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 request,
             )
             return ResultPayloadFailure(exception=e)
+        else:
+            return result_event.result
 
     @classmethod
     async def broadcast_app_event(cls, app_event: AppPayload) -> None:
