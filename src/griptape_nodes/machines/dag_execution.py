@@ -28,6 +28,7 @@ class WorkflowState(Enum):
     NO_ERROR = "no_error"
     WORKFLOW_COMPLETE = "workflow_complete"
     ERRORED = "errored"
+    CANCELED = "canceled"
 
 
 @dataclass
@@ -163,7 +164,7 @@ class ExecutionState(State):
                 to an actual parameter in the node.
         """
         current_node = node_reference.node_reference
-        for parameter_name in current_node.parameter_output_values.copy():
+        for parameter_name in current_node.parameter_output_values:
             parameter = current_node.get_parameter_by_name(parameter_name)
             if parameter is None:
                 err = f"Attempted to clear output values for node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
@@ -291,7 +292,7 @@ class ExecutionState(State):
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
             # Wait for a task to finish
         await asyncio.wait(context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
-        # Infinite loop? let's see how this goes.
+        # Once a task has finished, loop back to the top.
         return ExecutionState
 
 

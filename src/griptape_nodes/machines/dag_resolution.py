@@ -43,7 +43,6 @@ class DagResolutionContext:
         self.build_only = False
         self.batched_nodes = []
         # Get the DAG instance that will be used throughout resolution and execution
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
         self.execution_machine = DagExecutionMachine(flow_name, dag_instance)
@@ -76,7 +75,6 @@ class InitializeDagSpotlightState(State):
             return DagCompleteState
         current_node = context.focus_stack[-1].node
         if current_node.state == NodeResolutionState.UNRESOLVED:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
@@ -113,8 +111,6 @@ class EvaluateDagParameterState(State):
     async def on_update(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         connections = GriptapeNodes.FlowManager().get_connections()
         if current_parameter is None:
             msg = "No current parameter set."
@@ -143,7 +139,6 @@ class BuildDagNodeState(State):
     @staticmethod
     async def on_enter(context: DagResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
 
@@ -192,10 +187,7 @@ class ExecuteDagState(State):
             return DagCompleteState
         if context.execution_machine.is_error():
             return DagCompleteState
-        # Is this the right move?
         await context.execution_machine.update()
-        # Yield control after each execution machine update
-        await asyncio.sleep(0)
         execution_complete_after_update = context.execution_machine.is_complete()
         execution_error_after_update = context.execution_machine.is_error()
         logger.debug(

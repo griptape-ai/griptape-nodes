@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
+from griptape_nodes.machines.dag_resolution import DagResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -1690,7 +1691,7 @@ class FlowManager:
 
         # Initialize global control flow machine if needed
         if self._global_control_flow_machine is None:
-            self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel)
+            self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=in_parallel)
 
         try:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
@@ -1786,7 +1787,8 @@ class FlowManager:
             start_node = queue_item.node
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = ControlFlowMachine(flow.name, False)  # Default to sequential
+                #TODO: Update to config level setting for this case as well. https://github.com/griptape-ai/griptape-nodes/issues/1999
+                self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=False)  # Default to sequential
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
@@ -1810,8 +1812,6 @@ class FlowManager:
 
         if in_parallel:
             # Use DAG-based resolution + execution (like StartFlowRequest)
-            from griptape_nodes.machines.dag_resolution import DagResolutionMachine
-
             # Initialize DAG resolution machine
             dag_resolution_machine = DagResolutionMachine(flow.name)
             dag_resolution_machine.change_debug_mode(debug_mode=debug_mode)
@@ -1831,7 +1831,7 @@ class FlowManager:
         else:
             # Use existing sequential resolution logic
             if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = ControlFlowMachine(flow.name, False)  # Sequential resolution
+                self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=in_parallel)  # Sequential resolution
             # Get the node resolution machine for the current flow!
             self._global_control_flow_machine._context.current_node = node
             resolution_machine = self._global_control_flow_machine._context.resolution_machine

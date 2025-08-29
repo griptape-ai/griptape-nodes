@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_resolution import DagResolutionMachine
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
@@ -30,7 +31,6 @@ class NextNodeInfo:
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
-    from griptape_nodes.machines.node_resolution import NodeResolutionMachine
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -44,13 +44,13 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
 
+
+    #TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
     def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
         self.flow_name = flow_name
         if in_parallel:
             self.resolution_machine = DagResolutionMachine(flow_name)
         else:
-            from griptape_nodes.machines.node_resolution import NodeResolutionMachine
-
             self.resolution_machine = NodeResolutionMachine()
         self.current_node = None
 
@@ -203,14 +203,14 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
+    def __init__(self, flow_name: str, *, in_parallel: bool = False) -> None:
         context = ControlFlowContext(flow_name, in_parallel)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
-        await self._process_data_nodes_for_dag()
-
+        if self._context.resolution_machine is DagResolutionMachine:
+            await self._process_data_nodes_for_dag()
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
         start_node.set_entry_control_parameter(None)
@@ -264,9 +264,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         This method identifies data_nodes in the execution queue and processes
         their dependencies into the DAG resolution machine.
         """
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         if not isinstance(self._context.resolution_machine, DagResolutionMachine):
             return
         # Get the global flow queue
