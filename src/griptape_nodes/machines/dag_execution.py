@@ -250,9 +250,9 @@ class ExecutionState(State):
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
             # Wait for a task to finish
-            done, running_tasks = await asyncio.wait(
-                context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED
-            )
+        done, running_tasks = await asyncio.wait(
+            context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED
+        )
         # Infinite loop? let's see how this goes.
         return ExecutionState
 
