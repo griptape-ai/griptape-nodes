@@ -75,6 +75,7 @@ class Settings(BaseModel):
             "Exa": {"EXA_API_KEY": "$EXA_API_KEY"},
             "Grok": {"GROK_API_KEY": "$GROK_API_KEY"},
             "Groq": {"GROQ_API_KEY": "$GROQ_API_KEY"},
+            "Nvidia": {"NVIDIA_API_KEY": "$NVIDIA_API_KEY"},
             "Google": {"GOOGLE_API_KEY": "$GOOGLE_API_KEY", "GOOGLE_API_SEARCH_ID": "$GOOGLE_API_SEARCH_ID"},
             "Huggingface": {"HUGGINGFACE_HUB_ACCESS_TOKEN": "$HUGGINGFACE_HUB_ACCESS_TOKEN"},
             "LeonardoAI": {"LEONARDO_API_KEY": "$LEONARDO_API_KEY"},
