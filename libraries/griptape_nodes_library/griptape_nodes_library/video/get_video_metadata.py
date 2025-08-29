@@ -434,19 +434,18 @@ class GetVideoMetadata(DataNode):
         except (ValueError, TypeError):
             return None
 
-    def process(self) -> None:
-        video_input = self.get_parameter_value("video")
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Extract metadata when video parameter is set."""
+        if parameter.name == "video":
+            if not value:
+                self._set_default_output_values()
+            else:
+                video_url = self._get_video_url(value)
+                metadata = self._extract_video_metadata_structured(video_url)
+                self._set_metadata_output_values(metadata)
 
-        if video_input is None:
-            msg = "No video input provided"
-            raise ValueError(msg)
-
-        video_url = self._get_video_url(video_input)
-
-        # Use structured ffprobe approach - no fallback
-        metadata = self._extract_video_metadata_structured(video_url)
-
-        # Set output values for all parameter groups
+    def _set_metadata_output_values(self, metadata: VideoMetadata) -> None:
+        """Set output values from extracted metadata."""
         # File Details
         self.parameter_output_values["codec_name"] = metadata.file_details.codec_name
         self.parameter_output_values["codec_type"] = metadata.file_details.codec_type
@@ -471,3 +470,34 @@ class GetVideoMetadata(DataNode):
         self.parameter_output_values["frame_rate"] = metadata.frame_details.frame_rate
         self.parameter_output_values["optional_nb_frames"] = metadata.frame_details.optional_nb_frames
         self.parameter_output_values["optional_start_time"] = metadata.frame_details.optional_start_time
+
+    def _set_default_output_values(self) -> None:
+        """Set all output values to their defaults when no valid video input."""
+        # File Details - use placeholder values for guaranteed fields
+        self.parameter_output_values["codec_name"] = "unknown"
+        self.parameter_output_values["codec_type"] = "video"
+        self.parameter_output_values["optional_duration"] = None
+        self.parameter_output_values["optional_bit_rate"] = None
+        self.parameter_output_values["optional_codec_long_name"] = None
+
+        # Dimensions - use placeholder values for guaranteed fields
+        self.parameter_output_values["width"] = 0
+        self.parameter_output_values["height"] = 0
+        self.parameter_output_values["aspect_ratio_decimal"] = 0.0
+        self.parameter_output_values["aspect_ratio_string"] = "0:0"
+        self.parameter_output_values["optional_coded_width"] = None
+        self.parameter_output_values["optional_coded_height"] = None
+
+        # Color Details - all optional, set to None
+        self.parameter_output_values["optional_color_space"] = None
+        self.parameter_output_values["optional_color_transfer"] = None
+        self.parameter_output_values["optional_color_primaries"] = None
+
+        # Frame Details - use placeholder for guaranteed field
+        self.parameter_output_values["frame_rate"] = 0.0
+        self.parameter_output_values["optional_nb_frames"] = None
+        self.parameter_output_values["optional_start_time"] = None
+
+    def process(self) -> None:
+        """Process method - metadata extraction now handled in after_value_set."""
+        # The actual work is now done in after_value_set when the video parameter changes
