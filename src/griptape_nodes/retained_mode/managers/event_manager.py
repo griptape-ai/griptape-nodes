@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections import defaultdict
-from dataclasses import dataclass, fields
+from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
-from typing_extensions import TypeVar
+from typing_extensions import TypedDict, TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -14,7 +14,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
     FlushParameterChangesRequest,
-    GriptapeNodeEvent,
     RequestPayload,
     ResultPayload,
     WorkflowAlteredMixin,
@@ -24,19 +23,14 @@ from griptape_nodes.utils.async_utils import call_function
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from griptape_nodes.retained_mode.griptape_nodes import WorkflowManager
-    from griptape_nodes.retained_mode.managers.operation_manager import OperationDepthManager
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
 
 
-@dataclass
-class RequestContext:
-    operation_depth_mgr: OperationDepthManager
-    workflow_mgr: WorkflowManager
-    response_topic: str | None = None
-    request_id: str | None = None
+class ResultContext(TypedDict, total=False):
+    response_topic: str | None
+    request_id: str | None
 
 
 class EventManager:
@@ -45,7 +39,6 @@ class EventManager:
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        self.current_active_node: str | None = None
         # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
         self._flush_in_queue: bool = False
         # Event queue for publishing events
@@ -140,19 +133,25 @@ class EventManager:
         self,
         request: RP,
         callback_result: ResultPayload,
-        context: RequestContext,
-    ) -> ResultPayload:
+        *,
+        context: ResultContext,
+    ) -> EventResultSuccess | EventResultFailure:
         """Core logic for handling requests, shared between sync and async methods."""
-        with context.operation_depth_mgr as depth_manager:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        operation_depth_mgr = GriptapeNodes.OperationDepthManager()
+        workflow_mgr = GriptapeNodes.WorkflowManager()
+
+        with operation_depth_mgr as depth_manager:
             # Now see if the WorkflowManager was asking us to squelch altered_workflow_state commands
             # This prevents situations like loading a workflow (which naturally alters the workflow state)
             # from coming in and immediately being flagged as being dirty.
-            if context.workflow_mgr.should_squelch_workflow_altered():
+            if workflow_mgr.should_squelch_workflow_altered():
                 callback_result.altered_workflow_state = False
 
             retained_mode_str = None
             # If request_id exists, that means it's a direct request from the GUI (not internal), and should be echoed by retained mode.
-            if depth_manager.is_top_level() and context.request_id is not None:
+            if depth_manager.is_top_level() and context.get("request_id") is not None:
                 retained_mode_str = depth_manager.request_retained_mode_translation(request)
 
             # Some requests have fields marked as "omit_from_result" which should be removed from the request
@@ -162,41 +161,40 @@ class EventManager:
             if callback_result.succeeded():
                 result_event = EventResultSuccess(
                     request=request,
-                    request_id=context.request_id,
+                    request_id=context.get("request_id"),
                     result=callback_result,
                     retained_mode=retained_mode_str,
-                    response_topic=context.response_topic,
+                    response_topic=context.get("response_topic"),
                 )
             else:
                 result_event = EventResultFailure(
                     request=request,
-                    request_id=context.request_id,
+                    request_id=context.get("request_id"),
                     result=callback_result,
                     retained_mode=retained_mode_str,
-                    response_topic=context.response_topic,
+                    response_topic=context.get("response_topic"),
                 )
-            self.put_event(GriptapeNodeEvent(wrapped_event=result_event))
 
-        return callback_result
+        return result_event
 
     async def ahandle_request(
         self,
         request: RP,
         *,
-        operation_depth_mgr: OperationDepthManager,
-        workflow_mgr: WorkflowManager,
-        response_topic: str | None = None,
-        request_id: str | None = None,
-    ) -> ResultPayload:
+        result_context: ResultContext | None = None,
+    ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type.
 
         Args:
             request: The request to handle
-            operation_depth_mgr: The operation depth manager to use
-            workflow_mgr: The workflow manager to use
-            response_topic: The topic to send the response to (optional)
-            request_id: The ID of the request to correlate with the response (optional)
+            result_context: The result context containing response_topic and request_id
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        operation_depth_mgr = GriptapeNodes.OperationDepthManager()
+        if result_context is None:
+            result_context = ResultContext()
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -217,32 +215,30 @@ class EventManager:
                 await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
-        context = RequestContext(
-            operation_depth_mgr=operation_depth_mgr,
-            workflow_mgr=workflow_mgr,
-            response_topic=response_topic,
-            request_id=request_id,
+        return self._handle_request_core(
+            request,
+            cast("ResultPayload", result_payload),
+            context=result_context,
         )
-        return self._handle_request_core(request, cast("ResultPayload", result_payload), context)
 
     def handle_request(
         self,
         request: RP,
         *,
-        operation_depth_mgr: OperationDepthManager,
-        workflow_mgr: WorkflowManager,
-        response_topic: str | None = None,
-        request_id: str | None = None,
-    ) -> ResultPayload:
+        result_context: ResultContext | None = None,
+    ) -> EventResultSuccess | EventResultFailure:
         """Publish an event to the manager assigned to its type (sync version).
 
         Args:
             request: The request to handle
-            operation_depth_mgr: The operation depth manager to use
-            workflow_mgr: The workflow manager to use
-            response_topic: The topic to send the response to (optional)
-            request_id: The ID of the request to correlate with the response (optional)
+            result_context: The result context containing response_topic and request_id
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        operation_depth_mgr = GriptapeNodes.OperationDepthManager()
+        if result_context is None:
+            result_context = ResultContext()
+
         # Notify the manager of the event type
         request_type = type(request)
         callback = self._request_type_to_manager.get(request_type)
@@ -267,13 +263,11 @@ class EventManager:
                 self.put_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
-        context = RequestContext(
-            operation_depth_mgr=operation_depth_mgr,
-            workflow_mgr=workflow_mgr,
-            response_topic=response_topic,
-            request_id=request_id,
+        return self._handle_request_core(
+            request,
+            cast("ResultPayload", result_payload),
+            context=result_context,
         )
-        return self._handle_request_core(request, cast("ResultPayload", result_payload), context)
 
     def add_listener_to_app_event(
         self, app_event_type: type[AP], callback: Callable[[AP], None] | Callable[[AP], Awaitable[None]]

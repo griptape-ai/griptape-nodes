@@ -1051,6 +1051,15 @@
       }
     },
     {
+      "class_name": "NimPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/nim_prompt.py",
+      "metadata": {
+        "category": "agents/prompt_models",
+        "description": "Prompt Models available from Nvidia",
+        "display_name": "Nim Prompt"
+      }
+    },
+    {
       "class_name": "OllamaPrompt",
       "file_path": "griptape_nodes_library/config/prompt/ollama_prompt_driver.py",
       "metadata": {

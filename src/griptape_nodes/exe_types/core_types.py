@@ -715,7 +715,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
 
     # "settable" here means whether it can be assigned to during regular business operation.
     # During save/load, this value IS still serialized to save its proper state.
-    settable: bool = True
+    _settable: bool = True
 
     # "serializable" controls whether parameter values should be serialized during save/load operations.
     # Set to False for parameters containing non-serializable types (ImageDrivers, PromptDrivers, file handles, etc.)
@@ -771,7 +771,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.tooltip_as_input = tooltip_as_input
         self.tooltip_as_property = tooltip_as_property
         self.tooltip_as_output = tooltip_as_output
-        self.settable = settable
+        self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
         if allowed_modes is None:
@@ -911,6 +911,15 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._changes["mode_allowed_input"] = ParameterMode.INPUT in value
             self._changes["mode_allowed_output"] = ParameterMode.OUTPUT in value
             self._changes["mode_allowed_property"] = ParameterMode.PROPERTY in value
+
+    @property
+    def settable(self) -> bool:
+        return self._settable
+
+    @settable.setter
+    @BaseNodeElement.emits_update_on_write
+    def settable(self, value: bool) -> None:
+        self._settable = value
 
     @property
     def ui_options(self) -> dict:

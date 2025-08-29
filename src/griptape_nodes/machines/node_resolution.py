@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -219,14 +219,21 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
+                # Skip propagation for Control Parameters as they should not receive values
+                if (
+                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
+                    != ParameterTypeBuiltin.CONTROL_TYPE
+                ):
+                    GriptapeNodes.get_instance().handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=parameter.name,
+                            node_name=current_node.name,
+                            value=output_value,
+                            data_type=upstream_parameter.output_type,
+                            incoming_connection_source_node_name=upstream_node.name,
+                            incoming_connection_source_parameter_name=upstream_parameter.name,
+                        )
                     )
-                )
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:

@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterGroup,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -964,6 +965,7 @@ class NodeManager:
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
             parent_container_name=request.parent_container_name,
+            settable=request.settable,
         )
         try:
             if request.parent_container_name and request.initial_setup:
@@ -1170,6 +1172,7 @@ class NodeManager:
             mode_allowed_property=allows_property,
             mode_allowed_output=allows_output,
             is_user_defined=getattr(element, "user_defined", False),
+            settable=getattr(element, "settable", None),
             ui_options=getattr(element, "ui_options", None),
         )
         return result
@@ -1259,7 +1262,7 @@ class NodeManager:
         if request.ui_options is not None and hasattr(parameter, "ui_options"):
             parameter.ui_options = request.ui_options  # type: ignore[attr-defined]
 
-    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:
+    def modify_key_parameter_fields(self, request: AlterParameterDetailsRequest, parameter: Parameter) -> None:  # noqa: C901, PLR0912
         if request.type is not None:
             parameter.type = request.type
         if request.input_types is not None:
@@ -1284,6 +1287,8 @@ class NodeManager:
                 parameter.allowed_modes.add(ParameterMode.OUTPUT)
             else:
                 parameter.allowed_modes.discard(ParameterMode.OUTPUT)
+        if request.settable is not None:
+            parameter.settable = request.settable
 
     def _validate_and_break_invalid_connections(
         self, node_name: str, parameter: Parameter, request: AlterParameterDetailsRequest
@@ -1551,7 +1556,50 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
+        # Validate incoming connection source fields consistency
+        incoming_node_set = request.incoming_connection_source_node_name is not None
+        incoming_param_set = request.incoming_connection_source_parameter_name is not None
+        if incoming_node_set != incoming_param_set:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because incoming connection source fields must both be None or both be set. Got incoming_connection_source_node_name={request.incoming_connection_source_node_name}, incoming_connection_source_parameter_name={request.incoming_connection_source_parameter_name}."
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
+        # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
+        # When a parameter can accept both input connections AND manual property values, having an active connection should
+        # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
+        # Skip this check if: initial_setup (workflow loading), or incoming_connection_source fields are set (system passing upstream values)
+        if (
+            not request.initial_setup
+            and not incoming_node_set  # If incoming connection source fields are set, this is a legitimate upstream value pass
+            and ParameterMode.INPUT in parameter.allowed_modes
+            and ParameterMode.PROPERTY in parameter.allowed_modes
+        ):
+            # Check if this parameter has any incoming connections
+            connections = GriptapeNodes.FlowManager().get_connections()
+            target_connections = connections.incoming_index.get(node_name)
+            if target_connections is not None:
+                param_connections = target_connections.get(request.parameter_name)
+                if param_connections:  # Has incoming connections
+                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1965 Consider emitting UI events when parameters become settable/unsettable due to connection changes
+                    details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because this parameter has incoming connections and cannot be set as a property while connected."
+                    logger.error(details)
+                    result = SetParameterValueResultFailure(result_details=details)
+                    return result
+
+        # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
+        try:
+            modified_value = node.before_value_set(parameter, request.value)
+            if modified_value is not None:
+                request.value = modified_value
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because before_value_set hook raised exception: {err}"
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
+        # This check comes after before_value_set to allow nodes to temporarily modify settable state
         if not parameter.settable and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             logger.error(details)
@@ -1598,18 +1646,23 @@ class NodeManager:
             # Mark node as unresolved, broadcast an event
             node.make_node_unresolved(current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED}))
             # Get the flow
-            # Pass the value through!
-            # Optional data_type parameter for internal handling!
+            # Pass the value through to connected downstream parameters!
+            # Set incoming_connection_source fields to identify this as legitimate upstream value propagation
+            # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                GriptapeNodes.handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=target_parameter.name,
-                        node_name=target_node.name,
-                        value=finalized_value,
-                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                # Skip propagation for Control Parameters as they should not receive values
+                if ParameterType.attempt_get_builtin(parameter.output_type) != ParameterTypeBuiltin.CONTROL_TYPE:
+                    GriptapeNodes.handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=target_parameter.name,
+                            node_name=target_node.name,
+                            value=finalized_value,
+                            data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                            incoming_connection_source_node_name=node.name,
+                            incoming_connection_source_parameter_name=parameter.name,
+                        )
                     )
-                )
 
         # Cool.
         details = f"Successfully set value on Node '{node_name}' Parameter '{request.parameter_name}'."
@@ -1633,8 +1686,11 @@ class NodeManager:
             node.parameter_output_values[request.parameter_name] = object_created
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
+        # Skip before_value_set since we already called it earlier in the flow
         old_value = node.get_parameter_value(request.parameter_name)
-        node.set_parameter_value(request.parameter_name, object_created, initial_setup=request.initial_setup)
+        node.set_parameter_value(
+            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+        )
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
         if old_value != finalized_value:
