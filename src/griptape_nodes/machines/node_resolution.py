@@ -238,7 +238,6 @@ class ExecuteNodeState(State):
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:

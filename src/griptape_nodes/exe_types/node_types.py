@@ -620,10 +620,10 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            if not skip_before_value_set:
-                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-            else:
+            if skip_before_value_set:
                 final_value = candidate_value
+            else:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
