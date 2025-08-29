@@ -1,9 +1,9 @@
-"""Defines the GroqPrompt node for configuring the OpenAi Prompt Driver.
+"""Defines the NimPrompt node for configuring the OpenAi Prompt Driver.
 
-This module provides the `GroqPrompt` class, which allows users
+This module provides the `NimPrompt` class, which allows users
 to configure and utilize the OpenAi prompt service within the Griptape
 Nodes framework. It inherits common prompt parameters from `BasePrompt`, sets
-Groq specific model options, requires a Groq API key via
+Nvidia Nim specific model options, requires a Nim API key via
 node configuration, and instantiates the `OpenAiPromptDriver`.
 """
 
