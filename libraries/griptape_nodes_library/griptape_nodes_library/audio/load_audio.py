@@ -32,7 +32,7 @@ class LoadAudio(DataNode):
         self.audio_parameter = Parameter(
             name="audio",
             input_types=["AudioArtifact", "AudioUrlArtifact", "str"],
-            type="AudioArtifact",
+            type="AudioUrlArtifact",
             output_type="AudioUrlArtifact",
             default_value=None,
             ui_options={
