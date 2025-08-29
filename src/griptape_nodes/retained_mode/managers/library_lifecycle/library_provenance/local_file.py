@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.async_utils import subprocess_run
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
@@ -114,7 +115,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
 
         return EvaluationResult(issues=issues)
 
-    def install(self, context: LibraryLifecycleContext) -> InstallationResult:
+    async def install(self, context: LibraryLifecycleContext) -> InstallationResult:
         """Install this local file library."""
         problems = []
         venv_path = ""
@@ -150,7 +151,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         # Only install dependencies if conditions are met
         library_venv_python_path = None
         try:
-            library_venv_python_path = library_manager._init_library_venv(venv_path)
+            library_venv_python_path = await library_manager._init_library_venv(venv_path)
         except RuntimeError as e:
             problems.append(
                 LifecycleIssue(
@@ -187,7 +188,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             # Grab the python executable from the virtual environment so that we can pip install there
             logger.info("Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path)
             try:
-                subprocess.run(  # noqa: S603
+                await subprocess_run(
                     [
                         sys.executable,
                         "-m",

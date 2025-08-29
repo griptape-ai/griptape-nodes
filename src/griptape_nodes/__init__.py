@@ -6,6 +6,7 @@ console = Console()
 
 with console.status("Loading Griptape Nodes...") as status:
     import argparse
+    import asyncio
     import json
     import os
     import shutil
@@ -113,7 +114,7 @@ def _run_init(config: InitConfig) -> None:
 
     # Sync libraries
     if config.libraries_sync is not False:
-        _sync_libraries()
+        asyncio.run(_sync_libraries())
 
     console.print("[bold green]Initialization complete![/bold green]")
 
@@ -683,7 +684,7 @@ def _update_self() -> None:
     os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
 
-def _sync_libraries() -> None:
+async def _sync_libraries() -> None:
     """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
     install_source, _ = get_install_source()
     # Unless we're installed from PyPi, grab libraries from the 'latest' tag
@@ -737,7 +738,7 @@ def _sync_libraries() -> None:
     # Re-initialize all libraries from config
     console.print("[bold cyan]Initializing libraries...[/bold cyan]")
     try:
-        GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+        await GriptapeNodes.LibraryManager().load_all_libraries_from_config()
         console.print("[bold green]Libraries Initialized successfully.[/bold green]")
     except Exception as e:
         console.print(f"[red]Error initializing libraries: {e}[/red]")
@@ -904,7 +905,7 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
             _print_current_version()
     elif args.command == "libraries":
         if args.subcommand == "sync":
-            _sync_libraries()
+            asyncio.run(_sync_libraries())
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)

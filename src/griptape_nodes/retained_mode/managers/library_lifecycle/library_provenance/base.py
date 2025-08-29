@@ -60,7 +60,7 @@ class LibraryProvenance(ABC):
         """
 
     @abstractmethod
-    def install(self, context: LibraryLifecycleContext) -> InstallationResult:
+    async def install(self, context: LibraryLifecycleContext) -> InstallationResult:
         """Install this provenance.
 
         Args:

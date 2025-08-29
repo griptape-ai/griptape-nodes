@@ -240,7 +240,7 @@ async def _cleanup_websocket_connection() -> None:
 
 
 async def _process_event_queue() -> None:
-    """Process events concurrently - multiple requests can run simultaneously."""
+    """Process events concurrently - all events can run simultaneously."""
     # Wait for WebSocket connection (convert to async)
     await _await_websocket_ready()
     background_tasks = set()
@@ -255,27 +255,24 @@ async def _process_event_queue() -> None:
         while True:
             event = await event_queue.get()
 
-            if isinstance(event, EventRequest):
-                # Create task for concurrent processing
-                async with REQUEST_SEMAPHORE:
+            async with REQUEST_SEMAPHORE:
+                if isinstance(event, EventRequest):
                     task = asyncio.create_task(_process_event_request(event))
-                background_tasks.add(task)
-                task.add_done_callback(_handle_task_result)
-            elif isinstance(event, AppEvent):
-                # App events processed immediately
-                await _process_app_event(event)
-            elif isinstance(event, GriptapeNodeEvent):
-                # Process GriptapeNodeEvents
-                await _process_node_event(event)
-            elif isinstance(event, ExecutionGriptapeNodeEvent):
-                # Process ExecutionGriptapeNodeEvents
-                await _process_execution_node_event(event)
-            elif isinstance(event, ProgressEvent):
-                # Process ProgressEvents
-                await _process_progress_event(event)
-            else:
-                logger.warning("Unknown event type: %s", type(event))
+                elif isinstance(event, AppEvent):
+                    task = asyncio.create_task(_process_app_event(event))
+                elif isinstance(event, GriptapeNodeEvent):
+                    task = asyncio.create_task(_process_node_event(event))
+                elif isinstance(event, ExecutionGriptapeNodeEvent):
+                    task = asyncio.create_task(_process_execution_node_event(event))
+                elif isinstance(event, ProgressEvent):
+                    task = asyncio.create_task(_process_progress_event(event))
+                else:
+                    logger.warning("Unknown event type: %s", type(event))
+                    event_queue.task_done()
+                    continue
 
+            background_tasks.add(task)
+            task.add_done_callback(_handle_task_result)
             event_queue.task_done()
     except asyncio.CancelledError:
         logger.info("Event queue processor shutdown complete")
