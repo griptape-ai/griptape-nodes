@@ -851,8 +851,8 @@ class FlowManager:
             value = None
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
-        # if it existed somewhere and actually has a value - Set the parameter!
-        if value and request.initial_setup is False:
+        # Set the parameter value (including None/empty values) unless we're in initial setup
+        if request.initial_setup is False:
             # When creating a connection, pass the initial value from source to target parameter
             # Set incoming_connection_source fields to identify this as legitimate connection value passing
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
