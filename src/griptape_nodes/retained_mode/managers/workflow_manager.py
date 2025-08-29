@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import logging
 import pickle
 import pkgutil
@@ -3109,7 +3110,7 @@ class WorkflowManager:
 
         return workflow_shape
 
-    def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
+    async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
             publisher_name = request.publisher_name
             event_handler_mappings = GriptapeNodes.LibraryManager().get_registered_event_handlers(
@@ -3121,7 +3122,7 @@ class WorkflowManager:
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
-            result = publishing_handler.handler(request)
+            result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
                 file = Path(result.published_workflow_file_path)
                 self._register_published_workflow_file(file)
