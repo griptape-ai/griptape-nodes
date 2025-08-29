@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterContainer,
     ParameterGroup,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -1650,16 +1651,18 @@ class NodeManager:
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                GriptapeNodes.handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=target_parameter.name,
-                        node_name=target_node.name,
-                        value=finalized_value,
-                        data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
-                        incoming_connection_source_node_name=node.name,
-                        incoming_connection_source_parameter_name=parameter.name,
+                # Skip propagation for Control Parameters as they should not receive values
+                if ParameterType.attempt_get_builtin(parameter.output_type) != ParameterTypeBuiltin.CONTROL_TYPE:
+                    GriptapeNodes.handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=target_parameter.name,
+                            node_name=target_node.name,
+                            value=finalized_value,
+                            data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
+                            incoming_connection_source_node_name=node.name,
+                            incoming_connection_source_parameter_name=parameter.name,
+                        )
                     )
-                )
 
         # Cool.
         details = f"Successfully set value on Node '{node_name}' Parameter '{request.parameter_name}'."
