@@ -3006,7 +3006,8 @@ class WorkflowManager:
         set_parameter_value_asts.append(with_node_context)
         return set_parameter_value_asts
 
-    def _convert_parameter_to_minimal_dict(self, parameter: Parameter) -> dict[str, Any]:
+    @classmethod
+    def _convert_parameter_to_minimal_dict(cls, parameter: Parameter) -> dict[str, Any]:
         """Converts a parameter to a minimal dictionary for loading up a dynamic, black-box Node."""
         param_dict = parameter.to_dict()
         fields_to_include = [
@@ -3025,9 +3026,12 @@ class WorkflowManager:
             "traits",
             "ui_options",
             "settable",
-            "user_defined",
+            "is_user_defined",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
+        minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
+        minimal_dict["is_user_defined"] = bool(getattr(param_dict, "is_user_defined", True))
+
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
