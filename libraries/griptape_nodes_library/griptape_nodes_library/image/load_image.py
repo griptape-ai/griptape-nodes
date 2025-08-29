@@ -95,7 +95,6 @@ class LoadImage(DataNode):
         self._tethering.on_after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 
-
     def process(self) -> None:
         # Get parameter values and assign to outputs
         image_artifact = self.get_parameter_value("image")

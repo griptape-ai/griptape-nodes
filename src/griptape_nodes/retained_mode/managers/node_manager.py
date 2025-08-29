@@ -1564,13 +1564,6 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
 
-        # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
-        if not parameter.settable and not request.initial_setup:
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
-            logger.error(details)
-            result = SetParameterValueResultFailure(result_details=details)
-            return result
-
         # Prevent manual property setting on parameters that have both INPUT and PROPERTY modes when they have incoming connections
         # When a parameter can accept both input connections AND manual property values, having an active connection should
         # make the parameter non-settable as a property to avoid conflicts between connected values and manual values
@@ -1592,6 +1585,25 @@ class NodeManager:
                     logger.error(details)
                     result = SetParameterValueResultFailure(result_details=details)
                     return result
+
+        # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
+        try:
+            modified_value = node.before_value_set(parameter, request.value)
+            if modified_value is not None:
+                request.value = modified_value
+        except Exception as err:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because before_value_set hook raised exception: {err}"
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
+
+        # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
+        # This check comes after before_value_set to allow nodes to temporarily modify settable state
+        if not parameter.settable and not request.initial_setup:
+            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
+            logger.error(details)
+            result = SetParameterValueResultFailure(result_details=details)
+            return result
 
         # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
@@ -1671,8 +1683,11 @@ class NodeManager:
             node.parameter_output_values[request.parameter_name] = object_created
             return NodeManager.ModifiedReturnValue(object_created, modified)
         # Otherwise use set_parameter_value. This calls our converters and validators.
+        # Skip before_value_set since we already called it earlier in the flow
         old_value = node.get_parameter_value(request.parameter_name)
-        node.set_parameter_value(request.parameter_name, object_created, initial_setup=request.initial_setup)
+        node.set_parameter_value(
+            request.parameter_name, object_created, initial_setup=request.initial_setup, skip_before_value_set=True
+        )
         # Get the "converted" value here.
         finalized_value = node.get_parameter_value(request.parameter_name)
         if old_value != finalized_value:

@@ -91,7 +91,6 @@ class LoadVideo(DataNode):
         self._tethering.on_after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 
-
     def process(self) -> None:
         # Get parameter values and assign to outputs
         video_artifact = self.get_parameter_value("video")

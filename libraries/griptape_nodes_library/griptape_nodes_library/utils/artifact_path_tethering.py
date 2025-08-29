@@ -358,7 +358,6 @@ class ArtifactPathTethering:
             self.artifact_parameter.settable = False
             self.path_parameter.settable = False
 
-
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter."""
         if isinstance(value, str):
