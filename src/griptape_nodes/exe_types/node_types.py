@@ -4,7 +4,6 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
-from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, TypeVar
 
@@ -712,10 +711,13 @@ class BaseNode(ABC):
     async def aprocess(self) -> None:
         """Async version of process().
 
-        Default implementation wraps the existing process() method to maintain backwards compatibility.
+        Default implementation runs the existing process() method in a thread pool for true concurrency.
         Subclasses can override this method to provide direct async implementation.
         """
-        result = self.process()
+        loop = asyncio.get_running_loop()
+
+        # Run process() in thread pool for true concurrency
+        result = await loop.run_in_executor(None, self.process)
 
         if result is None:
             # Simple synchronous node - nothing to do
@@ -723,15 +725,12 @@ class BaseNode(ABC):
 
         if isinstance(result, Generator):
             # Handle generator pattern asynchronously using the same logic as before
-            loop = asyncio.get_running_loop()
-
             try:
                 while True:
                     # Get the next callable from generator
                     func = next(result)
                     # Run it in thread pool (preserving existing behavior)
-                    with ThreadPoolExecutor() as executor:
-                        future_result = await loop.run_in_executor(executor, func)
+                    future_result = await loop.run_in_executor(None, func)
                     # Send result back to generator
                     result.send(future_result)
             except StopIteration:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -194,6 +195,8 @@ class ExecuteDagState(State):
             return DagCompleteState
         # Is this the right move?
         await context.execution_machine.update()
+        # Yield control after each execution machine update
+        await asyncio.sleep(0)
         execution_complete_after_update = context.execution_machine.is_complete()
         execution_error_after_update = context.execution_machine.is_error()
         logger.debug(

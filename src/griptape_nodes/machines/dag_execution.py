@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-import time
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
@@ -150,6 +149,7 @@ class ExecutionState(State):
     @staticmethod
     async def on_update(context: ExecutionContext) -> type[State] | None:  # noqa: C901
         # Do we have any Leaf Nodes not in canceled state?
+        await asyncio.sleep(0.01)
         network = context.current_dag.network
         # Check and see if there are leaf nodes that are cancelled.
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
@@ -241,15 +241,18 @@ class ExecutionState(State):
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(
-                ExecutionState.execute_node(node_reference, context.current_dag.async_semaphore))
+                ExecutionState.execute_node(node_reference, context.current_dag.async_semaphore)
+            )
             # Add a callback to set node to done when task has finished.
             context.current_dag.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
             node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
-            # Wait for a task to finish; 
-            done, running_tasks = await asyncio.wait(context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+            # Wait for a task to finish
+            done, running_tasks = await asyncio.wait(
+                context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED
+            )
         # Infinite loop? let's see how this goes.
         return ExecutionState
 
