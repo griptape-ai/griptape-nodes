@@ -387,35 +387,75 @@ class ArtifactPathTethering:
                 artifact = self._to_artifact(artifact_dict)
 
                 # Store artifact using sync helper (sets parameter value and publishes update)
-                self._sync_parameter_value(self.artifact_parameter.name, artifact)
+                self._sync_parameter_value(
+                    source_param_name=self.artifact_parameter.name,
+                    target_param_name=self.artifact_parameter.name,
+                    target_value=artifact,
+                )
 
                 # Update path parameter
-                self._sync_parameter_value(self.path_parameter.name, download_url)
+                self._sync_parameter_value(
+                    source_param_name=self.artifact_parameter.name,
+                    target_param_name=self.path_parameter.name,
+                    target_value=download_url,
+                )
             except Exception:
                 # If processing fails, treat as invalid input - reset parameters
-                self._sync_parameter_value(self.artifact_parameter.name, None)
-                self._sync_parameter_value(self.path_parameter.name, "")
+                self._sync_parameter_value(
+                    source_param_name=self.artifact_parameter.name,
+                    target_param_name=self.artifact_parameter.name,
+                    target_value=None,
+                )
+                self._sync_parameter_value(
+                    source_param_name=self.artifact_parameter.name,
+                    target_param_name=self.path_parameter.name,
+                    target_value="",
+                )
                 # Don't re-raise - let the node continue with None value
         else:
             # Empty string - reset both parameters
-            self._sync_parameter_value(self.artifact_parameter.name, None)
-            self._sync_parameter_value(self.path_parameter.name, "")
+            self._sync_parameter_value(
+                source_param_name=self.artifact_parameter.name,
+                target_param_name=self.artifact_parameter.name,
+                target_value=None,
+            )
+            self._sync_parameter_value(
+                source_param_name=self.artifact_parameter.name,
+                target_param_name=self.path_parameter.name,
+                target_value="",
+            )
 
     def _handle_artifact_input(self, value: Any) -> None:
         """Handle artifact input to artifact parameter."""
         if value:
             # Convert to artifact and update artifact parameter
             artifact = self._to_artifact(value)
-            self._sync_parameter_value(self.artifact_parameter.name, artifact)
+            self._sync_parameter_value(
+                source_param_name=self.artifact_parameter.name,
+                target_param_name=self.artifact_parameter.name,
+                target_value=artifact,
+            )
 
             # Extract URL and update path parameter
             extracted_url = self.config.extract_url_func(value)
             if extracted_url:
-                self._sync_parameter_value(self.path_parameter.name, extracted_url)
+                self._sync_parameter_value(
+                    source_param_name=self.artifact_parameter.name,
+                    target_param_name=self.path_parameter.name,
+                    target_value=extracted_url,
+                )
         else:
             # No value - reset both parameters
-            self._sync_parameter_value(self.artifact_parameter.name, None)
-            self._sync_parameter_value(self.path_parameter.name, "")
+            self._sync_parameter_value(
+                source_param_name=self.artifact_parameter.name,
+                target_param_name=self.artifact_parameter.name,
+                target_value=None,
+            )
+            self._sync_parameter_value(
+                source_param_name=self.artifact_parameter.name,
+                target_param_name=self.path_parameter.name,
+                target_value="",
+            )
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
@@ -431,19 +471,44 @@ class ArtifactPathTethering:
             # Update both parameters with the processed URL
             artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
             artifact = self._to_artifact(artifact_dict)
-            self._sync_parameter_value(self.artifact_parameter.name, artifact)
-            self._sync_parameter_value(self.path_parameter.name, download_url)
+            self._sync_parameter_value(
+                source_param_name=self.path_parameter.name,
+                target_param_name=self.artifact_parameter.name,
+                target_value=artifact,
+            )
+            self._sync_parameter_value(
+                source_param_name=self.path_parameter.name,
+                target_param_name=self.path_parameter.name,
+                target_value=download_url,
+            )
         else:
             # Empty path - reset both parameters
-            self._sync_parameter_value(self.artifact_parameter.name, None)
-            self._sync_parameter_value(self.path_parameter.name, "")
+            self._sync_parameter_value(
+                source_param_name=self.path_parameter.name,
+                target_param_name=self.artifact_parameter.name,
+                target_value=None,
+            )
+            self._sync_parameter_value(
+                source_param_name=self.path_parameter.name, target_param_name=self.path_parameter.name, target_value=""
+            )
 
-    def _sync_parameter_value(self, target_param_name: str, target_value: Any) -> None:
+    def _sync_parameter_value(self, source_param_name: str, target_param_name: str, target_value: Any) -> None:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
-        # Use normal parameter setting flow to ensure before_value_set/after_value_set hooks are called
+        # Use node manager's request system to ensure full parameter setting flow including downstream propagation
         # The _updating_from_parameter lock prevents infinite recursion in on_after_value_set
-        self.node.set_parameter_value(target_param_name, target_value)
-        self.node.publish_update_to_parameter(target_param_name, target_value)
+        from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name=target_param_name,
+                node_name=self.node.name,
+                value=target_value,
+                incoming_connection_source_node_name=self.node.name,
+                incoming_connection_source_parameter_name=source_param_name,
+            )
+        )
+
         # Also update output values so they're ready for process()
         self.node.parameter_output_values[target_param_name] = target_value
 
