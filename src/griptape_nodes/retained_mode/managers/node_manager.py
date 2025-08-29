@@ -1608,8 +1608,6 @@ class NodeManager:
                             node_name=target_node.name,
                             value=finalized_value,
                             data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
-                            incoming_connection_source_node_name=node.name,
-                            incoming_connection_source_parameter_name=parameter.name,
                         )
                     )
 
