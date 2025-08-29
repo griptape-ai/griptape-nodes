@@ -564,7 +564,13 @@ class BaseNode(ABC):
         return None
 
     def set_parameter_value(
-        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
     ) -> None:
         """Attempt to set a Parameter's value.
 
@@ -585,6 +591,7 @@ class BaseNode(ABC):
             value: the value intended to be set
             emit_change: whether to emit a parameter lifecycle event, defaults to True
             initial_setup: Whether this value is being set as the initial setup on the node, defaults to False. When True, the value is not given to any before/after hooks.
+            skip_before_value_set: Whether to skip the before_value_set hook, defaults to False. Used when before_value_set has already been called earlier in the flow.
 
         Returns:
             A set of parameter names within this node that were modified as a result
@@ -613,7 +620,10 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            if not skip_before_value_set:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            else:
+                final_value = candidate_value
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
