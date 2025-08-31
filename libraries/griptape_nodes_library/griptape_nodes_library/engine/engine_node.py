@@ -80,6 +80,7 @@ class EngineNode(DataNode):
         if self.request_options:
             self._update_parameters_for_request_type(self.request_options[0])
 
+
     def _discover_request_types(self) -> dict[str, dict]:
         """Discover all RequestPayload types and their corresponding Result types."""
         registry = PayloadRegistry.get_registry()
@@ -221,6 +222,7 @@ class EngineNode(DataNode):
             default_value=default_value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"display_name": field.name},
+            user_defined=True,
         )
 
     def _get_field_default_value(self, field: Any) -> Any:
@@ -323,6 +325,7 @@ class EngineNode(DataNode):
             output_type=output_type,
             allowed_modes={ParameterMode.OUTPUT},
             ui_options={"display_name": field.name},
+            user_defined=True,
         )
 
     def _python_type_to_param_type(self, python_type: Any) -> str:
@@ -485,9 +488,23 @@ class EngineNode(DataNode):
         )
         return None
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle parameter value changes."""
-        if parameter.name == "request_type":
-            self._update_parameters_for_request_type(value)
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        """Override to handle request_type parameter changes."""
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
 
-        return super().after_value_set(parameter, value)
+        if param_name == "request_type":
+            self._update_parameters_for_request_type(value)
