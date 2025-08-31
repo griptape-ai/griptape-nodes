@@ -499,5 +499,12 @@ class GetVideoMetadata(DataNode):
         self.parameter_output_values["optional_start_time"] = None
 
     def process(self) -> None:
-        """Process method - metadata extraction now handled in after_value_set."""
-        # The actual work is now done in after_value_set when the video parameter changes
+        """Process method - ensures metadata extraction runs regardless of when parameter was set."""
+        video_input = self.get_parameter_value("video")
+
+        if not video_input:
+            self._set_default_output_values()
+        else:
+            video_url = self._get_video_url(video_input)
+            metadata = self._extract_video_metadata_structured(video_url)
+            self._set_metadata_output_values(metadata)
