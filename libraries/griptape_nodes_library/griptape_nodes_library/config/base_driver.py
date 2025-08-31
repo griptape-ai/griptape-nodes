@@ -36,6 +36,8 @@ class BaseDriver(DataNode):
                 tooltip="",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"display_name": "model config"},
+                # This will be a complex object that cannot serialize and could contain private keys; it needs to be assigned at runtime.
+                serializable=False,
             )
         )
 

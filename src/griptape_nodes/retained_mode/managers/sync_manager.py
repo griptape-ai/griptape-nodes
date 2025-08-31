@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowsFromConfigRequest,
     RegisterWorkflowsFromConfigResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -167,8 +168,6 @@ class SyncManager:
             sync_request = StartSyncAllCloudWorkflowsRequest()
 
             # Use handle_request to process through normal event system
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             result = GriptapeNodes.handle_request(sync_request)
 
             if isinstance(result, StartSyncAllCloudWorkflowsResultSuccess):
@@ -193,8 +192,6 @@ class SyncManager:
         Raises:
             RuntimeError: If required cloud configuration is missing.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         secrets_manager = GriptapeNodes.SecretsManager()
 
         # Get cloud storage configuration from secrets
@@ -428,8 +425,6 @@ class SyncManager:
         self, sync_id: str, workflow_files: list[str], storage_driver: GriptapeCloudStorageDriver, sync_dir: Path
     ) -> None:
         """Background thread function to sync workflows."""
-        from griptape_nodes.app.app import event_queue
-
         synced_workflows = []
         failed_downloads = []
         total_workflows = len(workflow_files)
@@ -470,14 +465,13 @@ class SyncManager:
             failed_workflows=failed_downloads,
             total_workflows=total_workflows,
         )
-        event_queue.put(AppEvent(payload=sync_complete_event))
+
+        GriptapeNodes.EventManager().put_event(AppEvent(payload=sync_complete_event))
 
         # Register workflows from the synced directory
         if synced_workflows:
             logger.info("Registering %d synced workflows from configuration", len(synced_workflows))
             try:
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
                 register_request = RegisterWorkflowsFromConfigRequest(
                     config_section="app_events.on_app_initialization_complete.workflows_to_register"
                 )

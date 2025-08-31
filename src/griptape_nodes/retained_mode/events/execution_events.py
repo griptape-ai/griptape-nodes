@@ -342,12 +342,6 @@ class NodeStartProcessEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ResumeNodeProcessingEvent(ExecutionPayload):
-    node_name: str
-
-
-@dataclass
-@PayloadRegistry.register
 class NodeFinishProcessEvent(ExecutionPayload):
     node_name: str
 

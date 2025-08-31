@@ -106,6 +106,8 @@ class TestBaseNodeElement:
                             "tooltip_as_output": None,
                             "tooltip_as_property": None,
                             "type": "str",
+                            "settable": True,
+                            "serializable": True,
                             "ui_options": {},
                             "parent_container_name": None,
                         },
@@ -190,6 +192,8 @@ class TestBaseNodeElement:
                             "tooltip_as_output": None,
                             "tooltip_as_property": None,
                             "type": "str",
+                            "settable": True,
+                            "serializable": True,
                             "ui_options": {},
                             "parent_container_name": None,
                         },
@@ -276,6 +280,8 @@ class TestBaseNodeElement:
                             "tooltip_as_output": None,
                             "tooltip_as_property": None,
                             "type": "str",
+                            "settable": True,
+                            "serializable": True,
                             "ui_options": {},
                             "parent_container_name": None,
                         },
@@ -299,3 +305,30 @@ class TestParameterGroup:
 class TestParameter:
     def test_init(self) -> None:
         assert Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+
+    def test_settable_property(self) -> None:
+        """Test that settable property works correctly and is included in serialization."""
+        # Test default value
+        param = Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+        assert param.settable is True
+
+        # Test setting to False
+        param_false = Parameter(
+            name="test", input_types=["str"], type="str", output_type="str", tooltip="test", settable=False
+        )
+        assert param_false.settable is False
+
+        # Test property setter
+        param.settable = False
+        assert param.settable is False
+        param.settable = True
+        assert param.settable is True
+
+        # Test serialization includes settable
+        param_dict = param.to_dict()
+        assert "settable" in param_dict
+        assert param_dict["settable"] is True
+
+        param_false_dict = param_false.to_dict()
+        assert "settable" in param_false_dict
+        assert param_false_dict["settable"] is False
