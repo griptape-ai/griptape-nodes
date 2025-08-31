@@ -7,6 +7,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMessage,
     ParameterMode,
+    ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.events.base_events import (
@@ -28,7 +29,7 @@ class EngineNode(DataNode):
 
         # Create request type selector dropdown
         self.request_options = []
-        for request_name, info in self._request_types.items():
+        for request_name, info in sorted(self._request_types.items()):
             display_name = request_name
             if not info["has_results"]:
                 display_name += " *"
@@ -232,7 +233,7 @@ class EngineNode(DataNode):
             input_types = []
             for arg in python_type.__args__:
                 if arg is type(None):
-                    input_types.append("none")
+                    input_types.append(ParameterTypeBuiltin.NONE.value)
                 else:
                     input_types.append(self._python_type_to_param_type(arg))
             return input_types
@@ -249,7 +250,7 @@ class EngineNode(DataNode):
             for arg in python_type.__args__:
                 if arg is not type(None):
                     return self._python_type_to_param_type(arg)
-            return "none"  # If somehow all types are None
+            return ParameterTypeBuiltin.NONE.value  # If somehow all types are None
         # For single types
         return self._python_type_to_param_type(python_type)
 
@@ -330,15 +331,15 @@ class EngineNode(DataNode):
             tuple: "tuple",
             set: "set",
         }
-        return type_mapping.get(origin, "any")
+        return type_mapping.get(origin, ParameterTypeBuiltin.ANY.value)
 
     def _handle_basic_type(self, python_type: Any) -> str:
         """Handle basic Python types."""
         type_mapping = {
-            str: "str",
-            int: "int",
-            float: "float",
-            bool: "bool",
+            str: ParameterTypeBuiltin.STR.value,
+            int: ParameterTypeBuiltin.INT.value,
+            float: ParameterTypeBuiltin.FLOAT.value,
+            bool: ParameterTypeBuiltin.BOOL.value,
         }
 
         if python_type in type_mapping:
@@ -347,7 +348,7 @@ class EngineNode(DataNode):
         if hasattr(python_type, "__name__"):
             return python_type.__name__
 
-        return "any"
+        return ParameterTypeBuiltin.ANY.value
 
     def process(self) -> None:
         """Execute the selected request and handle the result."""
