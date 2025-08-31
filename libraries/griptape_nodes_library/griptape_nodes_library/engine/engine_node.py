@@ -1,6 +1,6 @@
 import dataclasses
 import inspect
-from typing import Any, Union, get_origin
+from typing import Any, NamedTuple, Union, get_origin
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
@@ -18,6 +18,12 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+
+
+class ResultClasses(NamedTuple):
+    """Result classes for a RequestPayload."""
+    success_class: type | None
+    failure_class: type | None
 
 
 class EngineNode(DataNode):
@@ -82,18 +88,18 @@ class EngineNode(DataNode):
         for name, cls in registry.items():
             if inspect.isclass(cls) and issubclass(cls, RequestPayload) and cls != RequestPayload:
                 # Find corresponding result classes using heuristics
-                success_class, failure_class = self._find_result_classes(name, registry)
+                result_classes = self._find_result_classes(name, registry)
 
                 request_types[name] = {
                     "class": cls,
-                    "success_class": success_class,
-                    "failure_class": failure_class,
-                    "has_results": success_class is not None and failure_class is not None,
+                    "success_class": result_classes.success_class,
+                    "failure_class": result_classes.failure_class,
+                    "has_results": result_classes.success_class is not None or result_classes.failure_class is not None,
                 }
 
         return request_types
 
-    def _find_result_classes(self, request_name: str, registry: dict) -> tuple[type | None, type | None]:
+    def _find_result_classes(self, request_name: str, registry: dict) -> ResultClasses:
         """Find corresponding Success and Failure result classes for a request."""
         # Determine the base name for pattern matching
         request_suffix = "Request"
@@ -105,15 +111,19 @@ class EngineNode(DataNode):
 
         # Try different patterns for success/failure class names
         success_patterns = [
-            f"{base_name}ResultSuccess",
-            f"{base_name}_ResultSuccess",
+            f"{base_name}ResultSuccess",     # Pattern: {Base}ResultSuccess
+            f"{base_name}Success",           # Pattern: {Base}Success
+            f"{base_name}_ResultSuccess",    # Snake_case variants
             f"{base_name}Result_Success",
+            f"{base_name}_Success",
         ]
 
         failure_patterns = [
-            f"{base_name}ResultFailure",
-            f"{base_name}_ResultFailure",
+            f"{base_name}ResultFailure",     # Standard pattern
+            f"{base_name}Failure",           # Pattern: {Base}Failure
+            f"{base_name}_ResultFailure",    # Snake_case variants
             f"{base_name}Result_Failure",
+            f"{base_name}_Failure",
         ]
 
         success_class = None
@@ -135,7 +145,7 @@ class EngineNode(DataNode):
                     failure_class = cls
                     break
 
-        return success_class, failure_class
+        return ResultClasses(success_class, failure_class)
 
     def _update_parameters_for_request_type(self, selected_type: str) -> None:
         """Update node parameters based on selected request type."""
@@ -153,7 +163,7 @@ class EngineNode(DataNode):
 
         # Remove dynamic parameters and messages
         elements_to_remove = [
-            elem for elem in self.root_ui_element._children if hasattr(elem, "name") and elem.name not in core_params
+            elem for elem in self.root_ui_element._children if elem.name not in core_params
         ]
         for elem in elements_to_remove:
             self.remove_parameter_element(elem)
@@ -201,7 +211,7 @@ class EngineNode(DataNode):
         default_value = self._get_field_default_value(field)
 
         tooltip = f"Input for {field.name}"
-        if hasattr(field, "metadata") and field.metadata.get("description"):
+        if field.metadata.get("description"):
             tooltip = field.metadata["description"]
 
         return Parameter(
@@ -259,29 +269,31 @@ class EngineNode(DataNode):
         success_class = request_info["success_class"]
         failure_class = request_info["failure_class"]
 
-        # Add Success Parameters header
-        success_doc = success_class.__doc__ if success_class.__doc__ else success_class.__name__
-        success_header = ParameterMessage(
-            variant="info",
-            value=f"Success Parameters: {success_doc}",
-            name="success_header",
-        )
-        self.add_node_element(success_header)
+        # Add Success Parameters if success class exists
+        if success_class:
+            success_doc = success_class.__doc__ if success_class.__doc__ else success_class.__name__
+            success_header = ParameterMessage(
+                variant="info",
+                value=f"Success Parameters: {success_doc}",
+                name="success_header",
+            )
+            self.add_node_element(success_header)
 
-        self._create_output_parameters_for_class(success_class, "success", {"result_details", "altered_workflow_state"})
+            self._create_output_parameters_for_class(success_class, "success", {"result_details", "altered_workflow_state"})
 
-        # Add Failure Parameters header
-        failure_doc = failure_class.__doc__ if failure_class.__doc__ else failure_class.__name__
-        failure_header = ParameterMessage(
-            variant="info",
-            value=f"Failure Parameters: {failure_doc}",
-            name="failure_header",
-        )
-        self.add_node_element(failure_header)
+        # Add Failure Parameters if failure class exists
+        if failure_class:
+            failure_doc = failure_class.__doc__ if failure_class.__doc__ else failure_class.__name__
+            failure_header = ParameterMessage(
+                variant="info",
+                value=f"Failure Parameters: {failure_doc}",
+                name="failure_header",
+            )
+            self.add_node_element(failure_header)
 
-        self._create_output_parameters_for_class(
-            failure_class, "failure", {"result_details", "altered_workflow_state", "exception"}
-        )
+            self._create_output_parameters_for_class(
+                failure_class, "failure", {"result_details", "altered_workflow_state", "exception"}
+            )
 
     def _create_output_parameters_for_class(self, result_class: Any, prefix: str, skip_fields: set) -> None:
         """Create output parameters for a result class."""
@@ -302,7 +314,7 @@ class EngineNode(DataNode):
         output_type = self._get_output_type_for_field(field.type)
 
         tooltip = f"Output from {prefix} result: {field.name}"
-        if hasattr(field, "metadata") and field.metadata.get("description"):
+        if field.metadata.get("description"):
             tooltip = field.metadata["description"]
 
         return Parameter(
@@ -345,10 +357,11 @@ class EngineNode(DataNode):
         if python_type in type_mapping:
             return type_mapping[python_type]
 
-        if hasattr(python_type, "__name__"):
+        # Try to get the type name, fallback to "any" if not available
+        try:
             return python_type.__name__
-
-        return ParameterTypeBuiltin.ANY.value
+        except AttributeError:
+            return ParameterTypeBuiltin.ANY.value
 
     def process(self) -> None:
         """Execute the selected request and handle the result."""
@@ -434,9 +447,8 @@ class EngineNode(DataNode):
             if field.name in {"result_details", "altered_workflow_state"}:
                 continue
             output_param_name = f"output_success_{field.name}"
-            if hasattr(result, field.name):
-                value = getattr(result, field.name)
-                self.parameter_output_values[output_param_name] = value
+            value = getattr(result, field.name)
+            self.parameter_output_values[output_param_name] = value
 
     def _populate_failure_outputs(self, result: Any) -> None:
         """Populate failure output parameters."""
@@ -447,9 +459,8 @@ class EngineNode(DataNode):
             if field.name in {"result_details", "altered_workflow_state"}:
                 continue
             output_param_name = f"output_failure_{field.name}"
-            if hasattr(result, field.name):
-                value = getattr(result, field.name)
-                self.parameter_output_values[output_param_name] = value
+            value = getattr(result, field.name)
+            self.parameter_output_values[output_param_name] = value
 
     def _handle_execution_error(self, error_message: str) -> None:
         """Handle execution error."""
