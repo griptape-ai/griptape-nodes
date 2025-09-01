@@ -1,13 +1,15 @@
 import dataclasses
 import inspect
 import logging
-from typing import Any, ClassVar, NamedTuple, Union, get_origin
+import types
+from typing import Any, ClassVar, NamedTuple, Union, get_origin, get_type_hints
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterMessage,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -295,14 +297,24 @@ class EngineNode(ControlNode):
         if not fields_to_show:
             return
 
+        # Get resolved type hints to handle string annotations
+        try:
+            type_hints = get_type_hints(request_class)
+        except Exception:
+            # Fallback to field.type if get_type_hints fails
+            type_hints = {}
+
         for field in fields_to_show:
-            param = self._create_input_parameter_for_field(field)
+            param = self._create_input_parameter_for_field(field, type_hints)
             self.add_parameter(param)
 
-    def _create_input_parameter_for_field(self, field: Any) -> Parameter:
+    def _create_input_parameter_for_field(self, field: Any, type_hints: dict) -> Parameter:
         """Create an input parameter for a dataclass field."""
+        # Use resolved type hint if available, otherwise fall back to field.type
+        field_type = type_hints.get(field.name, field.type)
+
         # Get input types for Union types, or single type for simple types
-        input_types = self._get_input_types_for_field(field.type)
+        input_types = self._get_input_types_for_field(field_type)
 
         # Determine default value
         default_value = self._get_field_default_value(field)
@@ -311,13 +323,18 @@ class EngineNode(ControlNode):
         if field.metadata.get("description"):
             tooltip = f"{field.metadata['description']} (accepts: {', '.join(input_types)})"
 
+        # Add (optional) suffix for Optional fields
+        display_name = field.name
+        if self._is_optional_type(field_type):
+            display_name += " (optional)"
+
         return Parameter(
             name=f"input_{field.name}",
             tooltip=tooltip,
             input_types=input_types,
             default_value=default_value,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            ui_options={"display_name": field.name},
+            ui_options={"display_name": display_name},
             user_defined=True,
         )
 
@@ -334,25 +351,20 @@ class EngineNode(ControlNode):
 
     def _get_input_types_for_field(self, python_type: Any) -> list[str]:
         """Convert Python type annotation to list of input types for Parameter."""
-        origin = get_origin(python_type)
-
-        if origin is Union:
-            # For Union types, convert each type to a string
-            input_types = []
-            for arg in python_type.__args__:
-                if arg is type(None):
-                    input_types.append(ParameterTypeBuiltin.NONE.value)
-                else:
-                    input_types.append(self._python_type_to_param_type(arg))
-            return input_types
+        if self._is_union_type(python_type):
+            # For Union types, convert each non-None type to a string
+            input_types = [
+                self._python_type_to_param_type(arg)
+                for arg in python_type.__args__
+                if arg is not type(None)  # Skip None types
+            ]
+            return input_types if input_types else [ParameterTypeBuiltin.ANY.value]
         # For single types, return a list with one element
         return [self._python_type_to_param_type(python_type)]
 
     def _get_output_type_for_field(self, python_type: Any) -> str:
         """Convert Python type annotation to single output type for Parameter."""
-        origin = get_origin(python_type)
-
-        if origin is Union:
+        if self._is_union_type(python_type):
             # For Union types on outputs, we need to pick one type
             # For Optional[T], return T; for other unions, return first non-None type
             for arg in python_type.__args__:
@@ -400,25 +412,40 @@ class EngineNode(ControlNode):
         if not fields_to_show:
             return
 
+        # Get resolved type hints to handle string annotations
+        try:
+            type_hints = get_type_hints(result_class)
+        except Exception:
+            # Fallback to field.type if get_type_hints fails
+            type_hints = {}
+
         for field in fields_to_show:
-            param = self._create_output_parameter_for_field(field, prefix)
+            param = self._create_output_parameter_for_field(field, prefix, type_hints)
             self.add_parameter(param)
 
-    def _create_output_parameter_for_field(self, field: Any, prefix: str) -> Parameter:
+    def _create_output_parameter_for_field(self, field: Any, prefix: str, type_hints: dict) -> Parameter:
         """Create an output parameter for a dataclass field."""
+        # Use resolved type hint if available, otherwise fall back to field.type
+        field_type = type_hints.get(field.name, field.type)
+
         # For output parameters, we need a single output type
-        output_type = self._get_output_type_for_field(field.type)
+        output_type = self._get_output_type_for_field(field_type)
 
         tooltip = f"Output from {prefix} result: {field.name} (type: {output_type})"
         if field.metadata.get("description"):
             tooltip = f"{field.metadata['description']} (type: {output_type})"
+
+        # Add (optional) suffix for Optional fields
+        display_name = field.name
+        if self._is_optional_type(field_type):
+            display_name += " (optional)"
 
         return Parameter(
             name=f"output_{prefix}_{field.name}",
             tooltip=tooltip,
             output_type=output_type,
             allowed_modes={ParameterMode.OUTPUT},
-            ui_options={"display_name": field.name},
+            ui_options={"display_name": display_name},
             user_defined=True,
         )
 
@@ -434,31 +461,31 @@ class EngineNode(ControlNode):
 
     def _handle_generic_type(self, origin: type) -> str:
         """Handle generic types like list, dict, etc."""
-        type_mapping = {
-            list: "list",
-            dict: "dict",
-            tuple: "tuple",
-            set: "set",
-        }
-        return type_mapping.get(origin, ParameterTypeBuiltin.ANY.value)
+        type_name = origin.__name__
+
+        # Try to get builtin type from ParameterType first
+        builtin_type = ParameterType.attempt_get_builtin(type_name)
+        if builtin_type:
+            return builtin_type.value
+
+        # For generic types not in builtin types, return the type name directly
+        return type_name.lower()
 
     def _handle_basic_type(self, python_type: Any) -> str:
         """Handle basic Python types."""
-        type_mapping = {
-            str: ParameterTypeBuiltin.STR.value,
-            int: ParameterTypeBuiltin.INT.value,
-            float: ParameterTypeBuiltin.FLOAT.value,
-            bool: ParameterTypeBuiltin.BOOL.value,
-        }
+        # Get the type name as a string
+        if isinstance(python_type, str):
+            type_name = python_type
+        else:
+            type_name = python_type.__name__
 
-        if python_type in type_mapping:
-            return type_mapping[python_type]
+        # Try to get builtin type from ParameterType
+        builtin_type = ParameterType.attempt_get_builtin(type_name)
+        if builtin_type:
+            return builtin_type.value
 
-        # Try to get the type name, fallback to "any" if not available
-        try:
-            return python_type.__name__
-        except AttributeError:
-            return ParameterTypeBuiltin.ANY.value
+        # For unknown types, return the type name directly
+        return type_name.lower()
 
     def _build_request_kwargs(self, request_class: type) -> dict:
         """Build request kwargs from input parameters."""
@@ -490,15 +517,19 @@ class EngineNode(ControlNode):
 
         return value
 
+    def _is_union_type(self, python_type: Any) -> bool:
+        """Check if a type is a Union type (either typing.Union or types.UnionType)."""
+        origin = get_origin(python_type)
+        return origin is Union or origin is types.UnionType
+
     def _is_optional_type(self, python_type: Any) -> bool:
         """Check if a type is Optional[T] (Union[T, None])."""
-        origin = get_origin(python_type)
-        if origin is Union:
-            args = python_type.__args__
-            # Optional[T] is Union[T, None] which has exactly 2 args with None as one of them
-            optional_args_count = 2
-            return len(args) == optional_args_count and type(None) in args
-        return False
+        if not self._is_union_type(python_type):
+            return False
+        args = python_type.__args__
+        # Optional[T] is Union[T, None] which has exactly 2 args with None as one of them
+        optional_args_count = 2
+        return len(args) == optional_args_count and type(None) in args
 
     def _execute_request(self, request_class: type, request_kwargs: dict) -> None:
         """Execute the request and handle the result."""
