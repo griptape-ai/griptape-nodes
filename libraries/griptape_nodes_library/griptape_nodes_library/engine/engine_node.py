@@ -32,9 +32,24 @@ class ResultClasses(NamedTuple):
     failure_class: type | None
 
 
+@dataclasses.dataclass
+class RequestInfo:
+    """Information about a RequestPayload and its associated result classes."""
+
+    request_class: type
+    success_class: type | None
+    failure_class: type | None
+    has_results: bool
+
+
 class EngineNode(ControlNode):
     # Fields to skip when creating output parameters from result classes
     _SKIP_RESULT_FIELDS: ClassVar[set[str]] = {"result_details", "altered_workflow_state", "exception"}
+
+    # Parameter name prefixes
+    _INPUT_PARAMETER_NAME_PREFIX = "input_"
+    _OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX = "output_success_"
+    _OUTPUT_FAILURE_PARAMETER_NAME_PREFIX = "output_failure_"
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -46,7 +61,7 @@ class EngineNode(ControlNode):
         self.request_options = []
         for request_name, info in sorted(self._request_types.items()):
             display_name = request_name
-            if not info["has_results"]:
+            if not info.has_results:
                 display_name += " *"
             self.request_options.append(display_name)
 
@@ -99,7 +114,7 @@ class EngineNode(ControlNode):
         self._execution_succeeded = None
 
         # Step 2: Get the selected request type from the dropdown
-        selected_type = self.get_parameter_value("request_type")
+        selected_type = self.get_parameter_value(self.request_selector.name)
         if not selected_type:
             logger.error("No request type selected")
             msg = "No request type selected. Please choose a RequestPayload type from the dropdown."
@@ -114,7 +129,7 @@ class EngineNode(ControlNode):
 
         # Step 4: Get request information and validate it has result classes
         request_info = self._request_types[clean_type]
-        if not request_info["has_results"]:
+        if not request_info.has_results:
             logger.warning(
                 "Could not find corresponding ResultPayload classes for request type '%s' - execution skipped",
                 clean_type,
@@ -125,10 +140,10 @@ class EngineNode(ControlNode):
             raise ValueError(msg)
 
         # Step 5: Build the request arguments from input parameters
-        request_kwargs = self._build_request_kwargs(request_info["class"])
+        request_kwargs = self._build_request_kwargs(request_info.request_class)
 
         # Step 6: Execute the request and handle success/failure routing
-        self._execute_request(request_info["class"], request_kwargs)
+        self._execute_request(request_info.request_class, request_kwargs)
 
     def get_next_control_output(self) -> Parameter | None:
         """Determine which control output to follow based on execution result."""
@@ -169,6 +184,14 @@ class EngineNode(ControlNode):
         skip_before_value_set: bool = False,
     ) -> None:
         """Override to handle request_type parameter changes."""
+        # Handle request type changes with connection cleanup
+        if param_name == self.request_selector.name and not initial_setup:
+            current_value = self.get_parameter_value(self.request_selector.name)
+            if current_value != value:
+                # Request type is changing - clean up dynamic parameter connections first
+                logger.info("Request type changing from %s to %s", current_value, value)
+                self._cleanup_dynamic_parameter_connections()
+
         super().set_parameter_value(
             param_name,
             value,
@@ -177,11 +200,81 @@ class EngineNode(ControlNode):
             skip_before_value_set=skip_before_value_set,
         )
 
-        if param_name == "request_type":
+        if param_name == self.request_selector.name:
             self._update_parameters_for_request_type(value)
 
+    def _cleanup_dynamic_parameter_connections(self) -> None:
+        """Remove all connections to/from dynamic parameters when request type changes."""
+        from griptape_nodes.retained_mode.events.connection_events import (
+            DeleteConnectionRequest,
+            DeleteConnectionResultSuccess,
+            ListConnectionsForNodeRequest,
+            ListConnectionsForNodeResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections_request = ListConnectionsForNodeRequest(node_name=self.name)
+        connections_result = GriptapeNodes.handle_request(connections_request)
+
+        if not isinstance(connections_result, ListConnectionsForNodeResultSuccess):
+            logger.error("Failed to list connections for node '%s': %s", self.name, connections_result.result_details)
+            return
+
+        # Delete incoming connections to dynamic parameters
+        for connection in connections_result.incoming_connections:
+            if self._is_dynamic_parameter(connection.target_parameter_name):
+                logger.debug(
+                    "Deleting dynamic incoming connection: %s.%s -> %s.%s",
+                    connection.source_node_name,
+                    connection.source_parameter_name,
+                    self.name,
+                    connection.target_parameter_name,
+                )
+                delete_request = DeleteConnectionRequest(
+                    source_node_name=connection.source_node_name,
+                    source_parameter_name=connection.source_parameter_name,
+                    target_node_name=self.name,
+                    target_parameter_name=connection.target_parameter_name,
+                )
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                    logger.error("Failed to delete dynamic incoming connection: %s", delete_result.result_details)
+
+        # Delete outgoing connections from dynamic parameters
+        for connection in connections_result.outgoing_connections:
+            if self._is_dynamic_parameter(connection.source_parameter_name):
+                logger.debug(
+                    "Deleting dynamic outgoing connection: %s.%s -> %s.%s",
+                    self.name,
+                    connection.source_parameter_name,
+                    connection.target_node_name,
+                    connection.target_parameter_name,
+                )
+                delete_request = DeleteConnectionRequest(
+                    source_node_name=self.name,
+                    source_parameter_name=connection.source_parameter_name,
+                    target_node_name=connection.target_node_name,
+                    target_parameter_name=connection.target_parameter_name,
+                )
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                    logger.error("Failed to delete dynamic outgoing connection: %s", delete_result.result_details)
+
+    def _is_dynamic_parameter(self, parameter_name: str) -> bool:
+        """Check if a parameter is dynamically created (vs static control parameters)."""
+        # Dynamic parameters follow these patterns:
+        # - Input parameters: input_{field_name}
+        # - Output parameters: output_success_{field_name}, output_failure_{field_name}
+        return parameter_name.startswith(
+            (
+                self._INPUT_PARAMETER_NAME_PREFIX,
+                self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX,
+                self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX,
+            )
+        )
+
     # Private Methods
-    def _discover_request_types(self) -> dict[str, dict]:
+    def _discover_request_types(self) -> dict[str, RequestInfo]:
         """Discover all RequestPayload types and their corresponding Result types."""
         registry = PayloadRegistry.get_registry()
         request_types = {}
@@ -191,12 +284,12 @@ class EngineNode(ControlNode):
                 # Find corresponding result classes using heuristics
                 result_classes = self._find_result_classes(name, registry)
 
-                request_types[name] = {
-                    "class": cls,
-                    "success_class": result_classes.success_class,
-                    "failure_class": result_classes.failure_class,
-                    "has_results": result_classes.success_class is not None or result_classes.failure_class is not None,
-                }
+                request_types[name] = RequestInfo(
+                    request_class=cls,
+                    success_class=result_classes.success_class,
+                    failure_class=result_classes.failure_class,
+                    has_results=result_classes.success_class is not None or result_classes.failure_class is not None,
+                )
 
         return request_types
 
@@ -257,10 +350,10 @@ class EngineNode(ControlNode):
             return
 
         request_info = self._request_types[clean_type]
-        request_class = request_info["class"]
+        request_class = request_info.request_class
 
         # Clear existing dynamic parameters (keep core ones)
-        core_params = {"request_type", "documentation", "success", "failure"}
+        core_params = {self.request_selector.name, "documentation", "success", "failure"}
 
         # Remove dynamic parameters and messages
         elements_to_remove = [elem for elem in self.root_ui_element._children if elem.name not in core_params]
@@ -272,7 +365,7 @@ class EngineNode(ControlNode):
         self.info_message.value = doc_text
 
         # Check if request type is usable
-        if not request_info["has_results"]:
+        if not request_info.has_results:
             error_msg = ParameterMessage(
                 variant="error",
                 value=f"Cannot use {clean_type}: corresponding Success and Failure result classes not found",
@@ -329,7 +422,7 @@ class EngineNode(ControlNode):
             display_name += " (optional)"
 
         return Parameter(
-            name=f"input_{field.name}",
+            name=f"{self._INPUT_PARAMETER_NAME_PREFIX}{field.name}",
             tooltip=tooltip,
             input_types=input_types,
             default_value=default_value,
@@ -374,10 +467,10 @@ class EngineNode(ControlNode):
         # For single types
         return self._python_type_to_param_type(python_type)
 
-    def _create_result_parameters(self, request_info: dict) -> None:
+    def _create_result_parameters(self, request_info: RequestInfo) -> None:
         """Create Success and Failure output parameters."""
-        success_class = request_info["success_class"]
-        failure_class = request_info["failure_class"]
+        success_class = request_info.success_class
+        failure_class = request_info.failure_class
 
         # Add Success Parameters if success class exists
         if success_class:
@@ -441,7 +534,7 @@ class EngineNode(ControlNode):
             display_name += " (optional)"
 
         return Parameter(
-            name=f"output_{prefix}_{field.name}",
+            name=f"{self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX if prefix == 'success' else self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX}{field.name}",
             tooltip=tooltip,
             output_type=output_type,
             allowed_modes={ParameterMode.OUTPUT},
@@ -498,7 +591,7 @@ class EngineNode(ControlNode):
             if field.name == "request_id":
                 continue
 
-            param_name = f"input_{field.name}"
+            param_name = f"{self._INPUT_PARAMETER_NAME_PREFIX}{field.name}"
             if param_name in [p.name for p in self.parameters]:
                 value = self.get_parameter_value(param_name)
 
@@ -557,7 +650,7 @@ class EngineNode(ControlNode):
         for field in dataclasses.fields(result):
             if field.name in self._SKIP_RESULT_FIELDS:
                 continue
-            output_param_name = f"output_success_{field.name}"
+            output_param_name = f"{self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX}{field.name}"
             value = getattr(result, field.name)
             self.parameter_output_values[output_param_name] = value
 
@@ -569,11 +662,11 @@ class EngineNode(ControlNode):
         for field in dataclasses.fields(result):
             if field.name in self._SKIP_RESULT_FIELDS:
                 continue
-            output_param_name = f"output_failure_{field.name}"
+            output_param_name = f"{self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX}{field.name}"
             value = getattr(result, field.name)
             self.parameter_output_values[output_param_name] = value
 
     def _handle_execution_error(self, error_message: str) -> None:
         """Handle execution error."""
-        self.parameter_output_values["output_failure_exception"] = error_message
+        self.parameter_output_values[f"{self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX}exception"] = error_message
         self._execution_succeeded = False
