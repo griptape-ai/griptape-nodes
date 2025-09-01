@@ -1,6 +1,7 @@
 import dataclasses
 import inspect
-from typing import Any, NamedTuple, Union, get_origin
+import logging
+from typing import Any, ClassVar, NamedTuple, Union, get_origin
 
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
@@ -9,7 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -19,14 +20,20 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
+logger = logging.getLogger(__name__)
+
 
 class ResultClasses(NamedTuple):
     """Result classes for a RequestPayload."""
+
     success_class: type | None
     failure_class: type | None
 
 
-class EngineNode(DataNode):
+class EngineNode(ControlNode):
+    # Fields to skip when creating output parameters from result classes
+    _SKIP_RESULT_FIELDS: ClassVar[set[str]] = {"result_details", "altered_workflow_state", "exception"}
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -80,7 +87,98 @@ class EngineNode(DataNode):
         if self.request_options:
             self._update_parameters_for_request_type(self.request_options[0])
 
+        # Track execution state for control flow routing
+        self._execution_succeeded: bool | None = None
 
+    # Public Methods
+    def process(self) -> None:
+        """Execute the selected request and handle the result."""
+        # Step 1: Reset execution state at the start of each run
+        self._execution_succeeded = None
+
+        # Step 2: Get the selected request type from the dropdown
+        selected_type = self.get_parameter_value("request_type")
+        if not selected_type:
+            logger.error("No request type selected")
+            msg = "No request type selected. Please choose a RequestPayload type from the dropdown."
+            raise ValueError(msg)
+
+        # Step 3: Clean up the request type name (remove asterisk if present)
+        clean_type = selected_type.rstrip(" *")
+        if clean_type not in self._request_types:
+            logger.error("Unknown request type: %s", clean_type)
+            msg = f"Unknown request type '{clean_type}'. Please select a valid type from the dropdown."  # noqa: S608
+            raise ValueError(msg)
+
+        # Step 4: Get request information and validate it has result classes
+        request_info = self._request_types[clean_type]
+        if not request_info["has_results"]:
+            logger.warning(
+                "Could not find corresponding ResultPayload classes for request type '%s' - execution skipped",
+                clean_type,
+            )
+            msg = (
+                f"Cannot execute '{clean_type}': corresponding Success/Failure result classes not found in the system."
+            )
+            raise ValueError(msg)
+
+        # Step 5: Build the request arguments from input parameters
+        request_kwargs = self._build_request_kwargs(request_info["class"])
+
+        # Step 6: Execute the request and handle success/failure routing
+        self._execute_request(request_info["class"], request_kwargs)
+
+    def get_next_control_output(self) -> Parameter | None:
+        """Determine which control output to follow based on execution result."""
+        if self._execution_succeeded is None:
+            # Execution hasn't completed yet
+            self.stop_flow = True
+            return None
+
+        if self._execution_succeeded:
+            return self.success_output
+        return self.failure_output
+
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Engine nodes have side effects and need to execute every workflow run."""
+        from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+        self.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
+        return None
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Engine nodes have side effects and need to execute every time they run."""
+        from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+        self.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
+        return None
+
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        """Override to handle request_type parameter changes."""
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
+        if param_name == "request_type":
+            self._update_parameters_for_request_type(value)
+
+    # Private Methods
     def _discover_request_types(self) -> dict[str, dict]:
         """Discover all RequestPayload types and their corresponding Result types."""
         registry = PayloadRegistry.get_registry()
@@ -112,17 +210,17 @@ class EngineNode(DataNode):
 
         # Try different patterns for success/failure class names
         success_patterns = [
-            f"{base_name}ResultSuccess",     # Pattern: {Base}ResultSuccess
-            f"{base_name}Success",           # Pattern: {Base}Success
-            f"{base_name}_ResultSuccess",    # Snake_case variants
+            f"{base_name}ResultSuccess",  # Pattern: {Base}ResultSuccess
+            f"{base_name}Success",  # Pattern: {Base}Success
+            f"{base_name}_ResultSuccess",  # Snake_case variants
             f"{base_name}Result_Success",
             f"{base_name}_Success",
         ]
 
         failure_patterns = [
-            f"{base_name}ResultFailure",     # Standard pattern
-            f"{base_name}Failure",           # Pattern: {Base}Failure
-            f"{base_name}_ResultFailure",    # Snake_case variants
+            f"{base_name}ResultFailure",  # Standard pattern
+            f"{base_name}Failure",  # Pattern: {Base}Failure
+            f"{base_name}_ResultFailure",  # Snake_case variants
             f"{base_name}Result_Failure",
             f"{base_name}_Failure",
         ]
@@ -163,9 +261,7 @@ class EngineNode(DataNode):
         core_params = {"request_type", "documentation", "success", "failure"}
 
         # Remove dynamic parameters and messages
-        elements_to_remove = [
-            elem for elem in self.root_ui_element._children if elem.name not in core_params
-        ]
+        elements_to_remove = [elem for elem in self.root_ui_element._children if elem.name not in core_params]
         for elem in elements_to_remove:
             self.remove_parameter_element(elem)
 
@@ -211,9 +307,9 @@ class EngineNode(DataNode):
         # Determine default value
         default_value = self._get_field_default_value(field)
 
-        tooltip = f"Input for {field.name}"
+        tooltip = f"Input for {field.name} (accepts: {', '.join(input_types)})"
         if field.metadata.get("description"):
-            tooltip = field.metadata["description"]
+            tooltip = f"{field.metadata['description']} (accepts: {', '.join(input_types)})"
 
         return Parameter(
             name=f"input_{field.name}",
@@ -281,7 +377,7 @@ class EngineNode(DataNode):
             )
             self.add_node_element(success_header)
 
-            self._create_output_parameters_for_class(success_class, "success", {"result_details", "altered_workflow_state"})
+            self._create_output_parameters_for_class(success_class, "success", self._SKIP_RESULT_FIELDS)
 
         # Add Failure Parameters if failure class exists
         if failure_class:
@@ -293,9 +389,7 @@ class EngineNode(DataNode):
             )
             self.add_node_element(failure_header)
 
-            self._create_output_parameters_for_class(
-                failure_class, "failure", {"result_details", "altered_workflow_state", "exception"}
-            )
+            self._create_output_parameters_for_class(failure_class, "failure", self._SKIP_RESULT_FIELDS)
 
     def _create_output_parameters_for_class(self, result_class: Any, prefix: str, skip_fields: set) -> None:
         """Create output parameters for a result class."""
@@ -315,9 +409,9 @@ class EngineNode(DataNode):
         # For output parameters, we need a single output type
         output_type = self._get_output_type_for_field(field.type)
 
-        tooltip = f"Output from {prefix} result: {field.name}"
+        tooltip = f"Output from {prefix} result: {field.name} (type: {output_type})"
         if field.metadata.get("description"):
-            tooltip = field.metadata["description"]
+            tooltip = f"{field.metadata['description']} (type: {output_type})"
 
         return Parameter(
             name=f"output_{prefix}_{field.name}",
@@ -365,23 +459,6 @@ class EngineNode(DataNode):
             return python_type.__name__
         except AttributeError:
             return ParameterTypeBuiltin.ANY.value
-
-    def process(self) -> None:
-        """Execute the selected request and handle the result."""
-        selected_type = self.get_parameter_value("request_type")
-        if not selected_type:
-            return
-
-        clean_type = selected_type.rstrip(" *")
-        if clean_type not in self._request_types:
-            return
-
-        request_info = self._request_types[clean_type]
-        if not request_info["has_results"]:
-            return
-
-        request_kwargs = self._build_request_kwargs(request_info["class"])
-        self._execute_request(request_info["class"], request_kwargs)
 
     def _build_request_kwargs(self, request_class: type) -> dict:
         """Build request kwargs from input parameters."""
@@ -436,10 +513,10 @@ class EngineNode(DataNode):
         """Handle successful request execution result."""
         if result.succeeded():
             self._populate_success_outputs(result)
-            self.parameter_output_values["success"] = True
+            self._execution_succeeded = True
         else:
             self._populate_failure_outputs(result)
-            self.parameter_output_values["failure"] = True
+            self._execution_succeeded = False
 
     def _populate_success_outputs(self, result: Any) -> None:
         """Populate success output parameters."""
@@ -447,7 +524,7 @@ class EngineNode(DataNode):
             return
 
         for field in dataclasses.fields(result):
-            if field.name in {"result_details", "altered_workflow_state"}:
+            if field.name in self._SKIP_RESULT_FIELDS:
                 continue
             output_param_name = f"output_success_{field.name}"
             value = getattr(result, field.name)
@@ -459,7 +536,7 @@ class EngineNode(DataNode):
             return
 
         for field in dataclasses.fields(result):
-            if field.name in {"result_details", "altered_workflow_state"}:
+            if field.name in self._SKIP_RESULT_FIELDS:
                 continue
             output_param_name = f"output_failure_{field.name}"
             value = getattr(result, field.name)
@@ -468,43 +545,4 @@ class EngineNode(DataNode):
     def _handle_execution_error(self, error_message: str) -> None:
         """Handle execution error."""
         self.parameter_output_values["output_failure_exception"] = error_message
-        self.parameter_output_values["failure"] = True
-
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        """Engine nodes have side effects and need to execute every workflow run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Engine nodes have side effects and need to execute every time they run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
-
-    def set_parameter_value(
-        self,
-        param_name: str,
-        value: Any,
-        *,
-        initial_setup: bool = False,
-        emit_change: bool = True,
-        skip_before_value_set: bool = False,
-    ) -> None:
-        """Override to handle request_type parameter changes."""
-        super().set_parameter_value(
-            param_name,
-            value,
-            initial_setup=initial_setup,
-            emit_change=emit_change,
-            skip_before_value_set=skip_before_value_set,
-        )
-
-        if param_name == "request_type":
-            self._update_parameters_for_request_type(value)
+        self._execution_succeeded = False
