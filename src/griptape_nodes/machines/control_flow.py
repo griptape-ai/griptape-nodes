@@ -195,7 +195,6 @@ class CompleteState(State):
                 )
             )
         logger.info("Flow is complete.")
-        # At this point, we'll use the DagOrchestrator to run the rest of the flow.
         return None
 
     @staticmethod
@@ -211,7 +210,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
-        if self._context.resolution_machine is DagCreationMachine:
+        if isinstance(self._context.resolution_machine, DagCreationMachine):
             await self._process_data_nodes_for_dag()
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)

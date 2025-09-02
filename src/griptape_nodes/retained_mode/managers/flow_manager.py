@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from enum import StrEnum
 import logging
+from enum import StrEnum
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
 
@@ -117,6 +117,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     import collections
+
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
