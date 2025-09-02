@@ -709,7 +709,7 @@ class NodeManager:
             else:
                 failed_nodes[actual_node_name] = result.result_details
 
-        if not updated_nodes:
+        if failed_nodes:
             return BatchSetNodeMetadataResultFailure(
                 result_details=f"Failed to update any nodes. Failed nodes: {failed_nodes}"
             )
