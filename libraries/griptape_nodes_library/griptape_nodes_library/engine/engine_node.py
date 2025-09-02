@@ -8,16 +8,21 @@ from typing import Any, ClassVar, NamedTuple, Union, get_origin, get_type_hints
 from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
-    ParameterGroup,
     ParameterMessage,
     ParameterType,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import ControlNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
+    RemoveParameterFromNodeRequest,
+    RemoveParameterFromNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -50,6 +55,22 @@ class RequestInfo:
     has_results: bool
 
 
+class CategorizedParameters(NamedTuple):
+    """Categorized dynamic parameters for the EngineNode."""
+
+    input_parameters: list[Parameter]
+    success_output_parameters: list[Parameter]
+    failure_output_parameters: list[Parameter]
+
+
+class TransitionPlan(NamedTuple):
+    """Generic plan for transitioning a set of parameters."""
+
+    to_preserve: set[str]
+    to_remove: set[str]
+    to_add: set[str]
+
+
 class EngineNode(ControlNode):
     # Fields to skip when creating output parameters from result classes
     _SKIP_RESULT_FIELDS: ClassVar[set[str]] = {"result_details", "altered_workflow_state", "exception"}
@@ -59,46 +80,67 @@ class EngineNode(ControlNode):
     _OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX = "output_success_"
     _OUTPUT_FAILURE_PARAMETER_NAME_PREFIX = "output_failure_"
 
+    # Default selection option constant
+    _DEFAULT_SELECTION_TEXT = "Select an Engine Request Type"
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
         # Store discovered request types and their result mappings
         self._request_types = self._discover_request_types()
 
-        # Track dynamically created parameters for easier management
-        self._dynamic_input_parameters: list[Parameter] = []
-        self._dynamic_output_parameters: list[Parameter] = []
+        # Parameters will be categorized dynamically by scanning once and grouping by name patterns
 
-        # Create parameter groups for organizing inputs and outputs with their info messages
-        with ParameterGroup(name="Input Parameters") as input_group:
-            # Documentation message for the selected request type
-            self.documentation_message = ParameterMessage(
-                variant="info",
-                value="Select a request type to see its documentation and parameters.",
-                name="documentation",
-            )
-        self.input_group = input_group
-        self.add_node_element(self.input_group)
+        # Track if we've done initial parameter setup
+        self._initial_parameters_created = False
 
-        with ParameterGroup(name="Success Outputs") as success_group:
-            # Info message for success outputs (will be updated dynamically)
-            self.success_info_message = ParameterMessage(
-                variant="success",
-                value="",  # Will be populated when needed
-                name="success_info",
-            )
-        self.success_output_group = success_group
-        self.add_node_element(self.success_output_group)
+        # Create request type selector dropdown - build options first
+        self.request_options = []
+        for request_name, info in sorted(self._request_types.items()):
+            display_name = request_name
+            if not info.has_results:
+                display_name += " *"
+            self.request_options.append(display_name)
 
-        with ParameterGroup(name="Failure Outputs") as failure_group:
-            # Info message for failure outputs (will be updated dynamically)
-            self.failure_info_message = ParameterMessage(
-                variant="warning",
-                value="",  # Will be populated when needed
-                name="failure_info",
-            )
-        self.failure_output_group = failure_group
-        self.add_node_element(self.failure_output_group)
+        # Always add the default selection option as the first choice
+        all_options = [self._DEFAULT_SELECTION_TEXT]
+        if self.request_options:
+            all_options.extend(self.request_options)
+        else:
+            all_options.append("No requests available")
+
+        self.request_selector = Parameter(
+            name="request_type",
+            tooltip="Select the RequestPayload type to execute",
+            type="str",
+            default_value=self._DEFAULT_SELECTION_TEXT,
+            traits={Options(choices=all_options)},
+        )
+        self.add_parameter(self.request_selector)
+
+        # Documentation message for the selected request type
+        self.documentation_message = ParameterMessage(
+            variant="info",
+            value="Select a request type to see its documentation and parameters.",
+            name="documentation",
+        )
+        self.add_node_element(self.documentation_message)
+
+        # Info message for success outputs (will be updated dynamically)
+        self.success_info_message = ParameterMessage(
+            variant="success",
+            value="Success Output Parameters: Values returned when the request executes successfully will appear here.",
+            name="success_info",
+        )
+        self.add_node_element(self.success_info_message)
+
+        # Info message for failure outputs (will be updated dynamically)
+        self.failure_info_message = ParameterMessage(
+            variant="warning",
+            value="Failure Output Parameters: Values returned when the request fails or encounters errors will appear here.",
+            name="failure_info",
+        )
+        self.add_node_element(self.failure_info_message)
 
         # Create static UI elements that will be populated dynamically
         self.error_message = ParameterMessage(
@@ -107,26 +149,6 @@ class EngineNode(ControlNode):
             name="error_message",
         )
         self.add_node_element(self.error_message)
-
-        # Create request type selector dropdown
-        self.request_options = []
-        for request_name, info in sorted(self._request_types.items()):
-            display_name = request_name
-            if not info.has_results:
-                display_name += " *"
-            self.request_options.append(display_name)
-
-        # Ensure we have at least one option for the Parameter
-        default_options = self.request_options if self.request_options else ["No requests available"]
-
-        self.request_selector = Parameter(
-            name="request_type",
-            tooltip="Select the RequestPayload type to execute",
-            type="str",
-            default_value=default_options[0],
-            traits={Options(choices=default_options)},
-        )
-        self.add_parameter(self.request_selector)
 
         # Control outputs for success/failure routing
         self.success_output = ControlParameterOutput(
@@ -143,9 +165,8 @@ class EngineNode(ControlNode):
         )
         self.add_parameter(self.failure_output)
 
-        # Initialize with first valid request type if available
-        if self.request_options:
-            self._update_parameters_for_request_type(self.request_options[0])
+        # Initial parameter creation will be deferred to validate_before_workflow_run
+        # to ensure the node is properly registered first
 
         # Track execution state for control flow routing
         self._execution_succeeded: bool | None = None
@@ -201,8 +222,6 @@ class EngineNode(ControlNode):
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Engine nodes have side effects and need to execute every workflow run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )
@@ -210,8 +229,6 @@ class EngineNode(ControlNode):
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Engine nodes have side effects and need to execute every time they run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
         self.make_node_unresolved(
             current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
         )
@@ -227,6 +244,11 @@ class EngineNode(ControlNode):
         skip_before_value_set: bool = False,
     ) -> None:
         """Override to handle request_type parameter changes."""
+        # Store old value before updating if this is the request selector
+        old_value = None
+        if param_name == self.request_selector.name:
+            old_value = self.get_parameter_value(self.request_selector.name)
+
         super().set_parameter_value(
             param_name,
             value,
@@ -236,7 +258,7 @@ class EngineNode(ControlNode):
         )
 
         if param_name == self.request_selector.name:
-            self._update_parameters_for_request_type(value)
+            self._update_parameters_for_request_type(value, old_value)
 
     def _is_dynamic_parameter(self, parameter_name: str) -> bool:
         """Check if a parameter is dynamically created (vs static control parameters)."""
@@ -251,6 +273,111 @@ class EngineNode(ControlNode):
             )
         )
 
+    def _get_current_dynamic_parameters(self) -> CategorizedParameters:
+        """Get current dynamic parameters categorized by type.
+
+        Returns:
+            CategorizedParameters: Named tuple with input, success, and failure parameter lists
+        """
+        input_parameters = []
+        success_output_parameters = []
+        failure_output_parameters = []
+
+        for param in self.parameters:
+            if param.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX):
+                input_parameters.append(param)
+            elif param.name.startswith(self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX):
+                success_output_parameters.append(param)
+            elif param.name.startswith(self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX):
+                failure_output_parameters.append(param)
+
+        return CategorizedParameters(input_parameters, success_output_parameters, failure_output_parameters)
+
+    def _execute_systematic_parameter_transition(
+        self, _old_request_info: RequestInfo | None, new_request_info: RequestInfo
+    ) -> None:
+        """Execute systematic parameter transition following the outlined approach."""
+        # Step 1: Outline all parameters that need to be preserved, removed, and added
+        current_params = self._get_current_dynamic_parameters()
+
+        input_plan = self._outline_parameter_transition_plan(
+            current_names={p.name for p in current_params.input_parameters},
+            desired_names=self._get_desired_input_parameter_names(new_request_info.request_class),
+        )
+
+        success_plan = self._outline_parameter_transition_plan(
+            current_names={p.name for p in current_params.success_output_parameters},
+            desired_names=self._get_desired_output_parameter_names(new_request_info.success_class, ResultType.SUCCESS),
+        )
+
+        failure_plan = self._outline_parameter_transition_plan(
+            current_names={p.name for p in current_params.failure_output_parameters},
+            desired_names=self._get_desired_output_parameter_names(new_request_info.failure_class, ResultType.FAILURE),
+        )
+
+        # Step 2: For each group, remove parameters by name, then add new parameters
+        self._execute_transition_plan(input_plan, new_request_info.request_class, "input")
+        self._execute_transition_plan(success_plan, new_request_info.success_class, "success")
+        self._execute_transition_plan(failure_plan, new_request_info.failure_class, "failure")
+
+        # Step 3: Sort parameters into their respective groups (using ParameterGroups)
+        self._organize_parameters_into_groups()
+
+    def _outline_parameter_transition_plan(self, current_names: set[str], desired_names: set[str]) -> TransitionPlan:
+        """Create a generic transition plan for a set of parameters."""
+        to_preserve = current_names & desired_names
+        to_remove = current_names - desired_names
+        to_add = desired_names - current_names
+
+        return TransitionPlan(
+            to_preserve=to_preserve,
+            to_remove=to_remove,
+            to_add=to_add,
+        )
+
+    def _get_desired_input_parameter_names(self, request_class: type) -> set[str]:
+        """Get the set of input parameter names that should exist for this request class."""
+        if not (dataclasses.is_dataclass(request_class) and dataclasses.fields(request_class)):
+            return set()
+
+        fields_to_show = [f for f in dataclasses.fields(request_class) if f.name != "request_id"]
+        return {f"{self._INPUT_PARAMETER_NAME_PREFIX}{field.name}" for field in fields_to_show}
+
+    def _get_desired_output_parameter_names(self, result_class: type | None, prefix: ResultType) -> set[str]:
+        """Get the set of output parameter names that should exist for this result class."""
+        if not (result_class and dataclasses.is_dataclass(result_class)):
+            return set()
+
+        fields_to_show = [f for f in dataclasses.fields(result_class) if f.name not in self._SKIP_RESULT_FIELDS]
+        prefix_str = self._get_prefix_string(prefix)
+        return {f"{prefix_str}{field.name}" for field in fields_to_show}
+
+    def _execute_transition_plan(self, plan: TransitionPlan, param_class: type | None, param_type: str) -> None:
+        """Execute a single transition plan by removing and adding parameters by name."""
+        # Remove parameters by name (not by index)
+        for param_name in plan.to_remove:
+            remove_request = RemoveParameterFromNodeRequest(parameter_name=param_name, node_name=self.name)
+            result = GriptapeNodes.handle_request(remove_request)
+            if not isinstance(result, RemoveParameterFromNodeResultSuccess):
+                logger.warning("Failed to remove parameter %s: %s", param_name, result.result_details)
+
+        # Add new parameters for this group
+        if plan.to_add and param_class:
+            if param_type == "input":
+                self._create_request_parameters(param_class, skip_existing=plan.to_preserve)
+            elif param_type in ("success", "failure"):
+                result_type = ResultType.SUCCESS if param_type == "success" else ResultType.FAILURE
+                self._create_output_parameters_for_class(
+                    param_class, result_type, self._SKIP_RESULT_FIELDS, skip_existing=plan.to_preserve
+                )
+
+    def _organize_parameters_into_groups(self) -> None:
+        """Step 3: Let the framework handle parameter positioning naturally."""
+        # The parameters are created in the correct order during the add/remove phase
+        # Static elements (messages) are already positioned correctly
+        # Dynamic parameters should appear in their natural creation order
+        # No complex positioning needed - the framework handles this
+
     def _transition_parameters_smartly(self, old_request_info: RequestInfo, new_request_info: RequestInfo) -> None:
         """Intelligently transition parameters, preserving connections where possible."""
         logger.info(
@@ -259,14 +386,17 @@ class EngineNode(ControlNode):
             new_request_info.request_class.__name__,
         )
 
+        # Get current parameters once for use in all operations
+        current_params = self._get_current_dynamic_parameters()
+
         # Analyze which parameters can survive the transition
         surviving_params = self._analyze_parameter_compatibility(old_request_info, new_request_info)
 
         # Remove parameters that won't survive (using events for proper cleanup)
-        self._remove_non_surviving_parameters(surviving_params)
+        self._remove_non_surviving_parameters(surviving_params, current_params)
 
         # Clear all UI elements except survivors
-        self._clear_non_surviving_dynamic_elements(surviving_params=surviving_params)
+        self._clear_non_surviving_dynamic_elements(surviving_params, current_params)
 
         # Create new parameters (skipping survivors)
         self._create_request_parameters(new_request_info.request_class, skip_existing=surviving_params)
@@ -410,16 +540,17 @@ class EngineNode(ControlNode):
                 surviving_params.add(param_name)
                 logger.debug("Output parameter %s will survive transition", param_name)
 
-    def _remove_non_surviving_parameters(self, surviving_params: set[str]) -> None:
+    def _remove_non_surviving_parameters(
+        self, surviving_params: set[str], current_params: CategorizedParameters
+    ) -> None:
         """Remove parameters that won't survive the transition using proper events."""
-        from griptape_nodes.retained_mode.events.parameter_events import (
-            RemoveParameterFromNodeRequest,
-            RemoveParameterFromNodeResultSuccess,
+        # Find parameters that aren't surviving using the provided current_params
+        all_dynamic_params = (
+            current_params.input_parameters
+            + current_params.success_output_parameters
+            + current_params.failure_output_parameters
         )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        # Find all dynamic parameters that aren't surviving
-        params_to_remove = self._find_parameters_to_remove(surviving_params=surviving_params)
+        params_to_remove = [param.name for param in all_dynamic_params if param.name not in surviving_params]
 
         # Remove them using the proper event system
         for param_name in params_to_remove:
@@ -429,63 +560,63 @@ class EngineNode(ControlNode):
             if not isinstance(remove_result, RemoveParameterFromNodeResultSuccess):
                 logger.error("Failed to remove parameter %s: %s", param_name, remove_result.result_details)
 
-    def _find_parameters_to_remove(self, surviving_params: set[str]) -> list[str]:
-        """Find dynamic parameters that need to be removed during transition."""
-        params_to_remove = []
-        for param in self.parameters:
-            is_dynamic = self._is_dynamic_parameter(parameter_name=param.name)
-            is_surviving = param.name in surviving_params
-            if is_dynamic and not is_surviving:
-                params_to_remove.append(param.name)
-        return params_to_remove
-
-    def _clear_non_surviving_dynamic_elements(self, surviving_params: set[str]) -> None:
+    def _clear_non_surviving_dynamic_elements(
+        self, surviving_params: set[str], current_params: CategorizedParameters
+    ) -> None:
         """Clear dynamic parameters and UI elements that aren't surviving the transition."""
         from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # Remove non-surviving dynamic input parameters using proper events
-        for param in self._dynamic_input_parameters[:]:
+        # Remove non-surviving parameters using the provided current_params
+        all_dynamic_params = (
+            current_params.input_parameters
+            + current_params.success_output_parameters
+            + current_params.failure_output_parameters
+        )
+
+        for param in all_dynamic_params:
             if param.name not in surviving_params:
                 remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
                 GriptapeNodes.handle_request(remove_request)
-                self._dynamic_input_parameters.remove(param)
 
-        # Remove non-surviving dynamic output parameters using proper events
-        for param in self._dynamic_output_parameters[:]:
-            if param.name not in surviving_params:
-                remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
-                GriptapeNodes.handle_request(remove_request)
-                self._dynamic_output_parameters.remove(param)
-
-        # Clear static UI elements content
-        self.success_info_message.value = ""
-        self.failure_info_message.value = ""
+        # Reset static UI elements to explanatory content
+        self.success_info_message.value = (
+            "Success Output Parameters: Values returned when the request executes successfully will appear here."
+        )
+        self.failure_info_message.value = (
+            "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+        )
         self.error_message.value = ""
 
-    def _clear_all_dynamic_elements(self) -> None:
+    def _clear_all_dynamic_elements(self, current_params: CategorizedParameters) -> None:
         """Clear all dynamic parameters and UI elements for fresh start."""
-        from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        # Remove all parameters using the provided current_params
+        all_dynamic_params = (
+            current_params.input_parameters
+            + current_params.success_output_parameters
+            + current_params.failure_output_parameters
+        )
 
-        # Remove all dynamic input parameters using proper events
-        for param in self._dynamic_input_parameters[:]:
-            remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
-            GriptapeNodes.handle_request(remove_request)
+        for param in all_dynamic_params:
+            # Check if parameter still exists before trying to remove it
+            if self.get_parameter_by_name(param.name) is not None:
+                remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
+                result = GriptapeNodes.handle_request(remove_request)
+                if not hasattr(result, "succeeded") or not result.succeeded():
+                    logger.debug(
+                        "Failed to remove parameter %s: %s",
+                        param.name,
+                        getattr(result, "result_details", "Unknown error"),
+                    )
 
-        # Remove all dynamic output parameters using proper events
-        for param in self._dynamic_output_parameters[:]:
-            remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
-            GriptapeNodes.handle_request(remove_request)
-
-        # Clear static UI elements content
-        self.success_info_message.value = ""
-        self.failure_info_message.value = ""
+        # Reset static UI elements to explanatory content
+        self.success_info_message.value = (
+            "Success Output Parameters: Values returned when the request executes successfully will appear here."
+        )
+        self.failure_info_message.value = (
+            "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+        )
         self.error_message.value = ""
-
-        # Clear the tracking lists
-        self._dynamic_input_parameters.clear()
-        self._dynamic_output_parameters.clear()
 
     # Private Methods
     def _discover_request_types(self) -> dict[str, RequestInfo]:
@@ -555,21 +686,30 @@ class EngineNode(ControlNode):
 
         return ResultClasses(success_class, failure_class)
 
-    def _update_parameters_for_request_type(self, selected_type: str) -> None:
+    def _update_parameters_for_request_type(self, selected_type: str, _old_type: str | None = None) -> None:
         """Update node parameters based on selected request type with smart connection preservation."""
         # Remove asterisk if present
         clean_type = selected_type.rstrip(" *")
 
+        # Handle the default selection option
+        if clean_type == self._DEFAULT_SELECTION_TEXT:
+            # Clear all dynamic parameters and reset messages
+            current_params = self._get_current_dynamic_parameters()
+            self._clear_all_dynamic_elements(current_params)
+
+            # Reset all messages to default state
+            self.documentation_message.value = "Select a request type to see its documentation and parameters."
+            self.success_info_message.value = (
+                "Success Output Parameters: Values returned when the request executes successfully will appear here."
+            )
+            self.failure_info_message.value = "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+            self.error_message.value = ""
+            return
+
         if clean_type not in self._request_types:
             return
 
-        # Get old and new request information
-        current_type = self.get_parameter_value(self.request_selector.name)
-        if current_type:
-            current_clean_type = current_type.rstrip(" *")
-            old_request_info = self._request_types.get(current_clean_type)
-        else:
-            old_request_info = None
+        # Note: _old_type parameter preserved for potential future smart transition logic
 
         new_request_info = self._request_types[clean_type]
         new_request_class = new_request_info.request_class
@@ -588,12 +728,15 @@ class EngineNode(ControlNode):
         # Clear error message for usable request types
         self.error_message.value = ""
 
-        # Perform smart parameter transition
-        if old_request_info:
-            self._transition_parameters_smartly(old_request_info, new_request_info)
+        # Systematic parameter transition approach
+        if _old_type:
+            old_clean_type = _old_type.rstrip(" *")
+            old_request_info = self._request_types.get(old_clean_type)
+            self._execute_systematic_parameter_transition(old_request_info, new_request_info)
         else:
             # First time setup - just create all parameters
-            self._clear_all_dynamic_elements()
+            current_params = self._get_current_dynamic_parameters()
+            self._clear_all_dynamic_elements(current_params)
             self._create_request_parameters(new_request_class)
             self._create_result_parameters(new_request_info)
 
@@ -615,55 +758,51 @@ class EngineNode(ControlNode):
             type_hints = {}
 
         skip_existing = skip_existing or set()
-        from griptape_nodes.retained_mode.events.parameter_events import (
-            AddParameterToNodeRequest,
-            AddParameterToNodeResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         for field in fields_to_show:
             param_name = f"{self._INPUT_PARAMETER_NAME_PREFIX}{field.name}"
             if param_name not in skip_existing:
-                # Get field type information
                 field_type = type_hints.get(field.name, field.type)
-                input_types = self._get_input_types_for_field(field_type)
+                self._create_single_input_parameter(field, field_type, param_name)
 
-                # Build tooltip
-                tooltip = f"Input for {field.name}"
-                if field.metadata.get("description"):
-                    tooltip = field.metadata["description"]
+    def _create_single_input_parameter(self, field: Any, field_type: Any, param_name: str) -> None:
+        """Create a single input parameter and position it correctly."""
+        input_types = self._get_input_types_for_field(field_type)
 
-                # Build display name
-                display_name = field.name
-                if self._is_optional_type(field_type):
-                    display_name += " (optional)"
+        # Build tooltip
+        tooltip = f"Input for {field.name}"
+        if field.metadata.get("description"):
+            tooltip = field.metadata["description"]
 
-                # Get default value
-                default_value = self._get_field_default_value(field)
+        # Build display name
+        display_name = field.name
+        if self._is_optional_type(field_type):
+            display_name += " (optional)"
 
-                # Create parameter using the event system
-                add_request = AddParameterToNodeRequest(
-                    node_name=self.name,
-                    parameter_name=param_name,
-                    input_types=input_types,
-                    tooltip=tooltip,
-                    mode_allowed_input=True,
-                    mode_allowed_property=True,
-                    mode_allowed_output=False,
-                    default_value=default_value,
-                    ui_options={"display_name": display_name},
-                    is_user_defined=True,
-                )
+        # Get default value
+        default_value = self._get_field_default_value(field)
 
-                result = GriptapeNodes.handle_request(add_request)
-                if isinstance(result, AddParameterToNodeResultSuccess):
-                    # Get the parameter and add it to the input group
-                    param = self.get_parameter_by_name(param_name)
-                    if param:
-                        # Remove from root level and add to input group
-                        self.root_ui_element.remove_child(param)
-                        self.input_group.add_child(param)
-                        self._dynamic_input_parameters.append(param)
+        # Create parameter using the event system
+        add_request = AddParameterToNodeRequest(
+            node_name=self.name,
+            parameter_name=param_name,
+            input_types=input_types,
+            tooltip=tooltip,
+            mode_allowed_input=True,
+            mode_allowed_property=True,
+            mode_allowed_output=False,
+            default_value=default_value,
+            ui_options={"display_name": display_name},
+            is_user_defined=True,
+        )
+
+        result = GriptapeNodes.handle_request(add_request)
+        if not isinstance(result, AddParameterToNodeResultSuccess):
+            logger.warning(
+                "Failed to create input parameter %s: %s",
+                param_name,
+                result.result_details if hasattr(result, "result_details") else result,
+            )
 
     def _get_field_default_value(self, field: Any) -> Any:
         """Get the default value for a dataclass field."""
@@ -715,8 +854,10 @@ class EngineNode(ControlNode):
                 success_class, ResultType.SUCCESS, self._SKIP_RESULT_FIELDS, skip_existing
             )
         else:
-            # Clear success info if no success class
-            self.success_info_message.value = ""
+            # Show explanatory text if no success class
+            self.success_info_message.value = (
+                "Success Output Parameters: Values returned when the request executes successfully will appear here."
+            )
 
         # Add Failure Parameters if failure class exists
         if failure_class:
@@ -726,8 +867,8 @@ class EngineNode(ControlNode):
                 failure_class, ResultType.FAILURE, self._SKIP_RESULT_FIELDS, skip_existing
             )
         else:
-            # Clear failure info if no failure class
-            self.failure_info_message.value = ""
+            # Show explanatory text if no failure class
+            self.failure_info_message.value = "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
 
     def _create_output_parameters_for_class(
         self, result_class: Any, prefix: ResultType, skip_fields: set, skip_existing: set[str] | None = None
@@ -769,12 +910,6 @@ class EngineNode(ControlNode):
 
     def _create_single_output_parameter(self, field: Any, field_type: Any, param_name: str, prefix: ResultType) -> None:
         """Create a single output parameter using the event system."""
-        from griptape_nodes.retained_mode.events.parameter_events import (
-            AddParameterToNodeRequest,
-            AddParameterToNodeResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         output_type = self._get_output_type_for_field(field_type)
 
         tooltip = f"Output from {prefix.value} result: {field.name} (type: {output_type})"
@@ -798,15 +933,12 @@ class EngineNode(ControlNode):
         )
 
         result = GriptapeNodes.handle_request(add_request)
-        if isinstance(result, AddParameterToNodeResultSuccess):
-            # Get the parameter and add it to the appropriate output group
-            param = self.get_parameter_by_name(param_name)
-            if param:
-                # Remove from root level and add to appropriate group
-                self.root_ui_element.remove_child(param)
-                target_group = self.success_output_group if prefix == ResultType.SUCCESS else self.failure_output_group
-                target_group.add_child(param)
-                self._dynamic_output_parameters.append(param)
+        if not isinstance(result, AddParameterToNodeResultSuccess):
+            logger.warning(
+                "Failed to create output parameter %s: %s",
+                param_name,
+                result.result_details if hasattr(result, "result_details") else result,
+            )
 
     def _python_type_to_param_type(self, python_type: Any) -> str:
         """Convert Python type annotation to parameter type string."""
