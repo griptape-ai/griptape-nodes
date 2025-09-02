@@ -317,9 +317,15 @@ class EngineNode(ControlNode):
         )
 
         # Step 2: For each group, remove parameters by name, then add new parameters
-        self._execute_transition_plan(plan=input_plan, param_class=new_request_info.request_class, param_type=ParamType.INPUT)
-        self._execute_transition_plan(plan=success_plan, param_class=new_request_info.success_class, param_type=ParamType.SUCCESS)
-        self._execute_transition_plan(plan=failure_plan, param_class=new_request_info.failure_class, param_type=ParamType.FAILURE)
+        self._execute_transition_plan(
+            plan=input_plan, param_class=new_request_info.request_class, param_type=ParamType.INPUT
+        )
+        self._execute_transition_plan(
+            plan=success_plan, param_class=new_request_info.success_class, param_type=ParamType.SUCCESS
+        )
+        self._execute_transition_plan(
+            plan=failure_plan, param_class=new_request_info.failure_class, param_type=ParamType.FAILURE
+        )
 
         # Step 3: Sort parameters into their respective groups (using ParameterGroups)
         self._organize_parameters_into_groups()
@@ -371,44 +377,51 @@ class EngineNode(ControlNode):
                     result_class=param_class,
                     prefix=param_type,
                     skip_fields=self._SKIP_RESULT_FIELDS,
-                    skip_existing=plan.to_preserve
+                    skip_existing=plan.to_preserve,
                 )
-
 
     def _reorder_all_elements(self) -> None:
         """Reorder all elements in the correct sequence from scratch."""
         try:
             new_order = []
 
-            # 1. Control outputs (always first)
+            # 1. Execution control parameters
+            new_order.append("exec_in")
+            new_order.append("exec_out")
+
+            # 2. Control outputs
             new_order.append(self.success_output.name)
             new_order.append(self.failure_output.name)
 
-            # 2. request_type selector
+            # 3. request_type selector
             new_order.append(self.request_selector.name)
 
-            # 3. documentation ParameterMessage
+            # 4. documentation ParameterMessage
             new_order.append(self.documentation_message.name)
 
-            # 4. All input parameters
+            # 5. All input parameters
             input_params = [p for p in self.parameters if p.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX)]
             new_order.extend(param.name for param in input_params)
 
-            # 5. Success ParameterMessage
+            # 6. Success ParameterMessage
             new_order.append(self.success_info_message.name)
 
-            # 6. All success parameters
-            success_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_PARAMETER_NAME_PREFIX_SUCCESS)]
+            # 7. All success parameters
+            success_params = [
+                p for p in self.parameters if p.name.startswith(self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX)
+            ]
             new_order.extend(param.name for param in success_params)
 
-            # 7. Failure ParameterMessage
+            # 8. Failure ParameterMessage
             new_order.append(self.failure_info_message.name)
 
-            # 8. All failure parameters
-            failure_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_PARAMETER_NAME_PREFIX_FAILURE)]
+            # 9. All failure parameters
+            failure_params = [
+                p for p in self.parameters if p.name.startswith(self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX)
+            ]
             new_order.extend(param.name for param in failure_params)
 
-            # 9. Error message (always at end)
+            # 10. Error message (always at end)
             new_order.append(self.error_message.name)
 
             # Use the BaseNode's reorder_elements method
@@ -626,9 +639,7 @@ class EngineNode(ControlNode):
         self.success_info_message.value = (
             "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
-        self.failure_info_message.value = (
-            "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
-        )
+        self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
         self.error_message.value = ""
 
     def _clear_all_dynamic_elements(self, current_params: CategorizedParameters) -> None:
@@ -656,9 +667,7 @@ class EngineNode(ControlNode):
         self.success_info_message.value = (
             "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
-        self.failure_info_message.value = (
-            "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
-        )
+        self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
         self.error_message.value = ""
 
     # Private Methods
@@ -742,9 +751,7 @@ class EngineNode(ControlNode):
 
             # Reset all messages to default state
             self.documentation_message.value = "Select a request type to see its documentation and parameters."
-            self.success_info_message.value = (
-                "Success Output Parameters: These values will be populated only after the request executes successfully."
-            )
+            self.success_info_message.value = "Success Output Parameters: These values will be populated only after the request executes successfully."
             self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
             self.error_message.value = ""
             return
@@ -899,9 +906,7 @@ class EngineNode(ControlNode):
             )
         else:
             # Show explanatory text if no success class
-            self.success_info_message.value = (
-                "Success Output Parameters: These values will be populated only after the request executes successfully."
-            )
+            self.success_info_message.value = "Success Output Parameters: These values will be populated only after the request executes successfully."
 
         # Add Failure Parameters if failure class exists
         if failure_class:
