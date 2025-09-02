@@ -31,9 +31,10 @@ from griptape_nodes.traits.options import Options
 logger = logging.getLogger(__name__)
 
 
-class ResultType(Enum):
-    """Enum for result parameter types to avoid magic strings."""
+class ParamType(Enum):
+    """Enum for parameter types to avoid magic strings."""
 
+    INPUT = "input"
     SUCCESS = "success"
     FAILURE = "failure"
 
@@ -129,7 +130,7 @@ class EngineNode(ControlNode):
         # Info message for success outputs (will be updated dynamically)
         self.success_info_message = ParameterMessage(
             variant="success",
-            value="Success Output Parameters: Values returned when the request executes successfully will appear here.",
+            value="Success Output Parameters: These values will be populated only after the request executes successfully.",
             name="success_info",
         )
         self.add_node_element(self.success_info_message)
@@ -137,7 +138,7 @@ class EngineNode(ControlNode):
         # Info message for failure outputs (will be updated dynamically)
         self.failure_info_message = ParameterMessage(
             variant="warning",
-            value="Failure Output Parameters: Values returned when the request fails or encounters errors will appear here.",
+            value="Failure Output Parameters: These values will be populated only after the request fails or encounters errors.",
             name="failure_info",
         )
         self.add_node_element(self.failure_info_message)
@@ -307,18 +308,18 @@ class EngineNode(ControlNode):
 
         success_plan = self._outline_parameter_transition_plan(
             current_names={p.name for p in current_params.success_output_parameters},
-            desired_names=self._get_desired_output_parameter_names(new_request_info.success_class, ResultType.SUCCESS),
+            desired_names=self._get_desired_output_parameter_names(new_request_info.success_class, ParamType.SUCCESS),
         )
 
         failure_plan = self._outline_parameter_transition_plan(
             current_names={p.name for p in current_params.failure_output_parameters},
-            desired_names=self._get_desired_output_parameter_names(new_request_info.failure_class, ResultType.FAILURE),
+            desired_names=self._get_desired_output_parameter_names(new_request_info.failure_class, ParamType.FAILURE),
         )
 
         # Step 2: For each group, remove parameters by name, then add new parameters
-        self._execute_transition_plan(input_plan, new_request_info.request_class, "input")
-        self._execute_transition_plan(success_plan, new_request_info.success_class, "success")
-        self._execute_transition_plan(failure_plan, new_request_info.failure_class, "failure")
+        self._execute_transition_plan(plan=input_plan, param_class=new_request_info.request_class, param_type=ParamType.INPUT)
+        self._execute_transition_plan(plan=success_plan, param_class=new_request_info.success_class, param_type=ParamType.SUCCESS)
+        self._execute_transition_plan(plan=failure_plan, param_class=new_request_info.failure_class, param_type=ParamType.FAILURE)
 
         # Step 3: Sort parameters into their respective groups (using ParameterGroups)
         self._organize_parameters_into_groups()
@@ -343,7 +344,7 @@ class EngineNode(ControlNode):
         fields_to_show = [f for f in dataclasses.fields(request_class) if f.name != "request_id"]
         return {f"{self._INPUT_PARAMETER_NAME_PREFIX}{field.name}" for field in fields_to_show}
 
-    def _get_desired_output_parameter_names(self, result_class: type | None, prefix: ResultType) -> set[str]:
+    def _get_desired_output_parameter_names(self, result_class: type | None, prefix: ParamType) -> set[str]:
         """Get the set of output parameter names that should exist for this result class."""
         if not (result_class and dataclasses.is_dataclass(result_class)):
             return set()
@@ -352,7 +353,7 @@ class EngineNode(ControlNode):
         prefix_str = self._get_prefix_string(prefix)
         return {f"{prefix_str}{field.name}" for field in fields_to_show}
 
-    def _execute_transition_plan(self, plan: TransitionPlan, param_class: type | None, param_type: str) -> None:
+    def _execute_transition_plan(self, plan: TransitionPlan, param_class: type | None, param_type: ParamType) -> None:
         """Execute a single transition plan by removing and adding parameters by name."""
         # Remove parameters by name (not by index)
         for param_name in plan.to_remove:
@@ -363,20 +364,62 @@ class EngineNode(ControlNode):
 
         # Add new parameters for this group
         if plan.to_add and param_class:
-            if param_type == "input":
-                self._create_request_parameters(param_class, skip_existing=plan.to_preserve)
-            elif param_type in ("success", "failure"):
-                result_type = ResultType.SUCCESS if param_type == "success" else ResultType.FAILURE
+            if param_type == ParamType.INPUT:
+                self._create_request_parameters(request_class=param_class, skip_existing=plan.to_preserve)
+            elif param_type in (ParamType.SUCCESS, ParamType.FAILURE):
                 self._create_output_parameters_for_class(
-                    param_class, result_type, self._SKIP_RESULT_FIELDS, skip_existing=plan.to_preserve
+                    result_class=param_class,
+                    prefix=param_type,
+                    skip_fields=self._SKIP_RESULT_FIELDS,
+                    skip_existing=plan.to_preserve
                 )
 
+
+    def _reorder_all_elements(self) -> None:
+        """Reorder all elements in the correct sequence from scratch."""
+        try:
+            new_order = []
+
+            # 1. Control outputs (always first)
+            new_order.append(self.success_output.name)
+            new_order.append(self.failure_output.name)
+
+            # 2. request_type selector
+            new_order.append(self.request_selector.name)
+
+            # 3. documentation ParameterMessage
+            new_order.append(self.documentation_message.name)
+
+            # 4. All input parameters
+            input_params = [p for p in self.parameters if p.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX)]
+            new_order.extend(param.name for param in input_params)
+
+            # 5. Success ParameterMessage
+            new_order.append(self.success_info_message.name)
+
+            # 6. All success parameters
+            success_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_PARAMETER_NAME_PREFIX_SUCCESS)]
+            new_order.extend(param.name for param in success_params)
+
+            # 7. Failure ParameterMessage
+            new_order.append(self.failure_info_message.name)
+
+            # 8. All failure parameters
+            failure_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_PARAMETER_NAME_PREFIX_FAILURE)]
+            new_order.extend(param.name for param in failure_params)
+
+            # 9. Error message (always at end)
+            new_order.append(self.error_message.name)
+
+            # Use the BaseNode's reorder_elements method
+            self.reorder_elements(element_order=new_order)
+
+        except Exception as e:
+            logger.warning("Failed to reorder all elements: %s", e)
+
     def _organize_parameters_into_groups(self) -> None:
-        """Step 3: Let the framework handle parameter positioning naturally."""
-        # The parameters are created in the correct order during the add/remove phase
-        # Static elements (messages) are already positioned correctly
-        # Dynamic parameters should appear in their natural creation order
-        # No complex positioning needed - the framework handles this
+        """Step 3: Reorder all elements from scratch in the correct sequence."""
+        self._reorder_all_elements()
 
     def _transition_parameters_smartly(self, old_request_info: RequestInfo, new_request_info: RequestInfo) -> None:
         """Intelligently transition parameters, preserving connections where possible."""
@@ -474,7 +517,7 @@ class EngineNode(ControlNode):
             self._analyze_result_class_compatibility(
                 old_class=old_request_info.success_class,
                 new_class=new_request_info.success_class,
-                prefix=ResultType.SUCCESS,
+                prefix=ParamType.SUCCESS,
                 surviving_params=surviving_params,
             )
 
@@ -483,12 +526,12 @@ class EngineNode(ControlNode):
             self._analyze_result_class_compatibility(
                 old_class=old_request_info.failure_class,
                 new_class=new_request_info.failure_class,
-                prefix=ResultType.FAILURE,
+                prefix=ParamType.FAILURE,
                 surviving_params=surviving_params,
             )
 
     def _analyze_result_class_compatibility(
-        self, old_class: type, new_class: type, prefix: ResultType, surviving_params: set[str]
+        self, old_class: type, new_class: type, prefix: ParamType, surviving_params: set[str]
     ) -> None:
         """Analyze compatibility between old and new result classes."""
         old_fields = {f.name: f for f in dataclasses.fields(old_class) if f.name not in self._SKIP_RESULT_FIELDS}
@@ -509,9 +552,9 @@ class EngineNode(ControlNode):
             new_hints = {}
 
         match prefix:
-            case ResultType.SUCCESS:
+            case ParamType.SUCCESS:
                 prefix_str = self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX
-            case ResultType.FAILURE:
+            case ParamType.FAILURE:
                 prefix_str = self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX
             case _:
                 msg = f"Invalid result type prefix: {prefix}"
@@ -581,10 +624,10 @@ class EngineNode(ControlNode):
 
         # Reset static UI elements to explanatory content
         self.success_info_message.value = (
-            "Success Output Parameters: Values returned when the request executes successfully will appear here."
+            "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
         self.failure_info_message.value = (
-            "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+            "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
         )
         self.error_message.value = ""
 
@@ -611,10 +654,10 @@ class EngineNode(ControlNode):
 
         # Reset static UI elements to explanatory content
         self.success_info_message.value = (
-            "Success Output Parameters: Values returned when the request executes successfully will appear here."
+            "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
         self.failure_info_message.value = (
-            "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+            "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
         )
         self.error_message.value = ""
 
@@ -700,9 +743,9 @@ class EngineNode(ControlNode):
             # Reset all messages to default state
             self.documentation_message.value = "Select a request type to see its documentation and parameters."
             self.success_info_message.value = (
-                "Success Output Parameters: Values returned when the request executes successfully will appear here."
+                "Success Output Parameters: These values will be populated only after the request executes successfully."
             )
-            self.failure_info_message.value = "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+            self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
             self.error_message.value = ""
             return
 
@@ -769,10 +812,11 @@ class EngineNode(ControlNode):
         """Create a single input parameter and position it correctly."""
         input_types = self._get_input_types_for_field(field_type)
 
-        # Build tooltip
-        tooltip = f"Input for {field.name}"
+        # Build tooltip with type information
+        input_type_str = ", ".join(input_types) if input_types else "any"
+        tooltip = f"Input for {field.name} (type: {input_type_str})"
         if field.metadata.get("description"):
-            tooltip = field.metadata["description"]
+            tooltip = f"{field.metadata['description']} (type: {input_type_str})"
 
         # Build display name
         display_name = field.name
@@ -851,12 +895,12 @@ class EngineNode(ControlNode):
             success_doc = success_class.__doc__ if success_class.__doc__ else success_class.__name__
             self.success_info_message.value = f"Success Result: {success_doc}"
             self._create_output_parameters_for_class(
-                success_class, ResultType.SUCCESS, self._SKIP_RESULT_FIELDS, skip_existing
+                success_class, ParamType.SUCCESS, self._SKIP_RESULT_FIELDS, skip_existing
             )
         else:
             # Show explanatory text if no success class
             self.success_info_message.value = (
-                "Success Output Parameters: Values returned when the request executes successfully will appear here."
+                "Success Output Parameters: These values will be populated only after the request executes successfully."
             )
 
         # Add Failure Parameters if failure class exists
@@ -864,14 +908,14 @@ class EngineNode(ControlNode):
             failure_doc = failure_class.__doc__ if failure_class.__doc__ else failure_class.__name__
             self.failure_info_message.value = f"Failure Result: {failure_doc}"
             self._create_output_parameters_for_class(
-                failure_class, ResultType.FAILURE, self._SKIP_RESULT_FIELDS, skip_existing
+                failure_class, ParamType.FAILURE, self._SKIP_RESULT_FIELDS, skip_existing
             )
         else:
             # Show explanatory text if no failure class
-            self.failure_info_message.value = "Failure Output Parameters: Values returned when the request fails or encounters errors will appear here."
+            self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
 
     def _create_output_parameters_for_class(
-        self, result_class: Any, prefix: ResultType, skip_fields: set, skip_existing: set[str] | None = None
+        self, result_class: Any, prefix: ParamType, skip_fields: set, skip_existing: set[str] | None = None
     ) -> None:
         """Create output parameters for a result class."""
         if not (result_class and dataclasses.is_dataclass(result_class)):
@@ -897,18 +941,18 @@ class EngineNode(ControlNode):
                 field_type = type_hints.get(field.name, field.type)
                 self._create_single_output_parameter(field, field_type, param_name, prefix)
 
-    def _get_prefix_string(self, prefix: ResultType) -> str:
+    def _get_prefix_string(self, prefix: ParamType) -> str:
         """Get the parameter name prefix string for a result type."""
         match prefix:
-            case ResultType.SUCCESS:
+            case ParamType.SUCCESS:
                 return self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX
-            case ResultType.FAILURE:
+            case ParamType.FAILURE:
                 return self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX
             case _:
                 msg = f"Invalid result type prefix: {prefix}"
                 raise ValueError(msg)
 
-    def _create_single_output_parameter(self, field: Any, field_type: Any, param_name: str, prefix: ResultType) -> None:
+    def _create_single_output_parameter(self, field: Any, field_type: Any, param_name: str, prefix: ParamType) -> None:
         """Create a single output parameter using the event system."""
         output_type = self._get_output_type_for_field(field_type)
 
