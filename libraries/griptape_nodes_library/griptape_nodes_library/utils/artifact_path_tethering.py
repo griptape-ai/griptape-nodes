@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.video_utils import validate_url
 
 
 def default_extract_url_from_artifact_value(
@@ -126,32 +127,14 @@ class ArtifactPathValidator(Trait):
 
             # Check if it's a URL
             if path_str.startswith(("http://", "https://")):
-                self._validate_url(path_str)
+                valid = validate_url(path_str)
+                if not valid:
+                    error_msg = f"Invalid URL: '{path_str}'"
+                    raise ValueError(error_msg)
             else:
                 self._validate_file_path(path_str)
 
         return [validate_path]
-
-    def _validate_url(self, url: str) -> None:
-        """Validate that the URL is accessible and points to expected artifact type.
-
-        Uses HEAD request for efficiency while still validating content-type.
-        The actual download will use GET later, but content-type is unlikely to change.
-        """
-        try:
-            response = httpx.head(url, timeout=ArtifactPathTethering.URL_VALIDATION_TIMEOUT, follow_redirects=True)
-            response.raise_for_status()
-
-            content_type = response.headers.get("content-type", "")
-            if not content_type.startswith(self.url_content_type_prefix):
-                error_msg = f"URL validation failed for '{url}': Expected content-type starting with '{self.url_content_type_prefix}', got '{content_type}'"
-                raise ValueError(error_msg)
-        except httpx.RequestError as e:
-            error_msg = f"Failed to access URL '{url}': {e}"
-            raise ValueError(error_msg) from e
-        except httpx.HTTPStatusError as e:
-            error_msg = f"URL '{url}' returned HTTP {e.response.status_code} error"
-            raise ValueError(error_msg) from e
 
     def _validate_file_path(self, file_path: str) -> None:
         """Validate that the file path exists and has a supported extension."""
