@@ -1991,9 +1991,7 @@ class NodeManager:
             logger.error(details)
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            await GriptapeNodes.FlowManager().resolve_singular_node(
-                flow, node, debug_mode=debug_mode, in_parallel=request.in_parallel
-            )
+            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode=debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             logger.error(details)

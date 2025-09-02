@@ -18,8 +18,9 @@ from griptape_nodes.retained_mode.events.execution_events import NodeResolvedEve
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator, NodeState
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class WorkflowState(Enum):
@@ -43,7 +44,13 @@ class ExecutionContext:
         if dag_instance is not None:
             self.current_dag = dag_instance
         else:
-            self.current_dag = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            current_dag = GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(flow_name)
+            if current_dag is None:
+                msg = f"DAG instance not found for flow {flow_name}"
+                raise ValueError(msg)
+            self.current_dag = current_dag
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
@@ -80,6 +87,8 @@ class ExecutionState(State):
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
@@ -98,6 +107,8 @@ class ExecutionState(State):
             library_name = library[0]
         else:
             library_name = None
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
@@ -183,6 +194,8 @@ class ExecutionState(State):
                 data_type=parameter_type,
                 value=None,
             )
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
             )

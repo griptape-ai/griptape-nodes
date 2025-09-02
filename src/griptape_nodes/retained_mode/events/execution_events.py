@@ -1,6 +1,10 @@
-from dataclasses import dataclass
-from typing import Any
+from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -31,7 +35,6 @@ class ResolveNodeRequest(RequestPayload):
 
     node_name: str
     debug_mode: bool = False
-    in_parallel: bool = True
 
 
 @dataclass
@@ -72,8 +75,6 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
-    # TODO: Drive this from the config manager, so it can be a set secret.https://github.com/griptape-ai/griptape-nodes/issues/1999
-    in_parallel: bool = True
 
 
 @dataclass
@@ -271,6 +272,26 @@ class GetIsFlowRunningResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class GetIsFlowRunningResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Flow running status retrieval failed. Common causes: flow not found, no current context."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateExecutionMachineRequest(RequestPayload):
+    """Create an execution machine based on the parallelization config value."""
+
+    flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateExecutionMachineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    machine: ControlFlowMachine
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateExecutionMachineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
 
 
 # Execution Events! These are sent FROM the EE to the User/GUI. HOW MANY DO WE NEED?

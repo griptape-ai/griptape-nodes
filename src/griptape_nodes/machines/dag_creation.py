@@ -15,7 +15,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CurrentDataNodeEvent,
     ParameterSpotlightEvent,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 logger = logging.getLogger("griptape_nodes")
@@ -42,8 +41,9 @@ class DagCreationContext:
         self.build_only = False
         self.batched_nodes = []
         # Get the DAG instance that will be used throughout resolution and execution
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
+        dag_instance = GriptapeNodes.ExecutionMachineManager().get_orchestrator_for_flow(flow_name)
         self.execution_machine = ParallelExecutionMachine(flow_name, dag_instance)
 
     def reset(self, *, cancel: bool = False) -> None:
@@ -58,6 +58,8 @@ class DagCreationContext:
 class InitializeDagSpotlightState(State):
     @staticmethod
     async def on_enter(context: DagCreationContext) -> type[State] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         current_node = context.focus_stack[-1].node
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
@@ -72,6 +74,8 @@ class InitializeDagSpotlightState(State):
     async def on_update(context: DagCreationContext) -> type[State] | None:
         if not len(context.focus_stack):
             return DagCompleteState
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         current_node = context.focus_stack[-1].node
         if current_node.state == NodeResolutionState.UNRESOLVED:
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
@@ -91,6 +95,8 @@ class EvaluateDagParameterState(State):
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
             return BuildDagNodeState
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
@@ -107,6 +113,8 @@ class EvaluateDagParameterState(State):
 
     @staticmethod
     async def on_update(context: DagCreationContext) -> type[State] | None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         connections = GriptapeNodes.FlowManager().get_connections()
@@ -117,7 +125,14 @@ class EvaluateDagParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node:
-            dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            dag_instance = (
+                GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(context.flow_name)
+            )
+            if not dag_instance:
+                msg = f"DAG instance not found for flow {context.flow_name}"
+                raise ValueError(msg)
             if next_node.state == NodeResolutionState.UNRESOLVED:
                 focus_stack_names = {focus.node.name for focus in context.focus_stack}
                 if next_node.name in focus_stack_names:
@@ -137,8 +152,14 @@ class BuildDagNodeState(State):
     @staticmethod
     async def on_enter(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
+        dag_instance = (
+            GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(context.flow_name)
+        )
+        if not dag_instance:
+            msg = f"DAG instance not found for flow {context.flow_name}"
+            raise ValueError(msg)
 
         # Add the current node to the DAG using get_instance() pattern
         node_reference = DagOrchestrator.DagNode(node_reference=current_node)

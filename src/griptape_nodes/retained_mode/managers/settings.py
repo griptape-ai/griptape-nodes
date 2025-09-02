@@ -89,6 +89,7 @@ class Settings(BaseModel):
         }
     )
     log_level: str = Field(default="INFO")
+    parallel_execution: bool = Field(default=False, description="Enable parallel execution of nodes")
     storage_backend: Literal["local", "gtc"] = Field(default="local")
     minimum_disk_space_gb_libraries: float = Field(
         default=10.0,
