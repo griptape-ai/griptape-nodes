@@ -424,5 +424,5 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
     def get_context(self) -> ResolutionContext:
         return self._context
 
-    def set_current_state(self, value:State|None) -> None:
+    def set_current_state(self, value: State | None) -> None:
         self._current_state = value

@@ -252,5 +252,5 @@ class DagCreationMachine(FSM[DagCreationContext]):
     def get_current_state(self) -> State | None:
         return self._current_state
 
-    def set_current_state(self, value:State|None) -> None:
+    def set_current_state(self, value: State | None) -> None:
         self._current_state = value

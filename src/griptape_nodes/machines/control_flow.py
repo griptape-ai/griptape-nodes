@@ -275,6 +275,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         data_nodes = []
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
+
             if item.dag_execution_type == DagExecutionType.DATA_NODE:
                 data_nodes.append(item.node)
                 flow_manager.get_global_flow_queue().remove(item)

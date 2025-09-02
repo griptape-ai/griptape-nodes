@@ -123,10 +123,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+
 class DagExecutionType(StrEnum):
     START_NODE = "start_node"
     CONTROL_NODE = "control_node"
     DATA_NODE = "data_node"
+
 
 class QueueItem(NamedTuple):
     """Represents an item in the flow execution queue."""
@@ -1710,10 +1712,8 @@ class FlowManager:
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
             return False
-        current_state=self._global_control_flow_machine.get_current_state()
-        if (
-            current_state and current_state is not CompleteState
-        ):
+        current_state = self._global_control_flow_machine.get_current_state()
+        if current_state and current_state is not CompleteState:
             # Flow already exists in progress
             return True
         return bool(
@@ -1823,9 +1823,7 @@ class FlowManager:
             # We need to delete it, because they could be switching between in parallel and sequential.
             del self._global_control_flow_machine
         # Will create the DagCreationMachine if in_parallel is True, else SequentialResolutionMachine.
-        self._global_control_flow_machine = ControlFlowMachine(
-            flow.name, in_parallel=in_parallel
-        )
+        self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=in_parallel)
         self._global_control_flow_machine.get_context().current_node = node
         resolution_machine = self._global_control_flow_machine.get_resolution_machine()
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
@@ -1903,8 +1901,7 @@ class FlowManager:
             return None, None
         control_flow_context = self._global_control_flow_machine.get_context()
         current_control_node = (
-            control_flow_context.current_node.name if control_flow_context.current_node is not None
-            else None
+            control_flow_context.current_node.name if control_flow_context.current_node is not None else None
         )
         focus_stack_for_node = self._global_control_flow_machine.get_resolution_machine().get_context().focus_stack
         current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
