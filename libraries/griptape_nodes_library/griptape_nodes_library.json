@@ -746,6 +746,17 @@
       }
     },
     {
+      "class_name": "ExtractAudio",
+      "file_path": "griptape_nodes_library/video/extract_audio.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract audio from a video and output it as an audio file with configurable format and quality settings",
+        "display_name": "Extract Audio",
+        "icon": "volume-2",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
