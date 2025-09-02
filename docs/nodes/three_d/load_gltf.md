@@ -1,8 +1,8 @@
-# LoadGLTF
+# Load3D
 
 ## What is it?
 
-The LoadGLTF is a building block that lets you bring a GLTF file into your workflow. It allows you to load 3D models from various sources to be used and displayed within your project.
+The Load3D is a building block that lets you bring a GLTF file into your workflow. It allows you to load 3D models from various sources to be used and displayed within your project.
 
 ## When would I use it?
 
@@ -17,7 +17,7 @@ Use this node when you want to:
 
 ### Basic Setup
 
-1. Add the LoadGLTF node to your workflow
+1. Add the Load3D node to your workflow
 1. Connect it to a source of GLTF data (file browser, URL, or another node output)
 
 ### Parameters
