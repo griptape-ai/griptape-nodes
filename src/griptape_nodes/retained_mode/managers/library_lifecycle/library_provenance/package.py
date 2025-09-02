@@ -61,7 +61,7 @@ class LibraryProvenancePackage(LibraryProvenance):
         )
         return EvaluationResult(issues=issues)
 
-    def install(self, context: LibraryLifecycleContext) -> InstallationResult:  # noqa: ARG002
+    async def install(self, context: LibraryLifecycleContext) -> InstallationResult:  # noqa: ARG002
         """Install this package library."""
         issues = []
         issues.append(
