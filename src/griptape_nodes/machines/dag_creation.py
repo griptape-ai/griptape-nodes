@@ -34,17 +34,14 @@ class DagCreationContext:
     build_only: bool
     batched_nodes: list[BaseNode]
 
-    def __init__(self, flow_name: str) -> None:
+    def __init__(self, flow_name: str, dag_orchestrator:DagOrchestrator) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
         self.build_only = False
         self.batched_nodes = []
         # Get the DAG instance that will be used throughout resolution and execution
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        dag_instance = GriptapeNodes.ExecutionMachineManager().get_orchestrator_for_flow(flow_name)
-        self.execution_machine = ParallelExecutionMachine(flow_name, dag_instance)
+        self.execution_machine = ParallelExecutionMachine(flow_name, dag_orchestrator)
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.focus_stack:
@@ -125,11 +122,7 @@ class EvaluateDagParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            dag_instance = (
-                GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(context.flow_name)
-            )
+            dag_instance= context.execution_machine.get_dag_instance()
             if not dag_instance:
                 msg = f"DAG instance not found for flow {context.flow_name}"
                 raise ValueError(msg)
@@ -152,11 +145,7 @@ class BuildDagNodeState(State):
     @staticmethod
     async def on_enter(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        dag_instance = (
-            GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(context.flow_name)
-        )
+        dag_instance = context.execution_machine.get_dag_instance()
         if not dag_instance:
             msg = f"DAG instance not found for flow {context.flow_name}"
             raise ValueError(msg)
@@ -240,8 +229,8 @@ class DagCompleteState(State):
 class DagCreationMachine(FSM[DagCreationContext]):
     """State machine for building DAG structure without execution."""
 
-    def __init__(self, flow_name: str) -> None:
-        resolution_context = DagCreationContext(flow_name)
+    def __init__(self, flow_name: str, dag_orchestrator: DagOrchestrator) -> None:
+        resolution_context = DagCreationContext(flow_name, dag_orchestrator=dag_orchestrator)
         super().__init__(resolution_context)
 
     async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:

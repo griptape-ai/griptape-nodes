@@ -44,13 +44,8 @@ class ExecutionContext:
         if dag_instance is not None:
             self.current_dag = dag_instance
         else:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            current_dag = GriptapeNodes.get_instance().ExecutionMachineManager().get_orchestrator_for_flow(flow_name)
-            if current_dag is None:
-                msg = f"DAG instance not found for flow {flow_name}"
-                raise ValueError(msg)
-            self.current_dag = current_dag
+            msg = f"DAG instance not given for flow {flow_name}"
+            raise ValueError(msg)
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
@@ -391,3 +386,6 @@ class ParallelExecutionMachine(FSM[ExecutionContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
+
+    def get_dag_instance(self) -> DagOrchestrator:
+        return self._context.current_dag

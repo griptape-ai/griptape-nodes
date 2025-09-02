@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     CreateExecutionMachineRequest,
     CreateExecutionMachineResultSuccess,
 )
+from griptape_nodes.retained_mode.managers import dag_orchestrator
 from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 if TYPE_CHECKING:
@@ -81,12 +82,14 @@ class ExecutionMachineManager:
             logger.info("Creating new ControlFlowMachine for flow '%s' (parallel=%s)", flow_name, in_parallel)
 
             from griptape_nodes.machines.control_flow import ControlFlowMachine
-
-            machine = ControlFlowMachine(flow_name, in_parallel=in_parallel)
-            self._flow_to_machine[flow_name] = machine
-            # Create corresponding orchestrator
             if in_parallel:
                 orchestrator = DagOrchestrator(flow_name, self._max_workers)
+            else:
+                orchestrator = None
+            machine = ControlFlowMachine(flow_name, in_parallel=in_parallel, dag_orchestrator=orchestrator)
+            self._flow_to_machine[flow_name] = machine
+            # Create corresponding orchestrator
+            if orchestrator is not None:
                 self._machine_to_orchestrator[machine] = orchestrator
 
         result = CreateExecutionMachineResultSuccess(machine=self._flow_to_machine[flow_name])

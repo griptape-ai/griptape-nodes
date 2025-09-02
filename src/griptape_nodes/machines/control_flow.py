@@ -31,6 +31,7 @@ class NextNodeInfo:
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
+    from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -45,10 +46,10 @@ class ControlFlowContext:
     flow_name: str
 
     # TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
-    def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
+    def __init__(self, flow_name: str, in_parallel: bool = False, dag_orchestrator: DagOrchestrator|None = None) -> None:  # noqa: FBT001, FBT002
         self.flow_name = flow_name
-        if in_parallel:
-            self.resolution_machine = DagCreationMachine(flow_name)
+        if in_parallel and dag_orchestrator is not None:
+            self.resolution_machine = DagCreationMachine(flow_name, dag_orchestrator)
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
@@ -204,8 +205,8 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, *, in_parallel: bool = False) -> None:
-        context = ControlFlowContext(flow_name, in_parallel)
+    def __init__(self, flow_name: str, *, in_parallel: bool = False, dag_orchestrator: DagOrchestrator|None = None) -> None:
+        context = ControlFlowContext(flow_name, in_parallel, dag_orchestrator=dag_orchestrator)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
