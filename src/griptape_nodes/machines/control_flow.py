@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.machines.dag_resolution import DagResolutionMachine
+from griptape_nodes.machines.dag_creation import DagCreationMachine
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.machines.node_resolution import NodeResolutionMachine
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
@@ -39,19 +39,18 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
-    resolution_machine: DagResolutionMachine | NodeResolutionMachine
+    resolution_machine: DagCreationMachine | SequentialResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
 
-
-    #TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
+    # TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
     def __init__(self, flow_name: str, in_parallel: bool = False) -> None:  # noqa: FBT001, FBT002
         self.flow_name = flow_name
         if in_parallel:
-            self.resolution_machine = DagResolutionMachine(flow_name)
+            self.resolution_machine = DagCreationMachine(flow_name)
         else:
-            self.resolution_machine = NodeResolutionMachine()
+            self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -74,11 +73,14 @@ class ControlFlowContext:
                 return NextNodeInfo(node=node, entry_parameter=None)
         return None
 
-    def reset(self) -> None:
+    def reset(self, *, cancel: bool = False) -> None:
         if self.current_node:
             self.current_node.clear_node()
         self.current_node = None
-        self.resolution_machine.reset_machine()
+        if isinstance(self.resolution_machine, SequentialResolutionMachine):
+            self.resolution_machine.reset_machine()
+        elif isinstance(self.resolution_machine, DagCreationMachine):
+            self.resolution_machine.reset_machine(cancel=cancel)
         self.selected_output = None
         self.paused = False
 
@@ -209,7 +211,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
-        if self._context.resolution_machine is DagResolutionMachine:
+        if self._context.resolution_machine is DagCreationMachine:
             await self._process_data_nodes_for_dag()
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
@@ -264,18 +266,18 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         This method identifies data_nodes in the execution queue and processes
         their dependencies into the DAG resolution machine.
         """
-        if not isinstance(self._context.resolution_machine, DagResolutionMachine):
+        if not isinstance(self._context.resolution_machine, DagCreationMachine):
             return
         # Get the global flow queue
         flow_manager = GriptapeNodes.FlowManager()
-        queue_items = list(flow_manager._global_flow_queue.queue)
+        queue_items = list(flow_manager.get_global_flow_queue())
 
         # Find data_nodes and remove them from queue
         data_nodes = []
         for item in queue_items:
             if item.node_type == "data_node":
                 data_nodes.append(item.node)
-                flow_manager._global_flow_queue.queue.remove(item)
+                flow_manager.get_global_flow_queue().remove(item)
 
         # Build DAG for each data node
         for node in data_nodes:
@@ -287,8 +289,14 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 await self._context.resolution_machine.update()
 
             # Reset the machine state to allow adding more nodes
-            self._context.resolution_machine._current_state = None
+            self._context.resolution_machine.set_current_state(None)
 
-    def reset_machine(self) -> None:
-        self._context.reset()
+    def reset_machine(self, *, cancel: bool = False) -> None:
+        self._context.reset(cancel=cancel)
         self._current_state = None
+
+    def get_context(self) -> ControlFlowContext:
+        return self._context
+
+    def get_resolution_machine(self) -> DagCreationMachine | SequentialResolutionMachine:
+        return self._context.resolution_machine

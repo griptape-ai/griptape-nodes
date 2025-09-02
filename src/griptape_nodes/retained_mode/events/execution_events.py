@@ -72,7 +72,7 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
-    #TODO: Drive this from the config manager, so it can be a set secret.https://github.com/griptape-ai/griptape-nodes/issues/1999
+    # TODO: Drive this from the config manager, so it can be a set secret.https://github.com/griptape-ai/griptape-nodes/issues/1999
     in_parallel: bool = True
 
 

@@ -47,10 +47,15 @@ class ExecutionContext:
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
 
-    def reset(self) -> None:
-        self.current_dag.clear()
-        self.workflow_state = WorkflowState.NO_ERROR
-        self.error_message = None
+    def reset(self, *, cancel: bool = False) -> None:
+        if cancel:
+            self.workflow_state = WorkflowState.CANCELED
+            for node in self.current_dag.node_to_reference.values():
+                node.node_state = NodeState.CANCELED
+        else:
+            self.workflow_state = WorkflowState.NO_ERROR
+            self.error_message = None
+            self.current_dag.clear()
 
 
 class ExecutionState(State):
@@ -243,7 +248,7 @@ class ExecutionState(State):
         if len(canceled_nodes) == len(leaf_nodes):
             # All leaf nodes are cancelled.
             # Set state to workflow complete.
-            context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
+            context.workflow_state = WorkflowState.CANCELED
             return CompleteState
         # Are there any in the queued state?
         for node in queued_nodes:
@@ -351,7 +356,7 @@ class CompleteState(State):
         return None
 
 
-class DagExecutionMachine(FSM[ExecutionContext]):
+class ParallelExecutionMachine(FSM[ExecutionContext]):
     """State machine for DAG execution."""
 
     def __init__(self, flow_name: str, dag_instance: DagOrchestrator | None = None) -> None:
@@ -370,6 +375,6 @@ class DagExecutionMachine(FSM[ExecutionContext]):
     def get_error_message(self) -> str | None:
         return self._context.error_message
 
-    def reset_machine(self) -> None:
-        self._context.reset()
+    def reset_machine(self, *, cancel: bool = False) -> None:
+        self._context.reset(cancel=cancel)
         self._current_state = None

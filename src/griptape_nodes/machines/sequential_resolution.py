@@ -397,7 +397,7 @@ class CompleteState(State):
         return None
 
 
-class NodeResolutionMachine(FSM[ResolutionContext]):
+class SequentialResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
     def __init__(self) -> None:
@@ -420,3 +420,9 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
     def reset_machine(self) -> None:
         self._context.reset()
         self._current_state = None
+
+    def get_context(self) -> ResolutionContext:
+        return self._context
+
+    def set_current_state(self, value:State|None) -> None:
+        self._current_state = value

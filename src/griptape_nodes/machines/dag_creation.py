@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.machines.dag_execution import DagExecutionMachine
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.parallel_execution import ParallelExecutionMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -28,10 +27,10 @@ class Focus:
     scheduled_value: Any | None = None
 
 
-class DagResolutionContext:
+class DagCreationContext:
     focus_stack: list[Focus]
     paused: bool
-    execution_machine: DagExecutionMachine
+    execution_machine: ParallelExecutionMachine
     flow_name: str
     build_only: bool
     batched_nodes: list[BaseNode]
@@ -45,20 +44,20 @@ class DagResolutionContext:
         # Get the DAG instance that will be used throughout resolution and execution
 
         dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(flow_name)
-        self.execution_machine = DagExecutionMachine(flow_name, dag_instance)
+        self.execution_machine = ParallelExecutionMachine(flow_name, dag_instance)
 
-    def reset(self) -> None:
+    def reset(self, *, cancel: bool = False) -> None:
         if self.focus_stack:
             node = self.focus_stack[-1].node
             node.clear_node()
         self.focus_stack.clear()
         self.paused = False
-        self.execution_machine.reset_machine()
+        self.execution_machine.reset_machine(cancel=cancel)
 
 
 class InitializeDagSpotlightState(State):
     @staticmethod
-    async def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
@@ -70,12 +69,11 @@ class InitializeDagSpotlightState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagCreationContext) -> type[State] | None:
         if not len(context.focus_stack):
             return DagCompleteState
         current_node = context.focus_stack[-1].node
         if current_node.state == NodeResolutionState.UNRESOLVED:
-
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
         current_node.state = NodeResolutionState.RESOLVING
@@ -88,7 +86,7 @@ class InitializeDagSpotlightState(State):
 
 class EvaluateDagParameterState(State):
     @staticmethod
-    async def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
@@ -108,7 +106,7 @@ class EvaluateDagParameterState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         connections = GriptapeNodes.FlowManager().get_connections()
@@ -137,7 +135,7 @@ class EvaluateDagParameterState(State):
 
 class BuildDagNodeState(State):
     @staticmethod
-    async def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
         dag_instance = GriptapeNodes.get_instance().DagManager().get_orchestrator_for_flow(context.flow_name)
@@ -153,7 +151,7 @@ class BuildDagNodeState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagCreationContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
         # Mark node as resolved for DAG building purposes
@@ -172,7 +170,7 @@ class BuildDagNodeState(State):
 
 class ExecuteDagState(State):
     @staticmethod
-    async def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagCreationContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
         context.batched_nodes.clear()
         await context.execution_machine.start_execution()
@@ -181,7 +179,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagResolutionContext) -> type[State] | None:
+    async def on_update(context: DagCreationContext) -> type[State] | None:
         # Check if DAG execution is complete
         if context.execution_machine.is_complete():
             return DagCompleteState
@@ -208,21 +206,21 @@ class ExecuteDagState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    async def on_enter(context: DagResolutionContext) -> type[State] | None:
+    async def on_enter(context: DagCreationContext) -> type[State] | None:
         # Set build_only back to False.
         context.build_only = False
         return None
 
     @staticmethod
-    async def on_update(context: DagResolutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: DagCreationContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
-class DagResolutionMachine(FSM[DagResolutionContext]):
+class DagCreationMachine(FSM[DagCreationContext]):
     """State machine for building DAG structure without execution."""
 
     def __init__(self, flow_name: str) -> None:
-        resolution_context = DagResolutionContext(flow_name)
+        resolution_context = DagCreationContext(flow_name)
         super().__init__(resolution_context)
 
     async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
@@ -244,6 +242,15 @@ class DagResolutionMachine(FSM[DagResolutionContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def reset_machine(self) -> None:
-        self._context.reset()
+    def get_context(self) -> DagCreationContext:
+        return self._context
+
+    def reset_machine(self, *, cancel: bool = False) -> None:
+        self._context.reset(cancel=cancel)
         self._current_state = None
+
+    def get_current_state(self) -> State | None:
+        return self._current_state
+
+    def set_current_state(self, value:State|None) -> None:
+        self._current_state = value

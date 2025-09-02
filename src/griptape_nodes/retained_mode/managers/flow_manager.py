@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
@@ -15,7 +16,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
-from griptape_nodes.machines.dag_resolution import DagResolutionMachine
+from griptape_nodes.machines.dag_creation import DagCreationMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -1703,15 +1704,15 @@ class FlowManager:
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
             return False
+        current_state=self._global_control_flow_machine.get_current_state()
         if (
-            self._global_control_flow_machine._current_state is not CompleteState
-            and self._global_control_flow_machine._current_state
+            current_state and current_state is not CompleteState
         ):
             # Flow already exists in progress
             return True
         return bool(
-            not self._global_control_flow_machine._context.resolution_machine.is_complete()
-            and self._global_control_flow_machine._context.resolution_machine.is_started()
+            not self._global_control_flow_machine.get_context().resolution_machine.is_complete()
+            and self._global_control_flow_machine.get_context().resolution_machine.is_started()
         )
 
     def cancel_flow_run(self) -> None:
@@ -1720,7 +1721,7 @@ class FlowManager:
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
         if self._global_control_flow_machine is not None:
-            self._global_control_flow_machine.reset_machine()
+            self._global_control_flow_machine.reset_machine(cancel=True)
         # Reset control flow machine
         self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
@@ -1787,8 +1788,10 @@ class FlowManager:
             start_node = queue_item.node
             self._global_flow_queue.task_done()
             if self._global_control_flow_machine is None:
-                #TODO: Update to config level setting for this case as well. https://github.com/griptape-ai/griptape-nodes/issues/1999
-                self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=False)  # Default to sequential
+                # TODO: Update to config level setting for this case as well. https://github.com/griptape-ai/griptape-nodes/issues/1999
+                self._global_control_flow_machine = ControlFlowMachine(
+                    flow.name, in_parallel=False
+                )  # Default to sequential
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
@@ -1810,41 +1813,25 @@ class FlowManager:
             raise RuntimeError(errormsg)
         self._global_single_node_resolution = True
 
-        if in_parallel:
-            # Use DAG-based resolution + execution (like StartFlowRequest)
-            # Initialize DAG resolution machine
-            dag_resolution_machine = DagResolutionMachine(flow.name)
-            dag_resolution_machine.change_debug_mode(debug_mode=debug_mode)
-
-            # Reset node state and build DAG
-            node.state = NodeResolutionState.UNRESOLVED
-            await dag_resolution_machine.resolve_node(node)
-
-            # After DAG resolution completes, start the DAG execution machine
-            # but don't run it to completion - let stepping handle updates
-            execution_machine = dag_resolution_machine._context.execution_machine
+        if self._global_control_flow_machine is not None:
+            # We need to delete it, because they could be switching between in parallel and sequential.
+            del self._global_control_flow_machine
+        # Will create the DagCreationMachine if in_parallel is True, else SequentialResolutionMachine.
+        self._global_control_flow_machine = ControlFlowMachine(
+            flow.name, in_parallel=in_parallel
+        )
+        self._global_control_flow_machine.get_context().current_node = node
+        resolution_machine = self._global_control_flow_machine.get_resolution_machine()
+        resolution_machine.change_debug_mode(debug_mode=debug_mode)
+        node.state = NodeResolutionState.UNRESOLVED
+        # Resolve the node
+        await resolution_machine.resolve_node(node)
+        if in_parallel and isinstance(resolution_machine, DagCreationMachine):
+            execution_machine = resolution_machine.get_context().execution_machine
             await execution_machine.start_execution()
-
-            # decide if we can change it back to normal flow mode!
-            if dag_resolution_machine.is_complete():
-                self._global_single_node_resolution = False
-        else:
-            # Use existing sequential resolution logic
-            if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = ControlFlowMachine(flow.name, in_parallel=in_parallel)  # Sequential resolution
-            # Get the node resolution machine for the current flow!
-            self._global_control_flow_machine._context.current_node = node
-            resolution_machine = self._global_control_flow_machine._context.resolution_machine
-            # Set debug mode
-            resolution_machine.change_debug_mode(debug_mode=debug_mode)
-            # Resolve the node.
-            node.state = NodeResolutionState.UNRESOLVED
-            await resolution_machine.resolve_node(node)
-
-            # decide if we can change it back to normal flow mode!
-            if resolution_machine.is_complete():
-                self._global_single_node_resolution = False
-                self._global_control_flow_machine._context.current_node = None
+        if resolution_machine.is_complete():
+            self._global_single_node_resolution = False
+            self._global_control_flow_machine.get_context().current_node = None
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1855,9 +1842,9 @@ class FlowManager:
             return
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.granular_step(change_debug_mode)
-            resolution_machine = self._global_control_flow_machine._context.resolution_machine
+            resolution_machine = self._global_control_flow_machine.get_resolution_machine()
             if self._global_single_node_resolution:
-                resolution_machine = self._global_control_flow_machine._context.resolution_machine
+                resolution_machine = self._global_control_flow_machine.get_resolution_machine()
                 if resolution_machine.is_complete():
                     self._global_single_node_resolution = False
 
@@ -1887,10 +1874,10 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.change_debug_mode(False)
             if self._global_single_node_resolution:
-                if self._global_control_flow_machine._context.resolution_machine.is_complete():
+                if self._global_control_flow_machine.get_resolution_machine().is_complete():
                     self._global_single_node_resolution = False
                 else:
-                    await self._global_control_flow_machine._context.resolution_machine.update()
+                    await self._global_control_flow_machine.get_resolution_machine().update()
             else:
                 await self._global_control_flow_machine.node_step()
         # Now it is done executing. make sure it's actually done?
@@ -1908,12 +1895,12 @@ class FlowManager:
             raise RuntimeError(msg)
         if self._global_control_flow_machine is None:
             return None, None
+        control_flow_context = self._global_control_flow_machine.get_context()
         current_control_node = (
-            self._global_control_flow_machine._context.current_node.name
-            if self._global_control_flow_machine._context.current_node is not None
+            control_flow_context.current_node.name if control_flow_context.current_node is not None
             else None
         )
-        focus_stack_for_node = self._global_control_flow_machine._context.resolution_machine._context.focus_stack
+        focus_stack_for_node = self._global_control_flow_machine.get_resolution_machine().get_context().focus_stack
         current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
         return current_control_node, current_resolving_node
 
@@ -2150,3 +2137,7 @@ class FlowManager:
                         node_list.append(input_node)
                         node_queue.put(input_node)
         return node_list
+
+    def get_global_flow_queue(self) -> collections.deque[QueueItem]:
+        """Returns the queue from the global flow queue for modification."""
+        return self._global_flow_queue.queue
