@@ -635,18 +635,20 @@ class WorkflowManager:
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
 
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-            details = f"Failed to extract metadata from workflow file '{request.file_path}'"
-            logger.error(details)
-            return ImportWorkflowResultFailure(result_details=details)
+            return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
+
+        # Check if workflow is already registered
+        workflow_name = load_metadata_result.metadata.name
+        if WorkflowRegistry.has_workflow_with_name(workflow_name):
+            # Workflow already exists - no need to re-register
+            return ImportWorkflowResultSuccess(workflow_name=workflow_name)
 
         # Now register the workflow with the extracted metadata
         register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=request.file_path)
         register_result = self.on_register_workflow_request(register_request)
 
         if not isinstance(register_result, RegisterWorkflowResultSuccess):
-            details = f"Unexpected result when registering workflow from file '{request.file_path}'"
-            logger.error(details)
-            return ImportWorkflowResultFailure(result_details=details)
+            return ImportWorkflowResultFailure(result_details=register_result.result_details)
 
         # Add the workflow to the user configuration
         try:
