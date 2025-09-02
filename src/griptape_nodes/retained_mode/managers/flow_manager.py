@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import collections
+from enum import StrEnum
 import logging
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
@@ -116,17 +116,22 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    import collections
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
 
+class DagExecutionType(StrEnum):
+    START_NODE = "start_node"
+    CONTROL_NODE = "control_node"
+    DATA_NODE = "data_node"
 
 class QueueItem(NamedTuple):
     """Represents an item in the flow execution queue."""
 
     node: BaseNode
-    node_type: str  # 'start_node', 'control_node', or 'data_node'
+    dag_execution_type: DagExecutionType
 
 
 class FlowManager:
@@ -2017,11 +2022,11 @@ class FlowManager:
                 valid_data_nodes.append(node)
         # ok now - populate the global flow queue with node type information
         for node in start_nodes:
-            self._global_flow_queue.put(QueueItem(node=node, node_type="start_node"))
+            self._global_flow_queue.put(QueueItem(node=node, dag_execution_type=DagExecutionType.START_NODE))
         for node in control_nodes:
-            self._global_flow_queue.put(QueueItem(node=node, node_type="control_node"))
+            self._global_flow_queue.put(QueueItem(node=node, dag_execution_type=DagExecutionType.CONTROL_NODE))
         for node in valid_data_nodes:
-            self._global_flow_queue.put(QueueItem(node=node, node_type="data_node"))
+            self._global_flow_queue.put(QueueItem(node=node, dag_execution_type=DagExecutionType.DATA_NODE))
 
         return self._global_flow_queue
 
