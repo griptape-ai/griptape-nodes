@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from griptape_nodes.app.api import start_api
 from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -52,10 +53,16 @@ def get_workflows() -> list[str]:
 load_dotenv()
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_libraries() -> Generator[None, Any, None]:
+@pytest.fixture(scope="session")
+def griptape_nodes() -> GriptapeNodes:
+    """Initialize GriptapeNodes before tests and clean up afterwards."""
+    return GriptapeNodes()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[None, Any]:
     """Set up libraries for testing and restore original state afterwards."""
-    config_manager = GriptapeNodes.ConfigManager()
+    config_manager = griptape_nodes.ConfigManager()
 
     # Save the original libraries state
     original_libraries = config_manager.get_config_value(
@@ -68,7 +75,7 @@ def setup_test_libraries() -> Generator[None, Any, None]:
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=test_libraries,
     )
-    logger.info(config_manager.get_config_value("app_events.on_app_initialization_complete.libraries_to_register"))
+    await griptape_nodes.EventManager().broadcast_app_event(AppInitializationComplete())
 
     yield  # Run all tests
 
@@ -93,21 +100,19 @@ async def api_server() -> AsyncGenerator[None, None]:
 
 
 @pytest.fixture(autouse=True)
-def clear_state_before_each_test() -> Generator[None, Any, None]:
+def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> Generator[None, Any, None]:
     """Clear all object state before each test to ensure clean starting conditions."""
-    from griptape_nodes import GriptapeNodes
-
     # Clear any existing state
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-    GriptapeNodes.handle_request(clear_request)
+    griptape_nodes.handle_request(clear_request)
 
-    GriptapeNodes.ConfigManager()._set_log_level("DEBUG")
+    griptape_nodes.ConfigManager()._set_log_level("DEBUG")
 
     yield  # Run the test
 
     # Clean up after test
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-    GriptapeNodes.handle_request(clear_request)
+    griptape_nodes.handle_request(clear_request)
 
 
 @pytest.mark.parametrize("workflow_path", get_workflows())
