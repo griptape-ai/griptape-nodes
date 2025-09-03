@@ -143,7 +143,7 @@ class FlowManager:
 
     # Global execution state (moved from individual ControlFlows)
     _global_flow_queue: Queue[QueueItem]
-    _current_flow_name: str | None  # Track the current flow being executed
+    _global_control_flow_machine: ControlFlowMachine | None
     _global_single_node_resolution: bool
 
     def __init__(self, event_manager: EventManager) -> None:
