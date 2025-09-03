@@ -858,20 +858,16 @@ class EngineNode(BaseNode):
             if param_name in [p.name for p in self.parameters]:
                 value = self.get_parameter_value(param_name)
 
-                # Apply conversion based on field metadata
-                converted_value = self._convert_value_for_field(value, field)
+                # Convert empty string to None for optional fields
+                if value == "" and self._is_optional_type(field.type):
+                    converted_value = None
+                else:
+                    converted_value = value
 
                 if converted_value is not None:
                     request_kwargs[field.name] = converted_value
 
         return request_kwargs
-
-    def _convert_value_for_field(self, value: Any, field: Any) -> Any:
-        """Convert value based on field type."""
-        if value == "" and self._is_optional_type(field.type):
-            return None  # Convert empty string to None for optional fields
-
-        return value
 
     def _is_union_type(self, python_type: Any) -> bool:
         """Check if a type is a Union type (either typing.Union or types.UnionType)."""
