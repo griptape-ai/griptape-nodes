@@ -31,13 +31,28 @@ class ReloadHandler(PatternMatchingEventHandler):
 
     def start_process(self) -> None:
         if self.process:
-            self.process.terminate()
+            self._terminate_process(self.process)
         uv_path = find_uv_bin()
         self.process = subprocess.Popen(  # noqa: S603
             [uv_path, "run", "gtn"],
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
+
+    def _terminate_process(self, process: subprocess.Popen) -> None:
+        """Gracefully terminate a process with timeout."""
+        if process.poll() is not None:
+            return  # Process already terminated
+
+        # First try graceful termination
+        process.terminate()
+        try:
+            # Wait up to 5 seconds for graceful shutdown
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            # Force kill if it doesn't shut down gracefully
+            process.kill()
+            process.wait()
 
     def on_modified(self, event: Any) -> None:
         """Called on any file event in the watched directory (create, modify, delete, move)."""
@@ -65,7 +80,7 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         if event_handler.process:
-            event_handler.process.terminate()
+            event_handler._terminate_process(event_handler.process)
     finally:
         observer.stop()
         observer.join()

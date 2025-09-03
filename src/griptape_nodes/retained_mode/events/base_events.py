@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
 
 from griptape.artifacts import BaseArtifact
-from griptape.events import BaseEvent as GtBaseEvent
 from griptape.mixins.serializable_mixin import SerializableMixin
 from griptape.structures import Structure
 from griptape.tools import BaseTool
@@ -632,18 +631,24 @@ class AppEvent[A: AppPayload](BaseEvent):
         return cls(payload=event_payload, **event_data)
 
 
-@dataclass
-class GriptapeNodeEvent(GtBaseEvent):
+class GriptapeNodeEvent(BaseEvent):
     wrapped_event: EventResult
 
+    def get_request(self) -> Payload:
+        """Get the request from the wrapped event."""
+        return self.wrapped_event.get_request()
+
+
+class ExecutionGriptapeNodeEvent(BaseEvent):
+    wrapped_event: ExecutionEvent
+
+    def get_request(self) -> Payload:
+        """Get the request from the wrapped event."""
+        return self.wrapped_event.get_request()
+
 
 @dataclass
-class ExecutionGriptapeNodeEvent(GtBaseEvent):
-    wrapped_event: ExecutionEvent = field()
-
-
-@dataclass
-class ProgressEvent(GtBaseEvent):
+class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()

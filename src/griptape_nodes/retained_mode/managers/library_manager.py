@@ -95,6 +95,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -662,7 +663,7 @@ class LibraryManager:
         result = ListCategoriesInLibraryResultSuccess(categories=categories)
         return result
 
-    def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic needs branches)
+    async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic needs branches)
         file_path = request.file_path
 
         # Convert to Path object if it's a string
@@ -781,7 +782,7 @@ class LibraryManager:
 
                 # Only install dependencies if conditions are met
                 try:
-                    library_venv_python_path = self._init_library_venv(venv_path)
+                    library_venv_python_path = await self._init_library_venv(venv_path)
                 except RuntimeError as e:
                     self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
                         library_path=file_path,
@@ -816,7 +817,7 @@ class LibraryManager:
                     logger.info(
                         "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
                     )
-                    subprocess.run(  # noqa: S603
+                    await subprocess_run(
                         [
                             sys.executable,
                             "-m",
@@ -920,7 +921,7 @@ class LibraryManager:
                 logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
-    def register_library_from_requirement_specifier_request(
+    async def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
     ) -> ResultPayload:
         try:
@@ -930,7 +931,7 @@ class LibraryManager:
 
             # Only install dependencies if conditions are met
             try:
-                library_python_venv_path = self._init_library_venv(venv_path)
+                library_python_venv_path = await self._init_library_venv(venv_path)
             except RuntimeError as e:
                 details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
                 logger.error(details)
@@ -948,14 +949,14 @@ class LibraryManager:
                 uv_path = find_uv_bin()
 
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
-                subprocess.run(  # noqa: S603
+                await subprocess_run(
                     [
                         uv_path,
                         "pip",
                         "install",
                         request.requirement_specifier,
                         "--python",
-                        library_python_venv_path,
+                        str(library_python_venv_path),
                     ],
                     check=True,
                     capture_output=True,
@@ -986,7 +987,7 @@ class LibraryManager:
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
 
-    def _init_library_venv(self, library_venv_path: Path) -> Path:
+    async def _init_library_venv(self, library_venv_path: Path) -> Path:
         """Initialize a virtual environment for the library.
 
         If the virtual environment already exists, it will not be recreated.
@@ -1022,7 +1023,7 @@ class LibraryManager:
             try:
                 uv_path = find_uv_bin()
                 logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
-                subprocess.run(  # noqa: S603
+                await subprocess_run(
                     [uv_path, "venv", str(library_venv_path), "--python", python_version],
                     check=True,
                     capture_output=True,
@@ -1491,7 +1492,7 @@ class LibraryManager:
 
         return node_class
 
-    def load_all_libraries_from_config(self) -> None:
+    async def load_all_libraries_from_config(self) -> None:
         # Comment out lines 1503-1545 and call the _load libraries from provenance system to test the other functionality.
 
         # Load metadata for all libraries to determine which ones can be safely loaded
@@ -1527,7 +1528,7 @@ class LibraryManager:
                 register_request = RegisterLibraryFromFileRequest(
                     file_path=library_result.file_path, load_as_default_library=False
                 )
-                register_result = self.register_library_from_file_request(register_request)
+                register_result = await self.register_library_from_file_request(register_request)
                 if isinstance(register_result, RegisterLibraryFromFileResultFailure):
                     # Registration failed - the failure info is already recorded in _library_file_path_to_info
                     # by register_library_from_file_request, so we just log it here for visibility
@@ -1540,12 +1541,12 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         GriptapeNodes.EngineIdentityManager().initialize_engine_id()
         GriptapeNodes.SessionManager().get_saved_session_id()
 
         # App just got init'd. See if there are library JSONs to load!
-        self.load_all_libraries_from_config()
+        await self.load_all_libraries_from_config()
 
         # We have to load all libraries before we attempt to load workflows.
 
@@ -1603,7 +1604,7 @@ class LibraryManager:
         )
         console.print(message)
 
-    def _load_libraries_from_provenance_system(self) -> None:
+    async def _load_libraries_from_provenance_system(self) -> None:
         """Load libraries using the new provenance-based system with FSM.
 
         This method converts libraries_to_register entries into LibraryProvenanceLocalFile
@@ -1632,7 +1633,7 @@ class LibraryManager:
 
             # Add to directory as user candidate (defaults to active=True)
             # This automatically creates FSM and runs evaluation
-            self._library_directory.add_user_candidate(provenance)
+            await self._library_directory.add_user_candidate(provenance)
 
             logger.debug("Added library provenance: %s", provenance.get_display_name())
 
@@ -1661,8 +1662,8 @@ class LibraryManager:
 
         # Process installable candidates through installation and loading
         for candidate in installable_candidates:
-            if self._library_directory.install_library(candidate.provenance):
-                self._library_directory.load_library(candidate.provenance)
+            if await self._library_directory.install_library(candidate.provenance):
+                await self._library_directory.load_library(candidate.provenance)
 
     def _report_library_name_conflicts(self) -> None:
         """Report on library name conflicts found during evaluation."""
@@ -1997,7 +1998,7 @@ class LibraryManager:
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
 
-    def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+    async def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
         clear_all_result = GriptapeNodes.handle_request(clear_all_request)
@@ -2023,7 +2024,7 @@ class LibraryManager:
                 return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Load (or reload, which should trigger a hot reload) all libraries
-        self.load_all_libraries_from_config()
+        await self.load_all_libraries_from_config()
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."

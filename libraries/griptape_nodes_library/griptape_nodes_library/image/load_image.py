@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
@@ -66,8 +66,32 @@ class LoadImage(DataNode):
             config=self._tethering_config,
         )
 
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Delegate to tethering helper - only artifact parameter can receive connections
+        self._tethering.on_incoming_connection(target_parameter)
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Delegate to tethering helper - only artifact parameter can have connections removed
+        self._tethering.on_incoming_connection_removed(target_parameter)
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        # Delegate to tethering helper for dynamic settable control
+        return self._tethering.on_before_value_set(parameter, value)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Delegate tethering logic to helper
+        # Delegate tethering logic to helper for value synchronization and settable restoration
         self._tethering.on_after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 

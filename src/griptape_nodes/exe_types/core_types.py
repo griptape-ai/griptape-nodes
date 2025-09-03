@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.exe_types.node_types import BaseNode
+
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
 
@@ -253,11 +254,12 @@ class BaseNodeElement:
 
     def _emit_alter_element_event_if_possible(self) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         if self._node_context is None:
             return
 
         # Import here to avoid circular dependencies
-        from griptape.events import EventBus
 
         from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
         from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
@@ -281,7 +283,8 @@ class BaseNodeElement:
         event = ExecutionGriptapeNodeEvent(
             wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
         )
-        EventBus.publish_event(event)
+
+        GriptapeNodes.EventManager().put_event(event)
         self._changes.clear()
 
     def to_dict(self) -> dict[str, Any]:
@@ -712,7 +715,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
 
     # "settable" here means whether it can be assigned to during regular business operation.
     # During save/load, this value IS still serialized to save its proper state.
-    settable: bool = True
+    _settable: bool = True
 
     # "serializable" controls whether parameter values should be serialized during save/load operations.
     # Set to False for parameters containing non-serializable types (ImageDrivers, PromptDrivers, file handles, etc.)
@@ -768,7 +771,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.tooltip_as_input = tooltip_as_input
         self.tooltip_as_property = tooltip_as_property
         self.tooltip_as_output = tooltip_as_output
-        self.settable = settable
+        self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
         if allowed_modes is None:
@@ -908,6 +911,15 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._changes["mode_allowed_input"] = ParameterMode.INPUT in value
             self._changes["mode_allowed_output"] = ParameterMode.OUTPUT in value
             self._changes["mode_allowed_property"] = ParameterMode.PROPERTY in value
+
+    @property
+    def settable(self) -> bool:
+        return self._settable
+
+    @settable.setter
+    @BaseNodeElement.emits_update_on_write
+    def settable(self, value: bool) -> None:
+        self._settable = value
 
     @property
     def ui_options(self) -> dict:

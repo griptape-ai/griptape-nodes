@@ -3,7 +3,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import imageio_ffmpeg
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -184,9 +186,12 @@ class ResizeVideo(ControlNode):
                     f"flags={scaling_algorithm}"
                 )
 
+                # Get ffmpeg executable path from static-ffmpeg dependency
+            ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+
             # Build ffmpeg command - ffmpeg can work directly with URLs
             cmd = [
-                imageio_ffmpeg.get_ffmpeg_exe(),
+                ffmpeg_path,
                 "-y",
                 "-i",
                 input_url,

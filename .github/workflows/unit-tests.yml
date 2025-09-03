@@ -24,8 +24,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Init environment 
         uses: ./.github/actions/init-environment 
-      - name: Run unit tests
-        run: make test/unit
+      - name: Run unit tests with coverage
+        run: make test/unit/coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          token: ${{ secrets.CODECOV_TOKEN }}
   test-windows:
     runs-on: windows-latest
     strategy:

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, TypeVar
-
-from griptape.events import BaseEvent, EventBus
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -120,11 +120,14 @@ class BaseNode(ABC):
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # See if the current state is in the set of states to trigger a change event.
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
-            EventBus.publish_event(
+
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeUnresolvedEvent(node_name=self.name))
                 )
@@ -284,10 +287,6 @@ class BaseNode(ABC):
         # Waiting for https://github.com/griptape-ai/griptape-nodes/issues/1309
         return
 
-    def on_griptape_event(self, event: BaseEvent) -> None:  # noqa: ARG002
-        """Callback for when a Griptape Event comes destined for this Node."""
-        return
-
     def on_node_message_received(
         self,
         optional_element_name: str | None,  # noqa: ARG002
@@ -435,6 +434,9 @@ class BaseNode(ABC):
             if traits:
                 trait = traits[0]  # Take the first Options trait
                 trait.choices = choices
+                # Update the manually set UI options to include the new simple_dropdown
+                if hasattr(parameter, "_ui_options") and parameter._ui_options:
+                    parameter._ui_options["simple_dropdown"] = choices
 
                 if default in choices:
                     parameter.default_value = default
@@ -443,9 +445,6 @@ class BaseNode(ABC):
                     msg = f"Default model '{default}' is not in the provided choices."
                     raise ValueError(msg)
 
-                # Update the manually set UI options to include the new simple_dropdown
-                if hasattr(parameter, "_ui_options") and parameter._ui_options:
-                    parameter._ui_options["simple_dropdown"] = choices
             else:
                 msg = f"No Options trait found for parameter '{param}'."
                 raise ValueError(msg)
@@ -565,7 +564,13 @@ class BaseNode(ABC):
         return None
 
     def set_parameter_value(
-        self, param_name: str, value: Any, *, initial_setup: bool = False, emit_change: bool = True
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
     ) -> None:
         """Attempt to set a Parameter's value.
 
@@ -586,6 +591,7 @@ class BaseNode(ABC):
             value: the value intended to be set
             emit_change: whether to emit a parameter lifecycle event, defaults to True
             initial_setup: Whether this value is being set as the initial setup on the node, defaults to False. When True, the value is not given to any before/after hooks.
+            skip_before_value_set: Whether to skip the before_value_set hook, defaults to False. Used when before_value_set has already been called earlier in the flow.
 
         Returns:
             A set of parameter names within this node that were modified as a result
@@ -614,7 +620,10 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            if not skip_before_value_set:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
+            else:
+                final_value = candidate_value
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
@@ -710,6 +719,38 @@ class BaseNode(ABC):
     def process[T](self) -> AsyncResult | None:
         pass
 
+    async def aprocess(self) -> None:
+        """Async version of process().
+
+        Default implementation wraps the existing process() method to maintain backwards compatibility.
+        Subclasses can override this method to provide direct async implementation.
+        """
+        result = self.process()
+
+        if result is None:
+            # Simple synchronous node - nothing to do
+            return
+
+        if isinstance(result, Generator):
+            # Handle generator pattern asynchronously using the same logic as before
+            loop = asyncio.get_running_loop()
+
+            try:
+                while True:
+                    # Get the next callable from generator
+                    func = next(result)
+                    # Run it in thread pool (preserving existing behavior)
+                    with ThreadPoolExecutor() as executor:
+                        future_result = await loop.run_in_executor(executor, func)
+                    # Send result back to generator
+                    result.send(future_result)
+            except StopIteration:
+                # Generator is done
+                return
+        else:
+            # Some other return type - log warning but continue
+            logger.warning("Node %s process() returned unexpected type: %s", self.name, type(result))
+
     # if not implemented, it will return no issues.
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Runs before the entire workflow is run."""
@@ -768,6 +809,8 @@ class BaseNode(ABC):
         self.current_spotlight_parameter = None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Add the value to the node
         if parameter_name in self.parameter_output_values:
             try:
@@ -781,9 +824,14 @@ class BaseNode(ABC):
         else:
             self.parameter_output_values[parameter_name] = value
         # Publish the event up!
-        EventBus.publish_event(ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name))
+
+        GriptapeNodes.EventManager().put_event(
+            ProgressEvent(value=value, node_name=self.name, parameter_name=parameter_name)
+        )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         parameter = self.get_parameter_by_name(parameter_name)
         if parameter:
             data_type = parameter.type
@@ -794,7 +842,10 @@ class BaseNode(ABC):
                 data_type=data_type,
                 value=TypeValidator.safe_serialize(value),
             )
-            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
+            )
         else:
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
@@ -907,6 +958,7 @@ class BaseNode(ABC):
         """Emit an AlterElementEvent for parameter add/remove operations."""
         from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
         from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Create event data using the parameter's to_event method
         if remove:
@@ -920,7 +972,8 @@ class BaseNode(ABC):
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
-        EventBus.publish_event(event)
+
+        GriptapeNodes.EventManager().put_event(event)
 
     def _get_element_name(self, element: str | int, element_names: list[str]) -> str:
         """Convert an element identifier (name or index) to its name.
@@ -1061,6 +1114,7 @@ class TrackedParameterOutputValues(dict[str, Any]):
         if parameter is not None:
             from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
             from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             # Create event data using the parameter's to_event method
             event_data = parameter.to_event(self._node)
@@ -1073,7 +1127,8 @@ class TrackedParameterOutputValues(dict[str, Any]):
             event = ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=AlterElementEvent(element_details=event_data))
             )
-            EventBus.publish_event(event)
+
+            GriptapeNodes.EventManager().put_event(event)
 
 
 class ControlNode(BaseNode):

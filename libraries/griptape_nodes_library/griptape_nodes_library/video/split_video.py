@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import static_ffmpeg.run
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.structures import Agent as GriptapeAgent
 from griptape.tasks import PromptTask

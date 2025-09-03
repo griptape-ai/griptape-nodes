@@ -87,7 +87,7 @@ class CandidateState(State):
     """Initial state where we have a library candidate ready for processing."""
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Library %s is now a candidate for processing", context.provenance.get_display_name())
         return None  # Wait for explicit transition to InspectingState
 
@@ -106,7 +106,7 @@ class InspectingState(State):
         return {InspectedState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Inspecting library %s", context.provenance.get_display_name())
 
         # Store inspection result directly
@@ -145,7 +145,7 @@ class InspectedState(State):
         return {EvaluatingState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         if context.inspection_result and context.inspection_result.issues:
             logger.warning(
                 "Library %s inspection completed with problems: %s",
@@ -167,7 +167,7 @@ class EvaluatingState(State):
         return {EvaluatedState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Evaluating library %s", context.provenance.get_display_name())
 
         context.evaluation_result = context.provenance.evaluate(context)
@@ -185,7 +185,7 @@ class EvaluatedState(State):
         return {InstallingState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         evaluation_issues = context.get_evaluation_issues()
         if evaluation_issues:
             logger.warning(
@@ -208,7 +208,7 @@ class InstallingState(State):
         return {InstalledState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Installing library %s", context.provenance.get_display_name())
 
         # Check if user has disabled this library
@@ -219,7 +219,7 @@ class InstallingState(State):
             return InstalledState
 
         # Perform installation using delegation
-        context.installation_result = context.provenance.install(context)
+        context.installation_result = await context.provenance.install(context)
 
         # Auto-transition to InstalledState
         return InstalledState
@@ -234,7 +234,7 @@ class InstalledState(State):
         return {LoadingState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         installation_issues = context.get_installation_issues()
         if installation_issues:
             logger.warning(
@@ -257,7 +257,7 @@ class LoadingState(State):
         return {LoadedState}
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         logger.info("Loading library %s", context.provenance.get_display_name())
 
         # Check if user has disabled this library
@@ -292,7 +292,7 @@ class LoadedState(State):
         return set()  # Terminal state
 
     @staticmethod
-    def on_enter(context: LibraryLifecycleContext) -> StateType | None:
+    async def on_enter(context: LibraryLifecycleContext) -> StateType | None:
         library_loaded_issues = context.get_library_loaded_issues()
         if library_loaded_issues:
             logger.warning(
@@ -313,31 +313,31 @@ class LibraryLifecycleFSM(FSM[LibraryLifecycleContext]):
         context = LibraryLifecycleContext(provenance=provenance)
         super().__init__(context)
 
-    def start_lifecycle(self) -> None:
+    async def start_lifecycle(self) -> None:
         """Start the library lifecycle from CandidateState."""
         if self._current_state is not None:
             raise InvalidStateTransitionError(self._current_state, CandidateState, "Lifecycle has already been started")
-        self.start(CandidateState)
+        await self.start(CandidateState)
 
-    def begin_inspection(self) -> None:
+    async def begin_inspection(self) -> None:
         """Explicitly transition from Candidate to Inspecting."""
         self._validate_state_transition(InspectingState)
-        self.transition_state(InspectingState)
+        await self.transition_state(InspectingState)
 
-    def begin_evaluation(self) -> None:
+    async def begin_evaluation(self) -> None:
         """Explicitly transition from Inspected to Evaluating."""
         self._validate_state_transition(EvaluatingState)
-        self.transition_state(EvaluatingState)
+        await self.transition_state(EvaluatingState)
 
-    def begin_installation(self) -> None:
+    async def begin_installation(self) -> None:
         """Explicitly transition from Evaluated to Installing."""
         self._validate_state_transition(InstallingState)
-        self.transition_state(InstallingState)
+        await self.transition_state(InstallingState)
 
-    def begin_loading(self) -> None:
+    async def begin_loading(self) -> None:
         """Explicitly transition from Installed to Loading."""
         self._validate_state_transition(LoadingState)
-        self.transition_state(LoadingState)
+        await self.transition_state(LoadingState)
 
     def get_context(self) -> LibraryLifecycleContext:
         """Get the current context."""

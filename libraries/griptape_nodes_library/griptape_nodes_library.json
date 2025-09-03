@@ -614,6 +614,17 @@
       }
     },
     {
+      "class_name": "GetVideoMetadata",
+      "file_path": "griptape_nodes_library/video/get_video_metadata.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract metadata from video files including aspect ratio",
+        "display_name": "Get Video Metadata",
+        "icon": "info",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
@@ -753,6 +764,17 @@
         "description": "Extract the last frame from a video and output it as an Image",
         "display_name": "Extract Last Frame",
         "icon": "film",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractAudio",
+      "file_path": "griptape_nodes_library/video/extract_audio.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract audio from a video and output it as an audio file with configurable format and quality settings",
+        "display_name": "Extract Audio",
+        "icon": "volume-2",
         "group": "edit"
       }
     },
@@ -1059,6 +1081,15 @@
           "dark": "logos/groq.svg",
           "light": "logos/groq_dark.svg"
         }
+      }
+    },
+    {
+      "class_name": "NimPrompt",
+      "file_path": "griptape_nodes_library/config/prompt/nim_prompt.py",
+      "metadata": {
+        "category": "agents/prompt_models",
+        "description": "Prompt Models available from Nvidia",
+        "display_name": "Nim Prompt"
       }
     },
     {

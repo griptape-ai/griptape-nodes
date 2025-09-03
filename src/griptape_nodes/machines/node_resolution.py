@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
-from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
-from griptape.events import EventBus
-from griptape.utils import with_contextvars
-
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -25,11 +19,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeStartProcessEvent,
     ParameterSpotlightEvent,
     ParameterValueUpdateEvent,
-    ResumeNodeProcessingEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -37,8 +31,6 @@ logger = logging.getLogger("griptape_nodes")
 @dataclass
 class Focus:
     node: BaseNode
-    scheduled_value: Any | None = None
-    process_generator: Generator | None = None
 
 
 # This is on a per-node basis
@@ -55,18 +47,16 @@ class ResolutionContext:
             node = self.focus_stack[-1].node
             # clear the data node being resolved.
             node.clear_node()
-            self.focus_stack[-1].process_generator = None
-            self.focus_stack[-1].scheduled_value = None
         self.focus_stack.clear()
         self.paused = False
 
 
 class InitializeSpotlightState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
+    async def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
         current_node = context.focus_stack[-1].node
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
             )
@@ -76,7 +66,7 @@ class InitializeSpotlightState(State):
         return None
 
     @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:
+    async def on_update(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
         if not len(context.focus_stack):
             return CompleteState
@@ -104,13 +94,13 @@ class InitializeSpotlightState(State):
 
 class EvaluateParameterState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
+    async def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
             return ExecuteNodeState
         # if not in debug mode - keep going!
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=ParameterSpotlightEvent(
@@ -125,7 +115,7 @@ class EvaluateParameterState(State):
         return None
 
     @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:
+    async def on_update(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -153,11 +143,9 @@ class EvaluateParameterState(State):
 
 
 class ExecuteNodeState(State):
-    executor: ThreadPoolExecutor = ThreadPoolExecutor()
-
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/864
     @staticmethod
-    def clear_parameter_output_values(context: ResolutionContext) -> None:
+    async def clear_parameter_output_values(context: ResolutionContext) -> None:
         """Clears all parameter output values for the currently focused node in the resolution context.
 
         This method iterates through each parameter output value stored in the current node,
@@ -192,11 +180,13 @@ class ExecuteNodeState(State):
                 data_type=parameter_type,
                 value=None,
             )
-            EventBus.publish_event(ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload)))
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
+            )
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def collect_values_from_upstream_nodes(context: ResolutionContext) -> None:
+    async def collect_values_from_upstream_nodes(context: ResolutionContext) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
         This method iterates through all input parameters of the current node, finds their
@@ -229,25 +219,32 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
+                # Skip propagation for Control Parameters as they should not receive values
+                if (
+                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
+                    != ParameterTypeBuiltin.CONTROL_TYPE
+                ):
+                    GriptapeNodes.get_instance().handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=parameter.name,
+                            node_name=current_node.name,
+                            value=output_value,
+                            data_type=upstream_parameter.output_type,
+                            incoming_connection_source_node_name=upstream_node.name,
+                            incoming_connection_source_parameter_name=upstream_parameter.name,
+                        )
                     )
-                )
 
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:
+    async def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
             return ExecuteNodeState
-        ExecuteNodeState.collect_values_from_upstream_nodes(context)
-        ExecuteNodeState.clear_parameter_output_values(context)
+        await ExecuteNodeState.collect_values_from_upstream_nodes(context)
+        await ExecuteNodeState.clear_parameter_output_values(context)
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
@@ -262,7 +259,7 @@ class ExecuteNodeState(State):
                 data_type = parameter.type
                 if data_type is None:
                     data_type = ParameterTypeBuiltin.NONE.value
-                EventBus.publish_event(
+                GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
                             payload=ParameterValueUpdateEvent(
@@ -286,7 +283,7 @@ class ExecuteNodeState(State):
         return None
 
     @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:
+    async def on_update(context: ResolutionContext) -> type[State] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Once everything has been set
@@ -295,18 +292,16 @@ class ExecuteNodeState(State):
         # If the node is not locked, execute all of this.
         if not current_node.lock:
             # To set the event manager without circular import errors
-            EventBus.publish_event(
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeStartProcessEvent(node_name=current_node.name))
                 )
             )
             logger.info("Node '%s' is processing.", current_node.name)
+            current_node = current_focus.node
 
             try:
-                work_is_scheduled = ExecuteNodeState._process_node(current_focus)
-                if work_is_scheduled:
-                    logger.debug("Pausing Node '%s' to run background work", current_node.name)
-                    return None
+                await current_node.aprocess()
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
@@ -316,14 +311,12 @@ class ExecuteNodeState(State):
                         {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                     )
                 )
-                current_focus.process_generator = None
-                current_focus.scheduled_value = None
 
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
                 GriptapeNodes.FlowManager().cancel_flow_run()
 
-                EventBus.publish_event(
+                GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                     )
@@ -332,7 +325,7 @@ class ExecuteNodeState(State):
 
             logger.info("Node '%s' finished processing.", current_node.name)
 
-            EventBus.publish_event(
+            GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                 )
@@ -358,7 +351,7 @@ class ExecuteNodeState(State):
                 data_type = parameter.type
                 if data_type is None:
                     data_type = ParameterTypeBuiltin.NONE.value
-                EventBus.publish_event(
+                GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
                         wrapped_event=ExecutionEvent(
                             payload=ParameterValueUpdateEvent(
@@ -376,7 +369,7 @@ class ExecuteNodeState(State):
             library_name = library[0]
         else:
             library_name = None
-        EventBus.publish_event(
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
@@ -394,91 +387,14 @@ class ExecuteNodeState(State):
 
         return CompleteState
 
-    @staticmethod
-    def _process_node(current_focus: Focus) -> bool:
-        """Run the process method of the node.
-
-        If the node's process method returns a generator, take the next value from the generator (a callable) and run
-        that in a thread pool executor. The result of that callable will be passed to the generator when it is resumed.
-
-        This has the effect of pausing at a yield expression, running the expression in a thread, and resuming when the thread pool is done.
-
-        Args:
-            current_focus (Focus): The current focus.
-
-        Returns:
-            bool: True if work has been scheduled, False if the node is done processing.
-        """
-
-        def on_future_done(future: Future) -> None:
-            """Called when the future is done.
-
-            Stores the result of the future in the node's context, and publishes an event to resume the flow.
-            """
-            try:
-                current_focus.scheduled_value = future.result()
-            except Exception as e:
-                logger.debug("Error in future: %s", e)
-                current_focus.scheduled_value = e
-            finally:
-                # If it hasn't been cancelled.
-                if current_focus.process_generator:
-                    EventBus.publish_event(
-                        ExecutionGriptapeNodeEvent(
-                            wrapped_event=ExecutionEvent(payload=ResumeNodeProcessingEvent(node_name=current_node.name))
-                        )
-                    )
-
-        current_node = current_focus.node
-        # Only start the processing if we don't already have a generator
-        logger.debug("Node '%s' process generator: %s", current_node.name, current_focus.process_generator)
-        if current_focus.process_generator is None:
-            result = current_node.process()
-
-            # If the process returned a generator, we need to store it for later
-            if isinstance(result, Generator):
-                current_focus.process_generator = result
-                logger.debug("Node '%s' returned a generator.", current_node.name)
-
-        # We now have a generator, so we need to run it
-        if current_focus.process_generator is not None:
-            try:
-                logger.debug(
-                    "Node '%s' has an active generator, sending scheduled value of type: %s",
-                    current_node.name,
-                    type(current_focus.scheduled_value),
-                )
-                if isinstance(current_focus.scheduled_value, Exception):
-                    func = current_focus.process_generator.throw(current_focus.scheduled_value)
-                else:
-                    func = current_focus.process_generator.send(current_focus.scheduled_value)
-
-                # Once we've passed on the scheduled value, we should clear it out just in case
-                current_focus.scheduled_value = None
-
-                future = ExecuteNodeState.executor.submit(with_contextvars(func))
-                future.add_done_callback(with_contextvars(on_future_done))
-            except StopIteration:
-                logger.debug("Node '%s' generator is done.", current_node.name)
-                # If that was the last generator, clear out the generator and indicate that there is no more work scheduled
-                current_focus.process_generator = None
-                current_focus.scheduled_value = None
-                return False
-            else:
-                # If the generator is not done, indicate that there is work scheduled
-                logger.debug("Node '%s' generator is not done.", current_node.name)
-                return True
-        logger.debug("Node '%s' did not return a generator.", current_node.name)
-        return False
-
 
 class CompleteState(State):
     @staticmethod
-    def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_enter(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
     @staticmethod
-    def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
@@ -489,9 +405,9 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
         resolution_context = ResolutionContext()
         super().__init__(resolution_context)
 
-    def resolve_node(self, node: BaseNode) -> None:
+    async def resolve_node(self, node: BaseNode) -> None:
         self._context.focus_stack.append(Focus(node=node))
-        self.start(InitializeSpotlightState)
+        await self.start(InitializeSpotlightState)
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode

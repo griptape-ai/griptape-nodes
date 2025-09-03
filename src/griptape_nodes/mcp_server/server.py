@@ -69,8 +69,8 @@ mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup
 mcp_server_logger.setLevel(logging.INFO)
 
 
-def main(api_key: str) -> None:
-    """Main entry point for the Griptape Nodes MCP server."""
+def main_sync(api_key: str) -> None:
+    """Synchronous version of main entry point for the Griptape Nodes MCP server."""
     mcp_server_logger.debug("Starting MCP GTN server...")
     # Give these a session ID
     connection_manager = WebSocketConnectionManager()
@@ -116,7 +116,6 @@ def main(api_key: str) -> None:
             finally:
                 mcp_server_logger.debug("GTN MCP server shutting down...")
 
-    # Create an ASGI application using the transport
     mcp_server_app = FastAPI(lifespan=lifespan)
 
     # ASGI handler for streamable HTTP connections
@@ -125,10 +124,15 @@ def main(api_key: str) -> None:
 
     mcp_server_app.mount("/mcp", app=handle_streamable_http)
 
-    uvicorn.run(
-        mcp_server_app,
-        host=GTN_MCP_SERVER_HOST,
-        port=GTN_MCP_SERVER_PORT,
-        log_config=None,
-        log_level=GTN_MCP_SERVER_LOG_LEVEL,
-    )
+    try:
+        # Run server using uvicorn.run
+        uvicorn.run(
+            mcp_server_app,
+            host=GTN_MCP_SERVER_HOST,
+            port=GTN_MCP_SERVER_PORT,
+            log_config=None,
+            log_level=GTN_MCP_SERVER_LOG_LEVEL,
+        )
+    except Exception as e:
+        mcp_server_logger.error("MCP server failed: %s", e)
+        raise

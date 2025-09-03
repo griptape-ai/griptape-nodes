@@ -4,7 +4,7 @@ import binascii
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 from urllib.parse import urljoin
 
 import uvicorn
@@ -12,9 +12,6 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
-
-if TYPE_CHECKING:
-    from queue import Queue
 
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
@@ -31,19 +28,8 @@ logger = logging.getLogger("griptape_nodes_api")
 logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
-# Global event queue - initialized as None and set when starting the API
-event_queue: Queue | None = None
-
 # Global static directory - initialized as None and set when starting the API
 static_dir: Path | None = None
-
-
-def get_event_queue() -> Queue:
-    """FastAPI dependency to get the event queue."""
-    if event_queue is None:
-        msg = "Event queue is not initialized"
-        raise HTTPException(status_code=500, detail=msg)
-    return event_queue
 
 
 def get_static_dir() -> Path:
@@ -156,17 +142,19 @@ async def _delete_static_file(file_path: str, static_directory: Annotated[Path, 
 
 
 @app.post("/engines/request")
-async def _create_event(request: Request, queue: Annotated[Queue, Depends(get_event_queue)]) -> None:
+async def _create_event(request: Request) -> None:
+    """Create event using centralized event utilities."""
     from .app import _process_api_event
 
     body = await request.json()
-    _process_api_event(body, queue)
+
+    # Use centralized event processing
+    await _process_api_event(body)
 
 
-def start_api(static_directory: Path, queue: Queue) -> None:
-    """Run FastAPI with Uvicorn in order to serve static files produced by nodes."""
-    global event_queue, static_dir  # noqa: PLW0603
-    event_queue = queue
+def _setup_app(static_directory: Path) -> None:
+    """Setup FastAPI app with middleware and static files."""
+    global static_dir  # noqa: PLW0603
     static_dir = static_directory
 
     if not static_dir.exists():
@@ -190,6 +178,21 @@ def start_api(static_directory: Path, queue: Queue) -> None:
         name="static",
     )
 
-    uvicorn.run(
-        app, host=STATIC_SERVER_HOST, port=STATIC_SERVER_PORT, log_level=STATIC_SERVER_LOG_LEVEL, log_config=None
-    )
+
+def start_api(static_directory: Path) -> None:
+    """Run uvicorn server synchronously using uvicorn.run."""
+    # Setup the FastAPI app
+    _setup_app(static_directory)
+
+    try:
+        # Run server using uvicorn.run
+        uvicorn.run(
+            app,
+            host=STATIC_SERVER_HOST,
+            port=STATIC_SERVER_PORT,
+            log_level=STATIC_SERVER_LOG_LEVEL,
+            log_config=None,
+        )
+    except Exception as e:
+        logger.error("API server failed: %s", e)
+        raise

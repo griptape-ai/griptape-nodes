@@ -190,12 +190,12 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
 
     async def create_event(self, request_type: str, payload: dict[str, Any]) -> None:
         """Send an event to the API without waiting for a response."""
-        from griptape_nodes.app.app import _determine_request_topic
+        from griptape_nodes.app.app import determine_request_topic
 
         logger.debug("Creating Event: %s - %s", request_type, json.dumps(payload))
 
         data = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
-        topic = _determine_request_topic()
+        topic = determine_request_topic()
 
         request_data = {"payload": data, "type": data["event_type"], "topic": topic}
 
