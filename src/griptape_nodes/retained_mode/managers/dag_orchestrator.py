@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class NodeState(Enum):
+class NodeState(StrEnum):
     """Individual node execution states."""
 
     QUEUED = "queued"

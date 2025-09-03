@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
@@ -33,7 +33,7 @@ class Focus:
     scheduled_value: Any | None = None
 
 
-class WorkflowState(Enum):
+class WorkflowState(StrEnum):
     """Workflow execution states."""
 
     NO_ERROR = "no_error"
