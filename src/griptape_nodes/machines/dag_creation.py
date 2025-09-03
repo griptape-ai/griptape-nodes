@@ -34,7 +34,7 @@ class DagCreationContext:
     build_only: bool
     batched_nodes: list[BaseNode]
 
-    def __init__(self, flow_name: str, dag_orchestrator:DagOrchestrator) -> None:
+    def __init__(self, flow_name: str, dag_orchestrator: DagOrchestrator) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
@@ -122,7 +122,7 @@ class EvaluateDagParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node:
-            dag_instance= context.execution_machine.get_dag_instance()
+            dag_instance = context.execution_machine.get_dag_instance()
             if not dag_instance:
                 msg = f"DAG instance not found for flow {context.flow_name}"
                 raise ValueError(msg)
