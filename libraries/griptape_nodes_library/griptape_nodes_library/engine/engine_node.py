@@ -147,7 +147,7 @@ class EngineNode(BaseNode):
 
         # Info message for failure outputs (will be updated dynamically)
         self.failure_info_message = ParameterMessage(
-            variant="warning",
+            variant="error",
             value=self.__class__._FAILURE_MESSAGE_DEFAULT,
             name="failure_info",
         )
@@ -160,13 +160,11 @@ class EngineNode(BaseNode):
             name="error_message",
         )
         self.add_node_element(self.error_message)
+        # Hide error message by default - only show when there's an actual error
+        self.hide_message_by_name(self.error_message.name)
 
         # Control input for execution flow
-        self.control_parameter_in = ControlParameterInput(
-            name="control_in",
-            tooltip="Execution input for the Engine Node",
-            display_name="Execute",
-        )
+        self.control_parameter_in = ControlParameterInput()
         self.add_parameter(self.control_parameter_in)
 
         # Control outputs for success/failure routing
@@ -279,19 +277,6 @@ class EngineNode(BaseNode):
         if param_name == self.request_selector.name:
             self._update_parameters_for_request_type(value, old_value)
 
-    def _is_dynamic_parameter(self, parameter_name: str) -> bool:
-        """Check if a parameter is dynamically created (vs static control parameters)."""
-        # Dynamic parameters follow these patterns:
-        # - Input parameters: input_{field_name}
-        # - Output parameters: output_success_{field_name}, output_failure_{field_name}
-        return parameter_name.startswith(
-            (
-                self._INPUT_PARAMETER_NAME_PREFIX,
-                self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX,
-                self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX,
-            )
-        )
-
     def _get_current_dynamic_parameters(self) -> CategorizedParameters:
         """Get current dynamic parameters categorized by type.
 
@@ -352,7 +337,7 @@ class EngineNode(BaseNode):
         self._update_result_message_boxes(new_request_info)
 
         # Step 3: Sort parameters into their respective groups (using ParameterGroups)
-        self._organize_parameters_into_groups()
+        self._reorder_all_elements()
 
     def _update_result_message_boxes(self, request_info: RequestInfo) -> None:
         """Update success and failure message boxes with docstrings from result classes."""
@@ -465,10 +450,6 @@ class EngineNode(BaseNode):
         except Exception as e:
             logger.error("Failed to reorder all elements: %s", e)
 
-    def _organize_parameters_into_groups(self) -> None:
-        """Step 3: Reorder all elements from scratch in the correct sequence."""
-        self._reorder_all_elements()
-
     def _clear_all_dynamic_elements(self, current_params: CategorizedParameters) -> None:
         """Clear all dynamic parameters and UI elements for fresh start."""
         # Clear ALL parameter output values to prevent dirty values from carrying over
@@ -495,6 +476,7 @@ class EngineNode(BaseNode):
         )
         self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
         self.error_message.value = self._ERROR_MESSAGE_DEFAULT
+        self.hide_message_by_name(self.error_message.name)
 
     # Private Methods
     def _discover_request_types(self) -> dict[str, RequestInfo]:
@@ -582,12 +564,11 @@ class EngineNode(BaseNode):
             self.error_message.value = (
                 "Error Messages: Any configuration errors or execution failures will appear here."
             )
+            self.hide_message_by_name(self.error_message.name)
             return
 
         if clean_type not in self._request_types:
             return
-
-        # Note: _old_type parameter preserved for potential future smart transition logic
 
         new_request_info = self._request_types[clean_type]
         new_request_class = new_request_info.request_class
@@ -601,10 +582,12 @@ class EngineNode(BaseNode):
             self.error_message.value = (
                 f"Cannot use {clean_type}: corresponding Success and Failure result classes not found"
             )
+            self.show_message_by_name(self.error_message.name)
             return
 
         # Clear error message for usable request types
         self.error_message.value = self._ERROR_MESSAGE_DEFAULT
+        self.hide_message_by_name(self.error_message.name)
 
         # Systematic parameter transition approach
         if _old_type:
