@@ -31,20 +31,24 @@ jobs:
       - name: Find version bump commit
         id: find-commit
         run: |
-          # Get the commit that modified pyproject.toml with version change on the release branch
-          COMMIT_SHA=$(git log origin/${{ github.ref_name }} --format="%H" --grep="version" -i -- pyproject.toml | head -1)
-
-          # If no commit found with grep, try to find any commit that modified pyproject.toml
+          # Find commits on the release branch that are not on main and modify pyproject.toml
+          COMMIT_SHA=$(git log origin/${{ github.ref_name }} ^origin/main --format="%H" --grep="version\|bump" -i -- pyproject.toml | head -1)
+          
+          # If no commit found with grep, try to find any commit that modified pyproject.toml not on main
           if [ -z "$COMMIT_SHA" ]; then
-            COMMIT_SHA=$(git log origin/${{ github.ref_name }} --format="%H" -- pyproject.toml | head -1)
+            COMMIT_SHA=$(git log origin/${{ github.ref_name }} ^origin/main --format="%H" -- pyproject.toml | head -1)
           fi
-
+          
           if [ -z "$COMMIT_SHA" ]; then
-            echo "No version bump commit found"
+            echo "No version bump commit found on release branch that isn't already on main"
             echo "found=false" >> $GITHUB_OUTPUT
           else
             echo "Version bump commit found: $COMMIT_SHA"
+            # Get commit message for logging
+            COMMIT_MSG=$(git log -1 --format="%s" $COMMIT_SHA)
+            echo "Commit message: $COMMIT_MSG"
             echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+            echo "message=$COMMIT_MSG" >> $GITHUB_OUTPUT
             echo "found=true" >> $GITHUB_OUTPUT
           fi
 
