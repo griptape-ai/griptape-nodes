@@ -69,6 +69,11 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     def get_complete_file_path(cls, relative_file_path: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        # If the path is already absolute, return it as-is
+        if Path(relative_file_path).is_absolute():
+            return relative_file_path
+
+        # Otherwise, resolve it relative to the workspace
         config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
         complete_file_path = workspace_path / relative_file_path

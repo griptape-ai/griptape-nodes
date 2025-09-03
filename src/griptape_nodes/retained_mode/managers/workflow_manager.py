@@ -58,6 +58,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultFailure,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
+    ImportWorkflowRequest,
+    ImportWorkflowResultFailure,
+    ImportWorkflowResultSuccess,
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultFailure,
     ListAllWorkflowsResultSuccess,
@@ -271,6 +274,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             ImportWorkflowAsReferencedSubFlowRequest,
             self.on_import_workflow_as_referenced_sub_flow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            ImportWorkflowRequest,
+            self.on_import_workflow_request,
         )
         event_manager.assign_manager_to_request_type(
             BranchWorkflowRequest,
@@ -621,6 +628,38 @@ class WorkflowManager:
             logger.error(details)
             return RegisterWorkflowResultFailure(result_details=details)
         return RegisterWorkflowResultSuccess(workflow_name=workflow.metadata.name)
+
+    def on_import_workflow_request(self, request: ImportWorkflowRequest) -> ResultPayload:
+        # First, attempt to load metadata from the file
+        load_metadata_request = LoadWorkflowMetadata(file_name=request.file_path)
+        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
+
+        # Check if workflow is already registered
+        workflow_name = load_metadata_result.metadata.name
+        if WorkflowRegistry.has_workflow_with_name(workflow_name):
+            # Workflow already exists - no need to re-register
+            return ImportWorkflowResultSuccess(workflow_name=workflow_name)
+
+        # Now register the workflow with the extracted metadata
+        register_request = RegisterWorkflowRequest(metadata=load_metadata_result.metadata, file_name=request.file_path)
+        register_result = self.on_register_workflow_request(register_request)
+
+        if not isinstance(register_result, RegisterWorkflowResultSuccess):
+            return ImportWorkflowResultFailure(result_details=register_result.result_details)
+
+        # Add the workflow to the user configuration
+        try:
+            full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
+            GriptapeNodes.ConfigManager().save_user_workflow_json(full_path)
+        except Exception as e:
+            details = f"Failed to add workflow '{register_result.workflow_name}' to user configuration: {e}"
+
+            return ImportWorkflowResultFailure(result_details=details)
+
+        return ImportWorkflowResultSuccess(workflow_name=register_result.workflow_name)
 
     def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
         try:
@@ -1359,10 +1398,20 @@ class WorkflowManager:
                     file_name = new_file_name
 
         # Get file name stuff prepped.
-        if not file_name:
-            file_name = datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
-        relative_file_path = f"{file_name}.py"
-        file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+        # Use the existing registered file path if this is an existing workflow (not a template)
+        if prior_workflow and not prior_workflow.metadata.is_template:
+            # Use the existing registered file path
+            relative_file_path = prior_workflow.file_path
+            file_path = Path(WorkflowRegistry.get_complete_file_path(relative_file_path))
+            # Extract file name from the path for metadata generation
+            if not file_name:
+                file_name = prior_workflow.metadata.name
+        else:
+            # Create new path in workspace for new workflows or templates
+            if not file_name:
+                file_name = datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            relative_file_path = f"{file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         # Generate the workflow file contents
         try:
@@ -1385,20 +1434,17 @@ class WorkflowManager:
             logger.error(details)
             return SaveWorkflowResultFailure(result_details=details)
 
-        relative_serialized_file_path = f"{file_name}.py"
-        serialized_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_serialized_file_path)
-
         # Check disk space before writing
         config_manager = GriptapeNodes.ConfigManager()
         min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_workflows")
-        if not OSManager.check_available_disk_space(serialized_file_path.parent, min_space_gb):
-            error_msg = OSManager.format_disk_space_error(serialized_file_path.parent)
+        if not OSManager.check_available_disk_space(file_path.parent, min_space_gb):
+            error_msg = OSManager.format_disk_space_error(file_path.parent)
             details = f"Attempted to save workflow '{file_name}' (requires {min_space_gb:.1f} GB). Failed: {error_msg}"
             logger.error(details)
             return SaveWorkflowResultFailure(result_details=details)
 
         try:
-            with serialized_file_path.open("w", encoding="utf-8") as file:
+            with file_path.open("w", encoding="utf-8") as file:
                 file.write(final_code_output)
         except OSError as e:
             details = f"Attempted to save workflow '{file_name}'. Failed when writing file: {e}"
@@ -1408,19 +1454,21 @@ class WorkflowManager:
         # save the created workflow as an entry in the JSON config file.
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
-            try:
-                GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
-            except OSError as e:
-                details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
-                logger.error(details)
-                return SaveWorkflowResultFailure(result_details=details)
+            # Only add to config if it's in the workspace directory (not an external file)
+            if not Path(relative_file_path).is_absolute():
+                try:
+                    GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+                except OSError as e:
+                    details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
+                    logger.error(details)
+                    return SaveWorkflowResultFailure(result_details=details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         # Update existing workflow's metadata in the registry
         existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
         existing_workflow.metadata = workflow_metadata
-        details = f"Successfully saved workflow to: {serialized_file_path}"
+        details = f"Successfully saved workflow to: {file_path}"
         logger.info(details)
-        return SaveWorkflowResultSuccess(file_path=str(serialized_file_path))
+        return SaveWorkflowResultSuccess(file_path=str(file_path))
 
     def _generate_workflow_metadata(  # noqa: PLR0913
         self,
