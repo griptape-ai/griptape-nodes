@@ -16,7 +16,6 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState
-from griptape_nodes.machines.dag_creation import DagCreationMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -1847,9 +1846,6 @@ class FlowManager:
         node.state = NodeResolutionState.UNRESOLVED
         # Resolve the node
         await resolution_machine.resolve_node(node)
-        if isinstance(resolution_machine, DagCreationMachine):
-            execution_machine = resolution_machine.get_context().execution_machine
-            await execution_machine.start_execution()
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
             machine.get_context().current_node = None
