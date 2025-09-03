@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar
 
-import static_ffmpeg.run
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+import static_ffmpeg.run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
