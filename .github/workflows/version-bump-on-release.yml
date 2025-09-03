@@ -18,7 +18,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Configure git
         run: |
@@ -88,7 +88,7 @@ jobs:
           PR_EXISTS=$(gh pr list --base main --head ${{ steps.create-branch.outputs.branch }} --json number --jq length)
           echo "exists=$PR_EXISTS" >> $GITHUB_OUTPUT
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
 
       - name: Create pull request into main
         if: steps.find-commit.outputs.found == 'true' && steps.check-pr.outputs.exists == '0'
@@ -101,4 +101,4 @@ jobs:
 
           Cherry-picked commit: ${{ steps.find-commit.outputs.sha }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
