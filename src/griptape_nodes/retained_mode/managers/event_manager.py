@@ -246,12 +246,17 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Only support sync callbacks for sync method
+        # Support async callbacks for sync method ONLY if there is no running event loop
         if inspect.iscoroutinefunction(callback):
-            msg = f"Sync handle_request cannot call async callback for request type '{request_type.__name__}."
-            raise TypeError(msg)
-
-        result_payload: ResultPayload = callback(request)
+            try:
+                asyncio.get_running_loop()
+                msg = "Async handler cannot be called with sync handle_request. Use ahandle_request instead."
+                raise ValueError(msg)
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run
+                result_payload: ResultPayload = asyncio.run(callback(request))
+        else:
+            result_payload: ResultPayload = callback(request)
 
         # Handle workflow alteration events for sync context
         with operation_depth_mgr:
