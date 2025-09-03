@@ -2195,6 +2195,9 @@ class WorkflowManager:
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesResultSuccess"
         )
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.library_events", "ReloadAllLibrariesRequest"
+        )
 
         code_blocks: list[ast.AST] = []
 
@@ -2269,24 +2272,22 @@ class WorkflowManager:
         )
         ast.fix_missing_locations(test)
 
-        # 3) the body: GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+        # 3) the body: GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
         # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
         load_call = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                            attr="LibraryManager",
-                            ctx=ast.Load(),
-                        ),
-                        args=[],
-                        keywords=[],
-                    ),
-                    attr="load_all_libraries_from_config",
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="handle_request",
                     ctx=ast.Load(),
                 ),
-                args=[],
+                args=[
+                    ast.Call(
+                        func=ast.Name(id="ReloadAllLibrariesRequest", ctx=ast.Load()),
+                        args=[],
+                        keywords=[],
+                    )
+                ],
                 keywords=[],
             )
         )
