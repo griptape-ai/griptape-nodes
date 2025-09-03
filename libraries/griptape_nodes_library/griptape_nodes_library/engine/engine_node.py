@@ -21,9 +21,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
-    AddParameterToNodeResultSuccess,
     RemoveParameterFromNodeRequest,
-    RemoveParameterFromNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -85,6 +83,17 @@ class EngineNode(BaseNode):
     # Default selection option constant
     _DEFAULT_SELECTION_TEXT = "Select an Engine Request Type"
 
+    # Default message box text constants
+    _SUCCESS_MESSAGE_DEFAULT = (
+        "Success Output Parameters: These values will be populated only after the request executes successfully."
+    )
+    _FAILURE_MESSAGE_DEFAULT = (
+        "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
+    )
+    _ERROR_MESSAGE_DEFAULT = "Error Messages: Any configuration errors or execution failures will appear here."
+    _SUCCESS_MESSAGE_WITH_DOC_TEMPLATE = "Success Output Parameters: {doc}\n\nThese values will be populated only after the request executes successfully."
+    _FAILURE_MESSAGE_WITH_DOC_TEMPLATE = "Failure Output Parameters: {doc}\n\nThese values will be populated only after the request fails or encounters errors."
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -131,7 +140,7 @@ class EngineNode(BaseNode):
         # Info message for success outputs (will be updated dynamically)
         self.success_info_message = ParameterMessage(
             variant="success",
-            value="Success Output Parameters: These values will be populated only after the request executes successfully.",
+            value=self.__class__._SUCCESS_MESSAGE_DEFAULT,
             name="success_info",
         )
         self.add_node_element(self.success_info_message)
@@ -139,7 +148,7 @@ class EngineNode(BaseNode):
         # Info message for failure outputs (will be updated dynamically)
         self.failure_info_message = ParameterMessage(
             variant="warning",
-            value="Failure Output Parameters: These values will be populated only after the request fails or encounters errors.",
+            value=self.__class__._FAILURE_MESSAGE_DEFAULT,
             name="failure_info",
         )
         self.add_node_element(self.failure_info_message)
@@ -147,7 +156,7 @@ class EngineNode(BaseNode):
         # Create static UI elements that will be populated dynamically
         self.error_message = ParameterMessage(
             variant="error",
-            value="Error Messages: Any configuration errors or execution failures will appear here.",
+            value=self._ERROR_MESSAGE_DEFAULT,
             name="error_message",
         )
         self.add_node_element(self.error_message)
@@ -204,7 +213,7 @@ class EngineNode(BaseNode):
         # Step 4: Get request information and validate it has result classes
         request_info = self._request_types[clean_type]
         if not request_info.has_results:
-            logger.warning(
+            logger.error(
                 "Could not find corresponding ResultPayload classes for request type '%s' - execution skipped",
                 clean_type,
             )
@@ -309,7 +318,7 @@ class EngineNode(BaseNode):
         """Execute systematic parameter transition following the outlined approach."""
         # Clear ALL parameter output values to prevent contamination between request types
         self.parameter_output_values.clear()
-        
+
         # Step 1: Outline all parameters that need to be preserved, removed, and added
         current_params = self._get_current_dynamic_parameters()
 
@@ -339,8 +348,28 @@ class EngineNode(BaseNode):
             plan=failure_plan, param_class=new_request_info.failure_class, param_type=ParamType.FAILURE
         )
 
+        # Update success and failure message boxes with docstrings
+        self._update_result_message_boxes(new_request_info)
+
         # Step 3: Sort parameters into their respective groups (using ParameterGroups)
         self._organize_parameters_into_groups()
+
+    def _update_result_message_boxes(self, request_info: RequestInfo) -> None:
+        """Update success and failure message boxes with docstrings from result classes."""
+        success_class = request_info.success_class
+        failure_class = request_info.failure_class
+
+        if success_class:
+            success_doc = success_class.__doc__ if success_class.__doc__ else success_class.__name__
+            self.success_info_message.value = self.__class__._SUCCESS_MESSAGE_WITH_DOC_TEMPLATE.format(doc=success_doc)
+        else:
+            self.success_info_message.value = self.__class__._SUCCESS_MESSAGE_DEFAULT
+
+        if failure_class:
+            failure_doc = failure_class.__doc__ if failure_class.__doc__ else failure_class.__name__
+            self.failure_info_message.value = self.__class__._FAILURE_MESSAGE_WITH_DOC_TEMPLATE.format(doc=failure_doc)
+        else:
+            self.failure_info_message.value = self.__class__._FAILURE_MESSAGE_DEFAULT
 
     def _outline_parameter_transition_plan(self, current_names: set[str], desired_names: set[str]) -> TransitionPlan:
         """Create a generic transition plan for a set of parameters."""
@@ -377,8 +406,8 @@ class EngineNode(BaseNode):
         for param_name in plan.to_remove:
             remove_request = RemoveParameterFromNodeRequest(parameter_name=param_name, node_name=self.name)
             result = GriptapeNodes.handle_request(remove_request)
-            if not isinstance(result, RemoveParameterFromNodeResultSuccess):
-                logger.warning("Failed to remove parameter %s: %s", param_name, result.result_details)
+            if not result.succeeded():
+                logger.error("Failed to remove parameter %s: %s", param_name, result.result_details)
 
         # Add new parameters for this group
         if plan.to_add and param_class:
@@ -394,270 +423,57 @@ class EngineNode(BaseNode):
 
     def _reorder_all_elements(self) -> None:
         """Reorder all elements in the correct sequence from scratch."""
+        new_order = []
+
+        # 1. Control input
+        new_order.append(self.control_parameter_in.name)
+
+        # 2. Control outputs
+        new_order.append(self.success_output.name)
+        new_order.append(self.failure_output.name)
+
+        # 3. request_type selector
+        new_order.append(self.request_selector.name)
+
+        # 4. documentation ParameterMessage
+        new_order.append(self.documentation_message.name)
+
+        # 5. All input parameters
+        input_params = [p for p in self.parameters if p.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX)]
+        new_order.extend(param.name for param in input_params)
+
+        # 6. Success ParameterMessage
+        new_order.append(self.success_info_message.name)
+
+        # 7. All success parameters
+        success_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX)]
+        new_order.extend(param.name for param in success_params)
+
+        # 8. Failure ParameterMessage
+        new_order.append(self.failure_info_message.name)
+
+        # 9. All failure parameters
+        failure_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX)]
+        new_order.extend(param.name for param in failure_params)
+
+        # 10. Error message (always at end)
+        new_order.append(self.error_message.name)
+
+        # Use the BaseNode's reorder_elements method
         try:
-            new_order = []
-
-            # 1. Control input
-            new_order.append(self.control_parameter_in.name)
-
-            # 2. Control outputs
-            new_order.append(self.success_output.name)
-            new_order.append(self.failure_output.name)
-
-            # 3. request_type selector
-            new_order.append(self.request_selector.name)
-
-            # 4. documentation ParameterMessage
-            new_order.append(self.documentation_message.name)
-
-            # 5. All input parameters
-            input_params = [p for p in self.parameters if p.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX)]
-            new_order.extend(param.name for param in input_params)
-
-            # 6. Success ParameterMessage
-            new_order.append(self.success_info_message.name)
-
-            # 7. All success parameters
-            success_params = [
-                p for p in self.parameters if p.name.startswith(self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX)
-            ]
-            new_order.extend(param.name for param in success_params)
-
-            # 8. Failure ParameterMessage
-            new_order.append(self.failure_info_message.name)
-
-            # 9. All failure parameters
-            failure_params = [
-                p for p in self.parameters if p.name.startswith(self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX)
-            ]
-            new_order.extend(param.name for param in failure_params)
-
-            # 10. Error message (always at end)
-            new_order.append(self.error_message.name)
-
-            # Use the BaseNode's reorder_elements method
             self.reorder_elements(element_order=new_order)
-
         except Exception as e:
-            logger.warning("Failed to reorder all elements: %s", e)
+            logger.error("Failed to reorder all elements: %s", e)
 
     def _organize_parameters_into_groups(self) -> None:
         """Step 3: Reorder all elements from scratch in the correct sequence."""
         self._reorder_all_elements()
 
-    def _transition_parameters_smartly(self, old_request_info: RequestInfo, new_request_info: RequestInfo) -> None:
-        """Intelligently transition parameters, preserving connections where possible."""
-        logger.info(
-            "Smart transition from %s to %s",
-            old_request_info.request_class.__name__,
-            new_request_info.request_class.__name__,
-        )
-
-        # Get current parameters once for use in all operations
-        current_params = self._get_current_dynamic_parameters()
-
-        # Analyze which parameters can survive the transition
-        surviving_params = self._analyze_parameter_compatibility(old_request_info, new_request_info)
-
-        # Remove parameters that won't survive (using events for proper cleanup)
-        self._remove_non_surviving_parameters(surviving_params, current_params)
-
-        # Clear all UI elements except survivors
-        self._clear_non_surviving_dynamic_elements(surviving_params, current_params)
-
-        # Create new parameters (skipping survivors)
-        self._create_request_parameters(new_request_info.request_class, skip_existing=surviving_params)
-        self._create_result_parameters(new_request_info, skip_existing=surviving_params)
-
-    def _analyze_parameter_compatibility(
-        self, old_request_info: RequestInfo, new_request_info: RequestInfo
-    ) -> set[str]:
-        """Determine which parameters can survive the transition with their connections intact."""
-        surviving_params = set()
-
-        if not (old_request_info.request_class and new_request_info.request_class):
-            return surviving_params
-
-        # Get field information for both request types
-        try:
-            old_fields = {
-                f.name: f for f in dataclasses.fields(old_request_info.request_class) if f.name != "request_id"
-            }
-            old_hints = get_type_hints(old_request_info.request_class)
-        except Exception:
-            # dataclasses.fields or get_type_hints can fail with malformed classes or missing imports
-            # Fallback: treat as having no compatible fields to preserve connections safely
-            old_fields, old_hints = {}, {}
-
-        try:
-            new_fields = {
-                f.name: f for f in dataclasses.fields(new_request_info.request_class) if f.name != "request_id"
-            }
-            new_hints = get_type_hints(new_request_info.request_class)
-        except Exception:
-            # dataclasses.fields or get_type_hints can fail with malformed classes or missing imports
-            # Fallback: treat as having no compatible fields to preserve connections safely
-            new_fields, new_hints = {}, {}
-
-        # Check input parameters for compatibility
-        for field_name in old_fields:
-            if field_name in new_fields:
-                old_param_name = f"{self._INPUT_PARAMETER_NAME_PREFIX}{field_name}"
-
-                try:
-                    old_field_type = old_hints.get(field_name, old_fields[field_name].type)
-                    new_field_type = new_hints.get(field_name, new_fields[field_name].type)
-                except Exception as e:
-                    # Field type access can fail with complex generics or malformed annotations
-                    # Fallback: skip this field to avoid breaking the entire compatibility analysis
-                    logger.debug("Failed to get field types for %s: %s", field_name, e)
-                    continue
-
-                old_output_type = self._get_output_type_for_field(old_field_type)
-                new_input_types = self._get_input_types_for_field(new_field_type)
-
-                if self._types_are_compatible(old_output_type, new_input_types):
-                    surviving_params.add(old_param_name)
-                    logger.debug("Input parameter %s will survive transition", old_param_name)
-
-        # Check output parameters for compatibility
-        self._analyze_result_parameter_compatibility(old_request_info, new_request_info, surviving_params)
-
-        return surviving_params
-
-    def _types_are_compatible(self, old_output_type: str, new_input_types: list[str]) -> bool:
-        """Check if an old output type is compatible with new input types using ParameterType's built-in logic."""
-        for input_type in new_input_types:
-            if ParameterType.are_types_compatible(source_type=old_output_type, target_type=input_type):
-                return True
-        return False
-
-    def _analyze_result_parameter_compatibility(
-        self, old_request_info: RequestInfo, new_request_info: RequestInfo, surviving_params: set[str]
-    ) -> None:
-        """Analyze result parameter compatibility and add survivors."""
-        # Check success parameters
-        if old_request_info.success_class and new_request_info.success_class:
-            self._analyze_result_class_compatibility(
-                old_class=old_request_info.success_class,
-                new_class=new_request_info.success_class,
-                prefix=ParamType.SUCCESS,
-                surviving_params=surviving_params,
-            )
-
-        # Check failure parameters
-        if old_request_info.failure_class and new_request_info.failure_class:
-            self._analyze_result_class_compatibility(
-                old_class=old_request_info.failure_class,
-                new_class=new_request_info.failure_class,
-                prefix=ParamType.FAILURE,
-                surviving_params=surviving_params,
-            )
-
-    def _analyze_result_class_compatibility(
-        self, old_class: type, new_class: type, prefix: ParamType, surviving_params: set[str]
-    ) -> None:
-        """Analyze compatibility between old and new result classes."""
-        old_fields = {f.name: f for f in dataclasses.fields(old_class) if f.name not in self._SKIP_RESULT_FIELDS}
-        new_fields = {f.name: f for f in dataclasses.fields(new_class) if f.name not in self._SKIP_RESULT_FIELDS}
-
-        try:
-            old_hints = get_type_hints(old_class)
-        except Exception:
-            # get_type_hints can fail with string annotations or missing imports
-            # Fallback: use raw field.type attributes instead of resolved types
-            old_hints = {}
-
-        try:
-            new_hints = get_type_hints(new_class)
-        except Exception:
-            # get_type_hints can fail with string annotations or missing imports
-            # Fallback: use raw field.type attributes instead of resolved types
-            new_hints = {}
-
-        match prefix:
-            case ParamType.SUCCESS:
-                prefix_str = self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX
-            case ParamType.FAILURE:
-                prefix_str = self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX
-            case _:
-                msg = f"Invalid result type prefix: {prefix}"
-                raise ValueError(msg)
-
-        for field_name, old_field in old_fields.items():
-            if field_name not in new_fields:
-                continue
-
-            new_field = new_fields[field_name]
-
-            try:
-                old_field_type = old_hints.get(field_name, old_field.type)
-                new_field_type = new_hints.get(field_name, new_field.type)
-            except Exception as e:
-                # Field type access can fail with complex generics or malformed annotations
-                # Fallback: skip this field to avoid breaking the entire compatibility analysis
-                logger.debug("Failed to get field types for %s: %s", field_name, e)
-                continue
-
-            old_output_type = self._get_output_type_for_field(old_field_type)
-            new_output_type = self._get_output_type_for_field(new_field_type)
-
-            if old_output_type == new_output_type:
-                param_name = f"{prefix_str}{field_name}"
-                surviving_params.add(param_name)
-                logger.debug("Output parameter %s will survive transition", param_name)
-
-    def _remove_non_surviving_parameters(
-        self, surviving_params: set[str], current_params: CategorizedParameters
-    ) -> None:
-        """Remove parameters that won't survive the transition using proper events."""
-        # Find parameters that aren't surviving using the provided current_params
-        all_dynamic_params = (
-            current_params.input_parameters
-            + current_params.success_output_parameters
-            + current_params.failure_output_parameters
-        )
-        params_to_remove = [param.name for param in all_dynamic_params if param.name not in surviving_params]
-
-        # Remove them using the proper event system
-        for param_name in params_to_remove:
-            logger.debug("Removing non-surviving parameter: %s", param_name)
-            remove_request = RemoveParameterFromNodeRequest(parameter_name=param_name, node_name=self.name)
-            remove_result = GriptapeNodes.handle_request(remove_request)
-            if not isinstance(remove_result, RemoveParameterFromNodeResultSuccess):
-                logger.error("Failed to remove parameter %s: %s", param_name, remove_result.result_details)
-
-    def _clear_non_surviving_dynamic_elements(
-        self, surviving_params: set[str], current_params: CategorizedParameters
-    ) -> None:
-        """Clear dynamic parameters and UI elements that aren't surviving the transition."""
-        from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        # Remove non-surviving parameters using the provided current_params
-        all_dynamic_params = (
-            current_params.input_parameters
-            + current_params.success_output_parameters
-            + current_params.failure_output_parameters
-        )
-
-        for param in all_dynamic_params:
-            if param.name not in surviving_params:
-                remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
-                GriptapeNodes.handle_request(remove_request)
-
-        # Reset static UI elements to explanatory content
-        self.success_info_message.value = (
-            "Success Output Parameters: These values will be populated only after the request executes successfully."
-        )
-        self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
-        self.error_message.value = "Error Messages: Any configuration errors or execution failures will appear here."
-
     def _clear_all_dynamic_elements(self, current_params: CategorizedParameters) -> None:
         """Clear all dynamic parameters and UI elements for fresh start."""
         # Clear ALL parameter output values to prevent dirty values from carrying over
         self.parameter_output_values.clear()
-        
+
         # Remove all parameters using the provided current_params
         all_dynamic_params = (
             current_params.input_parameters
@@ -670,19 +486,15 @@ class EngineNode(BaseNode):
             if self.get_parameter_by_name(param.name) is not None:
                 remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
                 result = GriptapeNodes.handle_request(remove_request)
-                if not hasattr(result, "succeeded") or not result.succeeded():
-                    logger.debug(
-                        "Failed to remove parameter %s: %s",
-                        param.name,
-                        getattr(result, "result_details", "Unknown error"),
-                    )
+                if not result.succeeded():
+                    logger.error("Failed to remove parameter %s: %s", param.name, result.result_details)
 
         # Reset static UI elements to explanatory content
         self.success_info_message.value = (
             "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
-        self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
-        self.error_message.value = "Error Messages: Any configuration errors or execution failures will appear here."
+        self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
+        self.error_message.value = self._ERROR_MESSAGE_DEFAULT
 
     # Private Methods
     def _discover_request_types(self) -> dict[str, RequestInfo]:
@@ -765,8 +577,8 @@ class EngineNode(BaseNode):
 
             # Reset all messages to default state
             self.documentation_message.value = "Select a request type to see its documentation and parameters."
-            self.success_info_message.value = "Success Output Parameters: These values will be populated only after the request executes successfully."
-            self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
+            self.success_info_message.value = self._SUCCESS_MESSAGE_DEFAULT
+            self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
             self.error_message.value = (
                 "Error Messages: Any configuration errors or execution failures will appear here."
             )
@@ -792,7 +604,7 @@ class EngineNode(BaseNode):
             return
 
         # Clear error message for usable request types
-        self.error_message.value = "Error Messages: Any configuration errors or execution failures will appear here."
+        self.error_message.value = self._ERROR_MESSAGE_DEFAULT
 
         # Systematic parameter transition approach
         if _old_type:
@@ -864,11 +676,11 @@ class EngineNode(BaseNode):
         )
 
         result = GriptapeNodes.handle_request(add_request)
-        if not isinstance(result, AddParameterToNodeResultSuccess):
-            logger.warning(
+        if not result.succeeded():
+            logger.error(
                 "Failed to create input parameter %s: %s",
                 param_name,
-                result.result_details if hasattr(result, "result_details") else result,
+                result.result_details,
             )
 
     def _get_field_default_value(self, field: Any) -> Any:
@@ -913,27 +725,20 @@ class EngineNode(BaseNode):
         failure_class = request_info.failure_class
         skip_existing = skip_existing or set()
 
+        # Update message boxes with docstrings
+        self._update_result_message_boxes(request_info)
+
         # Add Success Parameters if success class exists
         if success_class:
-            success_doc = success_class.__doc__ if success_class.__doc__ else success_class.__name__
-            self.success_info_message.value = f"Success Output Parameters: {success_doc}. These values will be populated only after the request executes successfully."
             self._create_output_parameters_for_class(
                 success_class, ParamType.SUCCESS, self._SKIP_RESULT_FIELDS, skip_existing
             )
-        else:
-            # Show explanatory text if no success class
-            self.success_info_message.value = "Success Output Parameters: These values will be populated only after the request executes successfully."
 
         # Add Failure Parameters if failure class exists
         if failure_class:
-            failure_doc = failure_class.__doc__ if failure_class.__doc__ else failure_class.__name__
-            self.failure_info_message.value = f"Failure Output Parameters: {failure_doc}. These values will be populated only after the request fails or encounters errors."
             self._create_output_parameters_for_class(
                 failure_class, ParamType.FAILURE, self._SKIP_RESULT_FIELDS, skip_existing
             )
-        else:
-            # Show explanatory text if no failure class
-            self.failure_info_message.value = "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
 
     def _create_output_parameters_for_class(
         self, result_class: Any, prefix: ParamType, skip_fields: set, skip_existing: set[str] | None = None
@@ -998,11 +803,11 @@ class EngineNode(BaseNode):
         )
 
         result = GriptapeNodes.handle_request(add_request)
-        if not isinstance(result, AddParameterToNodeResultSuccess):
-            logger.warning(
+        if not result.succeeded():
+            logger.error(
                 "Failed to create output parameter %s: %s",
                 param_name,
-                result.result_details if hasattr(result, "result_details") else result,
+                result.result_details,
             )
 
     def _python_type_to_param_type(self, python_type: Any) -> str:
