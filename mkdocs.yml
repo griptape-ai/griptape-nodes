@@ -179,18 +179,22 @@ nav:
     - Video:
         - Load Video: nodes/video/load_video.md
         - Display Video: nodes/video/display_video.md
-        - Resize Video: nodes/video/resize_video.md
         - Save Video: nodes/video/save_video.md
+        - Resize Video: nodes/video/resize_video.md
         - Change Speed: nodes/video/change_speed.md
         - Flip Video: nodes/video/flip_video.md
         - Reverse Video: nodes/video/reverse_video.md
         - Split Video: nodes/video/split_video.md
+        - Concatenate Videos: nodes/video/concatenate_videos.md
         - Extract Last Frame: nodes/video/extract_last_frame.md
         - Extract Audio: nodes/video/extract_audio.md
         - Hold Video Frames: nodes/video/hold_video_frames.md
         - Adjust Video EQ: nodes/video/adjust_video_eq.md
         - Add Color Curves: nodes/video/add_color_curves.md
+        - Add Film Grain: nodes/video/add_film_grain.md
         - Add Overlay: nodes/video/add_overlay.md
+        - Add RGB Shift: nodes/video/add_rgb_shift.md
+        - Add Vignette: nodes/video/add_vignette.md
     - Tools:
         - Calculator: nodes/tools/calculator_tool.md
         - Date Time: nodes/tools/date_time_tool.md
