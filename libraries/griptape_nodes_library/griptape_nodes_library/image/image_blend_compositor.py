@@ -131,7 +131,32 @@ class ImageBlendCompositor(BaseImageProcessor):
 
         self.add_node_element(advanced_group)
 
-        """Process images immediately with a parameter override to avoid timing issues."""
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Process image automatically when inputs or parameters change."""
+        if parameter.name in ["input_image", "blend_image"] and value is not None:
+            # Check if both images are available
+            image = self.get_parameter_value("input_image")
+            blend_image = self.get_parameter_value("blend_image")
+            if image is not None and blend_image is not None:
+                self._process_images_immediately(image, blend_image)
+        elif parameter.name in [
+            "blend_mode",
+            "opacity",
+            "blend_position_x",
+            "blend_position_y",
+            "resize_blend_to_fit",
+            "preserve_alpha",
+            "invert_blend",
+        ]:
+            # Process when blend parameters change (for live preview)
+            image = self.get_parameter_value("input_image")
+            blend_image = self.get_parameter_value("blend_image")
+            if image is not None and blend_image is not None:
+                self._process_images_immediately(image, blend_image)
+        return super().after_value_set(parameter, value)
+
+    def _process_images_immediately(self, image_value: Any, blend_image_value: Any) -> None:
+        """Process images immediately for live preview."""
         try:
             # Convert to ImageUrlArtifact if needed
             if isinstance(image_value, dict):
@@ -154,12 +179,8 @@ class ImageBlendCompositor(BaseImageProcessor):
             image_pil = load_pil_from_url(image_artifact.value)
             blend_pil = load_pil_from_url(blend_image_artifact.value)
 
-            # Get current parameters but override the one that just changed
-            params = self._get_custom_parameters()
-            params[param_name] = param_value
-
-            # Process with current settings (including the override)
-            processed_image = self._process_images(image_pil, blend_pil, **params)
+            # Process with current settings
+            processed_image = self._process_images(image_pil, blend_pil, **self._get_custom_parameters())
 
             # Save and set output
             from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
@@ -309,40 +330,40 @@ class ImageBlendCompositor(BaseImageProcessor):
         # Convert back to PIL image
         return Image.fromarray(result_array)
 
-    # def _validate_custom_parameters(self) -> list[Exception] | None:
-    #     """Validate blend compositor parameters."""
-    #     exceptions = []
+    def _validate_custom_parameters(self) -> list[Exception] | None:
+        """Validate blend compositor parameters."""
+        exceptions = []
 
-    #     # Check that both images are provided
-    #     base_image = self.get_parameter_value("input_image")
-    #     blend_image = self.get_parameter_value("blend_image")
-    #     if base_image is None:
-    #         exceptions.append(ValueError(f"{self.name} - Input image is required"))
-    #     if blend_image is None:
-    #         exceptions.append(ValueError(f"{self.name} - Blend image is required"))
+        # Check that both images are provided
+        input_image = self.get_parameter_value("input_image")
+        blend_image = self.get_parameter_value("blend_image")
+        if input_image is None:
+            exceptions.append(ValueError(f"{self.name} - Input image is required"))
+        if blend_image is None:
+            exceptions.append(ValueError(f"{self.name} - Blend image is required"))
 
-    #     # Validate opacity
-    #     opacity = self.get_parameter_value("opacity")
-    #     if opacity is not None and (opacity < self.MIN_OPACITY or opacity > self.MAX_OPACITY):
-    #         msg = f"{self.name} - Opacity must be between {self.MIN_OPACITY} and {self.MAX_OPACITY}, got {opacity}"
-    #         exceptions.append(ValueError(msg))
+        # Validate opacity
+        opacity = self.get_parameter_value("opacity")
+        if opacity is not None and (opacity < self.MIN_OPACITY or opacity > self.MAX_OPACITY):
+            msg = f"{self.name} - Opacity must be between {self.MIN_OPACITY} and {self.MAX_OPACITY}, got {opacity}"
+            exceptions.append(ValueError(msg))
 
-    #     # Validate position
-    #     blend_position_x = self.get_parameter_value("blend_position_x")
-    #     if blend_position_x is not None and (
-    #         blend_position_x < self.MIN_POSITION or blend_position_x > self.MAX_POSITION
-    #     ):
-    #         msg = f"{self.name} - Blend position X must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_x}"
-    #         exceptions.append(ValueError(msg))
+        # Validate position
+        blend_position_x = self.get_parameter_value("blend_position_x")
+        if blend_position_x is not None and (
+            blend_position_x < self.MIN_POSITION or blend_position_x > self.MAX_POSITION
+        ):
+            msg = f"{self.name} - Blend position X must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_x}"
+            exceptions.append(ValueError(msg))
 
-    #     blend_position_y = self.get_parameter_value("blend_position_y")
-    #     if blend_position_y is not None and (
-    #         blend_position_y < self.MIN_POSITION or blend_position_y > self.MAX_POSITION
-    #     ):
-    #         msg = f"{self.name} - Blend position Y must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_y}"
-    #         exceptions.append(ValueError(msg))
+        blend_position_y = self.get_parameter_value("blend_position_y")
+        if blend_position_y is not None and (
+            blend_position_y < self.MIN_POSITION or blend_position_y > self.MAX_POSITION
+        ):
+            msg = f"{self.name} - Blend position Y must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_y}"
+            exceptions.append(ValueError(msg))
 
-    #     return exceptions if exceptions else None
+        return exceptions if exceptions else None
 
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get blend compositor parameters."""
