@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = "==3.12.*"
 
 [[package]]
@@ -234,8 +234,8 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.8.0"
-source = { git = "https://github.com/griptape-ai/griptape?rev=main#b5571dccee130d3ab5a3e26a1a02ced9f76ba251" }
+version = "1.8.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
@@ -254,6 +254,10 @@ dependencies = [
     { name = "tiktoken" },
     { name = "urllib3" },
     { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/54/421406c62032001590b05a7b92f417d8454481b84d70bdc434e691ac273d/griptape-1.8.2.tar.gz", hash = "sha256:c178fca93f5000bac6e4c38641fa7ba20d74da3e8f76f7cf57bb145ba2fd491d", size = 189258, upload-time = "2025-08-27T21:58:37.528Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/6f/6147cdb16d007e7fdbb0c070a1b5cc37d729a9bb714bf2d22a7ba9e154e2/griptape-1.8.2-py3-none-any.whl", hash = "sha256:8af998f93a91db9f2df5761cb92a9e8d44fcddafed7f5a3c76933e2901b5e209", size = 424361, upload-time = "2025-08-27T21:58:35.641Z" },
 ]
 
 [[package]]
@@ -316,7 +320,7 @@ requires-dist = [
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", git = "https://github.com/griptape-ai/griptape?rev=main" },
+    { name = "griptape", specifier = ">=1.8.2" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
     { name = "mcp", extras = ["ws"], specifier = ">=1.10.1" },
