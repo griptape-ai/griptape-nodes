@@ -39,7 +39,7 @@ class PaintMask(DataNode):
                 type="ImageUrlArtifact",
                 tooltip="Generated mask image.",
                 ui_options={"expander": True, "edit_mask": True, "edit_mask_paint_mask": True},
-                allowed_modes={ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 

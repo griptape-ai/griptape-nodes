@@ -76,6 +76,14 @@
       }
     },
     {
+      "engine": {
+        "color": "border-red-500",
+        "title": "Engine",
+        "description": "Engine control and introspection nodes",
+        "icon": "Cog"
+      }
+    },
+    {
       "agents/tools/config": {
         "color": "border-cyan-500",
         "title": "Drivers",
@@ -404,6 +412,16 @@
         "category": "lists",
         "description": "Creates a list of float values.",
         "display_name": "Create Float List"
+      }
+    },
+    {
+      "class_name": "EngineNode",
+      "file_path": "griptape_nodes_library/engine/engine_node.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Dynamically call any RequestPayload in the engine",
+        "display_name": "Engine Node",
+        "icon": "Cog"
       }
     },
     {
