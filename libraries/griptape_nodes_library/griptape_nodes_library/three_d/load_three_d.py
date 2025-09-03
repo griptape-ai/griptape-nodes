@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
@@ -33,7 +33,7 @@ class LoadThreeD(ControlNode):
             url_content_type_prefix="model/",
         )
 
-        three_d_parameter = Parameter(
+        self.three_d_parameter = Parameter(
             name="3d",
             input_types=["ThreeDArtifact", "ThreeDUrlArtifact", "str"],
             type="ThreeDUrlArtifact",
@@ -46,7 +46,7 @@ class LoadThreeD(ControlNode):
             },
             tooltip="The 3D file that has been loaded.",
         )
-        self.add_parameter(three_d_parameter)
+        self.add_parameter(self.three_d_parameter)
         # Use the tethering utility to create the properly configured path parameter
         self.path_parameter = ArtifactPathTethering.create_path_parameter(
             name="path",
@@ -55,6 +55,15 @@ class LoadThreeD(ControlNode):
             tooltip="Path to a local 3D file or URL to a 3D file",
         )
         self.add_parameter(self.path_parameter)
+
+        # Tethering helper: keeps image and path parameters in sync bidirectionally
+        # When user uploads a file -> path shows the URL, when user enters path -> image loads that file
+        self._tethering = ArtifactPathTethering(
+            node=self,
+            artifact_parameter=self.three_d_parameter,
+            path_parameter=self.path_parameter,
+            config=self._tethering_config,
+        )
 
         self.add_node_element(
             ParameterMessage(
@@ -73,13 +82,49 @@ class LoadThreeD(ControlNode):
         )
         self.add_parameter(image_parameter)
 
+    def after_incoming_connection(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Delegate to tethering helper - only artifact parameter can receive connections
+        self._tethering.on_incoming_connection(target_parameter)
+        return super().after_incoming_connection(source_node, source_parameter, target_parameter)
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,
+        source_parameter: Parameter,
+        target_parameter: Parameter,
+    ) -> None:
+        # Delegate to tethering helper - only artifact parameter can have connections removed
+        self._tethering.on_incoming_connection_removed(target_parameter)
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        # Delegate to tethering helper for dynamic settable control
+        return self._tethering.on_before_value_set(parameter, value)
+
     def after_value_set(
         self,
         parameter: Parameter,
         value: Any,
     ) -> None:
+        self._tethering.on_after_value_set(parameter, value)
+
         if parameter.name == "3d":
-            image_url = value.get("metadata", {}).get("imageUrl")
+            # Handle both dictionary and artifact object types
+            if isinstance(value, dict):
+                # If value is a dictionary, use .get() method
+                image_url = value.get("metadata", {}).get("imageUrl")
+            elif hasattr(value, "meta") and hasattr(value.meta, "get"):
+                # If value is an artifact object with metadata, access via .meta attribute
+                image_url = value.meta.get("imageUrl")
+            else:
+                # No metadata available
+                image_url = None
+
             if image_url:
                 image_artifact = ImageUrlArtifact(value=image_url)
                 self.set_parameter_value("image", image_artifact)
@@ -94,10 +139,5 @@ class LoadThreeD(ControlNode):
         three_d = self.get_parameter_value("3d")
         image = self.get_parameter_value("image")
 
-        if isinstance(three_d, dict):
-            three_d_artifact = dict_to_three_d_url_artifact(three_d)
-        else:
-            three_d_artifact = three_d
-
         self.parameter_output_values["image"] = image
-        self.parameter_output_values["3d"] = three_d_artifact
+        self.parameter_output_values["3d"] = three_d
