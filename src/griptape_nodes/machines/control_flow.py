@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.machines.dag_creation import DagCreationMachine
 from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -40,7 +40,7 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
-    resolution_machine: DagCreationMachine | SequentialResolutionMachine
+    resolution_machine: ParallelResolutionMachine | SequentialResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
@@ -51,7 +51,7 @@ class ControlFlowContext:
     ) -> None:
         self.flow_name = flow_name
         if in_parallel and dag_orchestrator is not None:
-            self.resolution_machine = DagCreationMachine(flow_name, dag_orchestrator)
+            self.resolution_machine = ParallelResolutionMachine(flow_name, dag_orchestrator)
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
@@ -82,7 +82,7 @@ class ControlFlowContext:
         self.current_node = None
         if isinstance(self.resolution_machine, SequentialResolutionMachine):
             self.resolution_machine.reset_machine()
-        elif isinstance(self.resolution_machine, DagCreationMachine):
+        elif isinstance(self.resolution_machine, ParallelResolutionMachine):
             self.resolution_machine.reset_machine(cancel=cancel)
         self.selected_output = None
         self.paused = False
@@ -215,7 +215,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
-        if isinstance(self._context.resolution_machine, DagCreationMachine):
+        if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
             await self._process_data_nodes_for_dag()
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
@@ -270,7 +270,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         This method identifies data_nodes in the execution queue and processes
         their dependencies into the DAG resolution machine.
         """
-        if not isinstance(self._context.resolution_machine, DagCreationMachine):
+        if not isinstance(self._context.resolution_machine, ParallelResolutionMachine):
             return
         # Get the global flow queue
         flow_manager = GriptapeNodes.FlowManager()
@@ -304,5 +304,5 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     def get_context(self) -> ControlFlowContext:
         return self._context
 
-    def get_resolution_machine(self) -> DagCreationMachine | SequentialResolutionMachine:
+    def get_resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:
         return self._context.resolution_machine

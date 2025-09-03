@@ -42,7 +42,7 @@ class WorkflowState(Enum):
     CANCELED = "canceled"
 
 
-class DagCreationContext:
+class ParallelResolutionContext:
     focus_stack: list[Focus]
     paused: bool
     flow_name: str
@@ -81,7 +81,7 @@ class DagCreationContext:
 
 class InitializeDagSpotlightState(State):
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         current_node = context.focus_stack[-1].node
@@ -95,7 +95,7 @@ class InitializeDagSpotlightState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         if not len(context.focus_stack):
             return DagCompleteState
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -114,7 +114,7 @@ class InitializeDagSpotlightState(State):
 
 class EvaluateDagParameterState(State):
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
@@ -136,7 +136,7 @@ class EvaluateDagParameterState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         current_node = context.focus_stack[-1].node
@@ -170,7 +170,7 @@ class EvaluateDagParameterState(State):
 
 class BuildDagNodeState(State):
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
         dag_instance = context.current_dag
         if not dag_instance:
@@ -188,7 +188,7 @@ class BuildDagNodeState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
 
         # Mark node as resolved for DAG building purposes
@@ -342,7 +342,7 @@ class ExecuteDagState(State):
         current_node.parameter_output_values.clear()
 
     @staticmethod
-    def build_node_states(context: DagCreationContext) -> tuple[list[str], list[str], list[str], list[str]]:
+    def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
         network = context.current_dag.network
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
         done_nodes = []
@@ -370,7 +370,7 @@ class ExecuteDagState(State):
             await current_node.node_reference.aprocess()
 
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
         context.batched_nodes.clear()
         for node in context.current_dag.node_to_reference.values():
@@ -382,7 +382,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         # Check if DAG execution is complete
         network = context.current_dag.network
         # Check and see if there are leaf nodes that are cancelled.
@@ -460,7 +460,7 @@ class ExecuteDagState(State):
 
 class ErrorState(State):
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
         for node in context.current_dag.node_to_reference.values():
@@ -475,7 +475,7 @@ class ErrorState(State):
         return ErrorState
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         # Don't modify lists while iterating through them.
         task_to_node = context.current_dag.task_to_node
         for task, node in task_to_node.copy().items():
@@ -504,21 +504,21 @@ class ErrorState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    async def on_enter(context: DagCreationContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         # Set build_only back to False.
         context.build_only = False
         return None
 
     @staticmethod
-    async def on_update(context: DagCreationContext) -> type[State] | None:  # noqa: ARG004
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
 
-class DagCreationMachine(FSM[DagCreationContext]):
+class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     """State machine for building DAG structure without execution."""
 
     def __init__(self, flow_name: str, dag_orchestrator: DagOrchestrator) -> None:
-        resolution_context = DagCreationContext(flow_name, dag_orchestrator=dag_orchestrator)
+        resolution_context = ParallelResolutionContext(flow_name, dag_orchestrator=dag_orchestrator)
         super().__init__(resolution_context)
 
     async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
@@ -540,7 +540,7 @@ class DagCreationMachine(FSM[DagCreationContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def get_context(self) -> DagCreationContext:
+    def get_context(self) -> ParallelResolutionContext:
         return self._context
 
     def reset_machine(self, *, cancel: bool = False) -> None:

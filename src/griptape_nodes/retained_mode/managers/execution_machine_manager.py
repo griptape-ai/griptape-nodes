@@ -61,9 +61,9 @@ class ExecutionMachineManager:
             existing_machine = self._flow_to_machine[flow_name]
             # Check if the existing machine's parallel setting matches current config
             # The machine stores this in its context's resolution_machine type
-            from griptape_nodes.machines.dag_creation import DagCreationMachine
+            from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 
-            is_currently_parallel = isinstance(existing_machine.get_resolution_machine(), DagCreationMachine)
+            is_currently_parallel = isinstance(existing_machine.get_resolution_machine(), ParallelResolutionMachine)
             if is_currently_parallel != in_parallel:
                 logger.info(
                     "Config changed for flow '%s': was parallel=%s, now parallel=%s. Recreating machine.",
