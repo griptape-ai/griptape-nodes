@@ -101,9 +101,12 @@ class AddOverlay(BaseVideoProcessor):
             # Get processing speed settings
             preset, pix_fmt, crf = self._get_processing_speed_settings()
 
+            # Get ffmpeg executable path
+            ffmpeg_path, _ = self._get_ffmpeg_paths()
+
             # No overlay video provided, just copy the input
             return [
-                "ffmpeg",
+                ffmpeg_path,
                 "-i",
                 input_url,
                 "-c:v",
@@ -158,8 +161,11 @@ class AddOverlay(BaseVideoProcessor):
         # Get processing speed settings
         preset, pix_fmt, crf = self._get_processing_speed_settings()
 
+        # Get ffmpeg executable path
+        ffmpeg_path, _ = self._get_ffmpeg_paths()
+
         return [
-            "ffmpeg",
+            ffmpeg_path,
             "-i",
             overlay_url,  # Overlay video (film grain) - [0]
             "-i",

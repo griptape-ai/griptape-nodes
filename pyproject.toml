@@ -19,12 +19,10 @@ dependencies = [
   "packaging>=25.0",
   "python-multipart>=0.0.20",
   "json-repair>=0.46.1",
-  "imageio-ffmpeg>=0.6.0",
   "mcp[ws]>=1.10.1",
   "binaryornot>=0.4.4",
   "pillow>=11.3.0",
   "watchfiles>=1.1.0",
-  "static-ffmpeg>=2.8",
   "networkx>=3.5"
 ]
 
@@ -49,12 +47,12 @@ docs = [
   "mkdocstrings[python]>=0.29.1",
 ]
 test = [
-    "pytest>=8.3.5",
-    "pytest-asyncio>=1.1.0",
-    "pytest-mock>=3.14.0",
-    "pytest-xdist>=3.6.1",
-    "pytest-cov>=6.0.0",
-    "coverage>=7.0.0",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=1.1.0",
+  "pytest-mock>=3.14.0",
+  "pytest-xdist>=3.6.1",
+  "pytest-cov>=6.0.0",
+  "coverage>=7.0.0",
 ]
 
 [project.scripts]
@@ -115,7 +113,7 @@ default.extend-ignore-re = [
   # Ignore any line that ends with this comment:
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
   # Or: ignore the *next* line after this comment:
-  "(?m)(#|//)\\s*spellchecker:ignore-next-line\\n.*"
+  "(?m)(#|//)\\s*spellchecker:ignore-next-line\\n.*",
 ]
 
 [tool.pyright]
@@ -132,6 +130,3 @@ exclude = [
 ]
 pythonVersion = "3.12"
 reportIncompatibleMethodOverride = false
-
-[tool.uv.sources]
-griptape = { git = "https://github.com/griptape-ai/griptape", rev = "main" }

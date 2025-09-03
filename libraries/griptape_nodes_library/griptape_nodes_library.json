@@ -614,6 +614,17 @@
       }
     },
     {
+      "class_name": "GetVideoMetadata",
+      "file_path": "griptape_nodes_library/video/get_video_metadata.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract metadata from video files including aspect ratio",
+        "display_name": "Get Video Metadata",
+        "icon": "info",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
@@ -621,6 +632,17 @@
         "description": "Split a video into multiple parts using ffmpeg with timecode support",
         "display_name": "Split Video",
         "icon": "scissors",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ConcatenateVideos",
+      "file_path": "griptape_nodes_library/video/concatenate_videos.py",
+      "metadata": {
+        "category": "video",
+        "description": "Concatenate multiple videos into a single video file with configurable format and codec options",
+        "display_name": "Concatenate Videos",
+        "icon": "link",
         "group": "edit"
       }
     },

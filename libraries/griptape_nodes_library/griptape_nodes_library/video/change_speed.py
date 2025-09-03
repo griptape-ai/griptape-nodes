@@ -55,6 +55,9 @@ class ChangeSpeed(BaseVideoProcessor):
         # Combine with frame rate filter if needed
         filter_complex = self._combine_video_filters(custom_filter, input_frame_rate)
 
+        # Get ffmpeg executable path
+        ffmpeg_path, _ = self._get_ffmpeg_paths()
+
         if include_audio:
             # Audio needs to be speed-adjusted to match the video speed change
             # Use atempo filter with speed ratio calculation
@@ -75,7 +78,7 @@ class ChangeSpeed(BaseVideoProcessor):
 
             # Build the command with audio speed adjustment
             return [
-                "ffmpeg",
+                ffmpeg_path,
                 "-i",
                 input_url,
                 "-vf",
@@ -104,7 +107,7 @@ class ChangeSpeed(BaseVideoProcessor):
 
         # Build the command without audio (silent video)
         return [
-            "ffmpeg",
+            ffmpeg_path,
             "-i",
             input_url,
             "-vf",
