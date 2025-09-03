@@ -2692,6 +2692,12 @@ class NodeManager:
             logger.error(details)
             return RenameParameterResultFailure(result_details=details)
 
+        # Only allow parameter rename for user-defined params
+        if not parameter.user_defined:
+            details = f"Attempted to rename Parameter '{request.parameter_name}' on Node '{node_name}'. Failed because the Parameter is not user-defined."
+            logger.error(details)
+            return RenameParameterResultFailure(result_details=details)
+
         # Validate the new parameter name
         if any(char.isspace() for char in request.new_parameter_name):
             details = f"Failed to rename Parameter '{request.parameter_name}' to '{request.new_parameter_name}'. Parameter names cannot contain any whitespace characters."

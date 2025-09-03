@@ -736,14 +736,17 @@ class BaseNode(ABC):
             loop = asyncio.get_running_loop()
 
             try:
+                # Start the generator
+                func = next(result)
+
                 while True:
-                    # Get the next callable from generator
-                    func = next(result)
-                    # Run it in thread pool (preserving existing behavior)
+                    # Run callable in thread pool (preserving existing behavior)
                     with ThreadPoolExecutor() as executor:
                         future_result = await loop.run_in_executor(executor, func)
-                    # Send result back to generator
-                    result.send(future_result)
+
+                    # Send result back and get next callable
+                    func = result.send(future_result)
+
             except StopIteration:
                 # Generator is done
                 return
