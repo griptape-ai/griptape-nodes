@@ -28,7 +28,12 @@ class ExecutionMachineManager:
         self._machine_to_orchestrator: dict[ControlFlowMachine, DagOrchestrator] = {}
         self._max_workers: int | None = None
 
-    def set_default_max_workers(self, max_workers: int | None) -> None:
+    @property
+    def max_workers(self) -> int | None:
+        return self._max_workers
+
+    @max_workers.setter
+    def max_workers(self, max_workers: int | None) -> None:
         """Set the default maximum number of worker threads for new orchestrators.
 
         Args:
@@ -148,6 +153,7 @@ class ExecutionMachineManager:
             self.remove_machine_for_flow(flow_name)
         logger.info("Cleared all ControlFlowMachines and DagOrchestrators")
 
+    @property
     def get_active_flows(self) -> list[str]:
         """Get a list of all flows that have active machines.
 
