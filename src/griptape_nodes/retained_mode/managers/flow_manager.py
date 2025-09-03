@@ -15,7 +15,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
-from griptape_nodes.machines.control_flow import CompleteState
+from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -38,8 +38,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ContinueExecutionStepResultFailure,
     ContinueExecutionStepResultSuccess,
     ControlFlowCancelledEvent,
-    CreateExecutionMachineRequest,
-    CreateExecutionMachineResultSuccess,
     GetFlowStateRequest,
     GetFlowStateResultFailure,
     GetFlowStateResultSuccess,
@@ -188,7 +186,7 @@ class FlowManager:
 
         # Initialize global execution state
         self._global_flow_queue = Queue[QueueItem]()
-        self._current_flow_name = None  # Track the current flow being executed
+        self._global_control_flow_machine = None  # Track the current control flow machine
         self._global_single_node_resolution = False
 
     def get_connections(self) -> Connections:
@@ -530,7 +528,7 @@ class FlowManager:
                 del self._flow_to_referenced_workflow_name[flow]
 
             # Clean up ControlFlowMachine and DAG orchestrator for this flow
-            GriptapeNodes.ExecutionMachineManager().remove_machine_for_flow(flow.name)
+            del self._global_control_flow_machine
 
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
@@ -1699,13 +1697,8 @@ class FlowManager:
             self._global_flow_queue.task_done()
 
         # Initialize global control flow machine if needed
-        self._current_flow_name = flow.name
-        result = GriptapeNodes.handle_request(CreateExecutionMachineRequest(flow_name=flow.name))
-        if isinstance(result, CreateExecutionMachineResultSuccess):
-            machine = result.machine
-        else:
-            # Disabling because start_flow is running our machine, should be caught as a RuntimeError for consistency.
-            raise RuntimeError(result.result_details)  # noqa: TRY004
+        machine = self.create_execution_machine(flow.name)
+        self._global_control_flow_machine = machine
         try:
             await machine.start_flow(start_node, debug_mode)
         except Exception:
@@ -1714,9 +1707,7 @@ class FlowManager:
             raise
 
     def check_for_existing_running_flow(self) -> bool:
-        if self._current_flow_name is None:
-            return False
-        machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
+        machine = self._global_control_flow_machine
         if machine is None:
             return False
         current_state = machine.get_current_state()
@@ -1733,12 +1724,13 @@ class FlowManager:
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
-        if self._current_flow_name is not None:
-            machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-            if machine is not None:
-                machine.reset_machine(cancel=True)
+        machine = self._global_control_flow_machine
+        if machine is not None:
+            machine.reset_machine(cancel=True)
         # Reset control flow machine
         self._global_single_node_resolution = False
+        del self._global_control_flow_machine
+        self._global_control_flow_machine = None
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
@@ -1748,11 +1740,12 @@ class FlowManager:
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
-        if self._current_flow_name is not None:
-            machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-            if machine is not None:
-                machine.reset_machine()
-        self._current_flow_name = None
+        machine = self._global_control_flow_machine
+        if machine is not None:
+            machine.reset_machine()
+        # Reset control flow machine
+        del self._global_control_flow_machine
+        self._global_control_flow_machine = None
         self._global_single_node_resolution = False
 
         # Clear all connections to prevent memory leaks and stale references
@@ -1804,14 +1797,10 @@ class FlowManager:
             queue_item = self._global_flow_queue.get()
             start_node = queue_item.node
             self._global_flow_queue.task_done()
-            # Get or create machine via ExecutionMachineManager
-            self._current_flow_name = flow.name
-            result = GriptapeNodes.handle_request(CreateExecutionMachineRequest(flow_name=flow.name))
-            if isinstance(result, CreateExecutionMachineResultSuccess):
-                machine = result.machine
-            else:
-                raise RuntimeError(result.result_details)
-            await machine.start_flow(start_node, debug_mode)
+            # Get or create machine
+            if self._global_control_flow_machine is None:
+                self._global_control_flow_machine = self.create_execution_machine(flow.name)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -1819,10 +1808,9 @@ class FlowManager:
             queue_item = self._global_flow_queue.get()
             start_node = queue_item.node
             self._global_flow_queue.task_done()
-            if self._current_flow_name is not None:
-                machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-                if machine is not None:
-                    await machine.start_flow(start_node, debug_mode)
+            machine = self._global_control_flow_machine
+            if machine is not None:
+                await machine.start_flow(start_node, debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # Set that we are only working on one node right now! no other stepping allowed
@@ -1832,23 +1820,17 @@ class FlowManager:
             raise RuntimeError(errormsg)
         self._global_single_node_resolution = True
 
-        # Get or create machine via ExecutionMachineManager
-        self._current_flow_name = flow.name
-        result = GriptapeNodes.handle_request(CreateExecutionMachineRequest(flow_name=flow.name))
-        if isinstance(result, CreateExecutionMachineResultSuccess):
-            machine = result.machine
-        else:
-            msg = f"Failed to create execution machine for flow '{flow.name}'"
-            raise RuntimeError(msg)  # noqa: TRY004
-        machine.get_context().current_node = node
-        resolution_machine = machine.get_resolution_machine()
+        # Get or create machine
+        self._global_control_flow_machine = self.create_execution_machine(flow.name)
+        self._global_control_flow_machine.get_context().current_node = node
+        resolution_machine = self._global_control_flow_machine.get_resolution_machine()
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
         # Resolve the node
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
-            machine.get_context().current_node = None
+            self._global_control_flow_machine.get_context().current_node = None
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1857,15 +1839,14 @@ class FlowManager:
         )
         if not self.check_for_existing_running_flow():
             return
-        if self._current_flow_name is not None:
-            machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-            if machine is not None:
-                await machine.granular_step(change_debug_mode)
+        machine = self._global_control_flow_machine
+        if machine is not None:
+            await machine.granular_step(change_debug_mode)
+            resolution_machine = machine.get_resolution_machine()
+            if self._global_single_node_resolution:
                 resolution_machine = machine.get_resolution_machine()
-                if self._global_single_node_resolution:
-                    resolution_machine = machine.get_resolution_machine()
-                if resolution_machine.is_complete():
-                    self._global_single_node_resolution = False
+            if resolution_machine.is_complete():
+                self._global_single_node_resolution = False
 
     async def single_node_step(self, flow: ControlFlow) -> None:
         # It won't call single_node_step without an existing flow running from US.
@@ -1878,10 +1859,8 @@ class FlowManager:
         if self._global_single_node_resolution:
             msg = "Cannot step through the Control Flow in Single Node Execution"
             raise RuntimeError(msg)
-        if self._current_flow_name is not None:
-            machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-            if machine is not None:
-                await machine.node_step()
+        if self._global_control_flow_machine is not None:
+            await self._global_control_flow_machine.node_step()
         # Start the next resolution step now please.
         await self._handle_post_execution_queue_processing(debug_mode=True)
 
@@ -1892,8 +1871,8 @@ class FlowManager:
         if not self.check_for_existing_running_flow():
             return
         # Turn all debugging to false and continue on
-        if self._current_flow_name is not None:
-            machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
+        if self._global_control_flow_machine is not None:
+            machine = self._global_control_flow_machine
             if machine is not None:
                 machine.change_debug_mode(False)
                 if self._global_single_node_resolution:
@@ -1916,16 +1895,13 @@ class FlowManager:
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise RuntimeError(msg)
-        if self._current_flow_name is None:
+        if self._global_control_flow_machine is None:
             return None, None
-        machine = GriptapeNodes.ExecutionMachineManager().get_machine_for_flow(self._current_flow_name)
-        if machine is None:
-            return None, None
-        control_flow_context = machine.get_context()
+        control_flow_context = self._global_control_flow_machine.get_context()
         current_control_node = (
             control_flow_context.current_node.name if control_flow_context.current_node is not None else None
         )
-        focus_stack_for_node = machine.get_resolution_machine().get_context().focus_stack
+        focus_stack_for_node = self._global_control_flow_machine.get_resolution_machine().get_context().focus_stack
         current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
         return current_control_node, current_resolving_node
 
@@ -2166,3 +2142,9 @@ class FlowManager:
     def get_global_flow_queue(self) -> collections.deque[QueueItem]:
         """Returns the queue from the global flow queue for modification."""
         return self._global_flow_queue.queue
+
+    def create_execution_machine(self, flow_name: str) -> ControlFlowMachine:
+        in_parallel = GriptapeNodes.ConfigManager().get_config_value("parallel_execution", default=False)
+        max_workers = GriptapeNodes.ConfigManager().get_config_value("max_workers", default=5)
+        machine = ControlFlowMachine(flow_name, max_workers=max_workers, in_parallel=in_parallel)
+        return machine

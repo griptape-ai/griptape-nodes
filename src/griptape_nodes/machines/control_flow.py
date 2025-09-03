@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 
 @dataclass
@@ -31,7 +32,6 @@ class NextNodeInfo:
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
-    from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -46,11 +46,10 @@ class ControlFlowContext:
     flow_name: str
 
     # TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
-    def __init__(
-        self, flow_name: str, *, in_parallel: bool = False, dag_orchestrator: DagOrchestrator | None = None
-    ) -> None:
+    def __init__(self, flow_name: str, max_workers: int, *, in_parallel: bool = False) -> None:
         self.flow_name = flow_name
-        if in_parallel and dag_orchestrator is not None:
+        if in_parallel:
+            dag_orchestrator = DagOrchestrator(flow_name, max_workers)
             self.resolution_machine = ParallelResolutionMachine(flow_name, dag_orchestrator)
         else:
             self.resolution_machine = SequentialResolutionMachine()
@@ -207,10 +206,8 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(
-        self, flow_name: str, *, in_parallel: bool = False, dag_orchestrator: DagOrchestrator | None = None
-    ) -> None:
-        context = ControlFlowContext(flow_name, in_parallel=in_parallel, dag_orchestrator=dag_orchestrator)
+    def __init__(self, flow_name: str, max_workers: int, *, in_parallel: bool = False) -> None:
+        context = ControlFlowContext(flow_name, max_workers, in_parallel=in_parallel)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

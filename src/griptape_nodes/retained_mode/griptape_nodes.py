@@ -42,7 +42,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
-from griptape_nodes.retained_mode.managers.execution_machine_manager import ExecutionMachineManager
 from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -148,7 +147,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
     _sync_manager: SyncManager
-    _execution_machine_manager: ExecutionMachineManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -206,7 +204,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
-            self._execution_machine_manager = ExecutionMachineManager(self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -371,10 +368,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def VariablesManager(cls) -> VariablesManager:
         return GriptapeNodes.get_instance()._workflow_variables_manager
-
-    @classmethod
-    def ExecutionMachineManager(cls) -> ExecutionMachineManager:
-        return GriptapeNodes.get_instance()._execution_machine_manager
 
     @classmethod
     def clear_data(cls) -> None:
