@@ -691,16 +691,28 @@ class EngineNode(BaseNode):
         return [self._python_type_to_param_type(python_type)]
 
     def _get_output_type_for_field(self, python_type: Any) -> str:
-        """Convert Python type annotation to single output type for Parameter."""
+        """Convert Python type annotation to single output type for Parameter.
+
+        Note: Any output types are converted to All for output parameters.
+        An output of Any can ONLY connect to something that accepts Any,
+        while an output of All can connect to any other Parameter,
+        which is useful for debugging or instances where the customer knows what they are doing.
+        """
         if self._is_union_type(python_type):
             # For Union types on outputs, we need to pick one type
             # For Optional[T], return T; for other unions, return first non-None type
             for arg in python_type.__args__:
                 if arg is not type(None):
-                    return self._python_type_to_param_type(arg)
+                    output_type = self._python_type_to_param_type(arg)
+                    if output_type.lower() == ParameterTypeBuiltin.ANY.value.lower():
+                        return ParameterTypeBuiltin.ALL.value
+                    return output_type
             return ParameterTypeBuiltin.NONE.value  # If somehow all types are None
         # For single types
-        return self._python_type_to_param_type(python_type)
+        output_type = self._python_type_to_param_type(python_type)
+        if output_type.lower() == ParameterTypeBuiltin.ANY.value.lower():
+            return ParameterTypeBuiltin.ALL.value
+        return output_type
 
     def _create_result_parameters(self, request_info: RequestInfo, skip_existing: set[str] | None = None) -> None:
         """Create Success and Failure output parameters."""
