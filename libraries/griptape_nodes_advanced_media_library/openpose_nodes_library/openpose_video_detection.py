@@ -18,6 +18,10 @@ from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignor
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
 
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+from static_ffmpeg import run  # type: ignore[import-untyped]
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -405,9 +409,12 @@ class OpenPoseVideoDetection(ControlNode):
 
                         # Use ffmpeg with explicit stream mapping
                         try:
+                            # Get ffmpeg executable path from static-ffmpeg dependency
+                            ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+
                             subprocess.run(  # noqa: S603
-                                [  # noqa: S607
-                                    "ffmpeg",
+                                [
+                                    ffmpeg_path,
                                     "-y",
                                     "-loglevel",
                                     "error",
@@ -444,7 +451,7 @@ class OpenPoseVideoDetection(ControlNode):
                             )
 
                         except FileNotFoundError:
-                            # ffmpeg not installed, keep video without audio
+                            # Fallback to video without audio when ffmpeg is unavailable
                             if temp_video_path.exists():
                                 temp_video_path.rename(output_path)
                             self.log_params.append_to_logs("Video saved without audio (ffmpeg not available)\n")
