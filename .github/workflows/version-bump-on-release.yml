@@ -96,7 +96,7 @@ jobs:
           gh pr create \
             --base main \
             --head ${{ steps.create-branch.outputs.branch }} \
-            --title "chore: version bump from ${{ github.ref_name }}" \
+            --title "${{ steps.find-commit.outputs.message }}" \
             --body "This PR cherry-picks the version bump commit from \`${{ github.ref_name }}\`.
 
           Cherry-picked commit: ${{ steps.find-commit.outputs.sha }}"
