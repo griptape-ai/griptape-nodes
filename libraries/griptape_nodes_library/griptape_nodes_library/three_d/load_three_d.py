@@ -1,29 +1,60 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
+from griptape_nodes_library.utils.artifact_path_tethering import (
+    ArtifactPathTethering,
+    ArtifactTetheringConfig,
+    default_extract_url_from_artifact_value,
+)
 from griptape_nodes_library.utils.three_d_utils import dict_to_three_d_url_artifact
 
 
-class LoadThreeD(DataNode):
+class LoadThreeD(ControlNode):
+    # Supported three_d file extensions
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".glb", ".gltf", ".stl", ".obj", ".fbx", ".ply", ".dae"}
+
+    @staticmethod
+    def _extract_url_from_three_d_value(three_d_value: Any) -> str | None:
+        """Extract URL from three_d parameter value and strip query parameters."""
+        return default_extract_url_from_artifact_value(artifact_value=three_d_value, artifact_classes=ThreeDUrlArtifact)
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        # Configuration for artifact tethering
+        self._tethering_config = ArtifactTetheringConfig(
+            dict_to_artifact_func=dict_to_three_d_url_artifact,
+            extract_url_func=self._extract_url_from_three_d_value,
+            supported_extensions=self.SUPPORTED_EXTENSIONS,
+            default_extension="glb",
+            url_content_type_prefix="model/",
+        )
 
-        # Need to define the category
-        self.category = "3D"
-        self.description = "Load a 3D file"
         three_d_parameter = Parameter(
             name="3d",
-            input_types=["ThreeDArtifact", "ThreeDUrlArtifact"],
+            input_types=["ThreeDArtifact", "ThreeDUrlArtifact", "str"],
             type="ThreeDUrlArtifact",
             output_type="ThreeDUrlArtifact",
             default_value=None,
-            ui_options={"clickable_file_browser": True, "expander": True},
+            ui_options={
+                "clickable_file_browser": True,
+                "expander": True,
+                "display_name": "3D File or path to 3D file",
+            },
             tooltip="The 3D file that has been loaded.",
         )
         self.add_parameter(three_d_parameter)
+        # Use the tethering utility to create the properly configured path parameter
+        self.path_parameter = ArtifactPathTethering.create_path_parameter(
+            name="path",
+            config=self._tethering_config,
+            display_name="File Path or URL",
+            tooltip="Path to a local 3D file or URL to a 3D file",
+        )
+        self.add_parameter(self.path_parameter)
 
         self.add_node_element(
             ParameterMessage(
