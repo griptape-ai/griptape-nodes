@@ -195,10 +195,6 @@ class FlowManager:
     def global_flow_queue(self, value: Queue[QueueItem]) -> None:
         self._global_flow_queue = value
 
-    @global_flow_queue.getter
-    def global_flow_queue(self) -> Queue[QueueItem]:
-        return self._global_flow_queue
-
     def get_connections(self) -> Connections:
         """Get the connections instance."""
         return self._connections
@@ -1707,26 +1703,24 @@ class FlowManager:
             self._global_flow_queue.task_done()
 
         # Initialize global control flow machine if needed
-        machine = ControlFlowMachine(flow.name)
-        self._global_control_flow_machine = machine
+        self._global_control_flow_machine = ControlFlowMachine(flow.name)
         try:
-            await machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
                 self.cancel_flow_run()
             raise
 
     def check_for_existing_running_flow(self) -> bool:
-        machine = self._global_control_flow_machine
-        if machine is None:
+        if self._global_control_flow_machine is None:
             return False
-        current_state = machine.get_current_state()
+        current_state = self._global_control_flow_machine.get_current_state()
         if current_state and current_state is not CompleteState:
             # Flow already exists in progress
             return True
         return bool(
-            not machine.get_context().resolution_machine.is_complete()
-            and machine.get_context().resolution_machine.is_started()
+            not self._global_control_flow_machine.get_context().resolution_machine.is_complete()
+            and self._global_control_flow_machine.get_context().resolution_machine.is_started()
         )
 
     def cancel_flow_run(self) -> None:
@@ -1734,9 +1728,8 @@ class FlowManager:
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
-        machine = self._global_control_flow_machine
-        if machine is not None:
-            machine.reset_machine(cancel=True)
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.reset_machine(cancel=True)
         # Reset control flow machine
         self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
@@ -1748,9 +1741,8 @@ class FlowManager:
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
-        machine = self._global_control_flow_machine
-        if machine is not None:
-            machine.reset_machine()
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.reset_machine()
         # Reset control flow machine
         self._global_single_node_resolution = False
 
@@ -1845,12 +1837,11 @@ class FlowManager:
         )
         if not self.check_for_existing_running_flow():
             return
-        machine = self._global_control_flow_machine
-        if machine is not None:
-            await machine.granular_step(change_debug_mode)
-            resolution_machine = machine.get_resolution_machine()
+        if self._global_control_flow_machine is not None:
+            await self._global_control_flow_machine.granular_step(change_debug_mode)
+            resolution_machine = self._global_control_flow_machine.get_resolution_machine()
             if self._global_single_node_resolution:
-                resolution_machine = machine.get_resolution_machine()
+                resolution_machine = self._global_control_flow_machine.get_resolution_machine()
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
 
@@ -1878,16 +1869,15 @@ class FlowManager:
             return
         # Turn all debugging to false and continue on
         if self._global_control_flow_machine is not None:
-            machine = self._global_control_flow_machine
-            if machine is not None:
-                machine.change_debug_mode(False)
+            if self._global_control_flow_machine is not None:
+                self._global_control_flow_machine.change_debug_mode(False)
                 if self._global_single_node_resolution:
-                    if machine.get_resolution_machine().is_complete():
+                    if self._global_control_flow_machine.get_resolution_machine().is_complete():
                         self._global_single_node_resolution = False
                     else:
-                        await machine.get_resolution_machine().update()
+                        await self._global_control_flow_machine.get_resolution_machine().update()
                 else:
-                    await machine.node_step()
+                    await self._global_control_flow_machine.node_step()
         # Now it is done executing. make sure it's actually done?
         await self._handle_post_execution_queue_processing(debug_mode=False)
 
