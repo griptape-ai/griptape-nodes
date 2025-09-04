@@ -73,10 +73,12 @@ class EventLogHandler(logging.Handler):
 logger = logging.getLogger("griptape_nodes_app")
 
 griptape_nodes_logger = logging.getLogger("griptape_nodes")
-# When running as an app, we want to forward all log messages to the event queue so they can be sent to the GUI
-griptape_nodes_logger.addHandler(EventLogHandler())
-griptape_nodes_logger.addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
-griptape_nodes_logger.setLevel(logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[EventLogHandler(), RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)],
+)
 
 console = Console()
 
