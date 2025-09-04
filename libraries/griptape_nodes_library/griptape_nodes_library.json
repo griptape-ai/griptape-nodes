@@ -1734,6 +1734,15 @@
       }
     },
     {
+      "class_name": "LoadThreeD",
+      "file_path": "griptape_nodes_library/three_d/load_three_d.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Loads a 3D file into your workflow",
+        "display_name": "Load 3D"
+      }
+    },
+    {
       "class_name": "ForLoopStartNode",
       "file_path": "griptape_nodes_library/execution/for_loop_start.py",
       "metadata": {

@@ -212,5 +212,5 @@ nav:
         - Start Flow: nodes/execution/start_flow.md
         - End Flow: nodes/execution/end_flow.md
     - 3D:
-        - Load GLTF: nodes/three_d/load_gltf.md
+        - Load 3D: nodes/three_d/load_gltf.md
   - Glossary: glossary.md
