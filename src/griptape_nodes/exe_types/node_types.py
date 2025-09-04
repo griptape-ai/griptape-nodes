@@ -80,7 +80,7 @@ class BaseNode(ABC):
     state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
-    parameter_output_values: dict[str, Any]
+    parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
     _tracked_parameters: list[BaseNodeElement]
@@ -1096,6 +1096,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
             super().clear()
             for key in keys_to_clear:
                 self._emit_parameter_change_event(key, None, deleted=True)
+
+    def silent_clear(self) -> None:
+        """Clear all values without emitting parameter change events."""
+        super().clear()
 
     def update(self, *args, **kwargs) -> None:
         # Handle both dict.update(other) and dict.update(**kwargs) patterns
