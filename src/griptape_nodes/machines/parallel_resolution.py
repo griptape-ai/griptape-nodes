@@ -22,9 +22,20 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DirectedGraph, NodeState
+from griptape_nodes.retained_mode.managers.directed_graph import DirectedGraph
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class NodeState(StrEnum):
+    """Individual node execution states."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    DONE = "done"
+    CANCELED = "canceled"
+    ERRORED = "errored"
+    WAITING = "waiting"
 
 
 @dataclass(kw_only=True)
