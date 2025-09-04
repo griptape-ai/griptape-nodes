@@ -76,14 +76,14 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
             return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-
+    
         # Apply fp8 layerwise caching
         logger.info("Enabling fp8 layerwise caching for transformer")
         pipe.transformer.enable_layerwise_casting(
             storage_dtype=torch.float8_e4m3fn,
             compute_dtype=torch.bfloat16,
         )
-
+        _log_memory_info(pipe, device)
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
             pipe.to(device)
@@ -93,6 +93,7 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
         logger.info("Still insufficient memory. Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
 
+        _log_memory_info(pipe, device)
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after sequential cpu offload")
             return
@@ -101,6 +102,7 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
         logger.info("Enabling vae slicing")
         pipe.enable_vae_slicing()
 
+        _log_memory_info(pipe, device)
         # Final check after all optimizations
         if not _check_cuda_memory_sufficient(pipe, device):
             logger.warning("Memory may still be insufficient after all optimizations, but will try anyway")
