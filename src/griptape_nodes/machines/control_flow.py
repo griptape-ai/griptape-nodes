@@ -18,7 +18,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator
 
 
 @dataclass
@@ -49,8 +48,7 @@ class ControlFlowContext:
     def __init__(self, flow_name: str, max_workers: int, *, in_parallel: bool = False) -> None:
         self.flow_name = flow_name
         if in_parallel:
-            dag_orchestrator = DagOrchestrator(flow_name, max_workers)
-            self.resolution_machine = ParallelResolutionMachine(flow_name, dag_orchestrator)
+            self.resolution_machine = ParallelResolutionMachine(flow_name, max_workers)
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None

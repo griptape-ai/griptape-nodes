@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import graphlib
 import logging
 from dataclasses import dataclass, field
@@ -8,6 +7,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import asyncio
+
     from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -78,47 +79,10 @@ class NodeState(StrEnum):
     WAITING = "waiting"
 
 
-# orchestrator attached to each flow, owned by griptape nodes
-class DagOrchestrator:
-    """Main DAG structure containing nodes and edges for a specific flow."""
+@dataclass(kw_only=True)
+class DagNode:
+    """Represents a node in the DAG with runtime references."""
 
-    # The generated network of nodes
-    network: DirectedGraph
-    # The node to reference mapping. Includes node and thread references.
-    node_to_reference: dict[str, DagOrchestrator.DagNode]
-    # Async execution support
-    async_semaphore: asyncio.Semaphore
-    task_to_node: dict[asyncio.Task, DagOrchestrator.DagNode]
-    # The flow this orchestrator is associated with
-    flow_name: str
-
-    def __init__(self, flow_name: str, max_workers: int | None = None) -> None:
-        """Initialize a DagOrchestrator for a specific flow.
-
-        Args:
-            flow_name: The name of the flow this orchestrator manages
-            max_workers: Maximum number of worker threads (defaults to ThreadPoolExecutor default)
-        """
-        self.flow_name = flow_name
-        self.network = DirectedGraph()
-        # Node to reference will also contain node state.
-        self.node_to_reference = {}
-        # Prevents a worker queue from developing
-        # Async execution setup
-        max_workers = max_workers if max_workers is not None else 5
-        self.async_semaphore = asyncio.Semaphore(max_workers)
-        self.task_to_node = {}
-
-    @dataclass(kw_only=True)
-    class DagNode:
-        """Represents a node in the DAG with runtime references."""
-
-        task_reference: asyncio.Task | None = field(default=None)
-        node_state: NodeState = field(default=NodeState.WAITING)
-        node_reference: BaseNode
-
-    def clear(self) -> None:
-        """Clear the DAG state but keep the thread pool alive for reuse."""
-        self.network.clear()
-        self.node_to_reference.clear()
-        self.task_to_node.clear()
+    task_reference: asyncio.Task | None = field(default=None)
+    node_state: NodeState = field(default=NodeState.WAITING)
+    node_reference: BaseNode

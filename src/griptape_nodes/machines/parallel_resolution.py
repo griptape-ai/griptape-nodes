@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DagOrchestrator, NodeState
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DagNode, DirectedGraph, NodeState
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -48,20 +48,29 @@ class ParallelResolutionContext:
     flow_name: str
     build_only: bool
     batched_nodes: list[BaseNode]
-    current_dag: DagOrchestrator
     error_message: str | None
     workflow_state: WorkflowState
+    # DAG fields moved from DagOrchestrator
+    network: DirectedGraph
+    node_to_reference: dict[str, DagNode]
+    async_semaphore: asyncio.Semaphore
+    task_to_node: dict[asyncio.Task, DagNode]
 
-    def __init__(self, flow_name: str, dag_orchestrator: DagOrchestrator) -> None:
+    def __init__(self, flow_name: str, max_workers: int | None = None) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
         self.build_only = False
         self.batched_nodes = []
-        # Get the DAG instance that will be used throughout resolution and execution
-        self.current_dag = dag_orchestrator
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
+
+        # Initialize DAG fields
+        self.network = DirectedGraph()
+        self.node_to_reference = {}
+        max_workers = max_workers if max_workers is not None else 5
+        self.async_semaphore = asyncio.Semaphore(max_workers)
+        self.task_to_node = {}
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.focus_stack:
@@ -71,12 +80,14 @@ class ParallelResolutionContext:
         self.paused = False
         if cancel:
             self.workflow_state = WorkflowState.CANCELED
-            for node in self.current_dag.node_to_reference.values():
+            for node in self.node_to_reference.values():
                 node.node_state = NodeState.CANCELED
         else:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
-            self.current_dag.clear()
+            self.network.clear()
+            self.node_to_reference.clear()
+            self.task_to_node.clear()
 
 
 class InitializeDagSpotlightState(State):
@@ -149,20 +160,16 @@ class EvaluateDagParameterState(State):
         if next_node:
             next_node, _ = next_node
         if next_node:
-            dag_instance = context.current_dag
-            if not dag_instance:
-                msg = f"DAG instance not found for flow {context.flow_name}"
-                raise ValueError(msg)
             if next_node.state == NodeResolutionState.UNRESOLVED:
                 focus_stack_names = {focus.node.name for focus in context.focus_stack}
                 if next_node.name in focus_stack_names:
                     msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
                     raise RuntimeError(msg)
-                dag_instance.network.add_edge(next_node.name, current_node.name)
+                context.network.add_edge(next_node.name, current_node.name)
                 context.focus_stack.append(Focus(node=next_node))
                 return InitializeDagSpotlightState
             if next_node.state == NodeResolutionState.RESOLVED and next_node in context.batched_nodes:
-                dag_instance.network.add_edge(next_node.name, current_node.name)
+                context.network.add_edge(next_node.name, current_node.name)
         if current_node.advance_parameter():
             return InitializeDagSpotlightState
         return BuildDagNodeState
@@ -172,16 +179,12 @@ class BuildDagNodeState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-        dag_instance = context.current_dag
-        if not dag_instance:
-            msg = f"DAG instance not found for flow {context.flow_name}"
-            raise ValueError(msg)
 
-        # Add the current node to the DAG using get_instance() pattern
-        node_reference = DagOrchestrator.DagNode(node_reference=current_node)
-        dag_instance.node_to_reference[current_node.name] = node_reference
+        # Add the current node to the DAG
+        node_reference = DagNode(node_reference=current_node)
+        context.node_to_reference[current_node.name] = node_reference
         # Add node name to DAG (has to be a hashable value)
-        dag_instance.network.add_node(node_for_adding=current_node.name)
+        context.network.add_node(node_for_adding=current_node.name)
 
         if not context.paused:
             return BuildDagNodeState
@@ -207,7 +210,7 @@ class BuildDagNodeState(State):
 
 class ExecuteDagState(State):
     @staticmethod
-    def handle_done_nodes(done_node: DagOrchestrator.DagNode) -> None:
+    def handle_done_nodes(done_node: DagNode) -> None:
         current_node = done_node.node_reference
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -263,7 +266,7 @@ class ExecuteDagState(State):
         )
 
     @staticmethod
-    def collect_values_from_upstream_nodes(node_reference: DagOrchestrator.DagNode) -> None:
+    def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
         This method iterates through all input parameters of the current node, finds their
@@ -307,7 +310,7 @@ class ExecuteDagState(State):
                 )
 
     @staticmethod
-    def clear_parameter_output_values(node_reference: DagOrchestrator.DagNode) -> None:
+    def clear_parameter_output_values(node_reference: DagNode) -> None:
         """Clear all parameter output values for the given node and publish events.
 
         This method iterates through each parameter output value stored in the node,
@@ -345,13 +348,13 @@ class ExecuteDagState(State):
 
     @staticmethod
     def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
-        network = context.current_dag.network
+        network = context.network
         leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
         done_nodes = []
         canceled_nodes = []
         queued_nodes = []
         for node in leaf_nodes:
-            node_reference = context.current_dag.node_to_reference[node]
+            node_reference = context.node_to_reference[node]
             # If the node is locked, mark it as done so it skips execution
             if node_reference.node_reference.lock:
                 node_reference.node_state = NodeState.DONE
@@ -367,7 +370,7 @@ class ExecuteDagState(State):
         return done_nodes, canceled_nodes, queued_nodes, leaf_nodes
 
     @staticmethod
-    async def execute_node(current_node: DagOrchestrator.DagNode, semaphore: asyncio.Semaphore) -> None:
+    async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
             await current_node.node_reference.aprocess()
 
@@ -375,7 +378,7 @@ class ExecuteDagState(State):
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
         context.batched_nodes.clear()
-        for node in context.current_dag.node_to_reference.values():
+        for node in context.node_to_reference.values():
             # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
             node.node_state = NodeState.QUEUED
         context.workflow_state = WorkflowState.NO_ERROR
@@ -386,7 +389,7 @@ class ExecuteDagState(State):
     @staticmethod
     async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         # Check if DAG execution is complete
-        network = context.current_dag.network
+        network = context.network
         # Check and see if there are leaf nodes that are cancelled.
         done_nodes, canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
         # Are there any nodes in Done state?
@@ -395,7 +398,7 @@ class ExecuteDagState(State):
             # Remove the leaf node from the graph.
             network.remove_node(node)
             # Return thread to thread pool.
-            ExecuteDagState.handle_done_nodes(context.current_dag.node_to_reference[node])
+            ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
         # Reinitialize leaf nodes since maybe we changed things up.
         if len(done_nodes) > 0:
             # We removed nodes from the network. There may be new leaf nodes.
@@ -412,7 +415,7 @@ class ExecuteDagState(State):
         # Are there any in the queued state?
         for node in queued_nodes:
             # Process all queued nodes - the async semaphore will handle concurrency limits
-            node_reference = context.current_dag.node_to_reference[node]
+            node_reference = context.node_to_reference[node]
 
             # Collect parameter values from upstream nodes before executing
             try:
@@ -440,22 +443,20 @@ class ExecuteDagState(State):
 
             def on_task_done(task: asyncio.Task) -> None:
                 logger.error("Task done")
-                node = context.current_dag.task_to_node.pop(task)
+                node = context.task_to_node.pop(task)
                 node.node_state = NodeState.DONE
                 logger.error("Task done: %s", node.node_reference.name)
 
             # Execute the node asynchronously
-            node_task = asyncio.create_task(
-                ExecuteDagState.execute_node(node_reference, context.current_dag.async_semaphore)
-            )
+            node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
             # Add a callback to set node to done when task has finished.
-            context.current_dag.task_to_node[node_task] = node_reference
+            context.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
             node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
             # Wait for a task to finish
-        await asyncio.wait(context.current_dag.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Once a task has finished, loop back to the top.
         return ExecuteDagState
 
@@ -465,13 +466,13 @@ class ErrorState(State):
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
-        for node in context.current_dag.node_to_reference.values():
+        for node in context.node_to_reference.values():
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
         # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
         # Cancel async tasks
-        for task in list(context.current_dag.task_to_node.keys()):
+        for task in list(context.task_to_node.keys()):
             if not task.done():
                 task.cancel()
         return ErrorState
@@ -479,7 +480,7 @@ class ErrorState(State):
     @staticmethod
     async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         # Don't modify lists while iterating through them.
-        task_to_node = context.current_dag.task_to_node
+        task_to_node = context.task_to_node
         for task, node in task_to_node.copy().items():
             if task.done():
                 node.node_state = NodeState.DONE
@@ -488,7 +489,7 @@ class ErrorState(State):
             task_to_node.pop(task)
 
         # Handle async tasks
-        task_to_node = context.current_dag.task_to_node
+        task_to_node = context.task_to_node
         for task, node in task_to_node.copy().items():
             if task.done():
                 node.node_state = NodeState.DONE
@@ -499,7 +500,9 @@ class ErrorState(State):
         if len(task_to_node) == 0:
             # Finish up. We failed.
             context.workflow_state = WorkflowState.ERRORED
-            context.current_dag.clear()
+            context.network.clear()
+            context.node_to_reference.clear()
+            context.task_to_node.clear()
             return DagCompleteState
         # Let's continue going through until everything is cancelled.
         return ErrorState
@@ -520,8 +523,8 @@ class DagCompleteState(State):
 class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     """State machine for building DAG structure without execution."""
 
-    def __init__(self, flow_name: str, dag_orchestrator: DagOrchestrator) -> None:
-        resolution_context = ParallelResolutionContext(flow_name, dag_orchestrator=dag_orchestrator)
+    def __init__(self, flow_name: str, max_workers: int | None = None) -> None:
+        resolution_context = ParallelResolutionContext(flow_name, max_workers=max_workers)
         super().__init__(resolution_context)
 
     async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
