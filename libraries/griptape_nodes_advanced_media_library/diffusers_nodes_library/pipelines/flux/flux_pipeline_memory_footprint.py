@@ -53,8 +53,12 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
             )
         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-        logger.info("Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
+        # logger.info("Enabling sequential cpu offload")
+        # pipe.enable_sequential_cpu_offload()
+
+        logger.info("Setting CUDA device")
+        pipe.to(device)
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
     logger.info("Enabling attention slicing")
     pipe.enable_attention_slicing()
@@ -75,14 +79,3 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
         logger.info("Transferring model to MPS/GPU - may take minutes")
         pipe.to(device)
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
-
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
-        pass
