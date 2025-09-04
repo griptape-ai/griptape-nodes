@@ -319,7 +319,10 @@ class LibraryManager:
             details = f"Request type '{request.request_type}' is not registered in the PayloadRegistry."
             return ListCapableLibraryEventHandlersResultFailure(exception=KeyError(details), result_details=details)
         handler_mappings = self.get_registered_event_handlers(request_type)
-        return ListCapableLibraryEventHandlersResultSuccess(handlers=list(handler_mappings.keys()))
+        return ListCapableLibraryEventHandlersResultSuccess(
+            handlers=list(handler_mappings.keys()),
+            result_details=f"Successfully listed {len(handler_mappings)} capable library event handlers",
+        )
 
     def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
         # Make a COPY of the list
@@ -327,10 +330,10 @@ class LibraryManager:
         event_copy = snapshot_list.copy()
 
         details = "Successfully retrieved the list of registered libraries."
-        logger.debug(details)
 
         result = ListRegisteredLibrariesResultSuccess(
             libraries=event_copy,
+            result_details=details,
         )
         return result
 
