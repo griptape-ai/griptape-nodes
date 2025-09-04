@@ -203,6 +203,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(DuplicateSelectedNodesRequest, self.on_duplicate_selected_nodes)
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
         event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
+        event_manager.assign_manager_to_request_type(SendNodeMessageRequest, self.on_send_node_message_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
