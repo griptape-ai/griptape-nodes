@@ -1,0 +1,131 @@
+[project]
+name = "griptape-nodes"
+version = "0.51.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.0, <3.13"
+dependencies = [
+  "griptape>=1.8.2",
+  "pydantic>=2.10.6",
+  "python-dotenv>=1.0.1",
+  "xdg-base-dirs>=6.0.2",
+  "httpx>=0.28.0,<1.0.0",
+  "websockets>=15.0.1,<16.0.0",
+  "tomlkit>=0.13.2",
+  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
+  "uv>=0.6.16",
+  "fastapi>=0.115.12",
+  "uvicorn>=0.34.2",
+  "packaging>=25.0",
+  "python-multipart>=0.0.20",
+  "json-repair>=0.46.1",
+  "mcp[ws]>=1.10.1",
+  "binaryornot>=0.4.4",
+  "pillow>=11.3.0",
+  "watchfiles>=1.1.0",
+]
+
+[project.optional-dependencies]
+profiling = ["austin-dist>=3.7.0"]
+
+[dependency-groups]
+dev = [
+  "mdformat>=0.7.22",
+  "mdformat-gfm>=0.4.1",
+  "mdformat-frontmatter>=2.0.8",
+  "mdformat-footnote>=0.1.1",
+  "mdformat-mkdocs>=4.1.2",
+  "pyright>=1.1.396",
+  "ruff>=0.11.0",
+  "typos>=1.30.2",
+  "watchdog>=6.0.0",
+]
+docs = [
+  "mkdocs-material>=9.6.9",
+  "mkdocs>=1.5.2",
+  "mkdocstrings[python]>=0.29.1",
+]
+test = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=1.1.0",
+  "pytest-mock>=3.14.0",
+  "pytest-xdist>=3.6.1",
+  "pytest-cov>=6.0.0",
+  "coverage>=7.0.0",
+]
+
+[project.scripts]
+griptape-nodes = "griptape_nodes:main"
+gtn = "griptape_nodes:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "TD002",   # Intentional
+  "FIX002",  # Intentional
+  "D101",    # Intentional
+  "D102",    # Intentional
+  "D107",    # Intentional
+  "ANN002",  # Intentional
+  "ANN003",  # Intentional
+  "ANN401",  # Intentional
+  "COM812",  # Intentional
+  "E501",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/834 
+  "D100",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/835 
+  "BLE001",  # TODO: https://github.com/griptape-ai/griptape-nodes/issues/839
+  "SLF001",  # TODO :https://github.com/griptape-ai/griptape-nodes/issues/838 
+  "SIM108",  # Intentional
+  "SIM110",  # Intentional
+  "D105",    # Intentional
+  "N802",    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/840
+  "TRY400",  # Intentional
+  "FBT003",  # Intentional
+  "RET504",  # Intentional
+  "PLC0415", # Intentional
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"nodes.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of nodes.griptape_nodes_library"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "D104"]
+"nodes/tests/*" = ["S101", "D104"]
+
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.typos]
+default.extend-ignore-re = [
+  # Ignore any line that ends with this comment:
+  "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+  # Or: ignore the *next* line after this comment:
+  "(?m)(#|//)\\s*spellchecker:ignore-next-line\\n.*",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["."]
+exclude = [
+  "libraries/griptape_nodes_library/workflows/templates/**/*",
+  ".venv",
+  "GriptapeNodes",
+  "**/node_modules",
+  "**/__pycache__",
+  "**/.*",
+]
+pythonVersion = "3.12"
+reportIncompatibleMethodOverride = false
