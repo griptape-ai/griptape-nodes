@@ -1387,7 +1387,7 @@ class FlowManager:
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
                         if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
                             details = f"Attempted to serialize parent flow '{flow_name}'. Failed while serializing child flow '{child_flow}'."
-                            return SerializeFlowToCommandsResultFailure()
+                            return SerializeFlowToCommandsResultFailure(result_details=details)
                         serialized_flow = child_flow_result.serialized_flow_commands
                         sub_flow_commands.append(serialized_flow)
 
@@ -1409,7 +1409,7 @@ class FlowManager:
             referenced_workflows=referenced_workflows_in_use,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
-        result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow)
+        result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
         return result
 
     def on_deserialize_flow_from_commands(self, request: DeserializeFlowFromCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (I am big and complicated and have a lot of negative edge-cases)
@@ -1535,7 +1535,7 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
-        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name)
+        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name, result_details=details)
 
     def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
         obj_manager = GriptapeNodes.ObjectManager()
@@ -1546,7 +1546,7 @@ class FlowManager:
             # Only flush if there are actually tracked parameters
             if node._tracked_parameters:
                 node.emit_parameter_changes()
-        return FlushParameterChangesResultSuccess()
+        return FlushParameterChangesResultSuccess(result_details="Parameter changes flushed successfully.")
 
     async def start_flow(self, flow: ControlFlow, start_node: BaseNode | None = None, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002, ARG002
         if self.check_for_existing_running_flow():

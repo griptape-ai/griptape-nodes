@@ -304,7 +304,7 @@ class OSManager:
                 logger.info(details)
                 return OpenAssociatedFileResultFailure(result_details=details)
 
-            return OpenAssociatedFileResultSuccess()
+            return OpenAssociatedFileResultSuccess(result_details="File opened successfully in associated application.")
         except subprocess.CalledProcessError as e:
             details = (
                 f"Process error when opening file: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
