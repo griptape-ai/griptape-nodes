@@ -1724,9 +1724,9 @@ class FlowManager:
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
+        # Reset control flow machine
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
-        # Reset control flow machine
         self._global_single_node_resolution = False
         logger.debug("Cancelling flow run")
 

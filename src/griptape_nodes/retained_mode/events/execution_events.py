@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
@@ -272,26 +270,6 @@ class GetIsFlowRunningResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class GetIsFlowRunningResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Flow running status retrieval failed. Common causes: flow not found, no current context."""
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateExecutionMachineRequest(RequestPayload):
-    """Create an execution machine based on the parallelization config value."""
-
-    flow_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateExecutionMachineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    machine: ControlFlowMachine
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateExecutionMachineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    pass
 
 
 # Execution Events! These are sent FROM the EE to the User/GUI. HOW MANY DO WE NEED?

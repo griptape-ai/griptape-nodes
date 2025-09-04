@@ -2,14 +2,7 @@ from __future__ import annotations
 
 import graphlib
 import logging
-from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import asyncio
-
-    from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -77,12 +70,3 @@ class NodeState(StrEnum):
     CANCELED = "canceled"
     ERRORED = "errored"
     WAITING = "waiting"
-
-
-@dataclass(kw_only=True)
-class DagNode:
-    """Represents a node in the DAG with runtime references."""
-
-    task_reference: asyncio.Task | None = field(default=None)
-    node_state: NodeState = field(default=NodeState.WAITING)
-    node_reference: BaseNode

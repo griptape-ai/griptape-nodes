@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -22,9 +22,18 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.retained_mode.managers.dag_orchestrator import DagNode, DirectedGraph, NodeState
+from griptape_nodes.retained_mode.managers.dag_orchestrator import DirectedGraph, NodeState
 
 logger = logging.getLogger("griptape_nodes")
+
+
+@dataclass(kw_only=True)
+class DagNode:
+    """Represents a node in the DAG with runtime references."""
+
+    task_reference: asyncio.Task | None = field(default=None)
+    node_state: NodeState = field(default=NodeState.WAITING)
+    node_reference: BaseNode
 
 
 @dataclass
