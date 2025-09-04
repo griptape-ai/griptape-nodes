@@ -76,7 +76,7 @@ class ParallelResolutionContext:
     async_semaphore: asyncio.Semaphore
     task_to_node: dict[asyncio.Task, DagNode]
 
-    def __init__(self, flow_name: str, max_workers: int | None = None) -> None:
+    def __init__(self, flow_name: str, max_nodes_in_parallel: int | None = None) -> None:
         self.flow_name = flow_name
         self.focus_stack = []
         self.paused = False
@@ -88,8 +88,8 @@ class ParallelResolutionContext:
         # Initialize DAG fields
         self.network = DirectedGraph()
         self.node_to_reference = {}
-        max_workers = max_workers if max_workers is not None else 5
-        self.async_semaphore = asyncio.Semaphore(max_workers)
+        max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
+        self.async_semaphore = asyncio.Semaphore(max_nodes_in_parallel)
         self.task_to_node = {}
 
     def reset(self, *, cancel: bool = False) -> None:
@@ -543,8 +543,8 @@ class DagCompleteState(State):
 class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     """State machine for building DAG structure without execution."""
 
-    def __init__(self, flow_name: str, max_workers: int | None = None) -> None:
-        resolution_context = ParallelResolutionContext(flow_name, max_workers=max_workers)
+    def __init__(self, flow_name: str, max_nodes_in_parallel: int | None = None) -> None:
+        resolution_context = ParallelResolutionContext(flow_name, max_nodes_in_parallel=max_nodes_in_parallel)
         super().__init__(resolution_context)
 
     async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:

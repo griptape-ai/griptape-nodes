@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.settings import ExecutionType
+from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 
 @dataclass
@@ -46,11 +46,15 @@ class ControlFlowContext:
     flow_name: str
 
     def __init__(
-        self, flow_name: str, max_workers: int, *, execution_type: ExecutionType = ExecutionType.SEQUENTIAL
+        self,
+        flow_name: str,
+        max_nodes_in_parallel: int,
+        *,
+        execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
     ) -> None:
         self.flow_name = flow_name
-        if execution_type == ExecutionType.PARALLEL:
-            self.resolution_machine = ParallelResolutionMachine(flow_name, max_workers)
+        if execution_type == WorkflowExecutionMode.PARALLEL:
+            self.resolution_machine = ParallelResolutionMachine(flow_name, max_nodes_in_parallel)
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
@@ -205,10 +209,10 @@ class CompleteState(State):
 class ControlFlowMachine(FSM[ControlFlowContext]):
     def __init__(self, flow_name: str) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
-            "execution_type", default=ExecutionType.SEQUENTIAL
+            "execution_type", default=WorkflowExecutionMode.SEQUENTIAL
         )
-        max_workers = GriptapeNodes.ConfigManager().get_config_value("max_workers", default=5)
-        context = ControlFlowContext(flow_name, max_workers, execution_type=execution_type)
+        max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
+        context = ControlFlowContext(flow_name, max_nodes_in_parallel, execution_type=execution_type)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

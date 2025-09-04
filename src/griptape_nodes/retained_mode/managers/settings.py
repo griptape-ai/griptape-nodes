@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ExecutionType(StrEnum):
+class WorkflowExecutionMode(StrEnum):
     """Execution type for node processing."""
 
     SEQUENTIAL = "sequential"
@@ -97,10 +97,12 @@ class Settings(BaseModel):
         }
     )
     log_level: str = Field(default="INFO")
-    execution_type: ExecutionType = Field(
-        default=ExecutionType.SEQUENTIAL, description="Execution type for node processing"
+    workflow_execution_mode: WorkflowExecutionMode = Field(
+        default=WorkflowExecutionMode.SEQUENTIAL, description="Workflow execution mode for node processing"
     )
-    max_workers: int | None = Field(default=5, description="Maximum number of nodes for parallel execution.")
+    max_nodes_in_parallel: int | None = Field(
+        default=5, description="Maximum number of nodes executing at a time for parallel execution."
+    )
     storage_backend: Literal["local", "gtc"] = Field(default="local")
     minimum_disk_space_gb_libraries: float = Field(
         default=10.0,
