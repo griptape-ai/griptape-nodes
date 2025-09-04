@@ -1739,8 +1739,6 @@ class FlowManager:
             machine.reset_machine(cancel=True)
         # Reset control flow machine
         self._global_single_node_resolution = False
-        del self._global_control_flow_machine
-        self._global_control_flow_machine = None
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
@@ -1754,8 +1752,6 @@ class FlowManager:
         if machine is not None:
             machine.reset_machine()
         # Reset control flow machine
-        del self._global_control_flow_machine
-        self._global_control_flow_machine = None
         self._global_single_node_resolution = False
 
         # Clear all connections to prevent memory leaks and stale references
