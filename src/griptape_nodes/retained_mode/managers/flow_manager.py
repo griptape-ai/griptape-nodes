@@ -191,10 +191,6 @@ class FlowManager:
     def global_flow_queue(self) -> Queue[QueueItem]:
         return self._global_flow_queue
 
-    @global_flow_queue.setter
-    def global_flow_queue(self, value: Queue[QueueItem]) -> None:
-        self._global_flow_queue = value
-
     def get_connections(self) -> Connections:
         """Get the connections instance."""
         return self._connections
@@ -1868,16 +1864,15 @@ class FlowManager:
         if not self.check_for_existing_running_flow():
             return
         # Turn all debugging to false and continue on
-        if self._global_control_flow_machine is not None:
-            if self._global_control_flow_machine is not None:
-                self._global_control_flow_machine.change_debug_mode(False)
-                if self._global_single_node_resolution:
-                    if self._global_control_flow_machine.get_resolution_machine().is_complete():
-                        self._global_single_node_resolution = False
-                    else:
-                        await self._global_control_flow_machine.get_resolution_machine().update()
+        if self._global_control_flow_machine is not None and self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.change_debug_mode(False)
+            if self._global_single_node_resolution:
+                if self._global_control_flow_machine.get_resolution_machine().is_complete():
+                    self._global_single_node_resolution = False
                 else:
-                    await self._global_control_flow_machine.node_step()
+                    await self._global_control_flow_machine.get_resolution_machine().update()
+            else:
+                await self._global_control_flow_machine.node_step()
         # Now it is done executing. make sure it's actually done?
         await self._handle_post_execution_queue_processing(debug_mode=False)
 
