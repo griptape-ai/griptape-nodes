@@ -1,17 +1,70 @@
 from __future__ import annotations
 
 import asyncio
+import graphlib
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-import networkx as nx
-
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class DirectedGraph:
+    """Directed graph implementation using Python's graphlib for DAG operations."""
+
+    def __init__(self) -> None:
+        self._nodes: set[str] = set()
+        self._predecessors: dict[str, set[str]] = {}
+
+    def add_node(self, node_for_adding: str) -> None:
+        """Add a node to the graph."""
+        self._nodes.add(node_for_adding)
+        if node_for_adding not in self._predecessors:
+            self._predecessors[node_for_adding] = set()
+
+    def add_edge(self, from_node: str, to_node: str) -> None:
+        """Add a directed edge from from_node to to_node."""
+        self.add_node(from_node)
+        self.add_node(to_node)
+        self._predecessors[to_node].add(from_node)
+
+    def nodes(self) -> set[str]:
+        """Return all nodes in the graph."""
+        return self._nodes.copy()
+
+    def in_degree(self, node: str) -> int:
+        """Return the in-degree of a node (number of incoming edges)."""
+        if node not in self._nodes:
+            return 0
+        return len(self._predecessors.get(node, set()))
+
+    def remove_node(self, node: str) -> None:
+        """Remove a node and all its edges from the graph."""
+        if node not in self._nodes:
+            return
+
+        self._nodes.remove(node)
+
+        # Remove this node from all predecessor lists
+        for predecessors in self._predecessors.values():
+            predecessors.discard(node)
+
+        # Remove this node's predecessor entry
+        if node in self._predecessors:
+            del self._predecessors[node]
+
+    def clear(self) -> None:
+        """Clear all nodes and edges from the graph."""
+        self._nodes.clear()
+        self._predecessors.clear()
+
+    def get_topological_sorter(self) -> graphlib.TopologicalSorter[str]:
+        """Create a TopologicalSorter from the current graph structure."""
+        return graphlib.TopologicalSorter(self._predecessors)
 
 
 class NodeState(StrEnum):
@@ -30,7 +83,7 @@ class DagOrchestrator:
     """Main DAG structure containing nodes and edges for a specific flow."""
 
     # The generated network of nodes
-    network: nx.DiGraph
+    network: DirectedGraph
     # The node to reference mapping. Includes node and thread references.
     node_to_reference: dict[str, DagOrchestrator.DagNode]
     # Async execution support
@@ -47,7 +100,7 @@ class DagOrchestrator:
             max_workers: Maximum number of worker threads (defaults to ThreadPoolExecutor default)
         """
         self.flow_name = flow_name
-        self.network = nx.DiGraph()
+        self.network = DirectedGraph()
         # Node to reference will also contain node state.
         self.node_to_reference = {}
         # Prevents a worker queue from developing
