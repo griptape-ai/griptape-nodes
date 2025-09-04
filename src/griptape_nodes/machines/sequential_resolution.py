@@ -417,7 +417,8 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def reset_machine(self) -> None:
+    # Unused argument but necessary for parallel_resolution because of futures ending during cancel but not reset.
+    def reset_machine(self, *, cancel: bool = False) -> None:  # noqa: ARG002
         self._context.reset()
         self._current_state = None
 

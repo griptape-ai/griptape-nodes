@@ -77,10 +77,7 @@ class ControlFlowContext:
         if self.current_node:
             self.current_node.clear_node()
         self.current_node = None
-        if isinstance(self.resolution_machine, SequentialResolutionMachine):
-            self.resolution_machine.reset_machine()
-        elif isinstance(self.resolution_machine, ParallelResolutionMachine):
-            self.resolution_machine.reset_machine(cancel=cancel)
+        self.resolution_machine.reset_machine(cancel=cancel)
         self.selected_output = None
         self.paused = False
 
