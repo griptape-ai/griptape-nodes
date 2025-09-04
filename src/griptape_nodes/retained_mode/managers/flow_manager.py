@@ -1062,7 +1062,9 @@ class FlowManager:
             logger.exception(details)
             return GetFlowStateResultFailure(result_details=details)
         details = f"Successfully got flow state for flow with name {flow_name}."
-        return GetFlowStateResultSuccess(control_node=control_node, resolving_node=resolving_node)
+        return GetFlowStateResultSuccess(
+            control_node=control_node, resolving_node=resolving_node, result_details=details
+        )
 
     def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1084,7 +1086,7 @@ class FlowManager:
             return CancelFlowResultFailure(result_details=details)
         details = f"Successfully cancelled flow execution with name {flow_name}"
 
-        return CancelFlowResultSuccess()
+        return CancelFlowResultSuccess(result_details=details)
 
     async def on_single_node_step_request(self, request: SingleNodeStepRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1108,7 +1110,7 @@ class FlowManager:
         # All completed happily
         details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
 
-        return SingleNodeStepResultSuccess()
+        return SingleNodeStepResultSuccess(result_details=details)
 
     async def on_single_execution_step_request(self, request: SingleExecutionStepRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1137,7 +1139,7 @@ class FlowManager:
             return SingleNodeStepResultFailure(validation_exceptions=[e], result_details=details)
         details = f"Successfully advanced to the next step of a running workflow with name {flow_name}"
 
-        return SingleExecutionStepResultSuccess()
+        return SingleExecutionStepResultSuccess(result_details=details)
 
     async def on_continue_execution_step_request(self, request: ContinueExecutionStepRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1157,7 +1159,7 @@ class FlowManager:
             details = f"Failed to continue execution step. An exception occurred: {e}."
             return ContinueExecutionStepResultFailure(result_details=details)
         details = f"Successfully continued flow with name {flow_name}"
-        return ContinueExecutionStepResultSuccess()
+        return ContinueExecutionStepResultSuccess(result_details=details)
 
     def on_unresolve_flow_request(self, request: UnresolveFlowRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1175,7 +1177,7 @@ class FlowManager:
             details = f"Failed to unresolve flow. An exception occurred: {e}."
             return UnresolveFlowResultFailure(result_details=details)
         details = f"Unresolved flow with name {flow_name}"
-        return UnresolveFlowResultSuccess()
+        return UnresolveFlowResultSuccess(result_details=details)
 
     async def on_validate_flow_dependencies_request(self, request: ValidateFlowDependenciesRequest) -> ResultPayload:
         flow_name = request.flow_name
@@ -1202,7 +1204,9 @@ class FlowManager:
             if exceptions:
                 all_exceptions = all_exceptions + exceptions
         return ValidateFlowDependenciesResultSuccess(
-            validation_succeeded=len(all_exceptions) == 0, exceptions=all_exceptions
+            validation_succeeded=len(all_exceptions) == 0,
+            exceptions=all_exceptions,
+            result_details=f"Validated flow dependencies: {len(all_exceptions)} exceptions found",
         )
 
     def on_list_flows_in_current_context_request(self, request: ListFlowsInCurrentContextRequest) -> ResultPayload:  # noqa: ARG002 (request isn't actually used)
@@ -1221,7 +1225,7 @@ class FlowManager:
 
         details = f"Successfully got the list of Flows in the Current Context (Flow '{parent_flow_name}')."
 
-        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list)
+        return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
 
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
