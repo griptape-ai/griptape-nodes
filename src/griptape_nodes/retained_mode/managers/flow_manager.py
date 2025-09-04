@@ -115,8 +115,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    import collections
-
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -188,6 +186,18 @@ class FlowManager:
         self._global_flow_queue = Queue[QueueItem]()
         self._global_control_flow_machine = None  # Track the current control flow machine
         self._global_single_node_resolution = False
+
+    @property
+    def global_flow_queue(self) -> Queue[QueueItem]:
+        return self._global_flow_queue
+
+    @global_flow_queue.setter
+    def global_flow_queue(self, value: Queue[QueueItem]) -> None:
+        self._global_flow_queue = value
+
+    @global_flow_queue.getter
+    def global_flow_queue(self) -> Queue[QueueItem]:
+        return self._global_flow_queue
 
     def get_connections(self) -> Connections:
         """Get the connections instance."""
@@ -1697,7 +1707,7 @@ class FlowManager:
             self._global_flow_queue.task_done()
 
         # Initialize global control flow machine if needed
-        machine = self.create_execution_machine(flow.name)
+        machine = ControlFlowMachine(flow.name)
         self._global_control_flow_machine = machine
         try:
             await machine.start_flow(start_node, debug_mode)
@@ -1799,7 +1809,7 @@ class FlowManager:
             self._global_flow_queue.task_done()
             # Get or create machine
             if self._global_control_flow_machine is None:
-                self._global_control_flow_machine = self.create_execution_machine(flow.name)
+                self._global_control_flow_machine = ControlFlowMachine(flow.name)
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
@@ -1821,7 +1831,7 @@ class FlowManager:
         self._global_single_node_resolution = True
 
         # Get or create machine
-        self._global_control_flow_machine = self.create_execution_machine(flow.name)
+        self._global_control_flow_machine = ControlFlowMachine(flow.name)
         self._global_control_flow_machine.get_context().current_node = node
         resolution_machine = self._global_control_flow_machine.get_resolution_machine()
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
@@ -2138,13 +2148,3 @@ class FlowManager:
                         node_list.append(input_node)
                         node_queue.put(input_node)
         return node_list
-
-    def get_global_flow_queue(self) -> collections.deque[QueueItem]:
-        """Returns the queue from the global flow queue for modification."""
-        return self._global_flow_queue.queue
-
-    def create_execution_machine(self, flow_name: str) -> ControlFlowMachine:
-        in_parallel = GriptapeNodes.ConfigManager().get_config_value("parallel_execution", default=False)
-        max_workers = GriptapeNodes.ConfigManager().get_config_value("max_workers", default=5)
-        machine = ControlFlowMachine(flow_name, max_workers=max_workers, in_parallel=in_parallel)
-        return machine

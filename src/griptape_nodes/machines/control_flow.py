@@ -206,7 +206,9 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, max_workers: int, *, in_parallel: bool = False) -> None:
+    def __init__(self, flow_name: str) -> None:
+        in_parallel = GriptapeNodes.ConfigManager().get_config_value("parallel_execution", default=False)
+        max_workers = GriptapeNodes.ConfigManager().get_config_value("max_workers", default=5)
         context = ControlFlowContext(flow_name, max_workers, in_parallel=in_parallel)
         super().__init__(context)
 
@@ -271,7 +273,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             return
         # Get the global flow queue
         flow_manager = GriptapeNodes.FlowManager()
-        queue_items = list(flow_manager.get_global_flow_queue())
+        queue_items = list(flow_manager.global_flow_queue.queue)
 
         # Find data_nodes and remove them from queue
         data_nodes = []
@@ -280,7 +282,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
             if item.dag_execution_type == DagExecutionType.DATA_NODE:
                 data_nodes.append(item.node)
-                flow_manager.get_global_flow_queue().remove(item)
+                flow_manager.global_flow_queue.queue.remove(item)
 
         # Build DAG for each data node
         for node in data_nodes:

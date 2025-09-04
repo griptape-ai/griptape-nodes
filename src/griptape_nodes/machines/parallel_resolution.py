@@ -494,9 +494,10 @@ class ErrorState(State):
                 node.node_state = NodeState.CANCELED
             task_to_node.pop(task)
 
-        if len(task_to_node) == 0 and len(task_to_node) == 0:
+        if len(task_to_node) == 0:
             # Finish up. We failed.
             context.workflow_state = WorkflowState.ERRORED
+            context.current_dag.clear()
             return DagCompleteState
         # Let's continue going through until everything is cancelled.
         return ErrorState
