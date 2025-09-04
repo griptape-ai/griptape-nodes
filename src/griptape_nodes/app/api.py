@@ -168,7 +168,7 @@ def _setup_app(static_directory: Path) -> None:
     )
 
 
-def start_api(static_directory: Path) -> None:
+def start_static_server(static_directory: Path) -> None:
     """Run uvicorn server synchronously using uvicorn.run."""
     # Setup the FastAPI app
     _setup_app(static_directory)

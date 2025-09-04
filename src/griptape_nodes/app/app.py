@@ -18,7 +18,8 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from griptape_nodes.mcp_server.server import main_sync
+from griptape_nodes.app.api import start_static_server
+from griptape_nodes.mcp_server.server import start_mcp_server
 from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
@@ -36,8 +37,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-from .api import start_api
 
 
 # WebSocket thread communication message types
@@ -138,12 +137,12 @@ async def astart_app() -> None:
 
     try:
         # Start MCP server in daemon thread
-        threading.Thread(target=main_sync, args=(api_key,), daemon=True, name="mcp-server").start()
+        threading.Thread(target=start_mcp_server, args=(api_key,), daemon=True, name="mcp-server").start()
 
         # Start static server in daemon thread if enabled
         if STATIC_SERVER_ENABLED:
             static_dir = _build_static_dir()
-            threading.Thread(target=start_api, args=(static_dir,), daemon=True, name="static-server").start()
+            threading.Thread(target=start_static_server, args=(static_dir,), daemon=True, name="static-server").start()
 
         # Start WebSocket tasks in daemon thread
         threading.Thread(
