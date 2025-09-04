@@ -279,19 +279,20 @@ class ContextManager:
         # As of today, we only allow a single Workflow context at a time. This may change in the future.
         if self.has_current_workflow():
             msg = f"Attempted to set the Workflow '{request.workflow_name}' as the Current Context. Failed because an existing workflow, '{self.get_current_workflow_name()}', is already in the Current Context. In order to clear the existing workflow and remove all objects and references to it, issue a ClearAllObjectState request."
-            logger.error(msg)
-            return SetWorkflowContextFailure()
+            return SetWorkflowContextFailure(result_details=msg)
 
         self.push_workflow(request.workflow_name)
         msg = f"Successfully set the Workflow '{request.workflow_name}' as the Current Context."
-        logger.debug(msg)
-        return SetWorkflowContextSuccess()
+        return SetWorkflowContextSuccess(result_details=msg)
 
     def on_get_workflow_context_request(self, request: GetWorkflowContextRequest) -> ResultPayload:  # noqa: ARG002
         workflow_name = None
         if self.has_current_workflow():
             workflow_name = self.get_current_workflow_name()
-        return GetWorkflowContextSuccess(workflow_name=workflow_name)
+        return GetWorkflowContextSuccess(
+            workflow_name=workflow_name,
+            result_details=f"Successfully retrieved workflow context: {workflow_name or 'None'}",
+        )
 
     def workflow(self, workflow_name: str) -> ContextManager.WorkflowContext:
         """Create a context manager for a Workflow context.

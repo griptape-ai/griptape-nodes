@@ -103,7 +103,7 @@ class StaticFilesManager:
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
-        return CreateStaticFileResultSuccess(url=url)
+        return CreateStaticFileResultSuccess(url=url, result_details=f"Successfully created static file: {url}")
 
     def on_handle_create_static_file_upload_url_request(
         self,
@@ -126,7 +126,10 @@ class StaticFilesManager:
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileUploadUrlResultSuccess(
-            url=response["url"], headers=response["headers"], method=response["method"]
+            url=response["url"],
+            headers=response["headers"],
+            method=response["method"],
+            result_details="Successfully created static file upload URL",
         )
 
     def on_handle_create_static_file_download_url_request(
@@ -149,7 +152,9 @@ class StaticFilesManager:
             logger.error(msg)
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        return CreateStaticFileDownloadUrlResultSuccess(url=url)
+        return CreateStaticFileDownloadUrlResultSuccess(
+            url=url, result_details="Successfully created static file download URL"
+        )
 
     def save_static_file(self, data: bytes, file_name: str) -> str:
         """Saves a static file to the workspace directory.

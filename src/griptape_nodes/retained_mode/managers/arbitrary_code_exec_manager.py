@@ -43,7 +43,9 @@ class ArbitraryCodeExecManager:
                 python_output = exec(request.python_string)  # noqa: S102
 
             captured_output = strip_ansi_codes(string_buffer.getvalue())
-            result = RunArbitraryPythonStringResultSuccess(python_output=captured_output)
+            result = RunArbitraryPythonStringResultSuccess(
+                python_output=captured_output, result_details="Successfully executed Python string"
+            )
         except Exception as e:
             python_output = f"ERROR: {e}"
             result = RunArbitraryPythonStringResultFailure(python_output=python_output, result_details=python_output)
