@@ -11,7 +11,7 @@ from typing import Any
 from binaryornot.check import is_binary
 from rich.console import Console
 
-from griptape_nodes.retained_mode.events.base_events import ResultPayload
+from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
@@ -399,11 +399,17 @@ class OSManager:
             if request.workspace_only:
                 # In workspace mode, return relative path if within workspace, absolute if outside
                 return ListDirectoryResultSuccess(
-                    entries=entries, current_path=str(relative_or_abs_path), is_workspace_path=is_workspace_path
+                    entries=entries,
+                    current_path=str(relative_or_abs_path),
+                    is_workspace_path=is_workspace_path,
+                    result_details="Directory listing retrieved successfully.",
                 )
             # In system-wide mode, always return the full absolute path
             return ListDirectoryResultSuccess(
-                entries=entries, current_path=str(directory), is_workspace_path=is_workspace_path
+                entries=entries,
+                current_path=str(directory),
+                is_workspace_path=is_workspace_path,
+                result_details="Directory listing retrieved successfully.",
             )
 
         except Exception as e:
@@ -430,6 +436,7 @@ class OSManager:
                 mime_type=mime_type,
                 encoding=encoding,
                 compression_encoding=compression_encoding,
+                result_details="File read successfully.",
             )
 
         except (ValueError, FileNotFoundError) as e:
@@ -759,8 +766,9 @@ class OSManager:
             # Check if it already exists - warn but treat as success
             if file_path.exists():
                 msg = f"Path already exists: {file_path}"
-                logger.warning(msg)
-                return CreateFileResultSuccess(created_path=str(file_path))
+                return CreateFileResultSuccess(
+                    created_path=str(file_path), result_details=ResultDetails(message=msg, level="WARNING")
+                )
 
             # Create parent directories if needed
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -777,7 +785,10 @@ class OSManager:
                 file_path.touch()
                 logger.info("Created empty file: %s", file_path)
 
-            return CreateFileResultSuccess(created_path=str(file_path))
+            return CreateFileResultSuccess(
+                created_path=str(file_path),
+                result_details=f"{'Directory' if request.is_directory else 'File'} created successfully at {file_path}",
+            )
 
         except Exception as e:
             path_info = request.get_full_path() if hasattr(request, "get_full_path") else str(request.path)
@@ -820,9 +831,13 @@ class OSManager:
 
             # Perform the rename operation
             old_path.rename(new_path)
-            logger.info("Renamed: %s -> %s", old_path, new_path)
+            details = f"Renamed: {old_path} -> {new_path}"
 
-            return RenameFileResultSuccess(old_path=str(old_path), new_path=str(new_path))
+            return RenameFileResultSuccess(
+                old_path=str(old_path),
+                new_path=str(new_path),
+                result_details=ResultDetails(message=details, level="INFO"),
+            )
 
         except Exception as e:
             msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"

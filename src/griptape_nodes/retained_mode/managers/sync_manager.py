@@ -13,7 +13,7 @@ from watchfiles import Change, PythonFilter, watch
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.base_events import AppEvent
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
 from griptape_nodes.retained_mode.events.sync_events import (
     StartSyncAllCloudWorkflowsRequest,
     StartSyncAllCloudWorkflowsResultFailure,
@@ -130,8 +130,11 @@ class SyncManager:
             workflow_files = [file for file in files if file.endswith(".py")]
 
             if not workflow_files:
-                logger.info("No workflow files found in cloud storage")
-                return StartSyncAllCloudWorkflowsResultSuccess(sync_directory=str(sync_dir), total_workflows=0)
+                return StartSyncAllCloudWorkflowsResultSuccess(
+                    sync_directory=str(sync_dir),
+                    total_workflows=0,
+                    result_details=ResultDetails(message="No workflow files found in cloud storage.", level="INFO"),
+                )
 
             # Start background sync with unique ID
             sync_task_id = str(uuid.uuid4())
@@ -149,9 +152,9 @@ class SyncManager:
             logger.error(details)
             return StartSyncAllCloudWorkflowsResultFailure(result_details=details)
         else:
-            logger.info("Started background sync for %d workflow files", len(workflow_files))
+            details = f"Started background sync for {len(workflow_files)} workflow files"
             return StartSyncAllCloudWorkflowsResultSuccess(
-                sync_directory=str(sync_dir), total_workflows=len(workflow_files)
+                sync_directory=str(sync_dir), total_workflows=len(workflow_files), result_details=details
             )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
