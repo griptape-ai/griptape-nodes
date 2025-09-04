@@ -519,7 +519,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             # Get engine name
             engine_name = GriptapeNodes.EngineIdentityManager().get_engine_name()
 
-            logger.debug("Engine heartbeat successful")
             return EngineHeartbeatResultSuccess(
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
@@ -527,6 +526,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 engine_id=GriptapeNodes.EngineIdentityManager().get_active_engine_id(),
                 session_id=GriptapeNodes.SessionManager().get_active_session_id(),
                 timestamp=datetime.now(tz=UTC).isoformat(),
+                result_details="Engine heartbeat successful",
                 **instance_info,
                 **workflow_info,
             )
