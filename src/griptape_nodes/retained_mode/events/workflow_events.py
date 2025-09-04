@@ -140,6 +140,41 @@ class RegisterWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
+class ImportWorkflowRequest(RequestPayload):
+    """Import and register a workflow from a file.
+
+    Use when: Importing workflows from external sources, batch workflow imports,
+    command-line workflow registration, loading workflows from shared locations.
+
+    Args:
+        file_path: Path to the workflow file to import and register
+
+    Results: ImportWorkflowResultSuccess (with workflow name) | ImportWorkflowResultFailure (import error)
+    """
+
+    file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow imported and registered successfully.
+
+    Args:
+        workflow_name: Name of the imported workflow
+    """
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ImportWorkflowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow import failed. Common causes: file not found, invalid workflow format, metadata extraction error, registration error."""
+
+
+@dataclass
+@PayloadRegistry.register
 class ListAllWorkflowsRequest(RequestPayload):
     """List all workflows in the registry.
 
