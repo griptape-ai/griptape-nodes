@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -22,7 +23,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.retained_mode.managers.directed_graph import DirectedGraph
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -566,12 +566,6 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def get_context(self) -> ParallelResolutionContext:
-        return self._context
-
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
-
-    def get_current_state(self) -> State | None:
-        return self._current_state

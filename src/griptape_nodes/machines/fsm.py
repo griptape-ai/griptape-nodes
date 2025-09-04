@@ -34,11 +34,17 @@ class FSM[T]:
         # Enter the initial state.
         await self.transition_state(initial_state)
 
-    def get_current_state(self) -> type[State] | None:
+    @property
+    def current_state(self) -> type[State] | None:
         return self._current_state
 
-    def set_current_state(self, value: type[State] | None) -> None:
+    @current_state.setter
+    def current_state(self, value: type[State] | None) -> None:
         self._current_state = value
+
+    @property
+    def context(self) -> T:
+        return self._context
 
     async def transition_state(self, new_state: type[State] | None) -> None:
         while new_state is not None:

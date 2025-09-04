@@ -2,7 +2,7 @@
 
 # ruff: noqa: PLR2004
 
-from griptape_nodes.retained_mode.managers.directed_graph import DirectedGraph
+from griptape_nodes.common.directed_graph import DirectedGraph
 
 
 class TestDirectedGraph:

@@ -421,6 +421,3 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:  # noqa: ARG002
         self._context.reset()
         self._current_state = None
-
-    def get_context(self) -> ResolutionContext:
-        return self._context

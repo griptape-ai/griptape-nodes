@@ -530,7 +530,7 @@ class FlowManager:
                 del self._flow_to_referenced_workflow_name[flow]
 
             # Clean up ControlFlowMachine and DAG orchestrator for this flow
-            del self._global_control_flow_machine
+            self._global_control_flow_machine = None
 
         details = f"Successfully deleted Flow '{flow_name}'."
         logger.debug(details)
@@ -1710,13 +1710,13 @@ class FlowManager:
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
             return False
-        current_state = self._global_control_flow_machine.get_current_state()
+        current_state = self._global_control_flow_machine.current_state
         if current_state and current_state is not CompleteState:
             # Flow already exists in progress
             return True
         return bool(
-            not self._global_control_flow_machine.get_context().resolution_machine.is_complete()
-            and self._global_control_flow_machine.get_context().resolution_machine.is_started()
+            not self._global_control_flow_machine.context.resolution_machine.is_complete()
+            and self._global_control_flow_machine.context.resolution_machine.is_started()
         )
 
     def cancel_flow_run(self) -> None:
@@ -1816,15 +1816,15 @@ class FlowManager:
 
         # Get or create machine
         self._global_control_flow_machine = ControlFlowMachine(flow.name)
-        self._global_control_flow_machine.get_context().current_node = node
-        resolution_machine = self._global_control_flow_machine.get_resolution_machine()
+        self._global_control_flow_machine.context.current_node = node
+        resolution_machine = self._global_control_flow_machine.resolution_machine
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
         # Resolve the node
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
-            self._global_control_flow_machine.get_context().current_node = None
+            self._global_control_flow_machine.context.current_node = None
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1835,9 +1835,9 @@ class FlowManager:
             return
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.granular_step(change_debug_mode)
-            resolution_machine = self._global_control_flow_machine.get_resolution_machine()
+            resolution_machine = self._global_control_flow_machine.resolution_machine
             if self._global_single_node_resolution:
-                resolution_machine = self._global_control_flow_machine.get_resolution_machine()
+                resolution_machine = self._global_control_flow_machine.resolution_machine
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
 
@@ -1867,10 +1867,10 @@ class FlowManager:
         if self._global_control_flow_machine is not None and self._global_control_flow_machine is not None:
             self._global_control_flow_machine.change_debug_mode(False)
             if self._global_single_node_resolution:
-                if self._global_control_flow_machine.get_resolution_machine().is_complete():
+                if self._global_control_flow_machine.resolution_machine.is_complete():
                     self._global_single_node_resolution = False
                 else:
-                    await self._global_control_flow_machine.get_resolution_machine().update()
+                    await self._global_control_flow_machine.resolution_machine.update()
             else:
                 await self._global_control_flow_machine.node_step()
         # Now it is done executing. make sure it's actually done?
@@ -1888,11 +1888,11 @@ class FlowManager:
             raise RuntimeError(msg)
         if self._global_control_flow_machine is None:
             return None, None
-        control_flow_context = self._global_control_flow_machine.get_context()
+        control_flow_context = self._global_control_flow_machine.context
         current_control_node = (
             control_flow_context.current_node.name if control_flow_context.current_node is not None else None
         )
-        focus_stack_for_node = self._global_control_flow_machine.get_resolution_machine().get_context().focus_stack
+        focus_stack_for_node = self._global_control_flow_machine.resolution_machine.context.focus_stack
         current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
         return current_control_node, current_resolving_node
 

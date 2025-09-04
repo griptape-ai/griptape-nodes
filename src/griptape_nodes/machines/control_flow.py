@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import ExecutionType
 
 
 @dataclass
@@ -44,10 +45,11 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
 
-    # TODO: Make in_parallel an object or enum instead of a boolean. https://github.com/griptape-ai/griptape-nodes/issues/1999
-    def __init__(self, flow_name: str, max_workers: int, *, in_parallel: bool = False) -> None:
+    def __init__(
+        self, flow_name: str, max_workers: int, *, execution_type: ExecutionType = ExecutionType.SEQUENTIAL
+    ) -> None:
         self.flow_name = flow_name
-        if in_parallel:
+        if execution_type == ExecutionType.PARALLEL:
             self.resolution_machine = ParallelResolutionMachine(flow_name, max_workers)
         else:
             self.resolution_machine = SequentialResolutionMachine()
@@ -202,9 +204,11 @@ class CompleteState(State):
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
     def __init__(self, flow_name: str) -> None:
-        in_parallel = GriptapeNodes.ConfigManager().get_config_value("parallel_execution", default=False)
+        execution_type = GriptapeNodes.ConfigManager().get_config_value(
+            "execution_type", default=ExecutionType.SEQUENTIAL
+        )
         max_workers = GriptapeNodes.ConfigManager().get_config_value("max_workers", default=5)
-        context = ControlFlowContext(flow_name, max_workers, in_parallel=in_parallel)
+        context = ControlFlowContext(flow_name, max_workers, execution_type=execution_type)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
@@ -289,14 +293,12 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 await self._context.resolution_machine.update()
 
             # Reset the machine state to allow adding more nodes
-            self._context.resolution_machine.set_current_state(None)
+            self._context.resolution_machine.current_state = None
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
 
-    def get_context(self) -> ControlFlowContext:
-        return self._context
-
-    def get_resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:
+    @property
+    def resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:
         return self._context.resolution_machine
