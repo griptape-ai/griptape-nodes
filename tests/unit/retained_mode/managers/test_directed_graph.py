@@ -187,47 +187,6 @@ class TestDirectedGraph:
         nodes1.add("external_node")
         assert "external_node" not in graph.nodes()
 
-    def test_get_topological_sorter(self) -> None:
-        """Test creating a TopologicalSorter from the graph."""
-        import graphlib
-
-        graph = DirectedGraph()
-        graph.add_edge("A", "B")
-        graph.add_edge("B", "C")
-
-        sorter = graph.get_topological_sorter()
-
-        assert isinstance(sorter, graphlib.TopologicalSorter)
-
-        # Test that we can get a topological ordering
-        sorter.prepare()
-        ready = list(sorter.get_ready())
-        assert "A" in ready  # A should be ready first (no dependencies)
-
-    def test_get_topological_sorter_complex(self) -> None:
-        """Test TopologicalSorter with a more complex graph."""
-        graph = DirectedGraph()
-
-        # Build a DAG: root -> {node1, node2} -> node3 -> leaf
-        graph.add_edge("root", "node1")
-        graph.add_edge("root", "node2")
-        graph.add_edge("node1", "node3")
-        graph.add_edge("node2", "node3")
-        graph.add_edge("node3", "leaf")
-
-        sorter = graph.get_topological_sorter()
-        sorter.prepare()
-
-        # Get the full topological order
-        order = list(sorter.static_order())
-
-        # Verify ordering constraints
-        assert order.index("root") < order.index("node1")
-        assert order.index("root") < order.index("node2")
-        assert order.index("node1") < order.index("node3")
-        assert order.index("node2") < order.index("node3")
-        assert order.index("node3") < order.index("leaf")
-
     def test_leaf_nodes_identification(self) -> None:
         """Test identifying leaf nodes (nodes with in_degree 0)."""
         graph = DirectedGraph()
@@ -265,6 +224,3 @@ class TestDirectedGraph:
         # These operations should not raise errors
         graph.remove_node("nonexistent")
         graph.clear()
-
-        sorter = graph.get_topological_sorter()
-        assert isinstance(sorter, sorter.__class__)

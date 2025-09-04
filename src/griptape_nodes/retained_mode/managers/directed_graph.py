@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import graphlib
 import logging
 
 logger = logging.getLogger("griptape_nodes")
@@ -54,7 +53,3 @@ class DirectedGraph:
         """Clear all nodes and edges from the graph."""
         self._nodes.clear()
         self._predecessors.clear()
-
-    def get_topological_sorter(self) -> graphlib.TopologicalSorter[str]:
-        """Create a TopologicalSorter from the current graph structure."""
-        return graphlib.TopologicalSorter(self._predecessors)
