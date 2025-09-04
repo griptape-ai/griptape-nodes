@@ -2,7 +2,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WorkflowExecutionMode(StrEnum):
@@ -100,6 +100,23 @@ class Settings(BaseModel):
     workflow_execution_mode: WorkflowExecutionMode = Field(
         default=WorkflowExecutionMode.SEQUENTIAL, description="Workflow execution mode for node processing"
     )
+
+    @field_validator("workflow_execution_mode", mode="before")
+    @classmethod
+    def validate_workflow_execution_mode(cls, v: Any) -> WorkflowExecutionMode:
+        """Convert string values to WorkflowExecutionMode enum."""
+        if isinstance(v, str):
+            try:
+                return WorkflowExecutionMode(v.lower())
+            except ValueError:
+                # Return default if invalid string
+                return WorkflowExecutionMode.SEQUENTIAL
+        elif isinstance(v, WorkflowExecutionMode):
+            return v
+        else:
+            # Return default for any other type
+            return WorkflowExecutionMode.SEQUENTIAL
+
     max_nodes_in_parallel: int | None = Field(
         default=5, description="Maximum number of nodes executing at a time for parallel execution."
     )

@@ -462,10 +462,9 @@ class ExecuteDagState(State):
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
-                logger.error("Task done")
                 node = context.task_to_node.pop(task)
                 node.node_state = NodeState.DONE
-                logger.error("Task done: %s", node.node_reference.name)
+                logger.info("Task done: %s", node.node_reference.name)
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))

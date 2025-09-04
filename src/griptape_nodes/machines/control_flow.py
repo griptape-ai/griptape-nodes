@@ -209,7 +209,7 @@ class CompleteState(State):
 class ControlFlowMachine(FSM[ControlFlowContext]):
     def __init__(self, flow_name: str) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
-            "execution_type", default=WorkflowExecutionMode.SEQUENTIAL
+            "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
         max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
         context = ControlFlowContext(flow_name, max_nodes_in_parallel, execution_type=execution_type)
