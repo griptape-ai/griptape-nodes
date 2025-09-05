@@ -1882,7 +1882,7 @@ class NodeManager:
             details = f"Failed to resolve node '{node_name}'. Flow Validation Failed. Error: {e}"
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         try:
-            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode)
+            await GriptapeNodes.FlowManager().resolve_singular_node(flow, node, debug_mode=debug_mode)
         except Exception as e:
             details = f'Failed to resolve "{node_name}".  Error: {e}'
             return ResolveNodeResultFailure(validation_exceptions=[e], result_details=details)

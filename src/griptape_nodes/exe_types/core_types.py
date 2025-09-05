@@ -4,7 +4,7 @@ import uuid
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
 from pydantic import BaseModel
@@ -57,7 +57,7 @@ class ParameterMode(Enum):
     PROPERTY = auto()
 
 
-class ParameterTypeBuiltin(Enum):
+class ParameterTypeBuiltin(StrEnum):
     STR = "str"
     BOOL = "bool"
     INT = "int"

@@ -9,7 +9,8 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.machines.node_resolution import NodeResolutionMachine
+from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
@@ -17,6 +18,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 
 @dataclass
@@ -38,12 +40,23 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_node: BaseNode | None
-    resolution_machine: NodeResolutionMachine
+    resolution_machine: ParallelResolutionMachine | SequentialResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
+    flow_name: str
 
-    def __init__(self) -> None:
-        self.resolution_machine = NodeResolutionMachine()
+    def __init__(
+        self,
+        flow_name: str,
+        max_nodes_in_parallel: int,
+        *,
+        execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
+    ) -> None:
+        self.flow_name = flow_name
+        if execution_type == WorkflowExecutionMode.PARALLEL:
+            self.resolution_machine = ParallelResolutionMachine(flow_name, max_nodes_in_parallel)
+        else:
+            self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
 
     def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
@@ -66,11 +79,11 @@ class ControlFlowContext:
                 return NextNodeInfo(node=node, entry_parameter=None)
         return None
 
-    def reset(self) -> None:
+    def reset(self, *, cancel: bool = False) -> None:
         if self.current_node:
             self.current_node.clear_node()
         self.current_node = None
-        self.resolution_machine.reset_machine()
+        self.resolution_machine.reset_machine(cancel=cancel)
         self.selected_output = None
         self.paused = False
 
@@ -194,11 +207,18 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self) -> None:
-        context = ControlFlowContext()
+    def __init__(self, flow_name: str) -> None:
+        execution_type = GriptapeNodes.ConfigManager().get_config_value(
+            "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
+        )
+        max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
+        context = ControlFlowContext(flow_name, max_nodes_in_parallel, execution_type=execution_type)
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        # If using DAG resolution, process data_nodes from queue first
+        if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
+            await self._process_data_nodes_for_dag()
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
         start_node.set_entry_control_parameter(None)
@@ -214,31 +234,75 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode
-        self._context.resolution_machine.change_debug_mode(debug_mode)
+        self._context.resolution_machine.change_debug_mode(debug_mode=debug_mode)
 
     async def granular_step(self, change_debug_mode: bool) -> None:  # noqa: FBT001
         resolution_machine = self._context.resolution_machine
+
         if change_debug_mode:
-            resolution_machine.change_debug_mode(True)
+            resolution_machine.change_debug_mode(debug_mode=True)
         await resolution_machine.update()
 
-        # Tick the control flow if the resolution machine inside it isn't busy.
-        if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
+        # Tick the control flow if the current machine isn't busy
+        if self._current_state is ResolveNodeState and (  # noqa: SIM102
+            resolution_machine.is_complete() or not resolution_machine.is_started()
+        ):
             # Don't tick ourselves if we are already complete.
             if self._current_state is not None:
                 await self.update()
 
     async def node_step(self) -> None:
         resolution_machine = self._context.resolution_machine
-        resolution_machine.change_debug_mode(False)
-        await resolution_machine.update()
 
-        # Tick the control flow if the resolution machine inside it isn't busy.
-        if resolution_machine.is_complete() or not resolution_machine.is_started():  # noqa: SIM102
-            # Don't tick ourselves if we are already complete.
-            if self._current_state is not None:
-                await self.update()
+        resolution_machine.change_debug_mode(debug_mode=False)
 
-    def reset_machine(self) -> None:
-        self._context.reset()
+        # If we're in the resolution phase, step the resolution machine
+        if self._current_state is ResolveNodeState:
+            await resolution_machine.update()
+
+        # Tick the control flow if the current machine isn't busy
+        if self._current_state is ResolveNodeState and (
+            resolution_machine.is_complete() or not resolution_machine.is_started()
+        ):
+            await self.update()
+
+    async def _process_data_nodes_for_dag(self) -> None:
+        """Process data_nodes from the global queue to build unified DAG.
+
+        This method identifies data_nodes in the execution queue and processes
+        their dependencies into the DAG resolution machine.
+        """
+        if not isinstance(self._context.resolution_machine, ParallelResolutionMachine):
+            return
+        # Get the global flow queue
+        flow_manager = GriptapeNodes.FlowManager()
+        queue_items = list(flow_manager.global_flow_queue.queue)
+
+        # Find data_nodes and remove them from queue
+        data_nodes = []
+        for item in queue_items:
+            from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
+
+            if item.dag_execution_type == DagExecutionType.DATA_NODE:
+                data_nodes.append(item.node)
+                flow_manager.global_flow_queue.queue.remove(item)
+
+        # Build DAG for each data node
+        for node in data_nodes:
+            node.state = NodeResolutionState.UNRESOLVED
+            await self._context.resolution_machine.resolve_node(node, build_only=True)
+
+            # Run resolution until complete for this node's subgraph
+            while not self._context.resolution_machine.is_complete():
+                await self._context.resolution_machine.update()
+
+            # Reset the machine state to allow adding more nodes
+            self._context.resolution_machine.current_state = None
+
+    def reset_machine(self, *, cancel: bool = False) -> None:
+        self._context.reset(cancel=cancel)
         self._current_state = None
+
+    @property
+    def resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:
+        return self._context.resolution_machine

@@ -10,12 +10,15 @@ from griptape_nodes.exe_types.core_types import (
     ControlParameterOutput,
     Parameter,
     ParameterMessage,
+    ParameterMode,
     ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
+    ResultDetails,
+    ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
 )
@@ -90,7 +93,6 @@ class EngineNode(BaseNode):
     _FAILURE_MESSAGE_DEFAULT = (
         "Failure Output Parameters: These values will be populated only after the request fails or encounters errors."
     )
-    _ERROR_MESSAGE_DEFAULT = "Error Messages: Any configuration errors or execution failures will appear here."
     _SUCCESS_MESSAGE_WITH_DOC_TEMPLATE = "Success Output Parameters: {doc}\n\nThese values will be populated only after the request executes successfully."
     _FAILURE_MESSAGE_WITH_DOC_TEMPLATE = "Failure Output Parameters: {doc}\n\nThese values will be populated only after the request fails or encounters errors."
 
@@ -153,16 +155,6 @@ class EngineNode(BaseNode):
         )
         self.add_node_element(self.failure_info_message)
 
-        # Create static UI elements that will be populated dynamically
-        self.error_message = ParameterMessage(
-            variant="error",
-            value=self._ERROR_MESSAGE_DEFAULT,
-            name="error_message",
-        )
-        self.add_node_element(self.error_message)
-        # Hide error message by default - only show when there's an actual error
-        self.hide_message_by_name(self.error_message.name)
-
         # Control input for execution flow
         self.control_parameter_in = ControlParameterInput()
         self.add_parameter(self.control_parameter_in)
@@ -182,6 +174,28 @@ class EngineNode(BaseNode):
         )
         self.add_parameter(self.failure_output)
 
+        # Boolean parameter to indicate success/failure (OUTPUT mode only)
+        self.was_successful = Parameter(
+            name="was_successful",
+            tooltip="Boolean indicating whether the request execution was successful",
+            type="bool",
+            default_value=False,
+            allowed_modes={ParameterMode.OUTPUT},
+        )
+        self.add_parameter(self.was_successful)
+
+        # Result details parameter with multiline option
+        self.result_details = Parameter(
+            name="result_details",
+            tooltip="Details about the execution result",
+            type="str",
+            default_value="",
+            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            settable=False,
+            ui_options={"multiline": True},
+        )
+        self.add_parameter(self.result_details)
+
         # Initial parameter creation will be deferred to validate_before_workflow_run
         # to ensure the node is properly registered first
 
@@ -191,8 +205,10 @@ class EngineNode(BaseNode):
     # Public Methods
     def process(self) -> None:
         """Execute the selected request and handle the result."""
-        # Step 1: Reset execution state at the start of each run
+        # Step 1: Reset execution state and result details at the start of each run
         self._execution_succeeded = None
+        self._assign_result_details("")
+        self.set_parameter_value(self.was_successful.name, False)
 
         # Step 2: Get the selected request type from the dropdown
         selected_type = self.get_parameter_value(self.request_selector.name)
@@ -224,7 +240,10 @@ class EngineNode(BaseNode):
         request_kwargs = self._build_request_kwargs(request_info.request_class)
 
         # Step 6: Execute the request and handle success/failure routing
-        self._execute_request(request_info.request_class, request_kwargs)
+        try:
+            self._execute_request(request_info.request_class, request_kwargs)
+        except Exception as e:
+            self._handle_execution_error(str(e))
 
     def get_next_control_output(self) -> Parameter | None:
         """Determine which control output to follow based on execution result."""
@@ -417,32 +436,35 @@ class EngineNode(BaseNode):
         new_order.append(self.success_output.name)
         new_order.append(self.failure_output.name)
 
-        # 3. request_type selector
+        # 3. was_successful boolean parameter
+        new_order.append(self.was_successful.name)
+
+        # 4. request_type selector
         new_order.append(self.request_selector.name)
 
-        # 4. documentation ParameterMessage
+        # 5. result_details parameter
+        new_order.append(self.result_details.name)
+
+        # 6. documentation ParameterMessage
         new_order.append(self.documentation_message.name)
 
-        # 5. All input parameters
+        # 7. All input parameters
         input_params = [p for p in self.parameters if p.name.startswith(self._INPUT_PARAMETER_NAME_PREFIX)]
         new_order.extend(param.name for param in input_params)
 
-        # 6. Success ParameterMessage
+        # 8. Success ParameterMessage
         new_order.append(self.success_info_message.name)
 
-        # 7. All success parameters
+        # 9. All success parameters
         success_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_SUCCESS_PARAMETER_NAME_PREFIX)]
         new_order.extend(param.name for param in success_params)
 
-        # 8. Failure ParameterMessage
+        # 10. Failure ParameterMessage
         new_order.append(self.failure_info_message.name)
 
-        # 9. All failure parameters
+        # 11. All failure parameters
         failure_params = [p for p in self.parameters if p.name.startswith(self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX)]
         new_order.extend(param.name for param in failure_params)
-
-        # 10. Error message (always at end)
-        new_order.append(self.error_message.name)
 
         # Use the BaseNode's reorder_elements method
         try:
@@ -475,8 +497,6 @@ class EngineNode(BaseNode):
             "Success Output Parameters: These values will be populated only after the request executes successfully."
         )
         self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
-        self.error_message.value = self._ERROR_MESSAGE_DEFAULT
-        self.hide_message_by_name(self.error_message.name)
 
     # Private Methods
     def _discover_request_types(self) -> dict[str, RequestInfo]:
@@ -561,10 +581,6 @@ class EngineNode(BaseNode):
             self.documentation_message.value = "Select a request type to see its documentation and parameters."
             self.success_info_message.value = self._SUCCESS_MESSAGE_DEFAULT
             self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
-            self.error_message.value = (
-                "Error Messages: Any configuration errors or execution failures will appear here."
-            )
-            self.hide_message_by_name(self.error_message.name)
             return
 
         if clean_type not in self._request_types:
@@ -579,15 +595,14 @@ class EngineNode(BaseNode):
 
         # Check if request type is usable
         if not new_request_info.has_results:
-            self.error_message.value = (
-                f"Cannot use {clean_type}: corresponding Success and Failure result classes not found"
+            # Set result_details to show the error instead of using error_message
+            self._assign_result_details(
+                f"ERROR: Cannot use {clean_type}: corresponding Success and Failure result classes not found"
             )
-            self.show_message_by_name(self.error_message.name)
             return
 
-        # Clear error message for usable request types
-        self.error_message.value = self._ERROR_MESSAGE_DEFAULT
-        self.hide_message_by_name(self.error_message.name)
+        # Clear result_details for usable request types
+        self._assign_result_details("")
 
         # Systematic parameter transition approach
         if _old_type:
@@ -892,16 +907,24 @@ class EngineNode(BaseNode):
         except Exception as e:
             self._handle_execution_error(str(e))
 
-    def _handle_result(self, result: Any) -> None:
+    def _handle_result(self, result: ResultPayload) -> None:
         """Handle successful request execution result."""
         if result.succeeded():
             self._populate_success_outputs(result)
             self._execution_succeeded = True
+            self.set_parameter_value(self.was_successful.name, True)
+            # Handle result_details for success
+            success_details = self._format_result_details(result.result_details)
+            self._assign_result_details(f"SUCCESS: {success_details}")
         else:
             self._populate_failure_outputs(result)
             self._execution_succeeded = False
+            self.set_parameter_value(self.was_successful.name, False)
+            # Handle result_details for failure
+            failure_details = self._format_result_details(result.result_details)
+            self._assign_result_details(f"FAILURE: {failure_details}")
 
-    def _populate_success_outputs(self, result: Any) -> None:
+    def _populate_success_outputs(self, result: ResultPayload) -> None:
         """Populate success output parameters."""
         if not dataclasses.is_dataclass(result):
             return
@@ -913,7 +936,7 @@ class EngineNode(BaseNode):
             value = getattr(result, field.name)
             self.parameter_output_values[output_param_name] = value
 
-    def _populate_failure_outputs(self, result: Any) -> None:
+    def _populate_failure_outputs(self, result: ResultPayload) -> None:
         """Populate failure output parameters."""
         if not dataclasses.is_dataclass(result):
             return
@@ -927,5 +950,17 @@ class EngineNode(BaseNode):
 
     def _handle_execution_error(self, error_message: str) -> None:
         """Handle execution error."""
-        self.parameter_output_values[f"{self._OUTPUT_FAILURE_PARAMETER_NAME_PREFIX}exception"] = error_message
         self._execution_succeeded = False
+        self.set_parameter_value(self.was_successful.name, False)
+        self._assign_result_details(f"ERROR: {error_message}")
+
+    def _assign_result_details(self, message: str) -> None:
+        """Helper to assign result_details using publish_update_to_parameter."""
+        self.parameter_output_values[self.result_details.name] = message
+        self.publish_update_to_parameter(self.result_details.name, message)
+
+    def _format_result_details(self, result_details: ResultDetails | str) -> str:
+        """Format result_details for display, handling ResultDetails or str."""
+        if isinstance(result_details, ResultDetails):
+            return "\n".join(f"[{detail.level}] {detail.message}" for detail in result_details.result_details)
+        return str(result_details)
