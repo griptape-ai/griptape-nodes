@@ -2498,7 +2498,7 @@ class NodeManager:
         """
         output_value = None
         internal_value = None
-        if parameter.name in node.parameter_output_values and node.state == NodeResolutionState.RESOLVED:
+        if parameter.name in node.parameter_output_values:
             # Output values are more important.
             output_value = node.parameter_output_values[parameter.name]
         if parameter.name in node.parameter_values:
