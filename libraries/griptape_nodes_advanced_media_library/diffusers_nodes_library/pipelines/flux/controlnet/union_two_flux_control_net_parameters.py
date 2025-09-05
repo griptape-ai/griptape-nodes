@@ -38,6 +38,16 @@ class UnionTwoFluxControlNetParameters:
                 tooltip="control_image",
             )
         )
+        self._node.add_parameter(
+            Parameter(
+                name="skip_memory_check",
+                input_types=["bool"],
+                type="bool",
+                output_type="bool",
+                tooltip="Skip memory check before running, which may result in out-of-memory errors if there is insufficient memory.",
+                default_value=False,
+            )
+        )
 
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
@@ -45,6 +55,9 @@ class UnionTwoFluxControlNetParameters:
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
+    
+    def get_skip_memory_check(self) -> bool:
+        return bool(self._node.get_parameter_value("skip_memory_check"))
 
     def get_pipe_kwargs(self) -> dict:
         control_image_pil = self.get_control_image_pil()

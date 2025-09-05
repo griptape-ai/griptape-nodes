@@ -82,7 +82,7 @@ class UnionFluxControlNetPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline_memory_footprint(pipe)
+            optimize_flux_pipeline_memory_footprint(pipe, self.flux_params.get_skip_memory_check())
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),

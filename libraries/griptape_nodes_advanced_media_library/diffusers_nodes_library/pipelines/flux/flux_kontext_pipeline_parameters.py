@@ -154,6 +154,16 @@ class FluxKontextPipelineParameters:
             )
         )
         self._seed_parameter.add_input_parameters()
+        self._node.add_parameter(
+            Parameter(
+                name="skip_memory_check",
+                input_types=["bool"],
+                type="bool",
+                output_type="bool",
+                tooltip="Skip memory check before running, which may result in out-of-memory errors if there is insufficient memory.",
+                default_value=False,
+            )
+        )
 
     def add_output_parameters(self) -> None:
         self._node.add_parameter(
@@ -264,6 +274,9 @@ class FluxKontextPipelineParameters:
     def get_effective_size(self) -> tuple[int, int]:
         """Get the effective width and height."""
         return self.get_width(), self.get_height()
+    
+    def get_skip_memory_check(self) -> bool:
+        return bool(self._node.get_parameter_value("skip_memory_check"))
 
     def get_pipe_kwargs(self) -> dict:
         return {
