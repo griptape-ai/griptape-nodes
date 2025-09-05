@@ -6,12 +6,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
-from typing import Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
     ControlParameterOutput,
+    NodeMessageResult,
     Parameter,
     ParameterContainer,
     ParameterDictionary,
@@ -39,6 +40,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.traits.options import Options
 
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import NodeMessagePayload
+
 logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
@@ -52,23 +56,6 @@ class NodeResolutionState(StrEnum):
     UNRESOLVED = auto()
     RESOLVING = auto()
     RESOLVED = auto()
-
-
-class NodeMessageResult(NamedTuple):
-    """Result from a node message callback.
-
-    Attributes:
-        success: True if the message was handled successfully, False otherwise
-        details: Human-readable description of what happened
-        response: Optional response data to return to the sender
-        altered_workflow_state: True if the message handling altered workflow state.
-            Clients can use this to determine if the workflow needs to be re-saved.
-    """
-
-    success: bool
-    details: str
-    response: Any = None
-    altered_workflow_state: bool = True
 
 
 class BaseNode(ABC):
@@ -291,7 +278,7 @@ class BaseNode(ABC):
         self,
         optional_element_name: str | None,
         message_type: str,
-        message: Any,
+        message: NodeMessagePayload | None,
     ) -> NodeMessageResult:
         """Callback for when a message is sent directly to this node.
 
