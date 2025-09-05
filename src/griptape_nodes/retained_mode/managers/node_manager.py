@@ -357,12 +357,10 @@ class NodeManager:
         else:
             details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
 
-        log_level = logging.DEBUG
+        log_level = "DEBUG"
         if remapped_requested_node_name:
-            log_level = logging.WARNING
+            log_level = "WARNING"
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
-
-        logger.log(level=log_level, msg=details)
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, StartLoopNode) and not request.initial_setup:
@@ -377,7 +375,7 @@ class NodeManager:
             # Check and see if the class exists
             libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
             if not libraries_with_node_type:
-                msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
+                msg = f"Attempted to create a paired set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
                 logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
             else:
                 # Create the EndNode
@@ -418,7 +416,7 @@ class NodeManager:
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
-            result_details=details,
+            result_details=ResultDetails(message=details, level=log_level),
         )
 
     def cancel_conditionally(
@@ -2694,7 +2692,6 @@ class NodeManager:
 
         if not callback_result.success:
             details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
-            logger.warning(details)
             return SendNodeMessageResultFailure(
                 result_details=callback_result.details,
                 response=callback_result.response,
@@ -2702,7 +2699,6 @@ class NodeManager:
             )
 
         details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
-        logger.debug(details)
         return SendNodeMessageResultSuccess(
             result_details=callback_result.details,
             response=callback_result.response,

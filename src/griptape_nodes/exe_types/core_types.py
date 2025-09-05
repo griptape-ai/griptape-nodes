@@ -11,7 +11,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
 
-    from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.exe_types.node_types import BaseNode, NodeMessageResult
+
+# Type alias for element message callback functions
+type ElementMessageCallback = Callable[[str, Any], "NodeMessageResult"]
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -415,6 +418,31 @@ class BaseNodeElement:
             "children": [child.to_event(node) for child in self.children],
         }
         return event_data
+
+    def on_message_received(self, message_type: str, message: Any) -> NodeMessageResult | None:
+        """Virtual method for handling messages sent to this element.
+
+        Attempts to delegate to child elements first. If any child handles the message
+        (returns non-None), that result is returned immediately. Otherwise, falls back
+        to default behavior (return None).
+
+        Args:
+            message_type: String indicating the message type for parsing
+            message: Message payload of any type
+
+        Returns:
+            NodeMessageResult | None: Result if handled, None if no handler available
+        """
+        # Try to delegate to all children first
+        # NOTE: This returns immediately on the first child that accepts the message (returns non-None).
+        # In the future, we may need to expand this to handle multiple children processing the same message.
+        for child in self._children:
+            result = child.on_message_received(message_type, message)
+            if result is not None:
+                return result
+
+        # No child handled it, return None (indicating no handler)
+        return None
 
 
 class UIOptionsMixin:
