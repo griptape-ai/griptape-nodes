@@ -6,14 +6,16 @@ import time
 from time import sleep, monotonic
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
+import base64
+import requests
+import json as _json
+from copy import deepcopy
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode, AsyncResult
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.traits.options import Options
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 __all__ = ["SeedanceVideoGeneration"]
 
@@ -39,144 +41,142 @@ class SeedanceVideoGeneration(DataNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        try:
-            self.category = "API Nodes"
-            self.description = "Generate video via Seedance through Griptape Cloud forwarder"
+        self.category = "API Nodes"
+        self.description = "Generate video via Seedance through Griptape Cloud forwarder"
 
-            # Compute API base once
-            base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-            base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-            api_base = urljoin(base_slash, "api/")
-            self._forwarders_base = urljoin(api_base, "forwarders/")
+        # Compute API base once
+        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
+        api_base = urljoin(base_slash, "api/")
+        self._forwarders_base = urljoin(api_base, "forwarders/")
 
-            # INPUTS / PROPERTIES
-            self.add_parameter(
-                Parameter(
-                    name="prompt",
-                    input_types=["str"],
-                    type="str",
-                    tooltip="Text prompt for the video (supports provider flags)",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    ui_options={
-                        "multiline": True,
-                        "placeholder_text": "Describe the video...",
-                        "display_name": "Prompt",
-                    },
-                )
+        # INPUTS / PROPERTIES
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                input_types=["str"],
+                type="str",
+                tooltip="Text prompt for the video (supports provider flags)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the video...",
+                    "display_name": "Prompt",
+                },
             )
+        )
 
-            self.add_parameter(
-                Parameter(
-                    name="model_id",
-                    input_types=["str"],
-                    type="str",
-                    default_value="seedance-1-0-pro-250528",
-                    tooltip="Model id to call via forwarder",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    ui_options={
-                        "display_name": "Model ID",
-                        "hide": True,
-                    },
-                )
+        self.add_parameter(
+            Parameter(
+                name="model_id",
+                input_types=["str"],
+                type="str",
+                default_value="seedance-1-0-pro-250528",
+                tooltip="Model id to call via forwarder",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "display_name": "Model ID",
+                    "hide": True,
+                },
             )
+        )
 
-            # Resolution selection
-            self.add_parameter(
-                Parameter(
-                    name="resolution",
-                    input_types=["str"],
-                    type="str",
-                    default_value="1080p",
-                    tooltip="Output resolution",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    traits={Options(choices=["480p", "720p", "1080p"])},
-                )
+        # Resolution selection
+        self.add_parameter(
+            Parameter(
+                name="resolution",
+                input_types=["str"],
+                type="str",
+                default_value="1080p",
+                tooltip="Output resolution",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["480p", "720p", "1080p"])},
             )
+        )
 
-            # Aspect ratio selection
-            self.add_parameter(
-                Parameter(
-                    name="ratio",
-                    input_types=["str"],
-                    type="str",
-                    default_value="16:9",
-                    tooltip="Output aspect ratio",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    traits={Options(choices=["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"])}
-                )
+        # Aspect ratio selection
+        self.add_parameter(
+            Parameter(
+                name="ratio",
+                input_types=["str"],
+                type="str",
+                default_value="16:9",
+                tooltip="Output aspect ratio",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"])}
             )
+        )
 
-            # Duration (seconds)
-            self.add_parameter(
-                Parameter(
-                    name="duration",
-                    input_types=["int", "str"],
-                    type="int",
-                    default_value=5,
-                    tooltip="Video duration in seconds",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                )
+        # Duration (seconds)
+        self.add_parameter(
+            Parameter(
+                name="duration",
+                input_types=["int"],
+                type="int",
+                default_value=5,
+                tooltip="Video duration in seconds",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[5, 10])}
             )
+        )
 
-            # Camera fixed flag
-            self.add_parameter(
-                Parameter(
-                    name="camerafixed",
-                    input_types=["bool"],
-                    type="bool",
-                    default_value=False,
-                    tooltip="Camera fixed",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                )
+        # Camera fixed flag
+        self.add_parameter(
+            Parameter(
+                name="camerafixed",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Camera fixed",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
+        )
 
-            # Optional first frame (image) - accepts artifact or URL/base64 string
-            self.add_parameter(
-                Parameter(
-                    name="first_frame",
-                    input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                    type="ImageArtifact",
-                    default_value=None,
-                    tooltip="Optional first frame image (URL or base64 data URI)",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    ui_options={"display_name": "First Frame"},
-                )
+        # Optional first frame (image) - accepts artifact or URL/base64 string
+        self.add_parameter(
+            Parameter(
+                name="first_frame",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                default_value=None,
+                tooltip="Optional first frame image (URL or base64 data URI)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "First Frame"},
             )
+        )
 
-            # OUTPUTS
-            self.add_parameter(
-                Parameter(
-                    name="generation_id",
-                    output_type="str",
-                    tooltip="Griptape Cloud generation id",
-                    allowed_modes={ParameterMode.OUTPUT}
-                )
+        # OUTPUTS
+        self.add_parameter(
+            Parameter(
+                name="generation_id",
+                output_type="str",
+                tooltip="Griptape Cloud generation id",
+                allowed_modes={ParameterMode.OUTPUT}
             )
+        )
 
-            self.add_parameter(
-                Parameter(
-                    name="provider_response",
-                    output_type="dict",
-                    type="dict",
-                    tooltip="Verbatim response from provider (initial POST)",
-                    allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
-                )
+        self.add_parameter(
+            Parameter(
+                name="provider_response",
+                output_type="dict",
+                type="dict",
+                tooltip="Verbatim response from provider (initial POST)",
+                allowed_modes={ParameterMode.OUTPUT},
+            ui_options={"hide_property": True},
             )
+        )
 
-            self.add_parameter(
-                Parameter(
-                    name="video_url",
-                    output_type="VideoUrlArtifact",
-                    type="VideoUrlArtifact",
-                    tooltip="Saved video as URL artifact for downstream display",
-                    allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                    ui_options={"is_full_width": True},
-                )
+        self.add_parameter(
+            Parameter(
+                name="video_url",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                tooltip="Saved video as URL artifact for downstream display",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"is_full_width": True},
             )
-        except Exception as exc:
-            logger.exception("SeedanceVideoGeneration __init__ setup failed: %s", exc)
-            raise
+        )
 
     def _log(self, message: str) -> None:
         try:
@@ -191,13 +191,7 @@ class SeedanceVideoGeneration(DataNode):
         yield lambda: self._process()
 
     def _process(self) -> None:  # noqa: C901 - keeping logic clear and linear
-        try:
-            import requests  # optional dependency, installed via library metadata
-        except Exception as exc:  # pragma: no cover - surfaced to UI
-            self._set_safe_defaults()
-            raise ImportError(
-                "Missing optional dependency 'requests'. Add it to library dependencies."
-            ) from exc
+        # requests is imported at module import time
 
         prompt: str = self.get_parameter_value("prompt") or ""
         model_id: str = self.get_parameter_value("model_id") or "seedance-1-0-pro-250528"
@@ -241,7 +235,6 @@ class SeedanceVideoGeneration(DataNode):
         # If it's an external URL, inline to data URI so forwarder doesn't need to fetch
         if isinstance(first_frame_url, str) and first_frame_url.startswith(("http://", "https://")):
             try:
-                import base64
                 rff = requests.get(first_frame_url, timeout=20)
                 rff.raise_for_status()
                 ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
@@ -268,7 +261,6 @@ class SeedanceVideoGeneration(DataNode):
         # Log sanitized request
         def _sanitize_body(b: Dict[str, Any]) -> Dict[str, Any]:
             try:
-                from copy import deepcopy
                 red = deepcopy(b)
                 cont = red.get("provider_request", {}).get("content", [])
                 for it in cont:
@@ -287,7 +279,6 @@ class SeedanceVideoGeneration(DataNode):
         self._log(f"Submitting request to forwarder model={model_id}")
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
         try:
-            import json as _json
             self._log(f"POST {post_url}\nheaders={dbg_headers}\nbody={_json.dumps(_sanitize_body(payload), indent=2)}")
         except Exception:
             pass
@@ -348,7 +339,6 @@ class SeedanceVideoGeneration(DataNode):
 
             # Log full payload for diagnostics each attempt
             try:
-                import json as _json
                 self._log(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
             except Exception:
                 pass
