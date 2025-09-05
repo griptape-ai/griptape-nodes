@@ -238,7 +238,6 @@ class ExecuteNodeState(State):
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
         current_node = context.focus_stack[-1].node
-
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
@@ -398,7 +397,7 @@ class CompleteState(State):
         return None
 
 
-class NodeResolutionMachine(FSM[ResolutionContext]):
+class SequentialResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
     def __init__(self) -> None:
@@ -418,6 +417,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def reset_machine(self) -> None:
+    # Unused argument but necessary for parallel_resolution because of futures ending during cancel but not reset.
+    def reset_machine(self, *, cancel: bool = False) -> None:  # noqa: ARG002
         self._context.reset()
         self._current_state = None

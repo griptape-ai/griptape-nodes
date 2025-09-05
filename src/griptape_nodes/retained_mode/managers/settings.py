@@ -1,7 +1,15 @@
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class WorkflowExecutionMode(StrEnum):
+    """Execution type for node processing."""
+
+    SEQUENTIAL = "sequential"
+    PARALLEL = "parallel"
 
 
 class AppInitializationComplete(BaseModel):
@@ -89,6 +97,29 @@ class Settings(BaseModel):
         }
     )
     log_level: str = Field(default="INFO")
+    workflow_execution_mode: WorkflowExecutionMode = Field(
+        default=WorkflowExecutionMode.SEQUENTIAL, description="Workflow execution mode for node processing"
+    )
+
+    @field_validator("workflow_execution_mode", mode="before")
+    @classmethod
+    def validate_workflow_execution_mode(cls, v: Any) -> WorkflowExecutionMode:
+        """Convert string values to WorkflowExecutionMode enum."""
+        if isinstance(v, str):
+            try:
+                return WorkflowExecutionMode(v.lower())
+            except ValueError:
+                # Return default if invalid string
+                return WorkflowExecutionMode.SEQUENTIAL
+        elif isinstance(v, WorkflowExecutionMode):
+            return v
+        else:
+            # Return default for any other type
+            return WorkflowExecutionMode.SEQUENTIAL
+
+    max_nodes_in_parallel: int | None = Field(
+        default=5, description="Maximum number of nodes executing at a time for parallel execution."
+    )
     storage_backend: Literal["local", "gtc"] = Field(default="local")
     minimum_disk_space_gb_libraries: float = Field(
         default=10.0,
