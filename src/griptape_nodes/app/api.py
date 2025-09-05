@@ -141,17 +141,6 @@ async def _delete_static_file(file_path: str, static_directory: Annotated[Path, 
         return {"message": f"File {file_path} deleted successfully"}
 
 
-@app.post("/engines/request")
-async def _create_event(request: Request) -> None:
-    """Create event using centralized event utilities."""
-    from .app import _process_api_event
-
-    body = await request.json()
-
-    # Use centralized event processing
-    await _process_api_event(body)
-
-
 def _setup_app(static_directory: Path) -> None:
     """Setup FastAPI app with middleware and static files."""
     global static_dir  # noqa: PLW0603
@@ -179,7 +168,7 @@ def _setup_app(static_directory: Path) -> None:
     )
 
 
-def start_api(static_directory: Path) -> None:
+def start_static_server(static_directory: Path) -> None:
     """Run uvicorn server synchronously using uvicorn.run."""
     # Setup the FastAPI app
     _setup_app(static_directory)

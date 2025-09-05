@@ -60,7 +60,9 @@ class SecretsManager:
             logger.error(details)
             return GetSecretValueResultFailure(result_details=details)
 
-        return GetSecretValueResultSuccess(value=secret_value)
+        return GetSecretValueResultSuccess(
+            value=secret_value, result_details=f"Successfully retrieved secret value for key: {secret_key}"
+        )
 
     def on_handle_set_secret_request(self, request: SetSecretValueRequest) -> ResultPayload:
         secret_name = SecretsManager._apply_secret_name_compliance(request.key)
@@ -77,12 +79,14 @@ class SecretsManager:
 
         self.set_secret(secret_name, secret_value)
 
-        return SetSecretValueResultSuccess()
+        return SetSecretValueResultSuccess(result_details=f"Successfully set secret value for key: {secret_name}")
 
     def on_handle_get_all_secret_values_request(self, request: GetAllSecretValuesRequest) -> ResultPayload:  # noqa: ARG002
         secret_values = dotenv_values(ENV_VAR_PATH)
 
-        return GetAllSecretValuesResultSuccess(values=secret_values)
+        return GetAllSecretValuesResultSuccess(
+            values=secret_values, result_details=f"Successfully retrieved {len(secret_values)} secret values"
+        )
 
     def on_handle_delete_secret_value_request(self, request: DeleteSecretValueRequest) -> ResultPayload:
         secret_name = SecretsManager._apply_secret_name_compliance(request.key)
@@ -101,7 +105,7 @@ class SecretsManager:
 
         logger.info("Secret '%s' deleted.", secret_name)
 
-        return DeleteSecretValueResultSuccess()
+        return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
 
     def get_secret(self, secret_name: str, *, should_error_on_not_found: bool = True) -> str | None:
         """Return the secret value with the following search precedence (highest to lowest priority).

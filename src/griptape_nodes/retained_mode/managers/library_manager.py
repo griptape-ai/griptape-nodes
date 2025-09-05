@@ -38,6 +38,9 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+
+# Runtime imports for ResultDetails since it's used at runtime
+from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -319,7 +322,10 @@ class LibraryManager:
             details = f"Request type '{request.request_type}' is not registered in the PayloadRegistry."
             return ListCapableLibraryEventHandlersResultFailure(exception=KeyError(details), result_details=details)
         handler_mappings = self.get_registered_event_handlers(request_type)
-        return ListCapableLibraryEventHandlersResultSuccess(handlers=list(handler_mappings.keys()))
+        return ListCapableLibraryEventHandlersResultSuccess(
+            handlers=list(handler_mappings.keys()),
+            result_details=f"Successfully listed {len(handler_mappings)} capable library event handlers",
+        )
 
     def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
         # Make a COPY of the list
@@ -327,10 +333,10 @@ class LibraryManager:
         event_copy = snapshot_list.copy()
 
         details = "Successfully retrieved the list of registered libraries."
-        logger.debug(details)
 
         result = ListRegisteredLibrariesResultSuccess(
             libraries=event_copy,
+            result_details=details,
         )
         return result
 
@@ -350,10 +356,10 @@ class LibraryManager:
         event_copy = snapshot_list.copy()
 
         details = f"Successfully retrieved the list of node types in the Library named '{request.library}'."
-        logger.debug(details)
 
         result = ListNodeTypesInLibraryResultSuccess(
             node_types=event_copy,
+            result_details=details,
         )
         return result
 
@@ -371,9 +377,8 @@ class LibraryManager:
         # Get the metadata off of it.
         metadata = library.get_metadata()
         details = f"Successfully retrieved metadata for Library '{request.library}'."
-        logger.debug(details)
 
-        result = GetLibraryMetadataResultSuccess(metadata=metadata)
+        result = GetLibraryMetadataResultSuccess(metadata=metadata, result_details=details)
         return result
 
     def load_library_metadata_from_file_request(self, request: LoadLibraryMetadataFromFileRequest) -> ResultPayload:
@@ -462,8 +467,9 @@ class LibraryManager:
             )
 
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
-        logger.debug(details)
-        return LoadLibraryMetadataFromFileResultSuccess(library_schema=library_data, file_path=file_path)
+        return LoadLibraryMetadataFromFileResultSuccess(
+            library_schema=library_data, file_path=file_path, result_details=details
+        )
 
     def load_metadata_for_all_libraries_request(self, request: LoadMetadataForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         """Load metadata for all libraries from configuration without loading node modules.
@@ -504,10 +510,10 @@ class LibraryManager:
         details = (
             f"Successfully loaded metadata for {len(successful_libraries)} libraries, {len(failed_libraries)} failed"
         )
-        logger.debug(details)
         return LoadMetadataForAllLibrariesResultSuccess(
             successful_libraries=successful_libraries,
             failed_libraries=failed_libraries,
+            result_details=details,
         )
 
     def _generate_sandbox_library_metadata(
@@ -615,9 +621,8 @@ class LibraryManager:
         )
 
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
-        logger.debug(details)
         return LoadLibraryMetadataFromFileResultSuccess(
-            library_schema=library_schema, file_path=str(sandbox_library_dir)
+            library_schema=library_schema, file_path=str(sandbox_library_dir), result_details=details
         )
 
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
@@ -642,10 +647,10 @@ class LibraryManager:
             return result
 
         details = f"Successfully retrieved node metadata for a node type '{request.node_type}' in a Library named '{request.library}'."
-        logger.debug(details)
 
         result = GetNodeMetadataFromLibraryResultSuccess(
             metadata=metadata,
+            result_details=details,
         )
         return result
 
@@ -660,7 +665,9 @@ class LibraryManager:
             return result
 
         categories = library.get_categories()
-        result = ListCategoriesInLibraryResultSuccess(categories=categories)
+        result = ListCategoriesInLibraryResultSuccess(
+            categories=categories, result_details=f"Successfully retrieved categories for library '{request.library}'."
+        )
         return result
 
     async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic needs branches)
@@ -906,15 +913,16 @@ class LibraryManager:
         match library_load_results.status:
             case LibraryStatus.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
-                logger.info(details)
-                return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_data.name, result_details=ResultDetails(message=details, level="INFO")
+                )
             case LibraryStatus.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
-                logger.warning(details)
-                return RegisterLibraryFromFileResultSuccess(library_name=library_data.name)
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_data.name, result_details=ResultDetails(message=details, level="WARNING")
+                )
             case LibraryStatus.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
-                logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
             case _:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected status '{library_load_results.status}' was returned."
@@ -985,7 +993,10 @@ class LibraryManager:
             logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
-        return RegisterLibraryFromRequirementSpecifierResultSuccess(library_name=request.requirement_specifier)
+        return RegisterLibraryFromRequirementSpecifierResultSuccess(
+            library_name=request.requirement_specifier,
+            result_details=f"Successfully registered library from requirement specifier: {request.requirement_specifier}",
+        )
 
     async def _init_library_venv(self, library_venv_path: Path) -> Path:
         """Initialize a virtual environment for the library.
@@ -1122,8 +1133,7 @@ class LibraryManager:
             del self._library_file_path_to_info[lib_info.library_path]
 
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
-        logger.debug(details)
-        return UnloadLibraryFromRegistryResultSuccess()
+        return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         list_libraries_request = ListRegisteredLibrariesRequest()
@@ -1159,8 +1169,9 @@ class LibraryManager:
 
         # We're home free now
         details = "Successfully retrieved all info for all libraries."
-        logger.debug(details)
-        result = GetAllInfoForAllLibrariesResultSuccess(library_name_to_library_info=library_name_to_all_info)
+        result = GetAllInfoForAllLibrariesResultSuccess(
+            library_name_to_library_info=library_name_to_all_info, result_details=details
+        )
         return result
 
     def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
@@ -1231,11 +1242,11 @@ class LibraryManager:
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
         details = f"Successfully got all library info for a Library named '{request.library}'."
-        logger.debug(details)
         result = GetAllInfoForLibraryResultSuccess(
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,
             node_type_name_to_node_metadata_details=node_type_name_to_node_metadata_details,
+            result_details=details,
         )
         return result
 
@@ -2029,5 +2040,4 @@ class LibraryManager:
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
-        logger.info(details)
-        return ReloadAllLibrariesResultSuccess()
+        return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level="INFO"))

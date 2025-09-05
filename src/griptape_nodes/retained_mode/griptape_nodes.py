@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
+    ResultDetails,
     ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
@@ -252,7 +253,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 type(request).__name__,
                 request,
             )
-            return ResultPayloadFailure(exception=e)
+            return ResultPayloadFailure(
+                exception=e, result_details=f"Unhandled exception while processing {type(request).__name__}: {e}"
+            )
         else:
             return result_event.result
 
@@ -276,7 +279,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 type(request).__name__,
                 request,
             )
-            return ResultPayloadFailure(exception=e)
+            return ResultPayloadFailure(
+                exception=e, result_details=f"Unhandled exception while processing async {type(request).__name__}: {e}"
+            )
         else:
             return result_event.result
 
@@ -421,6 +426,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                     major=engine_ver.major,
                     minor=engine_ver.minor,
                     patch=engine_ver.patch,
+                    result_details="Engine version retrieved successfully.",
                 )
             details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
             logger.error(details)
@@ -447,7 +453,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         await subscribe_to_topic(topic)
         logger.info("Subscribed to new session topic: %s", topic)
 
-        return AppStartSessionResultSuccess(current_session_id)
+        return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
 
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
         from griptape_nodes.app.app import unsubscribe_from_topic
@@ -465,14 +471,19 @@ class GriptapeNodes(metaclass=SingletonMeta):
             unsubscribe_topic = f"sessions/{previous_session_id}/request"
             await unsubscribe_from_topic(unsubscribe_topic)
 
-            return AppEndSessionResultSuccess(session_id=previous_session_id)
+            return AppEndSessionResultSuccess(
+                session_id=previous_session_id, result_details="Session ended successfully."
+            )
         except Exception as err:
             details = f"Failed to end session due to '{err}'."
             logger.error(details)
             return AppEndSessionResultFailure(result_details=details)
 
     def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
-        return AppGetSessionResultSuccess(session_id=GriptapeNodes.SessionManager().get_active_session_id())
+        return AppGetSessionResultSuccess(
+            session_id=GriptapeNodes.SessionManager().get_active_session_id(),
+            result_details="Session ID retrieved successfully.",
+        )
 
     def handle_session_heartbeat_request(self, request: SessionHeartbeatRequest) -> ResultPayload:  # noqa: ARG002
         """Handle session heartbeat requests.
@@ -487,8 +498,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 return SessionHeartbeatResultFailure(result_details=details)
 
             details = f"Session heartbeat successful for session: {active_session_id}"
-            logger.debug(details)
-            return SessionHeartbeatResultSuccess()
+            return SessionHeartbeatResultSuccess(result_details=details)
         except Exception as err:
             details = f"Failed to handle session heartbeat: {err}"
             logger.error(details)
@@ -509,7 +519,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             # Get engine name
             engine_name = GriptapeNodes.EngineIdentityManager().get_engine_name()
 
-            logger.debug("Engine heartbeat successful")
             return EngineHeartbeatResultSuccess(
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
@@ -517,6 +526,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 engine_id=GriptapeNodes.EngineIdentityManager().get_active_engine_id(),
                 session_id=GriptapeNodes.SessionManager().get_active_session_id(),
                 timestamp=datetime.now(tz=UTC).isoformat(),
+                result_details="Engine heartbeat successful",
                 **instance_info,
                 **workflow_info,
             )
@@ -529,8 +539,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
         """Handle requests to get the current engine name."""
         try:
             engine_name = GriptapeNodes.EngineIdentityManager().get_engine_name()
-            logger.debug("Retrieved engine name: %s", engine_name)
-            return GetEngineNameResultSuccess(engine_name=engine_name)
+            return GetEngineNameResultSuccess(
+                engine_name=engine_name, result_details="Engine name retrieved successfully."
+            )
         except Exception as err:
             error_message = f"Failed to get engine name: {err}"
             logger.error(error_message)
@@ -547,8 +558,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
             # Set the new engine name
             GriptapeNodes.EngineIdentityManager().set_engine_name(request.engine_name.strip())
-            logger.info("Engine name set to: %s", request.engine_name.strip())
-            return SetEngineNameResultSuccess(engine_name=request.engine_name.strip())
+            details = f"Engine name set to: {request.engine_name.strip()}"
+            return SetEngineNameResultSuccess(
+                engine_name=request.engine_name.strip(), result_details=ResultDetails(message=details, level="INFO")
+            )
 
         except Exception as err:
             error_message = f"Failed to set engine name: {err}"

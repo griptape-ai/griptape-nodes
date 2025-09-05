@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
+    ResultDetails,
     ResultPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -50,7 +51,10 @@ class ObjectManager:
     def on_rename_object_request(self, request: RenameObjectRequest) -> ResultPayload:
         # Does the source object exist?
         if request.object_name == request.requested_name:
-            return RenameObjectResultSuccess(final_name=request.requested_name)
+            return RenameObjectResultSuccess(
+                final_name=request.requested_name,
+                result_details=f"Object '{request.requested_name}' already has the requested name",
+            )
         source_obj = self.attempt_get_object_by_name(request.object_name)
         if source_obj is None:
             details = f"Attempted to rename object '{request.object_name}', but no object of that name could be found."
@@ -97,8 +101,11 @@ class ObjectManager:
         if final_name != request.requested_name:
             details += " WARNING: Originally requested the name '{request.requested_name}', but that was taken."
             log_level = logging.WARNING
-        logger.log(level=log_level, msg=details)
-        return RenameObjectResultSuccess(final_name=final_name)
+        if log_level == logging.WARNING:
+            result_details = ResultDetails(message=details, level="WARNING")
+        else:
+            result_details = details
+        return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)
 
     def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
         if not request.i_know_what_im_doing:
@@ -148,8 +155,7 @@ class ObjectManager:
         GriptapeNodes.VariablesManager().on_clear_object_state()
 
         details = "Successfully cleared all object state (deleted everything)."
-        logger.debug(details)
-        return ClearAllObjectStateResultSuccess()
+        return ClearAllObjectStateResultSuccess(result_details=details)
 
     def get_filtered_subset[T](
         self,
