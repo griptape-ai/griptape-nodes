@@ -369,6 +369,102 @@ def _get_args() -> argparse.Namespace:
     )
     libraries_subparsers.add_parser("sync", help="Sync libraries with your current engine version.")
 
+    # models
+    models_parser = subparsers.add_parser("models", help="Manage AI models.")
+    models_subparsers = models_parser.add_subparsers(
+        dest="subcommand",
+        metavar="SUBCOMMAND",
+        required=True,
+    )
+    models_download_parser = models_subparsers.add_parser("download", help="Download a model from Hugging Face Hub.")
+    models_download_parser.add_argument(
+        "model_id",
+        help="Model ID or URL (e.g., 'microsoft/DialoGPT-medium')",
+    )
+    models_download_parser.add_argument(
+        "--local-dir",
+        help="Local directory to download the model to (defaults to Hugging Face cache)",
+    )
+    models_download_parser.add_argument(
+        "--repo-type",
+        choices=["model", "dataset", "space"],
+        default="model",
+        help="Type of repository to download (default: model)",
+    )
+    models_download_parser.add_argument(
+        "--revision",
+        default="main",
+        help="Git revision (branch, tag, or commit hash) to download (default: main)",
+    )
+    models_download_parser.add_argument(
+        "--allow-patterns",
+        action="append",
+        help="Glob patterns to include when downloading (can be used multiple times)",
+    )
+    models_download_parser.add_argument(
+        "--ignore-patterns",
+        action="append",
+        help="Glob patterns to exclude when downloading (can be used multiple times)",
+    )
+    models_subparsers.add_parser("list", help="List all downloaded models in local cache.")
+    models_delete_parser = models_subparsers.add_parser("delete", help="Delete a model from local cache.")
+    models_delete_parser.add_argument(
+        "model_id",
+        help="Model ID to delete (e.g., 'microsoft/DialoGPT-medium')",
+    )
+    models_cancel_parser = models_subparsers.add_parser("cancel", help="Cancel an active model download.")
+    models_cancel_parser.add_argument(
+        "model_id",
+        help="Model ID to cancel download for (e.g., 'microsoft/DialoGPT-medium')",
+    )
+    models_status_parser = models_subparsers.add_parser("status", help="Show download status for models.")
+    models_status_parser.add_argument(
+        "model_id",
+        nargs="?",
+        help="Optional model ID to check status for (if omitted, shows all downloads)",
+    )
+    models_search_parser = models_subparsers.add_parser("search", help="Search for models on Hugging Face Hub.")
+    models_search_parser.add_argument(
+        "query",
+        nargs="?",
+        help="Search query to match against model names and descriptions",
+    )
+    models_search_parser.add_argument(
+        "--task",
+        help="Filter by task type (e.g., 'text-generation', 'image-classification')",
+    )
+    models_search_parser.add_argument(
+        "--library",
+        help="Filter by library (e.g., 'transformers', 'diffusers', 'timm')",
+    )
+    models_search_parser.add_argument(
+        "--author",
+        help="Filter by author/organization name",
+    )
+    models_search_parser.add_argument(
+        "--tags",
+        action="append",
+        help="Filter by tags (can be used multiple times)",
+    )
+    models_search_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of results to return (default: 20, max: 100)",
+    )
+    models_search_parser.add_argument(
+        "--sort",
+        choices=["downloads", "likes", "updated", "created"],
+        default="downloads",
+        help="Sort results by (default: downloads)",
+    )
+    models_search_parser.add_argument(
+        "--direction",
+        choices=["asc", "desc"],
+        default="desc",
+        help="Sort direction (default: desc)",
+    )
+
     args = parser.parse_args()
 
     # Default to the `engine` command when none is given.
@@ -869,6 +965,471 @@ def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:
     return result if result else None
 
 
+def _download_model(args: argparse.Namespace) -> None:
+    """Start a model download from Hugging Face Hub and exit immediately.
+
+    Args:
+        args: Parsed command line arguments containing model download parameters
+    """
+    import threading
+
+    from griptape_nodes.retained_mode.events.model_events import DownloadModelRequest
+
+    console.print(f"[bold green]Starting download for model: {args.model_id}[/bold green]")
+
+    # Create the download request
+    request = DownloadModelRequest(
+        model_id=args.model_id,
+        local_dir=args.local_dir,
+        repo_type=args.repo_type,
+        revision=args.revision,
+        allow_patterns=args.allow_patterns,
+        ignore_patterns=args.ignore_patterns,
+    )
+
+    console.print("[bold cyan]✓ Download started[/bold cyan]")
+    console.print(f"[dim]Monitor progress with: [bold]gtn models status {args.model_id}[/bold][/dim]")
+    console.print("[dim]View all downloads with: [bold]gtn models status[/bold][/dim]")
+
+    def download_worker() -> None:
+        """Background worker function to handle the actual download."""
+        import asyncio
+        import contextlib
+
+        # Errors will be captured in the status file by the progress tracker
+        with contextlib.suppress(Exception):
+            # Run the async download in a new event loop
+            asyncio.run(GriptapeNodes.ahandle_request(request))
+
+    # Start the download in a background thread
+    download_thread = threading.Thread(target=download_worker, daemon=True)
+    download_thread.start()
+
+    # Keep the process running until download completes
+    console.print(
+        "[dim]Waiting for download to complete... Press Ctrl+C to exit and continue download in background[/dim]"
+    )
+    try:
+        download_thread.join()
+        console.print("[bold green]✓ Download completed successfully![/bold green]")
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Download will continue in background[/yellow]")
+        console.print(f"[dim]Monitor progress with: [bold]gtn models status {args.model_id}[/bold][/dim]")
+
+
+async def _list_models(args: argparse.Namespace) -> None:  # noqa: ARG001
+    """List all downloaded models in the local cache.
+
+    Args:
+        args: Parsed command line arguments (no parameters needed for list)
+    """
+    from griptape_nodes.retained_mode.events.model_events import ListModelsRequest
+
+    console.print("[bold green]Listing cached models...[/bold green]")
+
+    # Create the list request
+    request = ListModelsRequest()
+
+    try:
+        # Use the ModelManager to handle the listing
+        result = await GriptapeNodes.ahandle_request(request)
+
+        from griptape_nodes.retained_mode.events.model_events import (
+            ListModelsResultSuccess,
+        )
+
+        if isinstance(result, ListModelsResultSuccess):
+            # Success case
+            models = result.models
+            if models:
+                console.print(f"[bold green]✓ Found {len(models)} cached models:[/bold green]")
+                from rich.table import Table
+
+                table = Table()
+                table.add_column("Model ID", style="green")
+                table.add_column("Size (GB)", style="cyan", justify="right")
+                table.add_column("Local Path", style="dim")
+
+                for model in models:
+                    size_gb = round(model["size_mb"] / 1024, 2)
+                    table.add_row(model["model_id"], str(size_gb), model["local_path"])
+                console.print(table)
+            else:
+                console.print("[yellow]No models found in local cache[/yellow]")
+
+        else:
+            # Failure case
+            from griptape_nodes.retained_mode.events.model_events import (
+                ListModelsResultFailure,
+            )
+
+            if isinstance(result, ListModelsResultFailure):
+                console.print("[bold red]✗ Model listing failed:[/bold red]")
+                if result.result_details:
+                    console.print(f"[red]{result.result_details}[/red]")
+                if result.exception:
+                    console.print(f"[dim]Error: {result.exception}[/dim]")
+            else:
+                console.print("[bold red]✗ Model listing failed: Unknown error occurred[/bold red]")
+
+    except Exception as e:
+        console.print("[bold red]✗ Unexpected error during model listing:[/bold red]")
+        console.print(f"[red]{e}[/red]")
+
+
+async def _delete_model(args: argparse.Namespace) -> None:
+    """Delete a model from the local cache.
+
+    Args:
+        args: Parsed command line arguments containing model_id to delete
+    """
+    from griptape_nodes.retained_mode.events.model_events import DeleteModelRequest
+
+    console.print(f"[bold yellow]Deleting model: {args.model_id}[/bold yellow]")
+
+    # Create the delete request
+    request = DeleteModelRequest(model_id=args.model_id)
+
+    try:
+        # Use the ModelManager to handle the deletion
+        result = await GriptapeNodes.ahandle_request(request)
+
+        from griptape_nodes.retained_mode.events.model_events import (
+            DeleteModelResultSuccess,
+        )
+
+        if isinstance(result, DeleteModelResultSuccess):
+            # Success case
+            console.print("[bold green]✓ Model deleted successfully![/bold green]")
+            console.print(f"[green]Deleted: {result.deleted_path}[/green]")
+        else:
+            # Failure case
+            from griptape_nodes.retained_mode.events.model_events import (
+                DeleteModelResultFailure,
+            )
+
+            if isinstance(result, DeleteModelResultFailure):
+                console.print("[bold red]✗ Model deletion failed:[/bold red]")
+                if result.result_details:
+                    console.print(f"[red]{result.result_details}[/red]")
+                if result.exception:
+                    console.print(f"[dim]Error: {result.exception}[/dim]")
+            else:
+                console.print("[bold red]✗ Model deletion failed: Unknown error occurred[/bold red]")
+
+    except Exception as e:
+        console.print("[bold red]✗ Unexpected error during model deletion:[/bold red]")
+        console.print(f"[red]{e}[/red]")
+
+
+async def _cancel_model_download(args: argparse.Namespace) -> None:
+    """Cancel an active model download.
+
+    Args:
+        args: Parsed command line arguments containing model_id to cancel
+    """
+    from griptape_nodes.retained_mode.events.model_events import CancelModelDownloadRequest
+
+    console.print(f"[bold yellow]Cancelling download for: {args.model_id}[/bold yellow]")
+
+    # Create the cancel request
+    request = CancelModelDownloadRequest(model_id=args.model_id)
+
+    try:
+        # Use the ModelManager to handle the cancellation
+        result = await GriptapeNodes.ahandle_request(request)
+
+        from griptape_nodes.retained_mode.events.model_events import (
+            CancelModelDownloadResultSuccess,
+        )
+
+        if isinstance(result, CancelModelDownloadResultSuccess):
+            # Success case
+            if result.was_cancelled:
+                console.print("[bold green]✓ Download cancellation requested![/bold green]")
+                console.print(f"[green]Cancelled: {result.model_id}[/green]")
+                console.print("[dim]The download will stop gracefully. Check status to confirm.[/dim]")
+            else:
+                console.print("[bold yellow]ℹ Download was not active[/bold yellow]")
+                console.print(f"[yellow]{result.result_details}[/yellow]")
+        else:
+            # Failure case
+            from griptape_nodes.retained_mode.events.model_events import (
+                CancelModelDownloadResultFailure,
+            )
+
+            if isinstance(result, CancelModelDownloadResultFailure):
+                console.print("[bold red]✗ Download cancellation failed:[/bold red]")
+                if result.result_details:
+                    console.print(f"[red]{result.result_details}[/red]")
+                if result.exception:
+                    console.print(f"[dim]Error: {result.exception}[/dim]")
+            else:
+                console.print("[bold red]✗ Download cancellation failed: Unknown error occurred[/bold red]")
+
+    except Exception as e:
+        console.print("[bold red]✗ Unexpected error during download cancellation:[/bold red]")
+        console.print(f"[red]{e}[/red]")
+
+
+def _format_download_row(download: dict) -> tuple[str, str, str, str, str, str]:  # noqa: PLR0912
+    """Format a download dictionary into table row data.
+
+    Args:
+        download: Download status dictionary
+
+    Returns:
+        tuple: (model_id, status_colored, progress_str, size_str, eta_str, started_str)
+    """
+    # Time conversion constants
+    seconds_in_minute = 60
+    seconds_in_hour = 3600
+    # Format progress
+    progress_str = f"{download.get('progress_percent', 0):.1f}%"
+
+    # Format size
+    downloaded = download.get("downloaded_bytes", 0)
+    total = download.get("total_bytes", 0)
+    if total > 0:
+        size_str = f"{downloaded // (1024 * 1024)}/{total // (1024 * 1024)} MB"
+    else:
+        size_str = "Unknown"
+
+    # Format ETA
+    eta_seconds = download.get("eta_seconds")
+    if eta_seconds is not None and eta_seconds > 0:
+        # Convert seconds to human readable format
+        if eta_seconds < seconds_in_minute:
+            eta_str = f"{int(eta_seconds)}s"
+        elif eta_seconds < seconds_in_hour:
+            minutes = int(eta_seconds // seconds_in_minute)
+            seconds = int(eta_seconds % seconds_in_minute)
+            eta_str = f"{minutes}m {seconds}s"
+        else:
+            hours = int(eta_seconds // seconds_in_hour)
+            minutes = int((eta_seconds % seconds_in_hour) // seconds_in_minute)
+            eta_str = f"{hours}h {minutes}m"
+    else:
+        eta_str = "Unknown"
+
+    # Format timestamp
+    started_at = download.get("started_at", "")
+    if started_at:
+        from datetime import datetime
+
+        try:
+            dt = datetime.fromisoformat(started_at)
+            started_str = dt.strftime("%H:%M:%S")
+        except Exception:
+            started_str = started_at[:10]  # Fallback
+    else:
+        started_str = "Unknown"
+
+    # Color status
+    status = download.get("status", "unknown")
+    if status == "completed":
+        status_colored = f"[green]{status}[/green]"
+    elif status == "failed":
+        status_colored = f"[red]{status}[/red]"
+    elif status == "downloading":
+        status_colored = f"[yellow]{status}[/yellow]"
+    elif status == "cancelled":
+        status_colored = f"[magenta]{status}[/magenta]"
+    else:
+        status_colored = status
+
+    return (
+        download.get("model_id", "Unknown"),
+        status_colored,
+        progress_str,
+        size_str,
+        eta_str,
+        started_str,
+    )
+
+
+def _display_downloads_table(downloads: list[dict]) -> None:
+    """Display downloads in a formatted table.
+
+    Args:
+        downloads: List of download status dictionaries
+    """
+    from rich.table import Table
+
+    console.print(f"[bold green]✓ Found {len(downloads)} download(s):[/bold green]")
+
+    table = Table()
+    table.add_column("Model ID", style="green")
+    table.add_column("Status", style="cyan")
+    table.add_column("Progress", style="yellow", justify="right")
+    table.add_column("Size", style="blue", justify="right")
+    table.add_column("ETA", style="magenta", justify="right")
+    table.add_column("Started", style="dim")
+
+    for download in downloads:
+        row_data = _format_download_row(download)
+        table.add_row(*row_data)
+
+    console.print(table)
+
+
+async def _get_model_status(args: argparse.Namespace) -> None:
+    """Get download status for models.
+
+    Args:
+        args: Parsed command line arguments containing optional model_id
+    """
+    from griptape_nodes.retained_mode.events.model_events import (
+        GetModelDownloadStatusRequest,
+        GetModelDownloadStatusResultFailure,
+        GetModelDownloadStatusResultSuccess,
+    )
+
+    if args.model_id:
+        console.print(f"[bold green]Getting download status for: {args.model_id}[/bold green]")
+    else:
+        console.print("[bold green]Getting download status for all models...[/bold green]")
+
+    # Create the status request
+    request = GetModelDownloadStatusRequest(model_id=args.model_id)
+
+    try:
+        # Use the ModelManager to handle the status query
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, GetModelDownloadStatusResultSuccess):
+            # Success case
+            downloads = result.downloads
+            if downloads:
+                _display_downloads_table(downloads)
+            elif args.model_id:
+                console.print(f"[yellow]No download found for model: {args.model_id}[/yellow]")
+            else:
+                console.print("[yellow]No downloads found[/yellow]")
+
+        elif isinstance(result, GetModelDownloadStatusResultFailure):
+            console.print("[bold red]✗ Failed to get download status:[/bold red]")
+            if result.result_details:
+                console.print(f"[red]{result.result_details}[/red]")
+            if result.exception:
+                console.print(f"[dim]Error: {result.exception}[/dim]")
+        else:
+            console.print("[bold red]✗ Failed to get download status: Unknown error occurred[/bold red]")
+
+    except Exception as e:
+        console.print("[bold red]✗ Unexpected error getting download status:[/bold red]")
+        console.print(f"[red]{e}[/red]")
+
+
+async def _search_models(args: argparse.Namespace) -> None:
+    """Search for models on Hugging Face Hub.
+
+    Args:
+        args: Parsed command line arguments containing search parameters
+    """
+    from griptape_nodes.retained_mode.events.model_events import (
+        SearchModelsRequest,
+        SearchModelsResultFailure,
+        SearchModelsResultSuccess,
+    )
+
+    if args.query:
+        console.print(f"[bold green]Searching for models: {args.query}[/bold green]")
+    else:
+        console.print("[bold green]Searching for models...[/bold green]")
+
+    # Create the search request
+    request = SearchModelsRequest(
+        query=args.query,
+        task=args.task,
+        library=args.library,
+        author=args.author,
+        tags=args.tags,
+        limit=args.limit,
+        sort=args.sort,
+        direction=args.direction,
+    )
+
+    try:
+        # Use the ModelManager to handle the search
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, SearchModelsResultSuccess):
+            # Success case
+            models = result.models
+            if models:
+                _display_search_results(models, result.query_info)
+            else:
+                console.print("[yellow]No models found matching the search criteria[/yellow]")
+
+        elif isinstance(result, SearchModelsResultFailure):
+            console.print("[bold red]✗ Model search failed:[/bold red]")
+            if result.result_details:
+                console.print(f"[red]{result.result_details}[/red]")
+            if result.exception:
+                console.print(f"[dim]Error: {result.exception}[/dim]")
+        else:
+            console.print("[bold red]✗ Model search failed: Unknown error occurred[/bold red]")
+
+    except Exception as e:
+        console.print("[bold red]✗ Unexpected error during model search:[/bold red]")
+        console.print(f"[red]{e}[/red]")
+
+
+def _display_search_results(models: list[dict], query_info: dict) -> None:
+    """Display model search results in a formatted table.
+
+    Args:
+        models: List of model information dictionaries
+        query_info: Information about the search query
+    """
+    from rich.table import Table
+
+    console.print(f"[bold green]✓ Found {len(models)} models[/bold green]")
+
+    # Show search parameters if any were used
+    params = []
+    if query_info.get("query"):
+        params.append(f"query: {query_info['query']}")
+    if query_info.get("task"):
+        params.append(f"task: {query_info['task']}")
+    if query_info.get("library"):
+        params.append(f"library: {query_info['library']}")
+    if query_info.get("author"):
+        params.append(f"author: {query_info['author']}")
+    if query_info.get("tags"):
+        params.append(f"tags: {', '.join(query_info['tags'])}")
+
+    if params:
+        console.print(f"[dim]Search parameters: {', '.join(params)}[/dim]")
+
+    table = Table()
+    table.add_column("Model ID", style="green")
+    table.add_column("Author", style="blue")
+    table.add_column("Downloads", style="cyan", justify="right")
+    table.add_column("Likes", style="yellow", justify="right")
+    table.add_column("Task", style="magenta")
+    table.add_column("Library", style="dim")
+
+    for model in models:
+        downloads_str = f"{model.get('downloads', 0):,}" if model.get("downloads") else "0"
+        likes_str = str(model.get("likes", 0))
+        task_str = model.get("pipeline_tag", "") or ""
+        library_str = model.get("library_name", "") or ""
+        author_str = model.get("author", "") or ""
+
+        table.add_row(
+            model.get("id", "Unknown"),
+            author_str,
+            downloads_str,
+            likes_str,
+            task_str,
+            library_str,
+        )
+
+    console.print(table)
+
+
 def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     if args.command == "init":
         config_values = _parse_key_value_pairs(getattr(args, "config", None))
@@ -906,6 +1467,19 @@ def _process_args(args: argparse.Namespace) -> None:  # noqa: C901, PLR0912
     elif args.command == "libraries":
         if args.subcommand == "sync":
             asyncio.run(_sync_libraries())
+    elif args.command == "models":
+        if args.subcommand == "download":
+            _download_model(args)
+        elif args.subcommand == "list":
+            asyncio.run(_list_models(args))
+        elif args.subcommand == "delete":
+            asyncio.run(_delete_model(args))
+        elif args.subcommand == "cancel":
+            asyncio.run(_cancel_model_download(args))
+        elif args.subcommand == "status":
+            asyncio.run(_get_model_status(args))
+        elif args.subcommand == "search":
+            asyncio.run(_search_models(args))
     else:
         msg = f"Unknown command: {args.command}"
         raise ValueError(msg)

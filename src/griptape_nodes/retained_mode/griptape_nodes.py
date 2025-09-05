@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
     from griptape_nodes.retained_mode.managers.operation_manager import (
@@ -138,6 +139,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _flow_manager: FlowManager
     _context_manager: ContextManager
     _library_manager: LibraryManager
+    _model_manager: ModelManager
     _workflow_manager: WorkflowManager
     _workflow_variables_manager: VariablesManager
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
@@ -160,6 +162,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+        from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
         from griptape_nodes.retained_mode.managers.operation_manager import (
@@ -193,6 +196,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
+            self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
@@ -305,6 +309,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def LibraryManager(cls) -> LibraryManager:
         return GriptapeNodes.get_instance()._library_manager
+
+    @classmethod
+    def ModelManager(cls) -> ModelManager:
+        return GriptapeNodes.get_instance()._model_manager
 
     @classmethod
     def ObjectManager(cls) -> ObjectManager:
