@@ -72,7 +72,6 @@ class ImageBash(DataNode):
                 type="int",
                 tooltip="The width of the image to create",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                ui_options={"ghost": False},
             )
 
             self.canvas_height = Parameter(
@@ -82,7 +81,6 @@ class ImageBash(DataNode):
                 type="int",
                 tooltip="The height of the image to create",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                ui_options={"ghost": False},
             )
         self.add_node_element(canvas_details_group)
 
@@ -582,15 +580,12 @@ class ImageBash(DataNode):
 
     def _enable_custom_dimensions(self, *, publish_updates: bool = True) -> None:
         """Enable custom width and height input fields."""
-        width_ui_options = self.canvas_width.ui_options
-        self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
-        width_ui_options["ghost"] = False
-        self.canvas_width.ui_options = width_ui_options
-
-        height_ui_options = self.canvas_height.ui_options
-        self.canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
-        height_ui_options["ghost"] = False
-        self.canvas_height.ui_options = height_ui_options
+        canvas_width = self.get_parameter_by_name("width")
+        canvas_height = self.get_parameter_by_name("height")
+        if canvas_width:
+            canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
+        if canvas_height:
+            canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
 
         if publish_updates:
             self.publish_update_to_parameter("width", self.canvas_width.default_value)
@@ -598,15 +593,9 @@ class ImageBash(DataNode):
 
     def _set_preset_dimensions(self, value: str) -> None:
         """Set width and height based on preset canvas size."""
-        width_ui_options = self.canvas_width.ui_options
-        self.canvas_width.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.OUTPUT}
-        width_ui_options["ghost"] = True
-        self.canvas_width.ui_options = width_ui_options
+        self.canvas_width.allowed_modes = {ParameterMode.OUTPUT}
 
-        height_ui_options = self.canvas_height.ui_options
-        self.canvas_height.allowed_modes = {ParameterMode.PROPERTY, ParameterMode.OUTPUT}
-        height_ui_options["ghost"] = True
-        self.canvas_height.ui_options = height_ui_options
+        self.canvas_height.allowed_modes = {ParameterMode.OUTPUT}
 
         dimensions = CANVAS_DIMENSIONS[value]
         self.publish_update_to_parameter("width", dimensions["width"])
@@ -680,7 +669,12 @@ class ImageBash(DataNode):
         if parameter.name == "canvas_size":
             # 1. If user modifies canvas_size to anything other than custom, get width/height from CANVAS_DIMENSIONS
             # 2. If user modifies canvas_size to custom, let them specify width and height
-            self._handle_canvas_size_change(value)
+            if value == "Custom":
+                self.canvas_width.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
+                self.canvas_height.allowed_modes = {ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
+            else:
+                self.canvas_width.allowed_modes = {ParameterMode.OUTPUT}
+                self.canvas_height.allowed_modes = {ParameterMode.OUTPUT}
         elif parameter.name in ["width", "height"] and value is not None:
             # 3. If width and height are changed - update the bash_image.meta value to have the appropriate canvas size width and height
             self._update_bash_image_canvas_size()
