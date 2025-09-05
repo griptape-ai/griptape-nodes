@@ -85,11 +85,10 @@ class Button(Trait):
                     try:
                         # Call the callback and wrap result in NodeMessageResult
                         result_payload = self.on_click_callback(self)
-                        response = NodeMessagePayload(data=result_payload.model_dump())
                         return NodeMessageResult(
                             success=True,
                             details=f"Button '{self.type}' clicked successfully",
-                            response=response,
+                            response=result_payload,
                         )
                     except Exception as e:
                         return NodeMessageResult(
@@ -107,11 +106,10 @@ class Button(Trait):
                     try:
                         # Call the callback and wrap result in NodeMessageResult
                         button_details = self.get_button_status_callback(self)
-                        response = NodeMessagePayload(data=button_details.model_dump())
                         return NodeMessageResult(
                             success=True,
                             details=f"Button '{self.type}' status: {button_details.status.value}",
-                            response=response,
+                            response=button_details,
                             altered_workflow_state=False,
                         )
                     except Exception as e:
@@ -133,11 +131,10 @@ class Button(Trait):
     ) -> NodeMessageResult:
         """Default implementation for get_button_status that returns PRESSABLE status."""
         button_details = ButtonDetailsMessagePayload(button_name=self.type, status=ButtonStatus.PRESSABLE)
-        response = NodeMessagePayload(data=button_details.model_dump())
 
         return NodeMessageResult(
             success=True,
             details=f"Button '{self.type}' status: {ButtonStatus.PRESSABLE.value}",
-            response=response,
+            response=button_details,
             altered_workflow_state=False,
         )
