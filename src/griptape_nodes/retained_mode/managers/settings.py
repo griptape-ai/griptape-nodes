@@ -15,6 +15,7 @@ class WorkflowExecutionMode(StrEnum):
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(default_factory=list)
     workflows_to_register: list[str] = Field(default_factory=list)
+    models_to_download: list[str] = Field(default_factory=list)
 
 
 class AppEvents(BaseModel):

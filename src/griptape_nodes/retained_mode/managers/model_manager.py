@@ -3,9 +3,9 @@ import contextlib
 import hashlib
 import json
 import logging
+import multiprocessing
 import re
 import shutil
-import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +19,6 @@ try:
     from huggingface_hub.constants import HF_HUB_CACHE
 except ImportError:
     from huggingface_hub import HF_HUB_CACHE
-from tqdm.auto import tqdm
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -43,6 +42,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.settings import AppInitializationComplete
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -50,9 +50,68 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class DownloadCancelledException(Exception):
+class DownloadCancelledError(Exception):
     """Exception raised when a download is cancelled by the user."""
-    pass
+
+
+def download_worker(
+    queue: multiprocessing.Queue,
+    model_id: str,
+    download_kwargs: dict[str, Any],
+) -> None:
+    """Download worker that runs in a separate process.
+
+    Args:
+        queue: Multiprocessing queue for status updates
+        model_id: Hugging Face model identifier
+        download_kwargs: Parameters for snapshot_download
+    """
+    try:
+        # Emit starting status
+        queue.put({"status": "starting", "model_id": model_id, "timestamp": time.time()})
+
+        # Emit downloading status
+        queue.put({"status": "downloading", "model_id": model_id, "timestamp": time.time()})
+
+        # Perform the actual download
+        local_path = snapshot_download(**download_kwargs)
+
+        # Emit success status
+        queue.put({"status": "completed", "model_id": model_id, "local_path": local_path, "timestamp": time.time()})
+
+    except RepositoryNotFoundError:
+        queue.put(
+            {
+                "status": "failed",
+                "model_id": model_id,
+                "error": f"Repository not found: {model_id}",
+                "error_type": "RepositoryNotFoundError",
+                "timestamp": time.time(),
+            }
+        )
+
+    except HfHubHTTPError as e:
+        queue.put(
+            {
+                "status": "failed",
+                "model_id": model_id,
+                "error": f"HTTP error {e.response.status_code}: {e!s}",
+                "error_type": "HfHubHTTPError",
+                "timestamp": time.time(),
+            }
+        )
+
+    except Exception as e:
+        queue.put(
+            {
+                "status": "failed",
+                "model_id": model_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "timestamp": time.time(),
+            }
+        )
+
 
 # HTTP status codes
 HTTP_UNAUTHORIZED = 401
@@ -63,7 +122,6 @@ MIN_CACHE_DIR_PARTS = 3
 
 # Model download status directory
 MODEL_DOWNLOADS_DIR = xdg_data_home() / "griptape_nodes" / "model_downloads"
-
 
 
 class SimpleProgressTracker:
@@ -131,7 +189,7 @@ class SimpleProgressTracker:
 
     def is_cancelled(self) -> bool:
         """Check if the download has been cancelled by reading the status file.
-        
+
         Returns:
             bool: True if the download has been cancelled, False otherwise
         """
@@ -154,122 +212,111 @@ class SimpleProgressTracker:
             logger.warning("Failed to clean up status file for %s: %s", self.model_id, e)
 
 
-def _calculate_aggregated_progress(active_instances: list[Any]) -> tuple[int, int]:
-    """Calculate total downloaded and total size across all tqdm instances."""
-    total_downloaded = 0
-    total_size = 0
+class MultiprocessingDownloadManager:
+    """Manages model downloads using multiprocessing for clean cancellation."""
 
-    for instance in active_instances:
-        if hasattr(instance, "n") and hasattr(instance, "total"):
-            instance_downloaded = getattr(instance, "n", 0) or 0
-            instance_total = getattr(instance, "total", 0) or 0
-            if instance_total > 0:  # Only count meaningful progress bars
-                total_downloaded += instance_downloaded
-                total_size += instance_total
+    def __init__(self) -> None:
+        self.process = None
+        self.queue = None
+        self.progress_tracker = None
 
-    return total_downloaded, total_size
+    def start_download(
+        self,
+        model_id: str,
+        download_kwargs: dict[str, Any],
+    ) -> None:
+        """Start a download in a separate process.
 
+        Args:
+            model_id: Hugging Face model identifier
+            download_kwargs: Parameters for snapshot_download
+        """
+        if self.process and self.process.is_alive():
+            msg = "Download already in progress"
+            raise RuntimeError(msg)
 
-def _calculate_average_eta(active_instances: list[Any]) -> float | None:
-    """Calculate average ETA across all active tqdm instances."""
-    total_eta = 0
-    eta_count = 0
+        # Create progress tracker for status file management
+        self.progress_tracker = SimpleProgressTracker(model_id)
 
-    for instance in active_instances:
+        self.queue = multiprocessing.Queue()
+        self.process = multiprocessing.Process(target=download_worker, args=(self.queue, model_id, download_kwargs))
+        self.process.start()
+
+    def get_status(self, timeout: float = 0.1) -> dict[str, Any] | None:
+        """Get the latest status update from the download process.
+
+        Args:
+            timeout: Timeout for queue.get() in seconds
+
+        Returns:
+            Status dictionary or None if no update available
+        """
+        if not self.queue:
+            return None
+
         try:
-            if hasattr(instance, "format_dict") and instance.format_dict and instance.format_dict.get("rate"):
-                rate = instance.format_dict["rate"]
-                if rate > 0:
-                    instance_downloaded = getattr(instance, "n", 0) or 0
-                    instance_total = getattr(instance, "total", 0) or 0
-                    remaining = instance_total - instance_downloaded
-                    if remaining > 0:
-                        eta = remaining / rate
-                        total_eta += eta
-                        eta_count += 1
-        except (AttributeError, KeyError, ZeroDivisionError):
-            continue
+            status = self.queue.get(timeout=timeout)
+        except Exception:
+            return None
 
-    return round(total_eta / eta_count, 1) if eta_count > 0 else None
+        # Update progress tracker with status from worker process
+        if self.progress_tracker and status:
+            status_type = status.get("status")
+            if status_type == "downloading":
+                self.progress_tracker._write_status("downloading")
+            elif status_type == "completed":
+                self.progress_tracker.mark_completed()
+            elif status_type == "failed":
+                error_message = status.get("error", "Unknown error")
+                self.progress_tracker.mark_failed(error_message)
+        return status
 
+    def cancel_download(self, timeout: float = 5.0) -> bool:
+        """Cancel the current download by terminating the process.
 
-def patch_tqdm_for_progress_tracking(progress_tracker: SimpleProgressTracker) -> tuple[Any, Any]:  # noqa: C901
-    """Monkey patch tqdm to track progress for Hugging Face downloads."""
-    # Store original methods
-    original_update = tqdm.update
-    original_init = tqdm.__init__
+        Args:
+            timeout: Time to wait for graceful termination
 
-    # Track all active tqdm instances for this download
-    active_tqdm_instances: list[Any] = []
+        Returns:
+            True if successfully cancelled, False if no download was running
+        """
+        print(self.process)
+        if not self.process or not self.process.is_alive():
+            return False
 
-    def patched_init(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original_init(self, *args, **kwargs)
+        # Mark as cancelled in progress tracker
+        if self.progress_tracker:
+            self.progress_tracker.mark_cancelled()
 
-        # Only track instances that have a meaningful total (file downloads)
-        if hasattr(self, "total") and self.total and self.total > 0:
-            self._progress_tracker = progress_tracker
-            active_tqdm_instances.append(self)
+        # Terminate the process
+        self.process.terminate()
 
-        return result
+        # Wait for termination with timeout
+        self.process.join(timeout=timeout)
 
-    def patched_update(self: Any, n: float | None = 1) -> Any:
-        result = original_update(self, n)
+        # Force kill if still alive
+        if self.process.is_alive():
+            self.process.kill()
+            self.process.join()
 
-        # Update progress tracker by aggregating all active instances
-        if hasattr(self, "_progress_tracker") and self._progress_tracker:
-            # Check if download has been cancelled
-            if self._progress_tracker.is_cancelled():
-                # Raise an exception to stop the download
-                raise DownloadCancelledException("Download cancelled by user")
-            
-            total_downloaded, total_size = _calculate_aggregated_progress(active_tqdm_instances)
+        return True
 
-            progress_info = {
-                "downloaded_bytes": total_downloaded,
-                "total_bytes": total_size,
-            }
+    def is_downloading(self) -> bool:
+        """Check if a download is currently in progress."""
+        return self.process is not None and self.process.is_alive()
 
-            if total_size > 0:
-                progress_info["progress_percent"] = float(round((total_downloaded / total_size) * 100, 2))  # type: ignore[assignment]
+    def cleanup(self) -> None:
+        """Clean up resources."""
+        if self.process and self.process.is_alive():
+            self.process.terminate()
+            self.process.join(timeout=2.0)
+            if self.process.is_alive():
+                self.process.kill()
+                self.process.join()
 
-                eta = _calculate_average_eta(active_tqdm_instances)
-                if eta is not None:
-                    progress_info["eta_seconds"] = float(eta)  # type: ignore[assignment]
-
-            self._progress_tracker._write_status("downloading", progress_info)
-
-        return result
-
-    def patched_close(self: Any) -> Any:
-        """Handle tqdm instance closing."""
-        if self in active_tqdm_instances:
-            active_tqdm_instances.remove(self)
-
-        if hasattr(tqdm, "_original_close"):
-            return tqdm._original_close(self)  # type: ignore[attr-defined]
-        return None
-
-    # Store original close method if it exists
-    if hasattr(tqdm, "close"):
-        tqdm._original_close = tqdm.close  # type: ignore[attr-defined]
-
-    # Apply patches
-    tqdm.update = patched_update
-    tqdm.__init__ = patched_init
-    tqdm.close = patched_close
-
-    return original_update, original_init
-
-
-def restore_tqdm(original_update: Any, original_init: Any) -> None:
-    """Restore original tqdm methods."""
-    tqdm.update = original_update
-    tqdm.__init__ = original_init
-
-    # Restore original close method if we stored it
-    if hasattr(tqdm, "_original_close"):
-        tqdm.close = tqdm._original_close  # type: ignore[attr-defined]
-        delattr(tqdm, "_original_close")
+        self.process = None
+        self.queue = None
+        self.progress_tracker = None
 
 
 def get_download_status(model_id: str) -> dict[str, Any] | None:
@@ -371,6 +418,9 @@ class ModelManager:
         Args:
             event_manager: The EventManager instance to use for event handling.
         """
+        # Store active download managers by model_id
+        self.active_downloads: dict[str, MultiprocessingDownloadManager] = {}
+
         if event_manager is not None:
             # Register our request handlers
             event_manager.assign_manager_to_request_type(DownloadModelRequest, self.on_handle_download_model_request)
@@ -380,7 +430,15 @@ class ModelManager:
                 GetModelDownloadStatusRequest, self.on_handle_get_download_status_request
             )
             event_manager.assign_manager_to_request_type(SearchModelsRequest, self.on_handle_search_models_request)
-            event_manager.assign_manager_to_request_type(CancelModelDownloadRequest, self.on_handle_cancel_download_request)
+            event_manager.assign_manager_to_request_type(
+                CancelModelDownloadRequest, self.on_handle_cancel_download_request
+            )
+
+            # Register for app initialization events
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
 
     def _parse_model_id(self, model_input: str) -> str:
         """Parse model ID from either a direct model ID or a Hugging Face URL.
@@ -485,14 +543,13 @@ class ModelManager:
                     model_id=parsed_model_id,
                     result_details=result_details,
                 )
-            else:
-                # Other runtime errors are actual failures
-                error_msg = f"Runtime error downloading model '{request.model_id}': {e}"
-                logger.error(error_msg)
-                return DownloadModelResultFailure(
-                    result_details=error_msg,
-                    exception=e,
-                )
+            # Other runtime errors are actual failures
+            error_msg = f"Runtime error downloading model '{request.model_id}': {e}"
+            logger.error(error_msg)
+            return DownloadModelResultFailure(
+                result_details=error_msg,
+                exception=e,
+            )
 
         except Exception as e:
             error_msg = f"Unexpected error downloading model '{request.model_id}': {e}"
@@ -503,7 +560,7 @@ class ModelManager:
             )
 
     def _download_model(self, download_params: dict[str, str | list[str] | None], model_id: str) -> Path:
-        """Model download implementation with progress tracking.
+        """Model download implementation using multiprocessing.
 
         Args:
             download_params: Dictionary containing download parameters
@@ -513,151 +570,100 @@ class ModelManager:
             Path: Local path where the model was downloaded
 
         Raises:
-            RuntimeError: If download was cancelled
+            RuntimeError: If download was cancelled or failed
         """
-        # Create progress tracking file
-        progress_tracker = SimpleProgressTracker(model_id)
-
         # Validate parameters and build download kwargs
         download_kwargs = self._build_download_kwargs(download_params)
 
-        # Monkey patch tqdm for progress tracking
-        original_update, original_init = patch_tqdm_for_progress_tracking(progress_tracker)
+        # Create and start multiprocessing download manager
+        download_manager = MultiprocessingDownloadManager()
+        self.active_downloads[model_id] = download_manager
 
         try:
-            # Execute download with progress tracking and cancellation monitoring
-            local_path = self._download_with_cancellation_check(download_kwargs, progress_tracker)
-                
-            progress_tracker.mark_completed()
+            download_manager.start_download(model_id, download_kwargs)
+            local_path = self._monitor_download_progress(download_manager)
             return Path(local_path)
-        except DownloadCancelledException as e:
-            # Download was cancelled via status file
-            progress_tracker.mark_cancelled()
-            raise RuntimeError("Download cancelled by user") from e
-        except RuntimeError as e:
-            if "cancelled" in str(e).lower():
-                progress_tracker.mark_cancelled()
-            else:
-                progress_tracker.mark_failed(str(e))
-            raise
-        except Exception as e:
-            progress_tracker.mark_failed(str(e))
+        except Exception:
+            # Clean up the download manager on any error
+            download_manager.cleanup()
             raise
         finally:
-            # Always restore original tqdm methods
-            restore_tqdm(original_update, original_init)
+            # Clean up from active downloads
+            self.active_downloads.pop(model_id, None)
 
-    def _download_with_cancellation_check(self, download_kwargs: dict, progress_tracker: SimpleProgressTracker) -> str:
-        """Execute download with periodic cancellation checks.
-        
+    def _monitor_download_progress(self, download_manager: MultiprocessingDownloadManager) -> str:
+        """Monitor download progress and handle status updates.
+
         Args:
-            download_kwargs: Parameters for snapshot_download
-            progress_tracker: Progress tracker to check for cancellation
-            
+            download_manager: The download manager to monitor
+
         Returns:
             str: Local path where the model was downloaded
-            
-        Raises:
-            DownloadCancelledException: If download was cancelled
-        """
-        download_result = None
-        download_exception = None
-        cancel_event = threading.Event()
-        
-        def download_worker():
-            nonlocal download_result, download_exception
-            try:
-                # Add the cancel event to the download process
-                download_result = self._interruptible_snapshot_download(download_kwargs, cancel_event, progress_tracker)
-            except Exception as e:
-                download_exception = e
-        
-        # Start download in a separate thread
-        download_thread = threading.Thread(target=download_worker)
-        download_thread.daemon = True
-        download_thread.start()
-        
-        # Monitor for cancellation while download is running
-        while download_thread.is_alive():
-            if progress_tracker.is_cancelled():
-                # Signal the download thread to cancel
-                cancel_event.set()
-                # Give it a moment to respond, then raise exception
-                download_thread.join(timeout=2.0)
-                raise DownloadCancelledException("Download cancelled by user")
-            
-            # Check every second
-            download_thread.join(timeout=1.0)
-        
-        # Download thread finished, check results
-        if download_exception:
-            raise download_exception
-        
-        if download_result is None:
-            raise RuntimeError("Download completed but no result was returned")
-            
-        return download_result
 
-    def _interruptible_snapshot_download(self, download_kwargs: dict, cancel_event: threading.Event, progress_tracker: SimpleProgressTracker) -> str:
-        """Run snapshot_download with periodic cancellation checks.
-        
-        Args:
-            download_kwargs: Parameters for snapshot_download
-            cancel_event: Event to signal cancellation
-            progress_tracker: Progress tracker for status updates
-            
-        Returns:
-            str: Local path where model was downloaded
-            
         Raises:
-            DownloadCancelledException: If cancellation was requested
+            RuntimeError: If download failed or was cancelled
         """
-        # Monkey patch the requests library to check for cancellation during HTTP operations
-        import requests
-        
-        original_get = requests.get
-        original_request = requests.Session.request
-        
-        def cancellation_aware_get(*args, **kwargs):
-            if cancel_event.is_set():
-                raise DownloadCancelledException("Download cancelled during HTTP request")
-            
-            # Add a timeout to prevent hanging
-            if 'timeout' not in kwargs:
-                kwargs['timeout'] = 30
-                
-            return original_get(*args, **kwargs)
-        
-        def cancellation_aware_request(self, method, url, **kwargs):
-            if cancel_event.is_set():
-                raise DownloadCancelledException("Download cancelled during HTTP request")
-                
-            # Add a timeout to prevent hanging  
-            if 'timeout' not in kwargs:
-                kwargs['timeout'] = 30
-                
-            return original_request(self, method, url, **kwargs)
-        
-        # Apply patches
-        requests.get = cancellation_aware_get
-        requests.Session.request = cancellation_aware_request
-        
-        try:
-            # Also check for cancellation before starting
-            if cancel_event.is_set():
-                raise DownloadCancelledException("Download cancelled before starting")
-                
-            result = snapshot_download(**download_kwargs)  # type: ignore[arg-type]
-            
-            # Final check after download
-            if cancel_event.is_set():
-                raise DownloadCancelledException("Download cancelled after completion")
-                
-            return result
-        finally:
-            # Always restore original functions
-            requests.get = original_get
-            requests.Session.request = original_request
+        local_path = None
+        while download_manager.is_downloading():
+            status = download_manager.get_status(timeout=1.0)
+            if status:
+                status_type = status.get("status")
+
+                if status_type == "completed":
+                    local_path = status.get("local_path")
+                    break
+                if status_type == "failed":
+                    self._handle_download_error(status)
+
+            # Check if process is still alive but not responding
+            if not download_manager.is_downloading():
+                break
+
+        # Get final status if we didn't get completion status in the loop
+        if local_path is None:
+            final_status = download_manager.get_status(timeout=5.0)
+            if final_status and final_status.get("status") == "completed":
+                local_path = final_status.get("local_path")
+
+        if local_path is None:
+            msg = "Download completed but no local path was returned"
+            raise RuntimeError(msg)
+
+        return local_path
+
+    def _handle_download_error(self, status: dict[str, Any]) -> None:
+        """Handle download error by re-raising appropriate exception.
+
+        Args:
+            status: Status dictionary containing error information
+        """
+        error_msg = status.get("error", "Unknown error")
+        error_type = status.get("error_type", "Exception")
+
+        if error_type == "RepositoryNotFoundError":
+            raise RepositoryNotFoundError(error_msg)
+        if error_type == "HfHubHTTPError":
+            self._raise_http_error(error_msg)
+        raise RuntimeError(error_msg)
+
+    def _raise_http_error(self, error_msg: str) -> None:
+        """Create and raise HfHubHTTPError with mock response.
+
+        Args:
+            error_msg: Error message containing HTTP status code
+        """
+
+        class MockResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+
+        # Extract status code from error message if possible
+        status_match = re.search(r"HTTP error (\d+)", error_msg)
+        status_code = int(status_match.group(1)) if status_match else 500
+
+        mock_response = MockResponse(status_code)
+        error = HfHubHTTPError(error_msg, response=mock_response)
+        raise error
 
     def _build_download_kwargs(self, download_params: dict[str, str | list[str] | None]) -> dict:
         """Build kwargs for snapshot_download with validation.
@@ -728,7 +734,6 @@ class ModelManager:
             ResultPayload: Success result with model list or failure with error details
         """
         try:
-
             # Get models in a thread to avoid blocking the event loop
             models = await asyncio.to_thread(self._list_models)
 
@@ -765,7 +770,6 @@ class ModelManager:
             logger.debug("Parsed model ID '%s' from URL '%s'", parsed_model_id, request.model_id)
 
         try:
-
             # Delete model in a thread to avoid blocking the event loop
             deleted_path = await asyncio.to_thread(self._delete_model, parsed_model_id)
 
@@ -983,7 +987,6 @@ class ModelManager:
             ResultPayload: Success result with model list or failure with error details
         """
         try:
-
             # Search models in a thread to avoid blocking the event loop
             search_results = await asyncio.to_thread(self._search_models, request)
 
@@ -1007,8 +1010,8 @@ class ModelManager:
     async def on_handle_cancel_download_request(self, request: CancelModelDownloadRequest) -> ResultPayload:
         """Handle model download cancellation requests asynchronously.
 
-        This method cancels an active model download by signaling the download thread
-        to stop and updating the download status appropriately.
+        This method cancels an active model download by terminating the download process
+        and updating the download status appropriately.
 
         Args:
             request: The cancel request containing model_id to cancel
@@ -1022,47 +1025,60 @@ class ModelManager:
             logger.debug("Parsed model ID '%s' from URL '%s'", parsed_model_id, request.model_id)
 
         try:
-            # Check the status file to see if download is active
+            # Check if we have an active download manager for this model
+            download_manager = self.active_downloads.get(parsed_model_id)
+
+            if download_manager and download_manager.is_downloading():
+                # Cancel the active download process
+                was_cancelled = download_manager.cancel_download()
+
+                if was_cancelled:
+                    result_details = f"Successfully cancelled active download of '{parsed_model_id}'"
+                    logger.info(result_details)
+
+                    # Clean up from active downloads
+                    self.active_downloads.pop(parsed_model_id, None)
+
+                    return CancelModelDownloadResultSuccess(
+                        model_id=parsed_model_id,
+                        was_cancelled=True,
+                        result_details=result_details,
+                    )
+                return CancelModelDownloadResultFailure(
+                    result_details=f"Failed to cancel download process for '{parsed_model_id}'",
+                )
+            # Check the status file to see if download was already completed/failed
             status = get_download_status(parsed_model_id)
-            
+
             if status:
                 status_str = status.get("status", "unknown")
-                
-                if status_str == "downloading":
-                    # Download is active, mark it as cancelled in the status file
-                    model_id_hash = hashlib.sha256(parsed_model_id.encode()).hexdigest()[:16]
-                    status_file = MODEL_DOWNLOADS_DIR / f"{model_id_hash}.json"
-                    
-                    # Update status to cancelled
-                    try:
-                        status["status"] = "cancelled"
-                        status["updated_at"] = datetime.now(tz=UTC).isoformat()
-                        with status_file.open("w", encoding="utf-8") as f:
-                            json.dump(status, f, indent=2)
-                            
-                        result_details = f"Cancellation requested for active download of '{parsed_model_id}'"
-                        logger.info(result_details)
 
-                        return CancelModelDownloadResultSuccess(
-                            model_id=parsed_model_id,
-                            was_cancelled=True,
-                            result_details=result_details,
-                        )
-                    except Exception as file_error:
-                        raise RuntimeError(f"Failed to update status file: {file_error}") from file_error
-                        
-                elif status_str in ["completed", "failed", "cancelled"]:
+                if status_str in ["completed", "failed", "cancelled"]:
                     return CancelModelDownloadResultSuccess(
                         model_id=parsed_model_id,
                         was_cancelled=False,
                         result_details=f"Download for '{parsed_model_id}' was already {status_str}",
                     )
-                else:
-                    return CancelModelDownloadResultFailure(
-                        result_details=f"Download for '{parsed_model_id}' is in unknown state: {status_str}",
+                # Mark as cancelled in status file for orphaned downloads
+                model_id_hash = hashlib.sha256(parsed_model_id.encode()).hexdigest()[:16]
+                status_file = MODEL_DOWNLOADS_DIR / f"{model_id_hash}.json"
+
+                try:
+                    status["status"] = "cancelled"
+                    status["updated_at"] = datetime.now(tz=UTC).isoformat()
+                    with status_file.open("w", encoding="utf-8") as f:
+                        json.dump(status, f, indent=2)
+
+                    return CancelModelDownloadResultSuccess(
+                        model_id=parsed_model_id,
+                        was_cancelled=True,
+                        result_details=f"Marked orphaned download as cancelled for '{parsed_model_id}'",
                     )
+                except Exception as file_error:
+                    msg = f"Failed to update status file: {file_error}"
+                    raise RuntimeError(msg) from file_error
             else:
-                # No download status file found
+                # No download found
                 return CancelModelDownloadResultFailure(
                     result_details=f"No download found for '{parsed_model_id}'",
                 )
@@ -1152,3 +1168,60 @@ class ModelManager:
             "total_results": len(models_list),
             "query_info": query_info,
         }
+
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+        """Handle app initialization complete event to download configured models.
+
+        Args:
+            payload: The app initialization complete event payload
+        """
+        models_to_download = payload.models_to_download
+        if not models_to_download:
+            logger.debug("No models configured for automatic download during app initialization")
+            return
+
+        logger.info("Starting automatic download of %d configured models", len(models_to_download))
+
+        # Download each model in the background
+        for model_id in models_to_download:
+            if not model_id or not model_id.strip():
+                logger.warning("Skipping empty model ID in models_to_download configuration")
+                continue
+
+            try:
+                # Create download request with default parameters
+                request = DownloadModelRequest(
+                    model_id=model_id.strip(),
+                    local_dir=None,  # Use Hugging Face cache directory
+                    repo_type="model",
+                    revision="main",
+                    allow_patterns=None,
+                    ignore_patterns=None,
+                )
+
+                logger.info("Starting automatic download for model: %s", model_id)
+
+                # Start download in background - don't await to avoid blocking app initialization
+                task = asyncio.create_task(self._handle_background_download(request))
+                # Store reference but don't await to avoid blocking app initialization
+                _ = task
+
+            except Exception as e:
+                logger.error("Failed to start automatic download for model '%s': %s", model_id, e)
+
+    async def _handle_background_download(self, request: DownloadModelRequest) -> None:
+        """Download a model in the background.
+
+        Args:
+            request: The download request
+        """
+        try:
+            result = await self.on_handle_download_model_request(request)
+
+            if isinstance(result, DownloadModelResultSuccess):
+                logger.info("Automatic download completed successfully for model: %s", request.model_id)
+            else:
+                logger.error("Automatic download failed for model '%s': %s", request.model_id, result.result_details)
+
+        except Exception as e:
+            logger.error("Unexpected error during automatic download for model '%s': %s", request.model_id, e)
