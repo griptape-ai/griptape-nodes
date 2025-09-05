@@ -1,4 +1,5 @@
 import base64
+from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -9,13 +10,12 @@ from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
-    save_pil_image_to_static_file,
 )
 
 CANVAS_DIMENSIONS = {
@@ -82,6 +82,14 @@ class ImageBash(DataNode):
                 tooltip="The height of the image to create",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
+
+            self.background_color = Parameter(
+                name="background_color",
+                default_value="#ffffff",
+                type="str",
+                tooltip="Background color for the canvas (hex color like #ffffff or #fffffa)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
         self.add_node_element(canvas_details_group)
 
         self.add_parameter(
@@ -114,8 +122,6 @@ class ImageBash(DataNode):
                     "value": f"data:image/svg+xml;base64,{default_svg_base64}",
                     "name": "Canvas Project",
                     "meta": {
-                        "canvas_size": {"width": 1920, "height": 1080},
-                        "canvas_background_color": "#fffffa",
                         "input_images": [],
                         "konva_json": {"images": [], "lines": []},
                         "viewport": {"x": 0, "y": 0, "scale": 1.0, "center_x": 960, "center_y": 540},
@@ -182,11 +188,9 @@ class ImageBash(DataNode):
         dimensions = CANVAS_DIMENSIONS["HD"]
         return (dimensions["width"], dimensions["height"])
 
-    def _get_existing_background_color(self, bash_image_value: Any) -> str:
-        """Get the existing background color from bash_image metadata."""
-        if isinstance(bash_image_value, dict):
-            return bash_image_value.get("meta", {}).get("canvas_background_color", "#ffffff")
-        return getattr(bash_image_value, "meta", {}).get("canvas_background_color", "#ffffff")
+    def _get_existing_background_color(self, bash_image_value: Any) -> str:  # noqa: ARG002
+        """Get the current background color from the parameter."""
+        return self.get_parameter_value("background_color") or "#ffffff"
 
     def _create_viewport_metadata(self, canvas_width: int, canvas_height: int) -> dict:
         """Create viewport metadata for the given canvas dimensions."""
@@ -206,7 +210,6 @@ class ImageBash(DataNode):
         existing_konva: dict,
         canvas_width: int,
         canvas_height: int,
-        existing_background_color: str,
         *,  # Force keyword arguments after this point
         preserve_existing: bool = False,
     ) -> None:
@@ -222,8 +225,7 @@ class ImageBash(DataNode):
                     "lines": existing_konva.get("lines", []),
                 }
 
-            # Store canvas background color and viewport settings
-            bash_image_value["meta"]["canvas_background_color"] = existing_background_color
+            # Store viewport settings
             bash_image_value["meta"]["viewport"] = self._create_viewport_metadata(canvas_width, canvas_height)
 
             self.set_parameter_value("bash_image", bash_image_value)
@@ -238,8 +240,7 @@ class ImageBash(DataNode):
                 meta["input_images"] = input_images
                 meta["konva_json"] = {"images": konva_images, "lines": existing_konva.get("lines", [])}
 
-            # Store canvas background color and viewport settings
-            meta["canvas_background_color"] = existing_background_color
+            # Store viewport settings
             meta["viewport"] = self._create_viewport_metadata(canvas_width, canvas_height)
 
             bash_image_value.meta = meta
@@ -442,9 +443,6 @@ class ImageBash(DataNode):
         # Build new konva_images array
         konva_images = self._build_konva_images(input_images, existing_konva, canvas_width, canvas_height)
 
-        # Preserve existing background color from metadata
-        existing_background_color = existing_meta.get("canvas_background_color", "#ffffff")
-
         # Update metadata
         self._update_bash_image_metadata(
             bash_image_value,
@@ -453,7 +451,6 @@ class ImageBash(DataNode):
             existing_konva,
             canvas_width,
             canvas_height,
-            existing_background_color,
         )
 
     def _handle_input_images_removed(self) -> None:
@@ -462,13 +459,13 @@ class ImageBash(DataNode):
         if bash_image_value is None:
             return
 
-        # Get canvas dimensions
+        # Get canvas dimensions and background color
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        existing_background_color = self._get_existing_background_color(bash_image_value)
+        background_color = self.get_parameter_value("background_color") or "#ffffff"
 
-        # Create new placeholder with existing background color
+        # Create new placeholder with background color
         svg_content = f"""<svg width="{canvas_width}" height="{canvas_height}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="{canvas_width}" height="{canvas_height}" fill="{existing_background_color}"/>
+  <rect width="{canvas_width}" height="{canvas_height}" fill="{background_color}"/>
 </svg>"""
         new_placeholder_url = (
             f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode('utf-8')).decode('utf-8')}"
@@ -493,7 +490,6 @@ class ImageBash(DataNode):
             existing_konva,
             canvas_width,
             canvas_height,
-            existing_background_color,
         )
 
     def _create_new_bash_image(self) -> None:
@@ -512,9 +508,9 @@ class ImageBash(DataNode):
             image_name = self._get_image_name(img_artifact.value, i, [])
             input_images.append({"id": f"source-img-{i + 1}", "url": img_artifact.value, "name": image_name})
 
-        # Get canvas dimensions from parameters
+        # Get canvas dimensions and background color from parameters
         canvas_width, canvas_height = self._get_canvas_dimensions()
-        canvas_background_color = "#ffffff"  # Default background color
+        background_color = self.get_parameter_value("background_color") or "#ffffff"
 
         # Create basic Konva JSON structure with image elements using existing helper
         konva_images = [
@@ -524,9 +520,9 @@ class ImageBash(DataNode):
 
         konva_json = {"images": konva_images, "lines": []}
 
-        # Use a simple placeholder URL - the actual canvas is defined by canvas_size and konva_json
+        # Use a simple placeholder URL - the actual canvas is defined by width/height and konva_json
         svg_content = f"""<svg width="{canvas_width}" height="{canvas_height}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="{canvas_width}" height="{canvas_height}" fill="{canvas_background_color}"/>
+  <rect width="{canvas_width}" height="{canvas_height}" fill="{background_color}"/>
 </svg>"""
         placeholder_url = f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode('utf-8')).decode('utf-8')}"
 
@@ -537,7 +533,6 @@ class ImageBash(DataNode):
                 "meta": {
                     "input_images": input_images,
                     "konva_json": konva_json,
-                    "canvas_background_color": canvas_background_color,
                     "viewport": self._create_viewport_metadata(canvas_width, canvas_height),
                 },
             }
@@ -603,6 +598,9 @@ class ImageBash(DataNode):
             # 1. If user modifies canvas_size to anything other than custom, get width/height from CANVAS_DIMENSIONS
             # 2. If user modifies canvas_size to custom, let them specify width and height
             self._handle_canvas_size_change(value)
+        elif parameter.name in ["width", "height", "background_color"] and value is not None:
+            # Width, height, and background color parameters are used directly
+            pass
         elif "input_images" in parameter.name:
             # 5. If input_images in parameter.name is updated, handle input_image_changes as before
             self._handle_input_images_change(value)
@@ -649,7 +647,7 @@ class ImageBash(DataNode):
             canvas_width = int(canvas_width)
         if not isinstance(canvas_height, int):
             canvas_height = int(canvas_height)
-        background_hex = meta.get("canvas_background_color", "#ffffff")
+        background_hex = self.get_parameter_value("background_color") or "#ffffff"
 
         # Create base canvas
         r, g, b, a = parse_color_to_rgba(background_hex)
@@ -721,11 +719,56 @@ class ImageBash(DataNode):
             canvas.paste(layer_img, (paste_x, paste_y), layer_img)
 
         # Save composed image and publish
-        output_artifact = save_pil_image_to_static_file(canvas, image_format="PNG")
+        filename = self._generate_filename("png")
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(self._pil_to_bytes(canvas, "PNG"), filename)
+        output_artifact = ImageUrlArtifact(value=static_url)
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact
         self.publish_update_to_parameter("output_image", output_artifact)
         logger.debug(f"Output image saved to {output_artifact.value}")
+
+    def _generate_filename(self, extension: str) -> str:
+        """Generate a meaningful filename based on workflow and node information."""
+        # Get workflow and node context
+        workflow_name = "unknown_workflow"
+        node_name = self.name
+
+        # Try to get workflow name from context
+        try:
+            context_manager = GriptapeNodes.ContextManager()
+            workflow_name = context_manager.get_current_workflow_name()
+        except Exception as e:
+            msg = f"{self.name}: Error getting workflow name: {e}"
+            logger.warning(msg)
+
+        # Clean up names for filename use
+        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
+        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
+
+        # Get current timestamp for cache busting
+        timestamp = int(datetime.now(UTC).timestamp())
+
+        # Create filename with meaningful structure and timestamp as query parameter
+        filename = f"image_bash_{workflow_name}_{node_name}.{extension}?t={timestamp}"
+
+        return filename
+
+    def _pil_to_bytes(self, img: Image.Image, img_format: str) -> bytes:
+        """Convert PIL Image to bytes."""
+        import io
+
+        img_data = None
+        with io.BytesIO() as img_byte_arr:
+            img.save(img_byte_arr, format=img_format)
+            img_byte_arr.seek(0)
+            img_data = img_byte_arr.getvalue()
+
+        if img_data is None or len(img_data) == 0:
+            msg = f"{self.name}: Failed to convert image to bytes"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        return img_data
 
     def _update_output_image(self) -> None:
         bash_image = self.get_parameter_value("bash_image")
