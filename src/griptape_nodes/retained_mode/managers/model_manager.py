@@ -21,6 +21,7 @@ except ImportError:
     from huggingface_hub import HF_HUB_CACHE
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.model_events import (
     CancelModelDownloadRequest,
@@ -42,7 +43,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.settings import AppInitializationComplete
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -66,20 +67,50 @@ def download_worker(
         model_id: Hugging Face model identifier
         download_kwargs: Parameters for snapshot_download
     """
+    progress_tracker = None
+
     try:
+        # Create progress tracker in worker process
+        progress_tracker = SimpleProgressTracker(model_id)
+
         # Emit starting status
         queue.put({"status": "starting", "model_id": model_id, "timestamp": time.time()})
 
         # Emit downloading status
         queue.put({"status": "downloading", "model_id": model_id, "timestamp": time.time()})
 
-        # Perform the actual download
-        local_path = snapshot_download(**download_kwargs)
+        # Create progress callback that updates both queue and tracker
+        def progress_callback(progress_info: dict) -> None:
+            # Update progress tracker file
+            progress_tracker._write_status("downloading", progress_info)
+            # Send progress update via queue
+            queue.put({"status": "progress", "model_id": model_id, "timestamp": time.time(), **progress_info})
+            # Check for cancellation
+            if progress_tracker.is_cancelled():
+                msg = "Download was cancelled by user"
+                raise DownloadCancelledError(msg)
+
+        # Add progress callback to download kwargs
+        download_kwargs_with_progress = download_kwargs.copy()
+        download_kwargs_with_progress["tqdm_class"] = _create_progress_tqdm_class(progress_callback)
+
+        # Perform the actual download using snapshot_download
+        local_path = snapshot_download(**download_kwargs_with_progress)
+
+        # Mark as completed
+        progress_tracker.mark_completed()
 
         # Emit success status
         queue.put({"status": "completed", "model_id": model_id, "local_path": local_path, "timestamp": time.time()})
 
+    except DownloadCancelledError:
+        if progress_tracker:
+            progress_tracker.mark_cancelled()
+        queue.put({"status": "cancelled", "model_id": model_id, "timestamp": time.time()})
+
     except RepositoryNotFoundError:
+        if progress_tracker:
+            progress_tracker.mark_failed(f"Repository not found: {model_id}")
         queue.put(
             {
                 "status": "failed",
@@ -91,26 +122,88 @@ def download_worker(
         )
 
     except HfHubHTTPError as e:
+        error_msg = f"HTTP error {e.response.status_code}: {e!s}"
+        if progress_tracker:
+            progress_tracker.mark_failed(error_msg)
         queue.put(
             {
                 "status": "failed",
                 "model_id": model_id,
-                "error": f"HTTP error {e.response.status_code}: {e!s}",
+                "error": error_msg,
                 "error_type": "HfHubHTTPError",
                 "timestamp": time.time(),
             }
         )
 
     except Exception as e:
+        error_msg = str(e)
+        if progress_tracker:
+            progress_tracker.mark_failed(error_msg)
         queue.put(
             {
                 "status": "failed",
                 "model_id": model_id,
-                "error": str(e),
+                "error": error_msg,
                 "error_type": type(e).__name__,
                 "timestamp": time.time(),
             }
         )
+
+
+def _create_progress_tqdm_class(progress_callback):
+    """Create a custom tqdm class that reports progress via callback.
+
+    Args:
+        progress_callback: Function to call with progress information
+
+    Returns:
+        Custom tqdm class for progress tracking
+    """
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        # If tqdm is not available, return None and progress won't be tracked
+        return None
+
+    class ProgressTqdm(tqdm):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._last_update_time = time.time()
+
+        def update(self, n=1):
+            super().update(n)
+
+            # Only report progress every 0.5 seconds to avoid flooding
+            current_time = time.time()
+            if current_time - self._last_update_time >= 0.5:
+                self._last_update_time = current_time
+
+                # Calculate progress information
+                progress_percent = (self.n / self.total * 100) if self.total else 0
+
+                # Calculate ETA
+                eta_seconds = None
+                if self.total and self.n > 0:
+                    elapsed = current_time - getattr(self, "start_t", current_time)
+                    if elapsed > 0:
+                        rate = self.n / elapsed
+                        remaining = self.total - self.n
+                        eta_seconds = remaining / rate if rate > 0 else None
+
+                progress_info = {
+                    "progress_percent": round(progress_percent, 1),
+                    "downloaded_bytes": self.n,
+                    "total_bytes": self.total or 0,
+                    "eta_seconds": int(eta_seconds) if eta_seconds else None,
+                }
+
+                try:
+                    progress_callback(progress_info)
+                except Exception:
+                    # Don't let progress callback errors stop the download
+                    pass
+
+    return ProgressTqdm
 
 
 # HTTP status codes
@@ -235,8 +328,8 @@ class MultiprocessingDownloadManager:
             msg = "Download already in progress"
             raise RuntimeError(msg)
 
-        # Create progress tracker for status file management
-        self.progress_tracker = SimpleProgressTracker(model_id)
+        # Progress tracker is created in the worker process
+        self.progress_tracker = None
 
         self.queue = multiprocessing.Queue()
         self.process = multiprocessing.Process(target=download_worker, args=(self.queue, model_id, download_kwargs))
@@ -259,16 +352,7 @@ class MultiprocessingDownloadManager:
         except Exception:
             return None
 
-        # Update progress tracker with status from worker process
-        if self.progress_tracker and status:
-            status_type = status.get("status")
-            if status_type == "downloading":
-                self.progress_tracker._write_status("downloading")
-            elif status_type == "completed":
-                self.progress_tracker.mark_completed()
-            elif status_type == "failed":
-                error_message = status.get("error", "Unknown error")
-                self.progress_tracker.mark_failed(error_message)
+        # Status updates are now handled entirely in the worker process
         return status
 
     def cancel_download(self, timeout: float = 5.0) -> bool:
@@ -280,13 +364,10 @@ class MultiprocessingDownloadManager:
         Returns:
             True if successfully cancelled, False if no download was running
         """
-        print(self.process)
         if not self.process or not self.process.is_alive():
             return False
 
-        # Mark as cancelled in progress tracker
-        if self.progress_tracker:
-            self.progress_tracker.mark_cancelled()
+        # The worker process will handle marking as cancelled when it detects termination
 
         # Terminate the process
         self.process.terminate()
@@ -612,6 +693,8 @@ class ModelManager:
                 if status_type == "completed":
                     local_path = status.get("local_path")
                     break
+                if status_type == "cancelled":
+                    raise RuntimeError("Download was cancelled")
                 if status_type == "failed":
                     self._handle_download_error(status)
 
@@ -622,8 +705,14 @@ class ModelManager:
         # Get final status if we didn't get completion status in the loop
         if local_path is None:
             final_status = download_manager.get_status(timeout=5.0)
-            if final_status and final_status.get("status") == "completed":
-                local_path = final_status.get("local_path")
+            if final_status:
+                final_status_type = final_status.get("status")
+                if final_status_type == "completed":
+                    local_path = final_status.get("local_path")
+                elif final_status_type == "cancelled":
+                    raise RuntimeError("Download was cancelled")
+                elif final_status_type == "failed":
+                    self._handle_download_error(final_status)
 
         if local_path is None:
             msg = "Download completed but no local path was returned"
@@ -692,7 +781,7 @@ class ModelManager:
             msg = "revision must be a string"
             raise TypeError(msg)
 
-        # Build base kwargs (tqdm is monkey patched for progress tracking)
+        # Build base kwargs (with resume support and progress tracking)
         download_kwargs: dict[str, Any] = {
             "repo_id": param_model_id,
             "repo_type": repo_type,
@@ -1169,13 +1258,16 @@ class ModelManager:
             "query_info": query_info,
         }
 
-    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:  # noqa: ARG002
         """Handle app initialization complete event to download configured models.
 
         Args:
             payload: The app initialization complete event payload
         """
-        models_to_download = payload.models_to_download
+        # Get models to download from config
+        config_mgr = GriptapeNodes.ConfigManager()
+        models_to_download = config_mgr.get_config_value("app_events.on_app_initialization_complete.models_to_download")
+
         if not models_to_download:
             logger.debug("No models configured for automatic download during app initialization")
             return
