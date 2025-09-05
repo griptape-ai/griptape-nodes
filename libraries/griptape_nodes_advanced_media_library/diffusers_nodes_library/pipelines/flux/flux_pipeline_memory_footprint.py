@@ -62,9 +62,14 @@ def _log_memory_info(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipelin
 
 
 @cache
-def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, skip_memory_check: bool = False) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
     device = get_best_device()
+
+    if skip_memory_check:
+        logger.info("Skipping memory checks. Moving pipeline to %s", device)
+        pipe.to(device)
+        return
 
     if device.type == "cuda":
         _log_memory_info(pipe, device)
