@@ -262,7 +262,7 @@ wheels = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.52.0"
+version = "0.52.1"
 source = { editable = "." }
 dependencies = [
     { name = "binaryornot" },
