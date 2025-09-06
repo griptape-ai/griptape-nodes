@@ -1335,6 +1335,16 @@
       }
     },
     {
+      "class_name": "ColorPickerNode",
+      "file_path": "griptape_nodes_library/misc/color_picker.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Create a color picker node to select a color in various formats",
+        "display_name": "ColorPicker",
+        "icon": "pipette"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {
