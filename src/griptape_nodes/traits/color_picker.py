@@ -64,9 +64,3 @@ class ColorPicker(Trait):
                 self._validate_function_format(value, ("hsv(", "hsva("), "hsv(0, 0%, 100%)")
 
         return [validate]
-
-
-# Register the trait with the registry (if the registry system is implemented)
-# TraitRegistry.register_trait(ColorPicker())
-
-# These Traits get added to a list on the parameter. When they are added they apply their functions to the parameter.
