@@ -643,6 +643,17 @@
       }
     },
     {
+      "class_name": "SeedanceVideoGeneration",
+      "file_path": "griptape_nodes_library/video/seedance_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video using the Seedance model via Griptape Cloud Forwarders.",
+        "display_name": "Seedance Video Generation",
+        "icon": "Sparkles",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
