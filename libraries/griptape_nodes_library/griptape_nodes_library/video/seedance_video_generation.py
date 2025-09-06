@@ -269,7 +269,7 @@ class SeedanceVideoGeneration(DataNode):
             text_parts.append(f"--camerafixed {cam_str}")
 
         text_payload = "  ".join([p for p in text_parts if p])
-        content_list = [{"type": "text", "text": text_payload}]
+        content_list: list[dict[str, Any]] = [{"type": "text", "text": text_payload}]
 
         # Handle first frame
         first_frame_url = self._coerce_image_url_or_data_uri(params["first_frame"])
