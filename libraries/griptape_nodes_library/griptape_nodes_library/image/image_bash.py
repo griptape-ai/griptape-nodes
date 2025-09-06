@@ -11,6 +11,7 @@ from PIL import Image, ImageEnhance
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.image_utils import (
@@ -89,6 +90,7 @@ class ImageBash(DataNode):
                 type="str",
                 tooltip="Background color for the canvas (hex color like #ffffff or #fffffa)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={ColorPicker(format="hex")},
             )
         self.add_node_element(canvas_details_group)
 
