@@ -8,6 +8,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.clamp import Clamp
+from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     DEFAULT_PLACEHOLDER_HEIGHT,
@@ -103,9 +104,10 @@ class DisplayImageGrid(ControlNode):
         self.background_color = Parameter(
             name="background_color",
             type="str",
-            default_value="#000000",
+            default_value="#00000000",
             tooltip="Background color of the grid (hex color)",
             ui_options={"hidden": True},
+            traits={ColorPicker(format="hexa")},
         )
         self.add_parameter(self.background_color)
         self.output_image_width = Parameter(

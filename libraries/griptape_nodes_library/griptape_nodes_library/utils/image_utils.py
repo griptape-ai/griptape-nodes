@@ -448,8 +448,8 @@ def create_grid_layout(  # noqa: PLR0913
     cell_width = (output_image_width - spacing * (columns + 1)) // columns
     cell_height = cell_width  # Square cells for grid layout
 
-    # Create background
-    total_width = cell_width * columns + spacing * (columns + 1)
+    # Create background - use output_image_width to ensure consistent sizing
+    total_width = output_image_width
     total_height = cell_height * rows + spacing * (rows + 1)
     grid_image = create_background_image(total_width, total_height, background_color, transparent_bg=transparent_bg)
 
@@ -468,8 +468,8 @@ def create_grid_layout(  # noqa: PLR0913
             resized_result.image = apply_border_radius(resized_result.image, border_radius)
 
         # Calculate final position
-        final_x = col * cell_width + spacing + resized_result.x_offset
-        final_y = row * cell_height + spacing + resized_result.y_offset
+        final_x = col * (cell_width + spacing) + spacing + resized_result.x_offset
+        final_y = row * (cell_height + spacing) + spacing + resized_result.y_offset
         grid_image.paste(
             resized_result.image,
             (final_x, final_y),
@@ -529,7 +529,7 @@ def create_masonry_layout(  # noqa: PLR0913
 
     # Place images in columns
     for col_idx, column_images in enumerate(columns_content):
-        x_offset = col_idx * column_width + spacing * (col_idx + 1)
+        x_offset = col_idx * (column_width + spacing) + spacing
         y_offset = spacing
 
         for img in column_images:
