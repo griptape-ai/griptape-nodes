@@ -118,7 +118,7 @@ class SeedanceVideoGeneration(DataNode):
                 default_value=5,
                 tooltip="Video duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[5, 10])},
+                traits={Options(choices=["5", "10"])},
             )
         )
 
