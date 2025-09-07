@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.exceptions import ConnectionClosed, ConnectionClosedError, WebSocketException
 
 from griptape_nodes.app.api import start_static_server
 from griptape_nodes.mcp_server.server import start_mcp_server
@@ -188,6 +188,7 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
     initialized = False
 
     async for ws_connection in connection_stream:
+        logger.info("WebSocket connection established")
         try:
             # Emit initialization event only for the first connection
             if not initialized:
@@ -204,9 +205,13 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(_process_incoming_messages(ws_connection, main_loop))
                 tg.create_task(_send_outgoing_messages(ws_connection))
-        except* Exception as e:
-            logger.error("WebSocket tasks failed: %s", e.exceptions)
+        except (ExceptionGroup, ConnectionClosed, ConnectionClosedError):
+            logger.info("WebSocket connection closed, reconnecting...")
+            continue
+        except Exception:
+            logger.exception("WebSocket tasks failed")
             await asyncio.sleep(2.0)  # Wait before retry
+            continue
 
 
 def _ensure_api_key() -> str:
@@ -237,28 +242,14 @@ def _build_static_dir() -> Path:
 
 async def _process_incoming_messages(ws_connection: Any, main_loop: asyncio.AbstractEventLoop) -> None:
     """Process incoming WebSocket requests from Nodes API."""
-    logger.info("Processing incoming WebSocket requests from WebSocket connection")
+    logger.debug("Processing incoming WebSocket requests from WebSocket connection")
 
-    try:
-        async for message in ws_connection:
-            try:
-                data = json.loads(message)
-                await _process_api_event(data, main_loop)
-            except Exception:
-                logger.exception("Error processing event, skipping.")
-
-    except ConnectionClosed:
-        logger.info("WebSocket connection closed, will retry")
-    except asyncio.CancelledError:
-        # Clean shutdown when task is cancelled
-        logger.info("WebSocket listener shutdown complete")
-        raise
-    except Exception as e:
-        logger.error("Error in WebSocket connection. Retrying in 2 seconds... %s", e)
-        await asyncio.sleep(2.0)
-        raise
-    finally:
-        logger.info("WebSocket listener shutdown complete")
+    async for message in ws_connection:
+        try:
+            data = json.loads(message)
+            await _process_api_event(data, main_loop)
+        except Exception:
+            logger.exception("Error processing event, skipping.")
 
 
 def _create_websocket_connection(api_key: str) -> Any:
@@ -315,33 +306,25 @@ async def _process_api_event(event: dict, main_loop: asyncio.AbstractEventLoop) 
 
 async def _send_outgoing_messages(ws_connection: Any) -> None:
     """Send outgoing WebSocket requests from queue on background thread."""
-    logger.info("Starting outgoing WebSocket request sender")
+    logger.debug("Starting outgoing WebSocket request sender")
 
-    try:
-        while True:
-            # Get message from outgoing queue
-            message = await ws_outgoing_queue.get()
+    while True:
+        # Get message from outgoing queue
+        message = await ws_outgoing_queue.get()
 
-            try:
-                if isinstance(message, WebSocketMessage):
-                    await _send_websocket_message(ws_connection, message.event_type, message.payload, message.topic)
-                elif isinstance(message, SubscribeCommand):
-                    await _send_subscribe_command(ws_connection, message.topic)
-                elif isinstance(message, UnsubscribeCommand):
-                    await _send_unsubscribe_command(ws_connection, message.topic)
-                else:
-                    logger.warning("Unknown outgoing message type: %s", type(message))
-            except Exception as e:
-                logger.error("Error sending outgoing WebSocket request: %s", e)
-            finally:
-                ws_outgoing_queue.task_done()
-
-    except asyncio.CancelledError:
-        logger.info("Outbound request sender shutdown complete")
-        raise
-    except Exception as e:
-        logger.error("Fatal error in outgoing request sender: %s", e)
-        raise
+        try:
+            if isinstance(message, WebSocketMessage):
+                await _send_websocket_message(ws_connection, message.event_type, message.payload, message.topic)
+            elif isinstance(message, SubscribeCommand):
+                await _send_subscribe_command(ws_connection, message.topic)
+            elif isinstance(message, UnsubscribeCommand):
+                await _send_unsubscribe_command(ws_connection, message.topic)
+            else:
+                logger.warning("Unknown outgoing message type: %s", type(message))
+        except Exception as e:
+            logger.error("Error sending outgoing WebSocket request: %s", e)
+        finally:
+            ws_outgoing_queue.task_done()
 
 
 async def _send_websocket_message(ws_connection: Any, event_type: str, payload: str, topic: str | None) -> None:
@@ -363,7 +346,7 @@ async def _send_subscribe_command(ws_connection: Any, topic: str) -> None:
     try:
         body = {"type": "subscribe", "topic": topic, "payload": {}}
         await ws_connection.send(json.dumps(body))
-        logger.info("Subscribed to topic: %s", topic)
+        logger.debug("Subscribed to topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error subscribing to topic %s: %s", topic, e)
     except Exception as e:
@@ -375,7 +358,7 @@ async def _send_unsubscribe_command(ws_connection: Any, topic: str) -> None:
     try:
         body = {"type": "unsubscribe", "topic": topic, "payload": {}}
         await ws_connection.send(json.dumps(body))
-        logger.info("Unsubscribed from topic: %s", topic)
+        logger.debug("Unsubscribed from topic: %s", topic)
     except WebSocketException as e:
         logger.error("Error unsubscribing from topic %s: %s", topic, e)
     except Exception as e:
