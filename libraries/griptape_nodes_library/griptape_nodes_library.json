@@ -354,6 +354,14 @@
         "description": "Image generation with Cosmos",
         "icon": "Image"
       }
+    },
+    {
+      "os": {
+        "color": "border-gray-600",
+        "title": "OS",
+        "description": "Operating system and file system related nodes",
+        "icon": "Terminal"
+      }
     }
   ],
   "nodes": [
@@ -422,6 +430,16 @@
         "description": "Dynamically call any RequestPayload in the engine",
         "display_name": "Engine Node",
         "icon": "Cog"
+      }
+    },
+    {
+      "class_name": "ExecutePython",
+      "file_path": "griptape_nodes_library/os/execute_python.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Execute Python code with input variables and capture output",
+        "display_name": "Execute Python",
+        "icon": "Code"
       }
     },
     {
@@ -1813,6 +1831,16 @@
         "description": "Check whether a variable exists",
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle"
+      }
+    },
+    {
+      "class_name": "ListFiles",
+      "file_path": "griptape_nodes_library/os/list_files.py",
+      "metadata": {
+        "category": "os",
+        "description": "List files in a directory with optional pattern matching and recursive search",
+        "display_name": "List Files",
+        "icon": "FolderOpen"
       }
     }
   ],
