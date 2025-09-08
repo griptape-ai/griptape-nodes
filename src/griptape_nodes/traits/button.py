@@ -51,6 +51,7 @@ class ButtonDetailsMessagePayload(NodeMessagePayload):
     icon: str | None = None
     icon_class: str | None = None
     icon_position: str | None = None
+    full_width: bool = False
     loading_label: str | None = None
     loading_icon: str | None = None
     loading_icon_class: str | None = None
@@ -80,6 +81,7 @@ class Button(Trait):
     icon: str | None = None
     icon_class: str | None = None
     icon_position: IconPosition | None = None
+    full_width: bool = False
     loading_label: str | None = None
     loading_icon: str | None = None
     loading_icon_class: str | None = None
@@ -91,13 +93,14 @@ class Button(Trait):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        label: str = "Button",
-        variant: ButtonVariant = "default",
+        label: str = "",  # Allows a button with no text.
+        variant: ButtonVariant = "secondary",
         size: ButtonSize = "default",
         state: ButtonState = "normal",
         icon: str | None = None,
         icon_class: str | None = None,
         icon_position: IconPosition | None = None,
+        full_width: bool = False,
         loading_label: str | None = None,
         loading_icon: str | None = None,
         loading_icon_class: str | None = None,
@@ -112,6 +115,7 @@ class Button(Trait):
         self.icon = icon
         self.icon_class = icon_class
         self.icon_position = icon_position
+        self.full_width = full_width
         self.loading_label = loading_label
         self.loading_icon = loading_icon
         self.loading_icon_class = loading_icon_class
@@ -132,6 +136,7 @@ class Button(Trait):
             icon=self.icon,
             icon_class=self.icon_class,
             icon_position=self.icon_position,
+            full_width=self.full_width,
             loading_label=self.loading_label,
             loading_icon=self.loading_icon,
             loading_icon_class=self.loading_icon_class,
@@ -140,11 +145,11 @@ class Button(Trait):
     def ui_options_for_trait(self) -> dict:
         """Generate UI options for the button trait with all styling properties."""
         options = {
-            "button": True,
             "button_label": self.label,
             "variant": self.variant,
             "size": self.size,
             "state": self.state,
+            "full_width": self.full_width,
         }
 
         # Only include icon properties if icon is specified
