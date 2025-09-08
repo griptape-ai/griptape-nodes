@@ -47,7 +47,7 @@ class SaveImage(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 default_value=DEFAULT_FILENAME,
                 tooltip="The output filename with extension (.png, .jpg, etc.)",
-                traits={Button(button_type="save")},
+                traits={Button(text="save")},
             )
         )
 

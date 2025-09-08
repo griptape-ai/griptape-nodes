@@ -8,29 +8,59 @@ from griptape_nodes.exe_types.core_types import NodeMessagePayload, NodeMessageR
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Specific callback types for better type safety and clarity
-type OnClickCallback = Callable[["Button"], NodeMessageResult]
-type GetButtonStatusCallback = Callable[["Button"], NodeMessageResult]
-
 # Don't export callback types - let users import explicitly
 
 logger = logging.getLogger("griptape_nodes")
 
 
-class ButtonStatus(StrEnum):
-    """Enumeration of possible button states."""
+class ButtonVariant(StrEnum):
+    """Button visual variants following shadcn design system."""
 
-    PRESSABLE = auto()
-    PRESSED = auto()
-    HIDDEN = auto()
-    DISABLED = auto()
+    DEFAULT = auto()  # Primary/main button (blue in shadcn)
+    SECONDARY = auto()  # Muted gray button
+    DESTRUCTIVE = auto()  # Red/danger button
+    OUTLINE = auto()  # Border only button
+    GHOST = auto()  # Minimal/transparent button
+    LINK = auto()  # Text link style button
+
+
+class ButtonSize(StrEnum):
+    """Button sizes following shadcn design system."""
+
+    DEFAULT = auto()  # Regular/standard size
+    SM = auto()  # Small size
+    ICON = auto()  # Square icon-only size
+
+
+class ButtonState(StrEnum):
+    """Button interaction and visibility states."""
+
+    NORMAL = auto()  # Button is interactive (replaces PRESSABLE)
+    DISABLED = auto()  # Button cannot be clicked
+    LOADING = auto()  # Button is processing/loading
+    HIDDEN = auto()  # Button is not visible/rendered
+
+
+class IconPosition(StrEnum):
+    """Icon positioning within button."""
+
+    LEFT = auto()
+    RIGHT = auto()
+
+
+# Legacy alias for backward compatibility during transition
+ButtonStatus = ButtonState
 
 
 class ButtonDetailsMessagePayload(NodeMessagePayload):
-    """Payload containing button details and status information."""
+    """Payload containing complete button details and status information."""
 
-    button_name: str
-    status: ButtonStatus
+    text: str
+    variant: str
+    size: str
+    state: str
+    icon: str | None = None
+    icon_position: str | None = None
 
 
 class OnClickMessageResultPayload(NodeMessagePayload):
@@ -41,33 +71,79 @@ class OnClickMessageResultPayload(NodeMessagePayload):
 
 @dataclass(eq=False)
 class Button(Trait):
+    # Specific callback types for better type safety and clarity
+    type OnClickCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
+    type GetButtonStateCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
+
     # Static message type constants
     ON_CLICK_MESSAGE_TYPE = "on_click"
     GET_BUTTON_STATUS_MESSAGE_TYPE = "get_button_status"
 
-    type: str = field(default_factory=lambda: "Generic")
+    # Button styling and behavior properties
+    text: str = "Button"
+    variant: ButtonVariant = ButtonVariant.DEFAULT
+    size: ButtonSize = ButtonSize.DEFAULT
+    state: ButtonState = ButtonState.NORMAL
+    icon: str | None = None
+    icon_position: IconPosition | None = None
+
     element_id: str = field(default_factory=lambda: "Button")
     on_click_callback: OnClickCallback | None = field(default=None, init=False)
-    get_button_status_callback: GetButtonStatusCallback | None = field(default=None, init=False)
+    get_button_state_callback: GetButtonStateCallback | None = field(default=None, init=False)
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        button_type: str | None = None,
+        *,
+        text: str = "Button",
+        variant: ButtonVariant = ButtonVariant.DEFAULT,
+        size: ButtonSize = ButtonSize.DEFAULT,
+        state: ButtonState = ButtonState.NORMAL,
+        icon: str | None = None,
+        icon_position: IconPosition | None = None,
         on_click: OnClickCallback | None = None,
-        get_button_status: GetButtonStatusCallback | None = None,
+        get_button_state: GetButtonStateCallback | None = None,
     ) -> None:
         super().__init__(element_id="Button")
-        if button_type:
-            self.type = button_type
+        self.text = text
+        self.variant = variant
+        self.size = size
+        self.state = state
+        self.icon = icon
+        self.icon_position = icon_position
         self.on_click_callback = on_click
-        self.get_button_status_callback = get_button_status
+        self.get_button_state_callback = get_button_state
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
         return ["button", "addbutton"]
 
+    def get_button_details(self, state: ButtonState | None = None) -> ButtonDetailsMessagePayload:
+        """Create a ButtonDetailsMessagePayload with current or specified button state."""
+        return ButtonDetailsMessagePayload(
+            text=self.text,
+            variant=self.variant.value,
+            size=self.size.value,
+            state=(state or self.state).value,
+            icon=self.icon,
+            icon_position=self.icon_position.value if self.icon_position else None,
+        )
+
     def ui_options_for_trait(self) -> dict:
-        return {"button": self.type}
+        """Generate UI options for the button trait with all styling properties."""
+        options = {
+            "button": True,
+            "button_label": self.text,
+            "variant": self.variant.value,
+            "size": self.size.value,
+            "state": self.state.value,
+        }
+
+        # Only include icon properties if icon is specified
+        if self.icon:
+            options["button_icon"] = self.icon
+            options["iconPosition"] = (self.icon_position or IconPosition.LEFT).value
+
+        return options
 
     def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
         """Handle messages sent to this button trait.
@@ -83,28 +159,30 @@ class Button(Trait):
             case self.ON_CLICK_MESSAGE_TYPE:
                 if self.on_click_callback is not None:
                     try:
-                        # Call the callback and return result directly
-                        return self.on_click_callback(self)
+                        # Pre-fill button details with current state and pass to callback
+                        button_details = self.get_button_details()
+                        return self.on_click_callback(self, button_details)
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
-                            details=f"Button '{self.type}' callback failed: {e!s}",
+                            details=f"Button '{self.text}' callback failed: {e!s}",
                             response=None,
                         )
 
                 # Log debug message and fall through if no callback specified
-                logger.debug("Button '%s' was clicked, but no on_click_callback was specified.", self.type)
+                logger.debug("Button '%s' was clicked, but no on_click_callback was specified.", self.text)
 
             case self.GET_BUTTON_STATUS_MESSAGE_TYPE:
                 # Use custom callback if provided, otherwise use default implementation
-                if self.get_button_status_callback is not None:
+                if self.get_button_state_callback is not None:
                     try:
-                        # Call the callback and return result directly
-                        return self.get_button_status_callback(self)
+                        # Pre-fill button details with current state and pass to callback
+                        button_details = self.get_button_details()
+                        return self.get_button_state_callback(self, button_details)
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
-                            details=f"Button '{self.type}' get_button_status callback failed: {e!s}",
+                            details=f"Button '{self.text}' get_button_state callback failed: {e!s}",
                             response=None,
                         )
                 else:
@@ -118,12 +196,12 @@ class Button(Trait):
         message_type: str,  # noqa: ARG002
         message: NodeMessagePayload | None,  # noqa: ARG002
     ) -> NodeMessageResult:
-        """Default implementation for get_button_status that returns PRESSABLE status."""
-        button_details = ButtonDetailsMessagePayload(button_name=self.type, status=ButtonStatus.PRESSABLE)
+        """Default implementation for get_button_status that returns current button details."""
+        button_details = self.get_button_details()
 
         return NodeMessageResult(
             success=True,
-            details=f"Button '{self.type}' status: {ButtonStatus.PRESSABLE.value}",
+            details=f"Button '{self.text}' details retrieved",
             response=button_details,
             altered_workflow_state=False,
         )
