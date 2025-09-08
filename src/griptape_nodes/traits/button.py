@@ -9,8 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 # Specific callback types for better type safety and clarity
-type OnClickCallback = Callable[["Button"], OnClickMessageResultPayload]
-type GetButtonStatusCallback = Callable[["Button"], ButtonDetailsMessagePayload]
+type OnClickCallback = Callable[["Button"], NodeMessageResult]
+type GetButtonStatusCallback = Callable[["Button"], NodeMessageResult]
 
 # Don't export callback types - let users import explicitly
 
@@ -83,13 +83,8 @@ class Button(Trait):
             case self.ON_CLICK_MESSAGE_TYPE:
                 if self.on_click_callback is not None:
                     try:
-                        # Call the callback and wrap result in NodeMessageResult
-                        result_payload = self.on_click_callback(self)
-                        return NodeMessageResult(
-                            success=True,
-                            details=f"Button '{self.type}' clicked successfully",
-                            response=result_payload,
-                        )
+                        # Call the callback and return result directly
+                        return self.on_click_callback(self)
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
@@ -104,14 +99,8 @@ class Button(Trait):
                 # Use custom callback if provided, otherwise use default implementation
                 if self.get_button_status_callback is not None:
                     try:
-                        # Call the callback and wrap result in NodeMessageResult
-                        button_details = self.get_button_status_callback(self)
-                        return NodeMessageResult(
-                            success=True,
-                            details=f"Button '{self.type}' status: {button_details.status.value}",
-                            response=button_details,
-                            altered_workflow_state=False,
-                        )
+                        # Call the callback and return result directly
+                        return self.get_button_status_callback(self)
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
