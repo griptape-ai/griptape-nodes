@@ -10,6 +10,7 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     print_pipeline_memory_footprint,
     to_human_readable_size,  # type: ignore[reportMissingImports]
 )
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import FluxPipelineParameters
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -71,12 +72,48 @@ def _log_memory_info(
 
 @cache
 def optimize_flux_pipeline_memory_footprint(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, *, skip_memory_check: bool = False
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
-    device = get_best_device()
+    from optimum.quanto import freeze, qfloat8, qint8, qint4, quantize
 
-    if skip_memory_check:
+    device = get_best_device()
+    
+    quantization_mode = pipe_params.get_quantization_mode()
+    quant_map = {
+        "fp8": qfloat8,
+        "int8": qint8,
+        "int4": qint4
+    }
+    if quantization_mode in quant_map:
+        logger.info("Applying quantization: %s", quantization_mode)
+        _log_memory_info(pipe, device)
+        quant_type = quant_map[quantization_mode]
+        if hasattr(pipe, 'transformer') and pipe.transformer is not None:
+            logger.info("Quantizing transformer with %s", quantization_mode)
+            quantize(pipe.transformer, weights=quant_type, exclude=["proj_out"])
+            logger.info("Freezing transformer")
+            freeze(pipe.transformer)
+            logger.info("Quantizing completed for transformer.")
+        if hasattr(pipe, 'text_encoder') and pipe.text_encoder is not None:
+            logger.info("Quantizing text_encoder with %s", quantization_mode)
+            quantize(pipe.text_encoder, weights=quant_type)
+            logger.info("Freezing text_encoder")
+            freeze(pipe.text_encoder)
+            logger.info("Quantizing completed for text_encoder.")
+        if hasattr(pipe, 'text_encoder_2') and pipe.text_encoder_2 is not None:
+            logger.info("Quantizing text_encoder_2 with %s", quantization_mode)
+            quantize(pipe.text_encoder_2, weights=quant_type)
+            logger.info("Freezing text_encoder_2")
+            freeze(pipe.text_encoder_2)
+            logger.info("Quantizing completed for text_encoder_2.")
+
+        logger.info("Quantization complete.")
+        _log_memory_info(pipe, device)
+        pipe.to(device)
+        return
+
+    if pipe_params.get_skip_memory_check():
         logger.info("Skipping memory checks. Moving pipeline to %s", device)
         pipe.to(device)
         return
@@ -91,8 +128,6 @@ def optimize_flux_pipeline_memory_footprint(
             return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-
-        # Apply fp8 layerwise caching
         logger.info("Enabling fp8 layerwise caching for transformer")
         pipe.transformer.enable_layerwise_casting(
             storage_dtype=torch.float8_e4m3fn,
@@ -104,7 +139,6 @@ def optimize_flux_pipeline_memory_footprint(
             pipe.to(device)
             return
 
-        # Apply sequential CPU offload
         logger.info("Still insufficient memory. Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
 

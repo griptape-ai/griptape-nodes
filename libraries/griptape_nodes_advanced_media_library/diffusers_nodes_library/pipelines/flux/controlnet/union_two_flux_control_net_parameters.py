@@ -3,7 +3,7 @@ from PIL.Image import Image
 from pillow_nodes_library.utils import image_artifact_to_pil
 from utils.image_utils import load_image_from_url_artifact
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
 
@@ -40,6 +40,16 @@ class UnionTwoFluxControlNetParameters:
         )
         self._node.add_parameter(
             Parameter(
+                name="quantization_mode",
+                type="str",
+                default_value="none",
+                allowed_modes={ParameterMode.PROPERTY},
+                tooltip="Quantization strategy: none/fp8/int8/int4",
+                traits={Options(choices=["none", "fp8", "int8", "int4"])},
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="skip_memory_check",
                 input_types=["bool"],
                 type="bool",
@@ -55,6 +65,9 @@ class UnionTwoFluxControlNetParameters:
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
+    
+    def get_quantization_mode(self) -> str:
+        return str(self._node.get_parameter_value("quantization_mode"))
 
     def get_skip_memory_check(self) -> bool:
         return bool(self._node.get_parameter_value("skip_memory_check"))

@@ -14,6 +14,7 @@ from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
+from griptape_nodes.traits.options import Options
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -110,6 +111,16 @@ class FluxFillPipelineParameters:
         self._seed_parameter.add_input_parameters()
         self._node.add_parameter(
             Parameter(
+                name="quantization_mode",
+                type="str",
+                default_value="none",
+                allowed_modes={ParameterMode.PROPERTY},
+                tooltip="Quantization strategy: none/fp8/int8/int4",
+                traits={Options(choices=["none", "fp8", "int8", "int4"])},
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="skip_memory_check",
                 input_types=["bool"],
                 type="bool",
@@ -181,6 +192,9 @@ class FluxFillPipelineParameters:
 
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
+    
+    def get_quantization_mode(self) -> str:
+        return str(self._node.get_parameter_value("quantization_mode"))
 
     def get_skip_memory_check(self) -> bool:
         return bool(self._node.get_parameter_value("skip_memory_check"))
