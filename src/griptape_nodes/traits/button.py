@@ -44,12 +44,15 @@ IconPosition = Literal[
 class ButtonDetailsMessagePayload(NodeMessagePayload):
     """Payload containing complete button details and status information."""
 
-    text: str
+    label: str
     variant: str
     size: str
     state: str
     icon: str | None = None
     icon_position: str | None = None
+    loading_label: str | None = None
+    loading_icon: str | None = None
+    loading_icon_class: str | None = None
 
 
 class OnClickMessageResultPayload(NodeMessagePayload):
@@ -69,12 +72,15 @@ class Button(Trait):
     GET_BUTTON_STATUS_MESSAGE_TYPE = "get_button_status"
 
     # Button styling and behavior properties
-    text: str = "Button"
+    label: str = "Button"
     variant: ButtonVariant = "default"
     size: ButtonSize = "default"
     state: ButtonState = "normal"
     icon: str | None = None
     icon_position: IconPosition | None = None
+    loading_label: str | None = None
+    loading_icon: str | None = None
+    loading_icon_class: str | None = None
 
     element_id: str = field(default_factory=lambda: "Button")
     on_click_callback: OnClickCallback | None = field(default=None, init=False)
@@ -83,22 +89,28 @@ class Button(Trait):
     def __init__(  # noqa: PLR0913
         self,
         *,
-        text: str = "Button",
+        label: str = "Button",
         variant: ButtonVariant = "default",
         size: ButtonSize = "default",
         state: ButtonState = "normal",
         icon: str | None = None,
         icon_position: IconPosition | None = None,
+        loading_label: str | None = None,
+        loading_icon: str | None = None,
+        loading_icon_class: str | None = None,
         on_click: OnClickCallback | None = None,
         get_button_state: GetButtonStateCallback | None = None,
     ) -> None:
         super().__init__(element_id="Button")
-        self.text = text
+        self.label = label
         self.variant = variant
         self.size = size
         self.state = state
         self.icon = icon
         self.icon_position = icon_position
+        self.loading_label = loading_label
+        self.loading_icon = loading_icon
+        self.loading_icon_class = loading_icon_class
         self.on_click_callback = on_click
         self.get_button_state_callback = get_button_state
 
@@ -109,19 +121,22 @@ class Button(Trait):
     def get_button_details(self, state: ButtonState | None = None) -> ButtonDetailsMessagePayload:
         """Create a ButtonDetailsMessagePayload with current or specified button state."""
         return ButtonDetailsMessagePayload(
-            text=self.text,
+            label=self.label,
             variant=self.variant,
             size=self.size,
             state=state or self.state,
             icon=self.icon,
             icon_position=self.icon_position,
+            loading_label=self.loading_label,
+            loading_icon=self.loading_icon,
+            loading_icon_class=self.loading_icon_class,
         )
 
     def ui_options_for_trait(self) -> dict:
         """Generate UI options for the button trait with all styling properties."""
         options = {
             "button": True,
-            "button_label": self.text,
+            "button_label": self.label,
             "variant": self.variant,
             "size": self.size,
             "state": self.state,
@@ -131,6 +146,14 @@ class Button(Trait):
         if self.icon:
             options["button_icon"] = self.icon
             options["iconPosition"] = self.icon_position or "left"
+
+        # Include loading properties if specified
+        if self.loading_label:
+            options["loading_label"] = self.loading_label
+        if self.loading_icon:
+            options["loading_icon"] = self.loading_icon
+        if self.loading_icon_class:
+            options["loading_icon_class"] = self.loading_icon_class
 
         return options
 
@@ -154,12 +177,12 @@ class Button(Trait):
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
-                            details=f"Button '{self.text}' callback failed: {e!s}",
+                            details=f"Button '{self.label}' callback failed: {e!s}",
                             response=None,
                         )
 
                 # Log debug message and fall through if no callback specified
-                logger.debug("Button '%s' was clicked, but no on_click_callback was specified.", self.text)
+                logger.debug("Button '%s' was clicked, but no on_click_callback was specified.", self.label)
 
             case self.GET_BUTTON_STATUS_MESSAGE_TYPE:
                 # Use custom callback if provided, otherwise use default implementation
@@ -171,7 +194,7 @@ class Button(Trait):
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
-                            details=f"Button '{self.text}' get_button_state callback failed: {e!s}",
+                            details=f"Button '{self.label}' get_button_state callback failed: {e!s}",
                             response=None,
                         )
                 else:
@@ -190,7 +213,7 @@ class Button(Trait):
 
         return NodeMessageResult(
             success=True,
-            details=f"Button '{self.text}' details retrieved",
+            details=f"Button '{self.label}' details retrieved",
             response=button_details,
             altered_workflow_state=False,
         )
