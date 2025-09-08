@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
 # WebSocket thread communication message types
@@ -92,7 +93,7 @@ class EventLogHandler(logging.Handler):
         log_event = AppEvent(
             payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
         )
-        GriptapeNodes.EventManager().put_event(log_event)
+        EventManager().put_event(log_event)
 
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
