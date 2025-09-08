@@ -42,3 +42,83 @@ class TestNodeManagerBatchSetNodeMetadata:
         assert "Failed to update any nodes" in result_str
         assert "nonexistent_node1" in result_str
         assert "nonexistent_node2" in result_str
+
+
+class TestNodeManagerResolutionStateSerialization:
+    """Test that node resolution states are preserved correctly during serialization."""
+
+    def test_resolved_node_with_no_parameter_value_preserves_resolution(self) -> None:
+        """Test that a resolved node with no parameter value set maintains its resolution state."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
+        from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+
+        # Create a simple parameter and node
+        mock_parameter = MagicMock(spec=Parameter)
+        mock_parameter.name = "test_param"
+
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {}  # No value set
+        mock_node.parameter_output_values = {}  # No output value
+
+        # Start with resolved state
+        create_node_request = CreateNodeRequest(
+            node_type="TestNode", node_name="test_node", resolution=NodeResolutionState.RESOLVED.value
+        )
+
+        # Call the function
+        result = NodeManager._handle_parameter_value_saving(
+            parameter=mock_parameter,
+            node=mock_node,
+            unique_parameter_uuid_to_values={},
+            serialized_parameter_value_tracker=MagicMock(),
+            create_node_request=create_node_request,
+        )
+
+        # Should return None (no values to serialize) but preserve resolution
+        assert result is None
+        assert create_node_request.resolution == NodeResolutionState.RESOLVED.value
+
+    def test_resolved_node_with_unserializable_parameter_becomes_unresolved(self) -> None:
+        """Test that a resolved node becomes unresolved when parameter serialization fails."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
+        from griptape_nodes.retained_mode.managers.node_manager import NodeManager, SerializedParameterValueTracker
+
+        # Create parameter with unserializable value
+        mock_parameter = MagicMock(spec=Parameter)
+        mock_parameter.name = "test_param"
+        mock_parameter.serializable = True
+
+        mock_node = MagicMock(spec=BaseNode)
+        mock_node.name = "test_node"
+        mock_node.parameter_values = {"test_param": "has_value"}
+        mock_node.parameter_output_values = {}
+        mock_node.get_parameter_value.return_value = "some_value"
+
+        create_node_request = CreateNodeRequest(
+            node_type="TestNode", node_name="test_node", resolution=NodeResolutionState.RESOLVED.value
+        )
+
+        # Mock tracker to return NOT_SERIALIZABLE to simulate serialization failure
+        mock_tracker = MagicMock()
+        mock_tracker.get_tracker_state.return_value = SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE
+
+        # Call the function - this should trigger the serialization failure path
+        NodeManager._handle_parameter_value_saving(
+            parameter=mock_parameter,
+            node=mock_node,
+            unique_parameter_uuid_to_values={},
+            serialized_parameter_value_tracker=mock_tracker,
+            create_node_request=create_node_request,
+        )
+
+        # Resolution should be reset to UNRESOLVED due to serialization failure
+        assert create_node_request.resolution == NodeResolutionState.UNRESOLVED.value
