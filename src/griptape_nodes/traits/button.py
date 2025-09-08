@@ -49,6 +49,7 @@ class ButtonDetailsMessagePayload(NodeMessagePayload):
     size: str
     state: str
     icon: str | None = None
+    icon_class: str | None = None
     icon_position: str | None = None
     loading_label: str | None = None
     loading_icon: str | None = None
@@ -77,6 +78,7 @@ class Button(Trait):
     size: ButtonSize = "default"
     state: ButtonState = "normal"
     icon: str | None = None
+    icon_class: str | None = None
     icon_position: IconPosition | None = None
     loading_label: str | None = None
     loading_icon: str | None = None
@@ -94,6 +96,7 @@ class Button(Trait):
         size: ButtonSize = "default",
         state: ButtonState = "normal",
         icon: str | None = None,
+        icon_class: str | None = None,
         icon_position: IconPosition | None = None,
         loading_label: str | None = None,
         loading_icon: str | None = None,
@@ -107,6 +110,7 @@ class Button(Trait):
         self.size = size
         self.state = state
         self.icon = icon
+        self.icon_class = icon_class
         self.icon_position = icon_position
         self.loading_label = loading_label
         self.loading_icon = loading_icon
@@ -126,6 +130,7 @@ class Button(Trait):
             size=self.size,
             state=state or self.state,
             icon=self.icon,
+            icon_class=self.icon_class,
             icon_position=self.icon_position,
             loading_label=self.loading_label,
             loading_icon=self.loading_icon,
@@ -146,6 +151,8 @@ class Button(Trait):
         if self.icon:
             options["button_icon"] = self.icon
             options["iconPosition"] = self.icon_position or "left"
+            if self.icon_class:
+                options["icon_class"] = self.icon_class
 
         # Include loading properties if specified
         if self.loading_label:
