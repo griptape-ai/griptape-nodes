@@ -2,7 +2,7 @@
 
 import logging
 
-from griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger(__name__)
 

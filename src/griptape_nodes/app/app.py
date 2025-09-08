@@ -82,12 +82,6 @@ STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "t
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 
 
-# Important to bootstrap singleton here so that we don't
-# get any weird circular import issues from the EventLogHandler
-# initializing it from a log during it's own initialization.
-griptape_nodes: GriptapeNodes = GriptapeNodes()
-
-
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
 
@@ -98,7 +92,7 @@ class EventLogHandler(logging.Handler):
         log_event = AppEvent(
             payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
         )
-        griptape_nodes.EventManager().put_event(log_event)
+        GriptapeNodes.EventManager().put_event(log_event)
 
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
@@ -130,7 +124,7 @@ async def astart_app() -> None:
     api_key = _ensure_api_key()
 
     # Initialize event queue in main thread
-    griptape_nodes.EventManager().initialize_queue()
+    GriptapeNodes.EventManager().initialize_queue()
 
     # Get main loop reference
     main_loop = asyncio.get_running_loop()
@@ -192,13 +186,13 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
         try:
             # Emit initialization event only for the first connection
             if not initialized:
-                griptape_nodes.EventManager().put_event_threadsafe(
+                GriptapeNodes.EventManager().put_event_threadsafe(
                     main_loop, AppEvent(payload=app_events.AppInitializationComplete())
                 )
                 initialized = True
 
             # Emit connection established event for every connection
-            griptape_nodes.EventManager().put_event_threadsafe(
+            GriptapeNodes.EventManager().put_event_threadsafe(
                 main_loop, AppEvent(payload=app_events.AppConnectionEstablished())
             )
 
@@ -215,7 +209,7 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
 
 
 def _ensure_api_key() -> str:
-    secrets_manager = griptape_nodes.SecretsManager()
+    secrets_manager = GriptapeNodes.SecretsManager()
     api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
     if api_key is None:
         message = Panel(
@@ -236,7 +230,7 @@ def _ensure_api_key() -> str:
 
 def _build_static_dir() -> Path:
     """Build the static directory path based on the workspace configuration."""
-    config_manager = griptape_nodes.ConfigManager()
+    config_manager = GriptapeNodes.ConfigManager()
     return Path(config_manager.workspace_path) / config_manager.merged_config["static_files_directory"]
 
 
@@ -301,7 +295,7 @@ async def _process_api_event(event: dict, main_loop: asyncio.AbstractEventLoop) 
         await _process_event_request(request_event)
     else:
         # Add the event to the main thread event queue for processing
-        griptape_nodes.EventManager().put_event_threadsafe(main_loop, request_event)
+        GriptapeNodes.EventManager().put_event_threadsafe(main_loop, request_event)
 
 
 async def _send_outgoing_messages(ws_connection: Any) -> None:
@@ -376,7 +370,7 @@ async def _process_event_queue() -> None:
             logger.exception("Background task failed", exc_info=task.exception())
 
     try:
-        event_queue = griptape_nodes.EventManager().event_queue
+        event_queue = GriptapeNodes.EventManager().event_queue
         while True:
             event = await event_queue.get()
 
@@ -406,7 +400,7 @@ async def _process_event_queue() -> None:
 
 async def _process_event_request(event: EventRequest) -> None:
     """Handle request and emit success/failure events based on result."""
-    result_event = await griptape_nodes.EventManager().ahandle_request(
+    result_event = await GriptapeNodes.EventManager().ahandle_request(
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
@@ -422,7 +416,7 @@ async def _process_event_request(event: EventRequest) -> None:
 async def _process_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
-    await griptape_nodes.broadcast_app_event(event.payload)
+    await GriptapeNodes.broadcast_app_event(event.payload)
 
     await _send_message("app_event", event.json())
 
@@ -501,8 +495,8 @@ async def unsubscribe_from_topic(topic: str) -> None:
 
 def determine_response_topic() -> str | None:
     """Determine the response topic based on session_id and engine_id in the payload."""
-    engine_id = griptape_nodes.get_engine_id()
-    session_id = griptape_nodes.get_session_id()
+    engine_id = GriptapeNodes.get_engine_id()
+    session_id = GriptapeNodes.get_session_id()
 
     # Normal topic determination logic
     # Check for session_id first (highest priority)
@@ -519,8 +513,8 @@ def determine_response_topic() -> str | None:
 
 def determine_request_topic() -> str | None:
     """Determine the request topic based on session_id and engine_id in the payload."""
-    engine_id = griptape_nodes.get_engine_id()
-    session_id = griptape_nodes.get_session_id()
+    engine_id = GriptapeNodes.get_engine_id()
+    session_id = GriptapeNodes.get_session_id()
 
     # Normal topic determination logic
     # Check for session_id first (highest priority)
