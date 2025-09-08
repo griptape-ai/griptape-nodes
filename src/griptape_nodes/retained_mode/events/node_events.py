@@ -3,6 +3,7 @@ from enum import Enum, auto
 from typing import Any, NamedTuple, NewType
 from uuid import uuid4
 
+from griptape_nodes.exe_types.core_types import NodeMessagePayload
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 from griptape_nodes.retained_mode.events.base_events import (
@@ -744,7 +745,7 @@ class SendNodeMessageRequest(RequestPayload):
     """
 
     message_type: str
-    message: Any
+    message: NodeMessagePayload | None
     node_name: str | None = None
     optional_element_name: str | None = None
 
@@ -758,7 +759,7 @@ class SendNodeMessageResultSuccess(ResultPayloadSuccess):
         response: Optional response data from the node's message handler
     """
 
-    response: Any = None
+    response: NodeMessagePayload | None = None
 
 
 @dataclass
@@ -773,7 +774,7 @@ class SendNodeMessageResultFailure(ResultPayloadFailure):
         response: Optional response data from the node's message handler (even on failure)
     """
 
-    response: Any = None
+    response: NodeMessagePayload | None = None
 
 
 @dataclass
