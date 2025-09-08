@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from enum import StrEnum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from griptape_nodes.exe_types.core_types import NodeMessagePayload, NodeMessageResult, Trait
 
@@ -13,43 +12,33 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class ButtonVariant(StrEnum):
-    """Button visual variants following shadcn design system."""
+# Type aliases using Literals
+ButtonVariant = Literal[
+    "default",
+    "secondary",
+    "destructive",
+    "outline",
+    "ghost",
+    "link",
+]
 
-    DEFAULT = auto()  # Primary/main button (blue in shadcn)
-    SECONDARY = auto()  # Muted gray button
-    DESTRUCTIVE = auto()  # Red/danger button
-    OUTLINE = auto()  # Border only button
-    GHOST = auto()  # Minimal/transparent button
-    LINK = auto()  # Text link style button
+ButtonSize = Literal[
+    "default",
+    "sm",
+    "icon",
+]
 
+ButtonState = Literal[
+    "normal",
+    "disabled",
+    "loading",
+    "hidden",
+]
 
-class ButtonSize(StrEnum):
-    """Button sizes following shadcn design system."""
-
-    DEFAULT = auto()  # Regular/standard size
-    SM = auto()  # Small size
-    ICON = auto()  # Square icon-only size
-
-
-class ButtonState(StrEnum):
-    """Button interaction and visibility states."""
-
-    NORMAL = auto()  # Button is interactive (replaces PRESSABLE)
-    DISABLED = auto()  # Button cannot be clicked
-    LOADING = auto()  # Button is processing/loading
-    HIDDEN = auto()  # Button is not visible/rendered
-
-
-class IconPosition(StrEnum):
-    """Icon positioning within button."""
-
-    LEFT = auto()
-    RIGHT = auto()
-
-
-# Legacy alias for backward compatibility during transition
-ButtonStatus = ButtonState
+IconPosition = Literal[
+    "left",
+    "right",
+]
 
 
 class ButtonDetailsMessagePayload(NodeMessagePayload):
@@ -81,9 +70,9 @@ class Button(Trait):
 
     # Button styling and behavior properties
     text: str = "Button"
-    variant: ButtonVariant = ButtonVariant.DEFAULT
-    size: ButtonSize = ButtonSize.DEFAULT
-    state: ButtonState = ButtonState.NORMAL
+    variant: ButtonVariant = "default"
+    size: ButtonSize = "default"
+    state: ButtonState = "normal"
     icon: str | None = None
     icon_position: IconPosition | None = None
 
@@ -95,9 +84,9 @@ class Button(Trait):
         self,
         *,
         text: str = "Button",
-        variant: ButtonVariant = ButtonVariant.DEFAULT,
-        size: ButtonSize = ButtonSize.DEFAULT,
-        state: ButtonState = ButtonState.NORMAL,
+        variant: ButtonVariant = "default",
+        size: ButtonSize = "default",
+        state: ButtonState = "normal",
         icon: str | None = None,
         icon_position: IconPosition | None = None,
         on_click: OnClickCallback | None = None,
@@ -121,11 +110,11 @@ class Button(Trait):
         """Create a ButtonDetailsMessagePayload with current or specified button state."""
         return ButtonDetailsMessagePayload(
             text=self.text,
-            variant=self.variant.value,
-            size=self.size.value,
-            state=(state or self.state).value,
+            variant=self.variant,
+            size=self.size,
+            state=state or self.state,
             icon=self.icon,
-            icon_position=self.icon_position.value if self.icon_position else None,
+            icon_position=self.icon_position,
         )
 
     def ui_options_for_trait(self) -> dict:
@@ -133,15 +122,15 @@ class Button(Trait):
         options = {
             "button": True,
             "button_label": self.text,
-            "variant": self.variant.value,
-            "size": self.size.value,
-            "state": self.state.value,
+            "variant": self.variant,
+            "size": self.size,
+            "state": self.state,
         }
 
         # Only include icon properties if icon is specified
         if self.icon:
             options["button_icon"] = self.icon
-            options["iconPosition"] = (self.icon_position or IconPosition.LEFT).value
+            options["iconPosition"] = self.icon_position or "left"
 
         return options
 
