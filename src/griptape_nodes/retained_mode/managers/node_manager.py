@@ -357,12 +357,10 @@ class NodeManager:
         else:
             details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
 
-        log_level = logging.DEBUG
+        log_level = "DEBUG"
         if remapped_requested_node_name:
-            log_level = logging.WARNING
+            log_level = "WARNING"
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
-
-        logger.log(level=log_level, msg=details)
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, StartLoopNode) and not request.initial_setup:
@@ -377,7 +375,7 @@ class NodeManager:
             # Check and see if the class exists
             libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
             if not libraries_with_node_type:
-                msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
+                msg = f"Attempted to create a paired set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
                 logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
             else:
                 # Create the EndNode
@@ -418,7 +416,7 @@ class NodeManager:
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
-            result_details=details,
+            result_details=ResultDetails(message=details, level=log_level),
         )
 
     def cancel_conditionally(
@@ -2048,11 +2046,10 @@ class NodeManager:
                     node=node,
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
+                    create_node_request=create_node_request,
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
-                else:
-                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
         # now check if locked
         if node.lock:
             lock_command = SetLockNodeStateRequest(node_name=None, lock=True)
@@ -2470,6 +2467,7 @@ class NodeManager:
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        create_node_request: CreateNodeRequest,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -2486,6 +2484,7 @@ class NodeManager:
             node (BaseNode): The node object that contains the parameter
             unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
             serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
+            create_node_request (CreateNodeRequest): The node creation request that will be modified if serialization fails
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
@@ -2498,7 +2497,7 @@ class NodeManager:
         """
         output_value = None
         internal_value = None
-        if parameter.name in node.parameter_output_values and node.state == NodeResolutionState.RESOLVED:
+        if parameter.name in node.parameter_output_values:
             # Output values are more important.
             output_value = node.parameter_output_values[parameter.name]
         if parameter.name in node.parameter_values:
@@ -2520,6 +2519,8 @@ class NodeManager:
             if internal_command is None:
                 details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
+                # Set node to unresolved when serialization fails
+                create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
             else:
                 commands.append(internal_command)
         if output_value is not None:
@@ -2535,6 +2536,8 @@ class NodeManager:
             if output_command is None:
                 details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
+                # Set node to unresolved when serialization fails
+                create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
             else:
                 commands.append(output_command)
         return commands if commands else None
@@ -2694,7 +2697,6 @@ class NodeManager:
 
         if not callback_result.success:
             details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
-            logger.warning(details)
             return SendNodeMessageResultFailure(
                 result_details=callback_result.details,
                 response=callback_result.response,
@@ -2702,7 +2704,6 @@ class NodeManager:
             )
 
         details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
-        logger.debug(details)
         return SendNodeMessageResultSuccess(
             result_details=callback_result.details,
             response=callback_result.response,
