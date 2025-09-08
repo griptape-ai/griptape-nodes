@@ -206,7 +206,7 @@ class FluxPipelineParameters:
 
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
-    
+
     def get_skip_memory_check(self) -> bool:
         return bool(self._node.get_parameter_value("skip_memory_check"))
 

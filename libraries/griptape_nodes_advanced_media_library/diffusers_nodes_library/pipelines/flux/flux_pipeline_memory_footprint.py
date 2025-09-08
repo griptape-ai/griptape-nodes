@@ -22,12 +22,16 @@ FLUX_PIPELINE_COMPONENT_NAMES = [
 ]
 
 
-def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline |  diffusers.AmusedPipeline) -> None:
+def print_flux_pipeline_memory_footprint(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+) -> None:
     """Print memory footprint for the main sub-modules of Flux pipelines."""
     print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
 
-def _check_cuda_memory_sufficient(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device) -> bool:
+def _check_cuda_memory_sufficient(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device
+) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
     total_memory = torch.cuda.get_device_properties(device).total_memory
@@ -35,7 +39,9 @@ def _check_cuda_memory_sufficient(pipe: diffusers.FluxPipeline | diffusers.FluxI
     return model_memory <= free_memory
 
 
-def _check_mps_memory_sufficient(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline) -> bool:
+def _check_mps_memory_sufficient(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+) -> bool:
     """Check if MPS device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
     recommended_max_memory = torch.mps.recommended_max_memory()
@@ -43,7 +49,9 @@ def _check_mps_memory_sufficient(pipe: diffusers.FluxPipeline | diffusers.FluxIm
     return model_memory <= free_memory
 
 
-def _log_memory_info(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device) -> None:
+def _log_memory_info(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device
+) -> None:
     """Log memory information for the device."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
@@ -62,7 +70,9 @@ def _log_memory_info(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipelin
 
 
 @cache
-def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, skip_memory_check: bool = False) -> None:
+def optimize_flux_pipeline_memory_footprint(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, *, skip_memory_check: bool = False
+) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
     device = get_best_device()
 
@@ -81,7 +91,7 @@ def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffu
             return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-    
+
         # Apply fp8 layerwise caching
         logger.info("Enabling fp8 layerwise caching for transformer")
         pipe.transformer.enable_layerwise_casting(

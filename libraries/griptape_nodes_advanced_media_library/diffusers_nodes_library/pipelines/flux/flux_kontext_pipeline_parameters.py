@@ -274,7 +274,7 @@ class FluxKontextPipelineParameters:
     def get_effective_size(self) -> tuple[int, int]:
         """Get the effective width and height."""
         return self.get_width(), self.get_height()
-    
+
     def get_skip_memory_check(self) -> bool:
         return bool(self._node.get_parameter_value("skip_memory_check"))
 

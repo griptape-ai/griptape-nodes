@@ -55,7 +55,7 @@ class UnionTwoFluxControlNetParameters:
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
-    
+
     def get_skip_memory_check(self) -> bool:
         return bool(self._node.get_parameter_value("skip_memory_check"))
 
