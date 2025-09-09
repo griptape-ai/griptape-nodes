@@ -70,8 +70,12 @@ def _log_memory_info(
     logger.info("Require memory for Flux Pipeline: %s", to_human_readable_size(model_memory))
 
 
-def quantize_flux_pipeline(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, quantization_mode: str, device: torch.device) -> None:
+def quantize_flux_pipeline(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, quantization_mode: str, device: torch.device
+) -> None:
+    """Uses optimum.quanto to quantize the pipeline components."""
     from optimum.quanto import freeze, qfloat8, qint4, qint8, quantize  # type: ignore[reportMissingImports]
+
     logger.info("Applying quantization: %s", quantization_mode)
     _log_memory_info(pipe, device)
     quant_map = {"fp8": qfloat8, "int8": qint8, "int4": qint4}
@@ -97,15 +101,13 @@ def quantize_flux_pipeline(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgP
 
     logger.debug("Quantization complete.")
     pipe.to(device)
-    return
+
 
 @cache
-def optimize_flux_pipeline_memory_footprint(
+def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
-    from optimum.quanto import qfloat8, qint4, qint8  # type: ignore[reportMissingImports]
-
     device = get_best_device()
 
     quantization_mode = pipe_params.get_quantization_mode()
@@ -115,7 +117,7 @@ def optimize_flux_pipeline_memory_footprint(
     if pipe_params.get_skip_memory_check():
         logger.info("Skipping memory checks. Moving pipeline to %s", device)
         pipe.to(device)
-        return
+        return None
 
     if device.type == "cuda":
         _log_memory_info(pipe, device)
@@ -124,7 +126,7 @@ def optimize_flux_pipeline_memory_footprint(
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
             pipe.to(device)
-            return
+            return None
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
         logger.info("Enabling fp8 layerwise caching for transformer")
@@ -136,7 +138,7 @@ def optimize_flux_pipeline_memory_footprint(
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
             pipe.to(device)
-            return
+            return None
 
         logger.info("Still insufficient memory. Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
@@ -144,7 +146,7 @@ def optimize_flux_pipeline_memory_footprint(
         _log_memory_info(pipe, device)
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after sequential cpu offload")
-            return
+            return None
 
         # Apply VAE slicing as final optimization
         logger.info("Enabling vae slicing")
@@ -165,7 +167,7 @@ def optimize_flux_pipeline_memory_footprint(
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
             pipe.to(device)
-            return
+            return None
 
         logger.warning("Insufficient memory on %s for Pipeline.", device)
         logger.info("Enabling vae slicing")
@@ -177,3 +179,4 @@ def optimize_flux_pipeline_memory_footprint(
 
         # Intentionally not calling pipe.to(device) here when memory is insufficient
         # to avoid potential OOM errors
+    return None
