@@ -80,6 +80,7 @@ class SeedanceVideoGeneration(DataNode):
                     "display_name": "Model ID",
                     "hide": True,
                 },
+                traits={Options(choices=["seedance-1-0-pro-250528", "seedance-1-0-lite-t2v", "seedance-1-0-lite-i2v"])},
             )
         )
 
@@ -118,7 +119,7 @@ class SeedanceVideoGeneration(DataNode):
                 default_value=5,
                 tooltip="Video duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["5", "10"])},
+                traits={Options(choices=[5, 10])},
             )
         )
 
