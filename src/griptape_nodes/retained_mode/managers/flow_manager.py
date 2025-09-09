@@ -5,12 +5,6 @@ from enum import StrEnum
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
 
-from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
-from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
-
-if TYPE_CHECKING:
-    from griptape_nodes.machines.dag_builder import DagBuilder
-
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -22,6 +16,9 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
+from griptape_nodes.machines.dag_builder import DagBuilder
+from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -1601,7 +1598,6 @@ class FlowManager:
             self._global_flow_queue.task_done()
 
         # Initialize global control flow machine and DAG builder
-        from griptape_nodes.machines.dag_builder import DagBuilder
 
         self._global_dag_builder = DagBuilder()
         self._global_control_flow_machine = ControlFlowMachine(flow.name)
@@ -1727,6 +1723,9 @@ class FlowManager:
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
         # Build the DAG for the node
+        if not self._global_dag_builder:
+            self._global_dag_builder = DagBuilder()
+        self._global_dag_builder.add_node_with_dependencies(node)
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
