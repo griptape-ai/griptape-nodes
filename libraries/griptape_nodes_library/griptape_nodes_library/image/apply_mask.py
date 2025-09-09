@@ -8,10 +8,11 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     extract_channel_from_image,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -138,7 +139,12 @@ class ApplyMask(DataNode):
         input_pil.putalpha(alpha)
         output_pil = input_pil
 
-        # Save output image and create URL artifact
-        output_artifact = save_pil_image_to_static_file(output_pil)
+        # Save output image and create URL artifact with proper filename
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_apply_mask",
+            extension="png",
+        )
+        output_artifact = save_pil_image_with_named_filename(output_pil, filename, "PNG")
         self.set_parameter_value("output", output_artifact)
         self.publish_update_to_parameter("output", output_artifact)

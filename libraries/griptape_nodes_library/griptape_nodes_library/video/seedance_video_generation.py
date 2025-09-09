@@ -370,7 +370,7 @@ class SeedanceVideoGeneration(DataNode):
 
         if video_bytes:
             try:
-                from griptape_nodes import GriptapeNodes
+                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 filename = f"seedance_video_{int(time.time())}.mp4"
                 static_files_manager = GriptapeNodes.StaticFilesManager()

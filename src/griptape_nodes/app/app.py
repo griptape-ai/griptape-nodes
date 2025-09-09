@@ -63,6 +63,11 @@ class UnsubscribeCommand:
     topic: str
 
 
+# Important to bootstrap singleton here so that we don't
+# get any weird circular import issues from the EventLogHandler
+# initializing it from a log during it's own initialization.
+griptape_nodes: GriptapeNodes = GriptapeNodes()
+
 # WebSocket outgoing queue for messages and commands.
 # Appears to be fine to create outside event loop
 # https://discuss.python.org/t/can-asyncio-queue-be-safely-created-outside-of-the-event-loop-thread/49215/8
@@ -80,12 +85,6 @@ STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "t
 
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
-
-
-# Important to bootstrap singleton here so that we don't
-# get any weird circular import issues from the EventLogHandler
-# initializing it from a log during it's own initialization.
-griptape_nodes: GriptapeNodes = GriptapeNodes()
 
 
 class EventLogHandler(logging.Handler):

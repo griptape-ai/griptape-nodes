@@ -1,5 +1,4 @@
 import base64
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -11,8 +10,10 @@ from PIL import Image, ImageEnhance
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -89,6 +90,7 @@ class ImageBash(DataNode):
                 type="str",
                 tooltip="Background color for the canvas (hex color like #ffffff or #fffffa)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={ColorPicker(format="hex")},
             )
         self.add_node_element(canvas_details_group)
 
@@ -727,31 +729,29 @@ class ImageBash(DataNode):
         self.publish_update_to_parameter("output_image", output_artifact)
         logger.debug(f"Output image saved to {output_artifact.value}")
 
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
+        """Get output filename suffix."""
+        return "_image_bash"
+
     def _generate_filename(self, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
-        # Get workflow and node context
-        workflow_name = "unknown_workflow"
-        node_name = self.name
+        # Get processing suffix
+        processing_suffix = self._get_output_suffix(
+            canvas_size=self.get_parameter_value("canvas_size"),
+            width=self.get_parameter_value("width"),
+            height=self.get_parameter_value("height"),
+            background_color=self.get_parameter_value("background_color"),
+        )
 
-        # Try to get workflow name from context
-        try:
-            context_manager = GriptapeNodes.ContextManager()
-            workflow_name = context_manager.get_current_workflow_name()
-        except Exception as e:
-            msg = f"{self.name}: Error getting workflow name: {e}"
-            logger.warning(msg)
+        # Use the general filename utility but with a custom prefix
+        base_filename = generate_filename(
+            node_name=self.name,
+            suffix=processing_suffix,
+            extension=extension,
+        )
 
-        # Clean up names for filename use
-        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
-        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
-
-        # Get current timestamp for cache busting
-        timestamp = int(datetime.now(UTC).timestamp())
-
-        # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"image_bash_{workflow_name}_{node_name}.{extension}?t={timestamp}"
-
-        return filename
+        # Add the "image_bash" prefix that this node specifically uses
+        return base_filename.replace(f"{self.name}{processing_suffix}", f"image_bash_{self.name}{processing_suffix}")
 
     def _pil_to_bytes(self, img: Image.Image, img_format: str) -> bytes:
         """Convert PIL Image to bytes."""

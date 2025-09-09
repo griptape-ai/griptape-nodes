@@ -7,11 +7,44 @@ from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
+from pydantic import BaseModel
+
+
+class NodeMessagePayload(BaseModel):
+    """Structured payload for node messages.
+
+    This replaces the use of Any in message payloads, providing
+    better type safety and validation for node message handling.
+    """
+
+    data: Any = None
+
+
+class NodeMessageResult(BaseModel):
+    """Result from a node message callback.
+
+    Attributes:
+        success: True if the message was handled successfully, False otherwise
+        details: Human-readable description of what happened
+        response: Optional response data to return to the sender
+        altered_workflow_state: True if the message handling altered workflow state.
+            Clients can use this to determine if the workflow needs to be re-saved.
+    """
+
+    success: bool
+    details: str
+    response: NodeMessagePayload | None = None
+    altered_workflow_state: bool = True
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
 
     from griptape_nodes.exe_types.node_types import BaseNode
+
+# Type alias for element message callback functions
+type ElementMessageCallback = Callable[[str, "NodeMessagePayload | None"], "NodeMessageResult"]
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -415,6 +448,31 @@ class BaseNodeElement:
             "children": [child.to_event(node) for child in self.children],
         }
         return event_data
+
+    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
+        """Virtual method for handling messages sent to this element.
+
+        Attempts to delegate to child elements first. If any child handles the message
+        (returns non-None), that result is returned immediately. Otherwise, falls back
+        to default behavior (return None).
+
+        Args:
+            message_type: String indicating the message type for parsing
+            message: Message payload as NodeMessagePayload or None
+
+        Returns:
+            NodeMessageResult | None: Result if handled, None if no handler available
+        """
+        # Try to delegate to all children first
+        # NOTE: This returns immediately on the first child that accepts the message (returns non-None).
+        # In the future, we may need to expand this to handle multiple children processing the same message.
+        for child in self._children:
+            result = child.on_message_received(message_type, message)
+            if result is not None:
+                return result
+
+        # No child handled it, return None (indicating no handler)
+        return None
 
 
 class UIOptionsMixin:

@@ -109,7 +109,7 @@ class SaveVideo(ControlNode):
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
+    def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
 
         # Validate that we have a video.

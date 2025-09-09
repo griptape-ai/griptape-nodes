@@ -132,6 +132,19 @@ nav:
         - Paint Mask: nodes/image/paint_mask.md
         - Invert Mask: nodes/image/invert_mask.md
         - Apply Mask: nodes/image/apply_mask.md
+        - Adjust Image EQ: nodes/image/adjust_image_eq.md
+        - Adjust Image Levels: nodes/image/adjust_image_levels.md
+        - Bloom Effect: nodes/image/bloom_effect.md
+        - Crop Image: nodes/image/crop_image.md
+        - Image Blend Compositor: nodes/image/image_blend_compositor.md
+        - Image Bash: nodes/image/image_bash.md
+        - Rescale Image: nodes/image/rescale_image.md
+        - Compare Images: nodes/image/compare_images.md
+        - Display Image Grid: nodes/image/display_image_grid.md
+        - Extend Canvas: nodes/image/extend_canvas.md
+        - Merge Images: nodes/image/merge_images.md
+        - Save Image: nodes/image/save_image.md
+        - Webcam: nodes/image/webcam.md
     - Lists:
         - Create List: nodes/lists/create_list.md
         - Add To List: nodes/lists/add_to_list.md
