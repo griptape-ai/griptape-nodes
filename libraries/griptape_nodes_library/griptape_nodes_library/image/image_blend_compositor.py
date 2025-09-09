@@ -220,9 +220,20 @@ class ImageBlendCompositor(BaseImageProcessor):
         if blend_pil.mode != "RGBA":
             blend_pil = blend_pil.convert("RGBA")
 
-        # Invert blend image if requested
+        # Invert blend image if requested (preserve alpha channel)
         if invert_blend:
-            blend_pil = ImageChops.invert(blend_pil)
+            # Extract alpha channel before inverting
+            alpha_channel = blend_pil.getchannel("A") if blend_pil.mode == "RGBA" else None
+
+            # Invert only the RGB channels
+            rgb_channels = blend_pil.convert("RGB")
+            inverted_rgb = ImageChops.invert(rgb_channels)
+
+            # Reconstruct the image with original alpha
+            if alpha_channel is not None:
+                blend_pil = Image.merge("RGBA", (*inverted_rgb.split(), alpha_channel))
+            else:
+                blend_pil = inverted_rgb.convert("RGBA")
 
         # Resize blend image if requested
         if resize_blend_to_fit:
@@ -247,12 +258,34 @@ class ImageBlendCompositor(BaseImageProcessor):
             if opacity < 1.0:
                 # Apply opacity to blend image
                 blend_pil.putalpha(int(255 * opacity))
-            result.paste(blend_pil, (x, y), blend_pil if preserve_alpha else None)
+            blended_image = blend_pil
         else:
             # Apply custom blend mode
-            blended = self._apply_blend_mode(image_pil, blend_pil, blend_mode, opacity)
-            result.paste(blended, (x, y), blended if preserve_alpha else None)
+            blended_image = self._apply_blend_mode(image_pil, blend_pil, blend_mode, opacity)
 
+        # Apply the blended image with proper alpha handling
+        result = self._apply_blended_image(result, blended_image, image_pil, (x, y), preserve_alpha=preserve_alpha)
+
+        return result
+
+    def _apply_blended_image(
+        self,
+        result: Image.Image,
+        blended_image: Image.Image,
+        original_image: Image.Image,
+        position: tuple[int, int],
+        *,
+        preserve_alpha: bool,
+    ) -> Image.Image:
+        """Apply the blended image to the result with proper alpha handling."""
+        if preserve_alpha:
+            # Preserve alpha from the original base image
+            original_alpha = original_image.getchannel("A")
+            result.paste(blended_image, position)
+            result.putalpha(original_alpha)
+        else:
+            # Paste without alpha (ignore transparency)
+            result.paste(blended_image, position)
         return result
 
     def _apply_blend_mode(self, base: Image.Image, blend: Image.Image, mode: str, opacity: float) -> Image.Image:
@@ -273,7 +306,18 @@ class ImageBlendCompositor(BaseImageProcessor):
             # Blend the result with the original base image at the specified opacity
             result = Image.blend(base_rgb, result, opacity)
 
-        return result
+        # Convert result back to RGBA to preserve alpha channel support
+        result_rgba = result.convert("RGBA")
+
+        # Apply the blend image's alpha channel to the result
+        if blend.mode == "RGBA":
+            blend_alpha = blend.getchannel("A")
+            result_rgba.putalpha(blend_alpha)
+        else:
+            # If blend image has no alpha, create a fully opaque alpha channel
+            result_rgba.putalpha(255)
+
+        return result_rgba
 
     def _get_blend_result(self, base_rgb: Image.Image, blend_rgb: Image.Image, mode: str) -> Image.Image:
         """Get the result of applying a specific blend mode."""
