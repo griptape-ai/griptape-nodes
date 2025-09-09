@@ -211,6 +211,22 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
     return ImageUrlArtifact(url)
 
 
+def save_pil_image_with_named_filename(
+    image: Image.Image, filename: str, image_format: str = "PNG"
+) -> ImageUrlArtifact:
+    """Save a PIL image to the static file system with a specific filename and return an ImageUrlArtifact."""
+    # Validate the image format
+    validate_pil_format(image_format, "image_format")
+
+    buffer = io.BytesIO()
+    image.save(buffer, format=image_format)
+    image_bytes = buffer.getvalue()
+
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+
+    return ImageUrlArtifact(url)
+
+
 def load_pil_from_url(url: str) -> Image.Image:
     """Load image from URL or local file path using httpx or PIL."""
     # Check if it's a local file path

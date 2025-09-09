@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -10,6 +9,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     DEFAULT_PLACEHOLDER_HEIGHT,
     DEFAULT_PLACEHOLDER_WIDTH,
@@ -195,7 +195,11 @@ class DisplayImageGrid(ControlNode):
                     transparent_bg=transparent_bg,
                 )
                 # Save and create URL for placeholder
-                filename = f"{uuid.uuid4()}.{output_format}"
+                filename = generate_filename(
+                    node_name=self.name,
+                    suffix="_placeholder",
+                    extension=output_format,
+                )
                 static_url = GriptapeNodes.StaticFilesManager().save_static_file(
                     image_to_bytes(placeholder_image, output_format),
                     filename,
@@ -228,7 +232,11 @@ class DisplayImageGrid(ControlNode):
                 )
 
             # Save the grid image and create URL
-            filename = f"{uuid.uuid4()}.{output_format}"
+            filename = generate_filename(
+                node_name=self.name,
+                suffix="_grid",
+                extension=output_format,
+            )
             static_url = GriptapeNodes.StaticFilesManager().save_static_file(
                 image_to_bytes(grid_image, output_format), filename
             )
