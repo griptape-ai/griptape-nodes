@@ -193,7 +193,7 @@ def optimize_flux_pipeline(
     device = get_best_device()
 
     quantization_mode = pipe_params.get_quantization_mode()
-    if quantization_mode:
+    if quantization_mode != "none":
         _quantize_flux_pipeline(pipe, quantization_mode, device)
 
     if pipe_params.get_skip_memory_check():
