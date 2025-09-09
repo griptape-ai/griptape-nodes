@@ -137,7 +137,7 @@ class AgentManager:
         if self.mcp_tool is None:
             self.mcp_tool = self._initialize_mcp_tool()
         await asyncio.to_thread(self._on_handle_run_agent_request, request)
-        return RunAgentResultStarted()
+        return RunAgentResultStarted(result_details="Agent execution started successfully.")
 
     def _create_agent(self) -> Agent:
         output_schema = Schema(
@@ -207,7 +207,9 @@ class AgentManager:
                         error=last_event.task_output.to_dict(), result_details=last_event.task_output.to_json()
                     )
                 if isinstance(last_event.task_output, JsonArtifact):
-                    return RunAgentResultSuccess(last_event.task_output.to_dict())
+                    return RunAgentResultSuccess(
+                        last_event.task_output.to_dict(), result_details="Agent execution completed successfully."
+                    )
             err_msg = f"Unexpected final event: {last_event}"
             logger.error(err_msg)
             return RunAgentResultFailure(error=ErrorArtifact(last_event).to_dict(), result_details=err_msg)
@@ -226,7 +228,7 @@ class AgentManager:
             details = f"Error configuring agent: {e}"
             logger.error(details)
             return ConfigureAgentResultFailure(result_details=details)
-        return ConfigureAgentResultSuccess()
+        return ConfigureAgentResultSuccess(result_details="Agent configured successfully.")
 
     def on_handle_reset_agent_conversation_memory_request(
         self, _: ResetAgentConversationMemoryRequest
@@ -237,7 +239,7 @@ class AgentManager:
             details = f"Error resetting agent conversation memory: {e}"
             logger.error(details)
             return ResetAgentConversationMemoryResultFailure(result_details=details)
-        return ResetAgentConversationMemoryResultSuccess()
+        return ResetAgentConversationMemoryResultSuccess(result_details="Agent conversation memory reset successfully.")
 
     def on_handle_get_conversation_memory_request(self, _: GetConversationMemoryRequest) -> ResultPayload:
         try:
@@ -246,4 +248,6 @@ class AgentManager:
             details = f"Error getting conversation memory: {e}"
             logger.error(details)
             return GetConversationMemoryResultFailure(result_details=details)
-        return GetConversationMemoryResultSuccess(runs=conversation_memory)
+        return GetConversationMemoryResultSuccess(
+            runs=conversation_memory, result_details="Conversation memory retrieved successfully."
+        )

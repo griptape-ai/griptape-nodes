@@ -81,13 +81,13 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata),
+                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
                 workflow_manager,
                 "on_register_workflow_request",
-                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow"),
+                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow", result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
             patch.object(griptape_nodes.ConfigManager(), "save_user_workflow_json") as mock_save,
@@ -110,7 +110,7 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata),
+                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=True),
         ):
@@ -147,7 +147,7 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata),
+                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
@@ -174,13 +174,13 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata),
+                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "has_workflow_with_name", return_value=False),
             patch.object(
                 workflow_manager,
                 "on_register_workflow_request",
-                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow"),
+                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow", result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
             patch.object(

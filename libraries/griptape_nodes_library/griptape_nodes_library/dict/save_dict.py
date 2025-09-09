@@ -36,7 +36,7 @@ class SaveDictionary(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="griptape_output.txt",
                 tooltip="The output filename",
-                traits={Button(button_type="save")},
+                traits={Button(label="save")},
             )
         )
 

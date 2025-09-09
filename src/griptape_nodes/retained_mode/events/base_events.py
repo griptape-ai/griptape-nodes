@@ -135,7 +135,7 @@ class SkipTheLineMixin:
 class ResultPayloadSuccess(ResultPayload, ABC):
     """Abstract base class for success result payloads."""
 
-    result_details: ResultDetails | str = "Success"
+    result_details: ResultDetails | str
 
     def __post_init__(self) -> None:
         """Initialize success result with INFO level default for strings."""
@@ -156,7 +156,7 @@ class ResultPayloadSuccess(ResultPayload, ABC):
 class ResultPayloadFailure(ResultPayload, ABC):
     """Abstract base class for failure result payloads."""
 
-    result_details: ResultDetails | str = "Failure"
+    result_details: ResultDetails | str
     exception: Exception | None = None
 
     def __post_init__(self) -> None:

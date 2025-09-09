@@ -6,12 +6,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
-from typing import Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
     ControlParameterOutput,
+    NodeMessageResult,
     Parameter,
     ParameterContainer,
     ParameterDictionary,
@@ -39,6 +40,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.traits.options import Options
 
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import NodeMessagePayload
+
 logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
@@ -54,23 +58,6 @@ class NodeResolutionState(StrEnum):
     RESOLVED = auto()
 
 
-class NodeMessageResult(NamedTuple):
-    """Result from a node message callback.
-
-    Attributes:
-        success: True if the message was handled successfully, False otherwise
-        details: Human-readable description of what happened
-        response: Optional response data to return to the sender
-        altered_workflow_state: True if the message handling altered workflow state.
-            Clients can use this to determine if the workflow needs to be re-saved.
-    """
-
-    success: bool
-    details: str
-    response: Any = None
-    altered_workflow_state: bool = True
-
-
 class BaseNode(ABC):
     # Owned by a flow
     name: str
@@ -80,7 +67,7 @@ class BaseNode(ABC):
     state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
-    parameter_output_values: dict[str, Any]
+    parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
     _tracked_parameters: list[BaseNodeElement]
@@ -289,14 +276,17 @@ class BaseNode(ABC):
 
     def on_node_message_received(
         self,
-        optional_element_name: str | None,  # noqa: ARG002
+        optional_element_name: str | None,
         message_type: str,
-        message: Any,  # noqa: ARG002
+        message: NodeMessagePayload | None,
     ) -> NodeMessageResult:
         """Callback for when a message is sent directly to this node.
 
         Custom nodes may elect to override this method to handle specific message types
         and implement custom communication patterns with external systems.
+
+        If optional_element_name is provided, this method will attempt to find the
+        element and delegate the message handling to that element's on_message_received method.
 
         Args:
             optional_element_name: Optional element name this message relates to
@@ -306,6 +296,26 @@ class BaseNode(ABC):
         Returns:
             NodeMessageResult: Result containing success status, details, and optional response
         """
+        # If optional_element_name is provided, delegate to the specific element
+        if optional_element_name is not None:
+            element = self.root_ui_element.find_element_by_name(optional_element_name)
+            if element is None:
+                return NodeMessageResult(
+                    success=False,
+                    details=f"Node '{self.name}' received message for element '{optional_element_name}' but no element with that name was found",
+                    response=None,
+                )
+            # Delegate to the element's message handler
+            result = element.on_message_received(message_type, message)
+            if result is None:
+                return NodeMessageResult(
+                    success=False,
+                    details=f"Element '{optional_element_name}' received message type '{message_type}' but no handler was available",
+                    response=None,
+                )
+            return result
+
+        # If no element name specified, fall back to node-level handling
         return NodeMessageResult(
             success=False,
             details=f"Node '{self.name}' was sent a message of type '{message_type}'. Failed because no message handler was specified for this node. Implement the on_node_message_received method in this node class in order for it to receive messages.",
@@ -620,10 +630,10 @@ class BaseNode(ABC):
         # Allow custom node logic to prepare and possibly mutate the value before it is actually set.
         # Record any parameters modified for cascading.
         if not initial_setup:
-            if not skip_before_value_set:
-                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
-            else:
+            if skip_before_value_set:
                 final_value = candidate_value
+            else:
+                final_value = self.before_value_set(parameter=parameter, value=candidate_value)
             # ACTUALLY SET THE NEW VALUE
             self.parameter_values[param_name] = final_value
 
@@ -1096,6 +1106,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
             super().clear()
             for key in keys_to_clear:
                 self._emit_parameter_change_event(key, None, deleted=True)
+
+    def silent_clear(self) -> None:
+        """Clear all values without emitting parameter change events."""
+        super().clear()
 
     def update(self, *args, **kwargs) -> None:
         # Handle both dict.update(other) and dict.update(**kwargs) patterns

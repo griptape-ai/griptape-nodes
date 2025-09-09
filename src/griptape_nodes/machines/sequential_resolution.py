@@ -42,6 +42,14 @@ class ResolutionContext:
         self.focus_stack = []
         self.paused = False
 
+    @property
+    def current_node(self) -> BaseNode:
+        """Get the currently focused node from the focus stack."""
+        if not self.focus_stack:
+            msg = "No node is currently in focus - focus stack is empty"
+            raise RuntimeError(msg)
+        return self.focus_stack[-1].node
+
     def reset(self) -> None:
         if self.focus_stack:
             node = self.focus_stack[-1].node
@@ -55,7 +63,7 @@ class InitializeSpotlightState(State):
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
@@ -70,7 +78,7 @@ class InitializeSpotlightState(State):
         # If the focus stack is empty
         if not len(context.focus_stack):
             return CompleteState
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
@@ -95,7 +103,7 @@ class InitializeSpotlightState(State):
 class EvaluateParameterState(State):
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
         current_parameter = current_node.get_current_parameter()
         if current_parameter is None:
             return ExecuteNodeState
@@ -116,7 +124,7 @@ class EvaluateParameterState(State):
 
     @staticmethod
     async def on_update(context: ResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
         current_parameter = current_node.get_current_parameter()
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -143,48 +151,6 @@ class EvaluateParameterState(State):
 
 
 class ExecuteNodeState(State):
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/864
-    @staticmethod
-    async def clear_parameter_output_values(context: ResolutionContext) -> None:
-        """Clears all parameter output values for the currently focused node in the resolution context.
-
-        This method iterates through each parameter output value stored in the current node,
-        removes it from the node's parameter_output_values dictionary, and publishes an event
-        to notify the system about the parameter value being set to None.
-
-        Args:
-            context (ResolutionContext): The resolution context containing the focus stack
-                with the current node being processed.
-
-        Raises:
-            ValueError: If a parameter name in parameter_output_values doesn't correspond
-                to an actual parameter in the node.
-
-        Note:
-            - Uses a copy of parameter_output_values to safely modify the dictionary during iteration
-            - For each parameter, publishes a ParameterValueUpdateEvent with value=None
-            - Events are wrapped in ExecutionGriptapeNodeEvent before publishing
-        """
-        current_node = context.focus_stack[-1].node
-        for parameter_name in current_node.parameter_output_values.copy():
-            parameter = current_node.get_parameter_by_name(parameter_name)
-            if parameter is None:
-                err = f"Attempted to execute node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
-                raise ValueError(err)
-            parameter_type = parameter.type
-            if parameter_type is None:
-                parameter_type = ParameterTypeBuiltin.NONE.value
-            payload = ParameterValueUpdateEvent(
-                node_name=current_node.name,
-                parameter_name=parameter_name,
-                data_type=parameter_type,
-                value=None,
-            )
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
-            )
-        current_node.parameter_output_values.clear()
-
     @staticmethod
     async def collect_values_from_upstream_nodes(context: ResolutionContext) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
@@ -199,7 +165,7 @@ class ExecuteNodeState(State):
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
         connections = GriptapeNodes.FlowManager().get_connections()
 
         for parameter in current_node.parameters:
@@ -237,14 +203,18 @@ class ExecuteNodeState(State):
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
+        current_node = context.current_node
 
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
         if current_node.lock:
             return ExecuteNodeState
         await ExecuteNodeState.collect_values_from_upstream_nodes(context)
-        await ExecuteNodeState.clear_parameter_output_values(context)
+
+        # Clear all of the current output values but don't broadcast the clearing.
+        # to avoid any flickering in subscribers (UI).
+        context.current_node.parameter_output_values.silent_clear()
+
         for parameter in current_node.parameters:
             if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
                 continue
@@ -398,7 +368,7 @@ class CompleteState(State):
         return None
 
 
-class NodeResolutionMachine(FSM[ResolutionContext]):
+class SequentialResolutionMachine(FSM[ResolutionContext]):
     """State machine for resolving node dependencies."""
 
     def __init__(self) -> None:
@@ -418,6 +388,7 @@ class NodeResolutionMachine(FSM[ResolutionContext]):
     def is_started(self) -> bool:
         return self._current_state is not None
 
-    def reset_machine(self) -> None:
+    # Unused argument but necessary for parallel_resolution because of futures ending during cancel but not reset.
+    def reset_machine(self, *, cancel: bool = False) -> None:  # noqa: ARG002
         self._context.reset()
         self._current_state = None

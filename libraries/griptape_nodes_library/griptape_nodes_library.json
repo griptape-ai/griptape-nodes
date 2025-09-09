@@ -643,6 +643,17 @@
       }
     },
     {
+      "class_name": "SeedanceVideoGeneration",
+      "file_path": "griptape_nodes_library/video/seedance_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video using the Seedance model via Griptape Cloud Forwarders.",
+        "display_name": "Seedance Video Generation",
+        "icon": "Sparkles",
+        "group": "general"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
@@ -1379,6 +1390,16 @@
       }
     },
     {
+      "class_name": "ColorPickerNode",
+      "file_path": "griptape_nodes_library/misc/color_picker.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Create a color picker node to select a color in various formats",
+        "display_name": "ColorPicker",
+        "icon": "pipette"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {
@@ -1775,6 +1796,15 @@
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF"
+      }
+    },
+    {
+      "class_name": "LoadThreeD",
+      "file_path": "griptape_nodes_library/three_d/load_three_d.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Loads a 3D file into your workflow",
+        "display_name": "Load 3D"
       }
     },
     {

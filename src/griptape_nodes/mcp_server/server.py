@@ -69,7 +69,7 @@ mcp_server_logger.addHandler(RichHandler(show_time=True, show_path=False, markup
 mcp_server_logger.setLevel(logging.INFO)
 
 
-def main_sync(api_key: str) -> None:
+def start_mcp_server(api_key: str) -> None:
     """Synchronous version of main entry point for the Griptape Nodes MCP server."""
     mcp_server_logger.debug("Starting MCP GTN server...")
     # Give these a session ID

@@ -9,6 +9,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS, parse_color_to_rgba
@@ -127,6 +128,7 @@ class CropImage(ControlNode):
                 type="str",
                 default_value="#00000000",
                 tooltip="Background color (RGBA or hex) for transparent areas",
+                traits={ColorPicker(format="hexa")},
             )
             Parameter(
                 name="output_format",

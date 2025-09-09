@@ -1,7 +1,7 @@
 import copy
 import logging
 from abc import abstractmethod
-from enum import Enum
+from enum import StrEnum
 from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import (
@@ -77,7 +77,7 @@ def _incoming_connection_exists(target_node: str, target_param: str) -> bool:
     return bool(param_connections)
 
 
-class StatusType(Enum):
+class StatusType(StrEnum):
     """Enum for iterative loop status types."""
 
     NORMAL = "normal"

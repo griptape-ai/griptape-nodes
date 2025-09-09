@@ -19,7 +19,7 @@
             "type": "debugpy",
             "request": "launch",
             "python": ".venv/bin/python",
-            "module": "src.griptape_nodes.__init__",
+            "module": "src.griptape_nodes.__main__",
             "console": "integratedTerminal",
             "args": [
                 "--no-update"
