@@ -1336,6 +1336,61 @@
       }
     },
     {
+      "class_name": "RescaleImage",
+      "file_path": "griptape_nodes_library/image/rescale_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Rescale images with separate parameters for target size (pixels) and percentage scale, plus resample filter options",
+        "display_name": "Rescale Image",
+        "icon": "image-upscale",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AdjustImageEQ",
+      "file_path": "griptape_nodes_library/image/adjust_image_eq.py",
+      "metadata": {
+        "category": "image",
+        "description": "Adjust image brightness, contrast, saturation, and gamma using PIL's ImageEnhance with precise controls",
+        "display_name": "Adjust Image EQ",
+        "icon": "sliders",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "AdjustImageLevels",
+      "file_path": "griptape_nodes_library/image/adjust_image_levels.py",
+      "metadata": {
+        "category": "image",
+        "description": "Adjust image levels similar to Photoshop's levels adjustment with input levels (shadows, midtones, highlights) and output levels",
+        "display_name": "Adjust Image Levels",
+        "icon": "bar-chart-3",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "BloomEffect",
+      "file_path": "griptape_nodes_library/image/bloom_effect.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a beautiful bloom/glow effect to images with configurable intensity and radius for dreamy, ethereal results",
+        "display_name": "Bloom Effect",
+        "icon": "sparkles",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ImageBlendCompositor",
+      "file_path": "griptape_nodes_library/image/image_blend_compositor.py",
+      "metadata": {
+        "category": "image",
+        "description": "Compose two images using various blend modes with positioning and advanced compositing options for creative image manipulation",
+        "display_name": "Image Blend Compositor",
+        "icon": "layers",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "Note",
       "file_path": "griptape_nodes_library/note.py",
       "metadata": {

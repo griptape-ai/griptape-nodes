@@ -6,10 +6,11 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -88,8 +89,14 @@ class InvertImage(DataNode):
                     image_to_invert = image_pil.convert("RGB")
                     inverted_image = Image.eval(image_to_invert, lambda x: 255 - x)
 
-            # Save output image and create URL artifact
-            output_artifact = save_pil_image_to_static_file(inverted_image, image_format="PNG")
+            # Save output image and create URL artifact with proper filename
+            # Generate a meaningful filename
+            filename = generate_filename(
+                node_name=self.name,
+                suffix="_inverted",
+                extension="png",
+            )
+            output_artifact = save_pil_image_with_named_filename(inverted_image, filename, "PNG")
             self.set_parameter_value("output", output_artifact)
             self.publish_update_to_parameter("output", output_artifact)
 
