@@ -131,6 +131,13 @@ class AdjustImageEQ(BaseImageProcessor):
         saturation = kwargs.get("saturation", self.DEFAULT_SATURATION)
         gamma = kwargs.get("gamma", self.DEFAULT_GAMMA)
 
+        # Debug logging
+        from griptape_nodes.retained_mode.griptape_nodes import logger
+
+        logger.debug(
+            f"{self.name}: Processing image with brightness={brightness}, contrast={contrast}, saturation={saturation}, gamma={gamma}"
+        )
+
         # Apply brightness adjustment
         if brightness != 1.0:
             enhancer = ImageEnhance.Brightness(pil_image)
@@ -148,10 +155,51 @@ class AdjustImageEQ(BaseImageProcessor):
 
         # Apply gamma adjustment
         if gamma != 1.0:
-            # Use PIL's point method for gamma correction
-            # Create a lookup table for gamma correction
-            gamma_table = [int(((i / 255.0) ** gamma) * 255.0) for i in range(256)]
-            pil_image = pil_image.point(gamma_table)
+            # Debug logging
+            from griptape_nodes.retained_mode.griptape_nodes import logger
+
+            logger.debug(f"{self.name}: Applying gamma correction with gamma={gamma}, image_mode={pil_image.mode}")
+
+            # Use the proper gamma correction method from PIL documentation
+            # Based on: https://linuxtut.com/en/145d858eff3c505c100a/
+            def create_gamma_table(gamma_value: float, gain: float = 1.0) -> list[int]:
+                """Create gamma correction lookup table following PIL documentation."""
+                return [min(255, int((x / 255.0) ** (1.0 / gamma_value) * gain * 255.0)) for x in range(256)]
+
+            # Create lookup table for gamma correction
+            gamma_table = create_gamma_table(gamma, gain=1.0)
+
+            # Debug: Check if lookup table is actually changing values
+            logger.debug(
+                f"{self.name}: Gamma table sample - input 0->{gamma_table[0]}, 128->{gamma_table[128]}, 255->{gamma_table[255]}"
+            )
+
+            # Handle different image modes
+            if pil_image.mode == "RGBA":
+                # For RGBA images, apply gamma to RGB channels only, preserve alpha
+                rgb_image = pil_image.convert("RGB")
+                # Create combined lookup table for RGB channels
+                combined_table = gamma_table + gamma_table + gamma_table
+                gamma_corrected_rgb = rgb_image.point(combined_table)
+                # Convert back to RGBA and preserve original alpha
+                gamma_corrected_image = gamma_corrected_rgb.convert("RGBA")
+                # Copy original alpha channel
+                original_alpha = pil_image.getchannel("A")
+                gamma_corrected_image.putalpha(original_alpha)
+                pil_image = gamma_corrected_image
+            elif pil_image.mode == "RGB":
+                # For RGB images, create combined lookup table for all channels
+                combined_table = gamma_table + gamma_table + gamma_table
+                pil_image = pil_image.point(combined_table)
+            elif pil_image.mode == "L":
+                # For grayscale images, use single channel table
+                pil_image = pil_image.point(gamma_table)
+            else:
+                # For other modes, convert to RGB first
+                rgb_image = pil_image.convert("RGB")
+                combined_table = gamma_table + gamma_table + gamma_table
+                gamma_corrected_rgb = rgb_image.point(combined_table)
+                pil_image = gamma_corrected_rgb.convert(pil_image.mode)
 
         return pil_image
 
