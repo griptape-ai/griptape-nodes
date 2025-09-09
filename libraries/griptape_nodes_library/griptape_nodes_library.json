@@ -1358,6 +1358,17 @@
       }
     },
     {
+      "class_name": "AdjustImageLevels",
+      "file_path": "griptape_nodes_library/image/adjust_image_levels.py",
+      "metadata": {
+        "category": "image",
+        "description": "Adjust image levels similar to Photoshop's levels adjustment with input levels (shadows, midtones, highlights) and output levels",
+        "display_name": "Adjust Image Levels",
+        "icon": "bar-chart-3",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
