@@ -98,28 +98,12 @@ def _quantize_flux_pipeline(
         freeze(pipe.text_encoder_2)
         logger.debug("Quantizing completed for text_encoder_2.")
 
-    logger.debug("Quantization complete.")
-    pipe.to(device)
-
-
-def _compile_pipeline_components(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline,
-    device: torch.device,
-) -> None:
-    """Compile pipeline components for better performance."""
-    if device.type == "cuda" and hasattr(torch, "compile"):
-        logger.info("Compiling pipeline components with torch.compile")
-
-        if hasattr(pipe, "transformer") and pipe.transformer is not None:
-            pipe.transformer = torch.compile(pipe.transformer, mode="reduce-overhead", fullgraph=False)
-
-        if hasattr(pipe, "vae") and pipe.vae is not None:
-            # Compile decode method specifically for inference
-            pipe.vae.decode = torch.compile(pipe.vae.decode, mode="reduce-overhead")
+    logger.info("Quantization complete.")
 
 
 def _optimize_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline,
+    quantization_mode: str,
     device: torch.device,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
@@ -132,28 +116,28 @@ def _optimize_flux_pipeline(
             pipe.to(device)
             return
 
-        logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
-        logger.info("Enabling fp8 layerwise caching for transformer")
-        pipe.transformer.enable_layerwise_casting(
-            storage_dtype=torch.float8_e4m3fn,
-            compute_dtype=torch.bfloat16,
-        )
-        _log_memory_info(pipe, device)
-        if _check_cuda_memory_sufficient(pipe, device):
-            logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
-            pipe.to(device)
-            return
+        if quantization_mode == "none":
+            logger.warning("Insufficient memory. Enabling fp8 layerwise caching for transformer")
+            pipe.transformer.enable_layerwise_casting(
+                storage_dtype=torch.float8_e4m3fn,
+                compute_dtype=torch.bfloat16,
+            )
+            _log_memory_info(pipe, device)
+            if _check_cuda_memory_sufficient(pipe, device):
+                logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
+                pipe.to(device)
+                return
 
-        logger.info("Still insufficient memory. Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
+            logger.info("Insufficient memory. Enabling sequential cpu offload")
+            pipe.enable_sequential_cpu_offload()
 
-        _log_memory_info(pipe, device)
-        if _check_cuda_memory_sufficient(pipe, device):
-            logger.info("Sufficient memory after sequential cpu offload")
-            return
+            _log_memory_info(pipe, device)
+            if _check_cuda_memory_sufficient(pipe, device):
+                logger.info("Sufficient memory after sequential cpu offload")
+                return
 
         # Apply VAE slicing as final optimization
-        logger.info("Enabling vae slicing")
+        logger.info("Insufficient memory. Enabling vae slicing")
         pipe.enable_vae_slicing()
 
         _log_memory_info(pipe, device)
@@ -200,12 +184,11 @@ def optimize_flux_pipeline(
         logger.info("Skipping memory checks. Moving pipeline to %s", device)
         pipe.to(device)
     else:
-        _optimize_flux_pipeline(pipe, device)
+        _optimize_flux_pipeline(pipe, quantization_mode, device)
 
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
         if hasattr(torch.backends.cuda, "sdp_kernel"):
             torch.backends.cuda.sdp_kernel()
-        _compile_pipeline_components(pipe, device)
     except Exception:
         logger.debug("sdp_kernel not supported, continuing without")
