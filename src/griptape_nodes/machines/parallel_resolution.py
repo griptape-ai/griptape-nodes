@@ -5,7 +5,7 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
@@ -182,53 +182,21 @@ class ExecuteDagState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
-                        incoming_connection_source_node_name=upstream_node.name,
-                        incoming_connection_source_parameter_name=upstream_parameter.name,
+                # Skip propagation for Control Parameters as they should not receive values
+                if (
+                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
+                    != ParameterTypeBuiltin.CONTROL_TYPE
+                ):
+                    GriptapeNodes.get_instance().handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=parameter.name,
+                            node_name=current_node.name,
+                            value=output_value,
+                            data_type=upstream_parameter.output_type,
+                            incoming_connection_source_node_name=upstream_node.name,
+                            incoming_connection_source_parameter_name=upstream_parameter.name,
+                        )
                     )
-                )
-
-    @staticmethod
-    def clear_parameter_output_values(node_reference: DagNode) -> None:
-        """Clear all parameter output values for the given node and publish events.
-
-        This method iterates through each parameter output value stored in the node,
-        removes it from the node's parameter_output_values dictionary, and publishes an event
-        to notify the system about the parameter value being set to None.
-
-        Args:
-            node_reference (DagOrchestrator.DagNode): The DAG node to clear values for.
-
-        Raises:
-            ValueError: If a parameter name in parameter_output_values doesn't correspond
-                to an actual parameter in the node.
-        """
-        current_node = node_reference.node_reference
-        for parameter_name in current_node.parameter_output_values:
-            parameter = current_node.get_parameter_by_name(parameter_name)
-            if parameter is None:
-                err = f"Attempted to clear output values for node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
-                raise ValueError(err)
-            parameter_type = parameter.type
-            if parameter_type is None:
-                parameter_type = ParameterTypeBuiltin.NONE.value
-            payload = ParameterValueUpdateEvent(
-                node_name=current_node.name,
-                parameter_name=parameter_name,
-                data_type=parameter_type,
-                value=None,
-            )
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
-            )
-        current_node.parameter_output_values.clear()
 
     @staticmethod
     def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
@@ -318,17 +286,13 @@ class ExecuteDagState(State):
                 context.workflow_state = WorkflowState.ERRORED
                 return ErrorState
 
-            # Clear parameter output values before execution
-            try:
-                ExecuteDagState.clear_parameter_output_values(node_reference)
-            except Exception as e:
-                logger.exception(
-                    "Error clearing parameter output values for node '%s'", node_reference.node_reference.name
-                )
-                context.error_message = (
-                    f"Parameter clearing failed for node '{node_reference.node_reference.name}': {e}"
-                )
-                context.workflow_state = WorkflowState.ERRORED
+            # Clear all of the current output values but don't broadcast the clearing.
+            # to avoid any flickering in subscribers (UI).
+            node_reference.node_reference.parameter_output_values.silent_clear()
+            exceptions = node_reference.node_reference.validate_before_node_run()
+            if exceptions:
+                msg = f"Canceling flow run. Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
+                logger.error(msg)
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
