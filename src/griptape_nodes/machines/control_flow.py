@@ -54,7 +54,13 @@ class ControlFlowContext:
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
-            self.resolution_machine = ParallelResolutionMachine(flow_name, max_nodes_in_parallel)
+            # Get the global DagBuilder from FlowManager
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+            self.resolution_machine = ParallelResolutionMachine(
+                flow_name, max_nodes_in_parallel, dag_builder=dag_builder
+            )
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_node = None
@@ -218,7 +224,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
         # If using DAG resolution, process data_nodes from queue first
         if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
-            await self._process_data_nodes_for_dag()
+            await self._process_data_nodes_for_dag(start_node)
         self._context.current_node = start_node
         # Set entry control parameter for initial node (None for workflow start)
         start_node.set_entry_control_parameter(None)
@@ -266,7 +272,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_data_nodes_for_dag(self) -> None:
+    async def _process_data_nodes_for_dag(self, start_node:BaseNode) -> None:
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -276,28 +282,23 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             return
         # Get the global flow queue
         flow_manager = GriptapeNodes.FlowManager()
+        dag_builder = flow_manager.global_dag_builder
+        if dag_builder is None:
+            msg = "DAG builder is not initialized."
+            raise ValueError(msg)
+        # Build with the first node: 
+        dag_builder.add_node_with_dependencies(start_node)
         queue_items = list(flow_manager.global_flow_queue.queue)
 
         # Find data_nodes and remove them from queue
-        data_nodes = []
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
-
             if item.dag_execution_type == DagExecutionType.DATA_NODE:
-                data_nodes.append(item.node)
+                node = item.node
+                node.state = NodeResolutionState.UNRESOLVED
+                # Build here.
+                dag_builder.add_node_with_dependencies(node)
                 flow_manager.global_flow_queue.queue.remove(item)
-
-        # Build DAG for each data node
-        for node in data_nodes:
-            node.state = NodeResolutionState.UNRESOLVED
-            await self._context.resolution_machine.resolve_node(node, build_only=True)
-
-            # Run resolution until complete for this node's subgraph
-            while not self._context.resolution_machine.is_complete():
-                await self._context.resolution_machine.update()
-
-            # Reset the machine state to allow adding more nodes
-            self._context.resolution_machine.current_state = None
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)

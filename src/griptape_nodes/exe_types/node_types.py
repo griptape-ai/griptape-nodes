@@ -735,7 +735,11 @@ class BaseNode(ABC):
         Default implementation wraps the existing process() method to maintain backwards compatibility.
         Subclasses can override this method to provide direct async implementation.
         """
-        result = self.process()
+        if asyncio.iscoroutinefunction(self.process):
+            # If the process() method is async, just call it directly
+            result = await self.process()
+        else:
+            result = self.process()
 
         if result is None:
             # Simple synchronous node - nothing to do

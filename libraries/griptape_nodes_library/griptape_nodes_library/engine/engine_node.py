@@ -203,7 +203,7 @@ class EngineNode(BaseNode):
         self._execution_succeeded: bool | None = None
 
     # Public Methods
-    def process(self) -> None:
+    async def process(self) -> None:
         """Execute the selected request and handle the result."""
         # Step 1: Reset execution state and result details at the start of each run
         self._execution_succeeded = None
@@ -241,7 +241,7 @@ class EngineNode(BaseNode):
 
         # Step 6: Execute the request and handle success/failure routing
         try:
-            self._execute_request(request_info.request_class, request_kwargs)
+            await self._execute_request(request_info.request_class, request_kwargs)
         except Exception as e:
             self._handle_execution_error(str(e))
 
@@ -898,12 +898,11 @@ class EngineNode(BaseNode):
         optional_args_count = 2
         return len(args) == optional_args_count and type(None) in args
 
-    def _execute_request(self, request_class: type, request_kwargs: dict) -> None:
+    async def _execute_request(self, request_class: type, request_kwargs: dict) -> None:
         """Execute the request and handle the result."""
         try:
             request_instance = request_class(**request_kwargs)
-            result = GriptapeNodes.handle_request(request_instance)
-            self._handle_result(result)
+            await GriptapeNodes.ahandle_request(request_instance)
         except Exception as e:
             self._handle_execution_error(str(e))
 
