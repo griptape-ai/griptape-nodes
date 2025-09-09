@@ -107,8 +107,15 @@ def quantize_flux_pipeline(
 def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
 ) -> None:
-    """Optimize pipeline memory footprint with incremental VRAM checking."""
+    """Optimize pipeline memory footprint with incremental VRAM checking. Also enables/disables quantization and other performance impacting parameters."""
     device = get_best_device()
+
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        if hasattr(torch.backends.cuda, "sdp_kernel"):
+            torch.backends.cuda.sdp_kernel()
+    except Exception:
+        logger.debug("Failed to set sdp_kernel, continuing without")
 
     quantization_mode = pipe_params.get_quantization_mode()
     if quantization_mode:
