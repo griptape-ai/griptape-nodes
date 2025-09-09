@@ -1,5 +1,4 @@
 import logging
-from functools import cache
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
@@ -70,7 +69,7 @@ def _log_memory_info(
     logger.info("Require memory for Flux Pipeline: %s", to_human_readable_size(model_memory))
 
 
-def quantize_flux_pipeline(
+def _quantize_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, quantization_mode: str, device: torch.device
 ) -> None:
     """Uses optimum.quanto to quantize the pipeline components."""
@@ -103,29 +102,27 @@ def quantize_flux_pipeline(
     pipe.to(device)
 
 
-@cache
-def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
+def _compile_pipeline_components(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline,
+    device: torch.device,
 ) -> None:
-    """Optimize pipeline memory footprint with incremental VRAM checking. Also enables/disables quantization and other performance impacting parameters."""
-    device = get_best_device()
+    """Compile pipeline components for better performance."""
+    if device.type == "cuda" and hasattr(torch, "compile"):
+        logger.info("Compiling pipeline components with torch.compile")
 
-    try:
-        torch.backends.cuda.matmul.allow_tf32 = True
-        if hasattr(torch.backends.cuda, "sdp_kernel"):
-            torch.backends.cuda.sdp_kernel()
-    except Exception:
-        logger.debug("Failed to set sdp_kernel, continuing without")
+        if hasattr(pipe, "transformer") and pipe.transformer is not None:
+            pipe.transformer = torch.compile(pipe.transformer, mode="reduce-overhead", fullgraph=False)
 
-    quantization_mode = pipe_params.get_quantization_mode()
-    if quantization_mode:
-        return quantize_flux_pipeline(pipe, quantization_mode, device)
+        if hasattr(pipe, "vae") and pipe.vae is not None:
+            # Compile decode method specifically for inference
+            pipe.vae.decode = torch.compile(pipe.vae.decode, mode="reduce-overhead")
 
-    if pipe_params.get_skip_memory_check():
-        logger.info("Skipping memory checks. Moving pipeline to %s", device)
-        pipe.to(device)
-        return None
 
+def _optimize_flux_pipeline(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline,
+    device: torch.device,
+) -> None:
+    """Optimize pipeline memory footprint with incremental VRAM checking."""
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
@@ -133,7 +130,7 @@ def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
             pipe.to(device)
-            return None
+            return
 
         logger.warning("Insufficient memory on %s for Pipeline. Applying VRAM optimizations.", device)
         logger.info("Enabling fp8 layerwise caching for transformer")
@@ -145,7 +142,7 @@ def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
             pipe.to(device)
-            return None
+            return
 
         logger.info("Still insufficient memory. Enabling sequential cpu offload")
         pipe.enable_sequential_cpu_offload()
@@ -153,7 +150,7 @@ def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
         _log_memory_info(pipe, device)
         if _check_cuda_memory_sufficient(pipe, device):
             logger.info("Sufficient memory after sequential cpu offload")
-            return None
+            return
 
         # Apply VAE slicing as final optimization
         logger.info("Enabling vae slicing")
@@ -174,7 +171,7 @@ def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
             pipe.to(device)
-            return None
+            return
 
         logger.warning("Insufficient memory on %s for Pipeline.", device)
         logger.info("Enabling vae slicing")
@@ -186,4 +183,29 @@ def optimize_flux_pipeline_memory_footprint(  # noqa: C901 PLR0911
 
         # Intentionally not calling pipe.to(device) here when memory is insufficient
         # to avoid potential OOM errors
-    return None
+    return
+
+
+def optimize_flux_pipeline(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
+) -> None:
+    """Optimize pipeline performance and memory."""
+    device = get_best_device()
+
+    quantization_mode = pipe_params.get_quantization_mode()
+    if quantization_mode:
+        return _quantize_flux_pipeline(pipe, quantization_mode, device)
+
+    if pipe_params.get_skip_memory_check():
+        logger.info("Skipping memory checks. Moving pipeline to %s", device)
+        pipe.to(device)
+    else:
+        _optimize_flux_pipeline(pipe, device)
+
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        if hasattr(torch.backends.cuda, "sdp_kernel"):
+            torch.backends.cuda.sdp_kernel()
+        _compile_pipeline_components(pipe, device)
+    except Exception:
+        logger.debug("sdp_kernel not supported, continuing without")
