@@ -79,7 +79,6 @@ class DagBuilder:
             self.network.add_node(node_for_adding=current_node.name)
             # DON'T mark as resolved - that happens during actual execution
             added_nodes.append(current_node)
-            logger.info("Added node %s to DAG (state: %s)", current_node.name, NodeState.WAITING)
 
         _add_node_recursive(node, set())
         return added_nodes
@@ -87,11 +86,9 @@ class DagBuilder:
     def add_single_node(self, node: BaseNode) -> DagNode:
         """Add just one node to DAG without dependencies (assumes dependencies already exist)."""
         if node.name in self.node_to_reference:
-            logger.info("Node %s already in DAG", node.name)
             return self.node_to_reference[node.name]
 
         dag_node = DagNode(node_reference=node, node_state=NodeState.WAITING)
         self.node_to_reference[node.name] = dag_node
         self.network.add_node(node_for_adding=node.name)
-        logger.info("Added single node %s to DAG (state: %s)", node.name, NodeState.WAITING)
         return dag_node

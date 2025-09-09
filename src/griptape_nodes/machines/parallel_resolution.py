@@ -258,34 +258,24 @@ class ExecuteDagState(State):
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        logger.info("=== ExecuteDagState.on_enter ===")
-        logger.info("Context paused: %s", context.paused)
-
         # Start DAG execution after resolution is complete
         waiting_nodes = []
-        total_nodes = len(context.node_to_reference)
         for node_name, node in context.node_to_reference.items():
-            logger.info("Node %s current state: %s", node_name, node.node_state)
             # Only queue nodes that are waiting - preserve state of already processed nodes
             if node.node_state == NodeState.WAITING:
                 node.node_state = NodeState.QUEUED
                 waiting_nodes.append(node_name)
 
-        logger.info("Queued %d nodes (out of %d total): %s", len(waiting_nodes), total_nodes, waiting_nodes)
         context.workflow_state = WorkflowState.NO_ERROR
 
         if not context.paused:
-            logger.info("Not paused, transitioning to ExecuteDagState")
             return ExecuteDagState
-        logger.info("Paused, staying in current state")
         return None
 
     @staticmethod
     async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
-        logger.info("=== ExecuteDagState.on_update ===")
         # Check if execution is paused
         if context.paused:
-            logger.info("Execution is paused, returning None")
             return None
 
         # Check if DAG execution is complete
@@ -344,7 +334,6 @@ class ExecuteDagState(State):
             def on_task_done(task: asyncio.Task) -> None:
                 node = context.task_to_node.pop(task)
                 node.node_state = NodeState.DONE
-                logger.info("Task done: %s", node.node_reference.name)
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
@@ -365,9 +354,7 @@ class ExecuteDagState(State):
         await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Once a task has finished, loop back to the top.
         if context.paused:
-            logger.info("Execution paused after task completion, returning None")
             return None
-        logger.info("Continuing ExecuteDagState loop")
         return ExecuteDagState
 
 
@@ -438,10 +425,6 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
             flow_name, max_nodes_in_parallel=max_nodes_in_parallel, dag_builder=dag_builder
         )
         super().__init__(resolution_context)
-
-        logger.info("Starting state machine at InitializeDagSpotlightState")
-
-        logger.info("resolve_node completed, final state: %s", self._current_state)
 
     async def resolve_node(self, node: BaseNode | None = None) -> None:  # noqa: ARG002
         """Execute the DAG structure using the existing DagBuilder."""
