@@ -272,7 +272,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_data_nodes_for_dag(self, start_node:BaseNode) -> None:
+    async def _process_data_nodes_for_dag(self, start_node: BaseNode) -> None:
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -286,13 +286,14 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         if dag_builder is None:
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
-        # Build with the first node: 
+        # Build with the first node:
         dag_builder.add_node_with_dependencies(start_node)
         queue_items = list(flow_manager.global_flow_queue.queue)
 
         # Find data_nodes and remove them from queue
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
+
             if item.dag_execution_type == DagExecutionType.DATA_NODE:
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED

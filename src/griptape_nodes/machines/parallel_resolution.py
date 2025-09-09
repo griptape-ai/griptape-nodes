@@ -17,9 +17,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    CurrentDataNodeEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
-    CurrentDataNodeEvent
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 
@@ -355,12 +355,11 @@ class ExecuteDagState(State):
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
 
-            # Send an event that this is a current data node: 
+            # Send an event that this is a current data node:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node))
-            )
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
             )
             # Wait for a task to finish
         await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
@@ -421,7 +420,7 @@ class ErrorState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:  # noqa: ARG004
         return None
 
     @staticmethod
