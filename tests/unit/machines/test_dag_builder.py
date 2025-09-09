@@ -3,9 +3,7 @@
 # ruff: noqa: PLR2004
 
 from typing import Any
-from unittest.mock import MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, NodeState
@@ -66,9 +64,7 @@ class TestDagBuilder:
         mock_node.parameters = []
 
         # Mock the FlowManager to return no connections
-        with pytest.mock.patch(
-            "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager"
-        ) as mock_flow_manager:
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager:
             mock_connections = MagicMock()
             mock_connections.get_connected_node.return_value = None
             mock_flow_manager.return_value.get_connections.return_value = mock_connections
@@ -96,9 +92,7 @@ class TestDagBuilder:
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager connections
-        with pytest.mock.patch(
-            "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager"
-        ) as mock_flow_manager:
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager:
             mock_connections = MagicMock()
             # First call (for downstream_node): return upstream connection
             # Second call (for upstream_node): return None
@@ -140,9 +134,7 @@ class TestDagBuilder:
         dag_builder.add_node(upstream_node)
 
         # Mock the FlowManager connections
-        with pytest.mock.patch(
-            "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager"
-        ) as mock_flow_manager:
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager:
             mock_connections = MagicMock()
             mock_connections.get_connected_node.return_value = (upstream_node, MagicMock())
             mock_flow_manager.return_value.get_connections.return_value = mock_connections
@@ -176,9 +168,7 @@ class TestDagBuilder:
         node_b.parameters = [param_b]
 
         # Mock the FlowManager connections to simulate a cycle
-        with pytest.mock.patch(
-            "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager"
-        ) as mock_flow_manager:
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager:
             mock_connections = MagicMock()
 
             def mock_get_connected_node(current_node: Any, param: Any) -> Any:  # noqa: ARG001
@@ -250,9 +240,7 @@ class TestDagBuilder:
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager to create an edge
-        with pytest.mock.patch(
-            "griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager"
-        ) as mock_flow_manager:
+        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager:
             mock_connections = MagicMock()
             mock_connections.get_connected_node.side_effect = [
                 (upstream_node, MagicMock()),  # downstream has upstream dependency
