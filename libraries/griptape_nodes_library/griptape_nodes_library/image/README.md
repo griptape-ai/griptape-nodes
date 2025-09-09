@@ -19,8 +19,8 @@ To create a new image processing node, inherit from `BaseImageProcessor` and imp
 ### Required Methods
 
 1. **`_setup_custom_parameters()`**: Define your node's specific parameters
-2. **`_get_processing_description()`**: Return a description of what your processor does
-3. **`_process_image(pil_image, **kwargs)`**: Implement your image processing logic
+1. **`_get_processing_description()`**: Return a description of what your processor does
+1. **`_process_image(pil_image, **kwargs)`**: Implement your image processing logic
 
 ### Optional Methods
 
@@ -101,10 +101,10 @@ Supported output formats:
 ## Best Practices
 
 1. **Use the base class constants** for common values and limits
-2. **Implement proper validation** in `_validate_custom_parameters()`
-3. **Handle edge cases** in your `_process_image()` method
-4. **Use meaningful suffixes** in `_get_output_suffix()` for file naming
-5. **Leverage the built-in logging** for debugging and user feedback
+1. **Implement proper validation** in `_validate_custom_parameters()`
+1. **Handle edge cases** in your `_process_image()` method
+1. **Use meaningful suffixes** in `_get_output_suffix()` for file naming
+1. **Leverage the built-in logging** for debugging and user feedback
 
 ## Example Nodes
 
