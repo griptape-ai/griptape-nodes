@@ -194,7 +194,7 @@ def optimize_flux_pipeline(
 
     quantization_mode = pipe_params.get_quantization_mode()
     if quantization_mode:
-        return _quantize_flux_pipeline(pipe, quantization_mode, device)
+        _quantize_flux_pipeline(pipe, quantization_mode, device)
 
     if pipe_params.get_skip_memory_check():
         logger.info("Skipping memory checks. Moving pipeline to %s", device)
