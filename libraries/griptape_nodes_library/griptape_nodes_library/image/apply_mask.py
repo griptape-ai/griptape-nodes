@@ -140,15 +140,11 @@ class ApplyMask(DataNode):
         output_pil = input_pil
 
         # Save output image and create URL artifact with proper filename
-        filename = self._generate_filename_with_suffix("_apply_mask", "png")
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_apply_mask",
+            extension="png",
+        )
         output_artifact = save_pil_image_with_named_filename(output_pil, filename, "PNG")
         self.set_parameter_value("output", output_artifact)
         self.publish_update_to_parameter("output", output_artifact)
-
-    def _generate_filename_with_suffix(self, suffix: str, extension: str) -> str:
-        """Generate a meaningful filename based on workflow and node information."""
-        return generate_filename(
-            node_name=self.name,
-            suffix=suffix,
-            extension=extension,
-        )

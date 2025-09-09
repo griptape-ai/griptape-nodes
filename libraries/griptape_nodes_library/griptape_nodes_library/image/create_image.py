@@ -1,4 +1,3 @@
-import uuid
 from typing import Any
 
 import requests
@@ -14,6 +13,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from griptape_nodes_library.utils.file_utils import generate_filename
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -324,7 +324,12 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), f"{uuid.uuid4()}.png")
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_generated",
+            extension="png",
+        )
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), filename)
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

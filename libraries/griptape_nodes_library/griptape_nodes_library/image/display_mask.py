@@ -122,16 +122,12 @@ class DisplayMask(DataNode):
 
         # Save output mask and create URL artifact with proper filename
         # Generate a meaningful filename
-        filename = self._generate_filename_with_suffix("_display_mask", "png")
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_display_mask",
+            extension="png",
+        )
         output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
         output_param_name = self._get_output_parameter_name()
         self.set_parameter_value(output_param_name, output_artifact)
         self.publish_update_to_parameter(output_param_name, output_artifact)
-
-    def _generate_filename_with_suffix(self, suffix: str, extension: str) -> str:
-        """Generate a meaningful filename based on workflow and node information."""
-        return generate_filename(
-            node_name=self.name,
-            suffix=suffix,
-            extension=extension,
-        )

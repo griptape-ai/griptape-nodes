@@ -165,18 +165,14 @@ class LoadImage(DataNode):
             mask = extract_channel_from_image(image_pil, channel, "image")
 
             # Save output mask and create URL artifact with proper filename
-            filename = self._generate_filename_with_suffix("_load_mask", "png")
+            filename = generate_filename(
+                node_name=self.name,
+                suffix="_load_mask",
+                extension="png",
+            )
             output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
             self.set_parameter_value("output_mask", output_artifact)
             self.publish_update_to_parameter("output_mask", output_artifact)
 
         except Exception as e:
             logger.warning(f"{self.name}: Error extracting mask: {e}")
-
-    def _generate_filename_with_suffix(self, suffix: str, extension: str) -> str:
-        """Generate a meaningful filename based on workflow and node information."""
-        return generate_filename(
-            node_name=self.name,
-            suffix=suffix,
-            extension=extension,
-        )
