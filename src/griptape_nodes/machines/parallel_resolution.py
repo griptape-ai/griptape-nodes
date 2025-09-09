@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
+    CurrentDataNodeEvent
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 
@@ -353,6 +354,14 @@ class ExecuteDagState(State):
             node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
+
+            # Send an event that this is a current data node: 
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+            GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node))
+            )
+            )
             # Wait for a task to finish
         await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Once a task has finished, loop back to the top.
