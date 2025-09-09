@@ -39,7 +39,7 @@ class DagBuilder:
     """Handles DAG construction independently of execution state machine."""
 
     def __init__(self) -> None:
-        self.network = DirectedGraph()
+        self.graph = DirectedGraph()
         self.node_to_reference: dict[str, DagNode] = {}
 
     def add_node_with_dependencies(self, node: BaseNode) -> list[BaseNode]:
@@ -66,29 +66,29 @@ class DagBuilder:
 
                     # If upstream is already in DAG, just add edge
                     if upstream_node.name in self.node_to_reference:
-                        self.network.add_edge(upstream_node.name, current_node.name)
+                        self.graph.add_edge(upstream_node.name, current_node.name)
                     # Otherwise, add it to DAG first
                     else:
                         _add_node_recursive(upstream_node, visited)
-                        self.network.add_edge(upstream_node.name, current_node.name)
+                        self.graph.add_edge(upstream_node.name, current_node.name)
 
             # Add current node to DAG (but keep original resolution state)
 
             dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
             self.node_to_reference[current_node.name] = dag_node
-            self.network.add_node(node_for_adding=current_node.name)
+            self.graph.add_node(node_for_adding=current_node.name)
             # DON'T mark as resolved - that happens during actual execution
             added_nodes.append(current_node)
 
         _add_node_recursive(node, set())
         return added_nodes
 
-    def add_single_node(self, node: BaseNode) -> DagNode:
+    def add_node(self, node: BaseNode) -> DagNode:
         """Add just one node to DAG without dependencies (assumes dependencies already exist)."""
         if node.name in self.node_to_reference:
             return self.node_to_reference[node.name]
 
         dag_node = DagNode(node_reference=node, node_state=NodeState.WAITING)
         self.node_to_reference[node.name] = dag_node
-        self.network.add_node(node_for_adding=node.name)
+        self.graph.add_node(node_for_adding=node.name)
         return dag_node

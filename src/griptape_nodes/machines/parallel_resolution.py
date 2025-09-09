@@ -68,7 +68,7 @@ class ParallelResolutionContext:
         if not self.dag_builder:
             msg = "DagBuilder is not initialized"
             raise ValueError(msg)
-        return self.dag_builder.network
+        return self.dag_builder.graph
 
     @property
     def node_to_reference(self) -> dict[str, DagNode]:
@@ -94,7 +94,7 @@ class ParallelResolutionContext:
 
 class ExecuteDagState(State):
     @staticmethod
-    def handle_done_nodes(done_node: DagNode) -> None:
+    async def handle_done_nodes(done_node: DagNode) -> None:
         current_node = done_node.node_reference
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -116,7 +116,7 @@ class ExecuteDagState(State):
                 data_type = ParameterTypeBuiltin.NONE.value
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            GriptapeNodes.EventManager().put_event(
+            await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ParameterValueUpdateEvent(
@@ -136,7 +136,7 @@ class ExecuteDagState(State):
             library_name = None
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        GriptapeNodes.EventManager().put_event(
+        await GriptapeNodes.EventManager().aput_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
@@ -150,7 +150,7 @@ class ExecuteDagState(State):
         )
 
     @staticmethod
-    def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
+    async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
         This method iterates through all input parameters of the current node, finds their
@@ -187,7 +187,7 @@ class ExecuteDagState(State):
                     ParameterType.attempt_get_builtin(upstream_parameter.output_type)
                     != ParameterTypeBuiltin.CONTROL_TYPE
                 ):
-                    GriptapeNodes.get_instance().handle_request(
+                    await GriptapeNodes.get_instance().ahandle_request(
                         SetParameterValueRequest(
                             parameter_name=parameter.name,
                             node_name=current_node.name,
@@ -256,7 +256,7 @@ class ExecuteDagState(State):
             # Remove the leaf node from the graph.
             network.remove_node(node)
             # Return thread to thread pool.
-            ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
+            await ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
         # Reinitialize leaf nodes since maybe we changed things up.
         if len(done_nodes) > 0:
             # We removed nodes from the network. There may be new leaf nodes.
@@ -277,7 +277,7 @@ class ExecuteDagState(State):
 
             # Collect parameter values from upstream nodes before executing
             try:
-                ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
+                await ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
             except Exception as e:
                 logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
                 context.error_message = (
@@ -311,7 +311,7 @@ class ExecuteDagState(State):
             # Send an event that this is a current data node:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            GriptapeNodes.EventManager().put_event(
+            await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
             )
             # Wait for a task to finish
