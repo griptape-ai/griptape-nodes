@@ -92,3 +92,8 @@ class DagBuilder:
         self.node_to_reference[node.name] = dag_node
         self.graph.add_node(node_for_adding=node.name)
         return dag_node
+
+    def clear(self) -> None:
+        """Clear all nodes and references from the DAG builder."""
+        self.graph.clear()
+        self.node_to_reference.clear()

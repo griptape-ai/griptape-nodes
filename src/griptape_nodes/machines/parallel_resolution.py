@@ -87,9 +87,11 @@ class ParallelResolutionContext:
         else:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
-            self.network.clear()
-            self.node_to_reference.clear()
             self.task_to_node.clear()
+
+        # Clear DAG builder state to allow re-adding nodes on subsequent runs
+        if self.dag_builder:
+            self.dag_builder.clear()
 
 
 class ExecuteDagState(State):
@@ -371,7 +373,10 @@ class ErrorState(State):
 
 class DagCompleteState(State):
     @staticmethod
-    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:  # noqa: ARG004
+    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
+        # Clear the DAG builder so we don't have any leftover nodes in node_to_reference.
+        if context.dag_builder is not None:
+            context.dag_builder.clear()
         return None
 
     @staticmethod
