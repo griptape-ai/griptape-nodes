@@ -729,6 +729,10 @@ class ImageBash(DataNode):
         self.publish_update_to_parameter("output_image", output_artifact)
         logger.debug(f"Output image saved to {output_artifact.value}")
 
+    def _get_output_suffix(self, **kwargs) -> str:
+        """Get output filename suffix."""
+        return "_image_bash"
+
     def _generate_filename(self, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
         # Get workflow and node context
@@ -750,8 +754,16 @@ class ImageBash(DataNode):
         # Get current timestamp for cache busting
         timestamp = int(datetime.now(UTC).timestamp())
 
+        # Get processing suffix
+        processing_suffix = self._get_output_suffix(
+            canvas_size=self.get_parameter_value("canvas_size"),
+            width=self.get_parameter_value("width"),
+            height=self.get_parameter_value("height"),
+            background_color=self.get_parameter_value("background_color"),
+        )
+
         # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"image_bash_{workflow_name}_{node_name}.{extension}?t={timestamp}"
+        filename = f"image_bash_{workflow_name}_{node_name}{processing_suffix}.{extension}?t={timestamp}"
 
         return filename
 

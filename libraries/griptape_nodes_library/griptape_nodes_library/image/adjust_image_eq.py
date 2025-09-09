@@ -3,8 +3,13 @@ from typing import Any
 from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
+from griptape_nodes_library.utils.image_utils import (
+    load_pil_from_url,
+    save_pil_image_with_named_filename,
+)
 
 
 class AdjustImageEQ(BaseImageProcessor):
@@ -99,25 +104,21 @@ class AdjustImageEQ(BaseImageProcessor):
                 image_artifact = image_value
 
             # Load PIL image
-            from griptape_nodes_library.utils.image_utils import load_pil_from_url
-
             pil_image = load_pil_from_url(image_artifact.value)
 
             # Process with current EQ settings
             processed_image = self._process_image(pil_image, **self._get_custom_parameters())
 
-            # Save and set output
-            from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
-
-            output_artifact = save_pil_image_to_static_file(processed_image, "PNG")
+            # Save and set output with proper filename
+            # Generate a meaningful filename with processing parameters
+            filename = self._generate_processed_image_filename("png")
+            output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
 
             self.set_parameter_value("output", output_artifact)
             self.publish_update_to_parameter("output", output_artifact)
 
         except Exception as e:
             # Log error but don't fail the node
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
             logger.warning(f"{self.name}: Live preview failed: {e}")
 
     def _get_processing_description(self) -> str:
@@ -240,11 +241,7 @@ class AdjustImageEQ(BaseImageProcessor):
 
     def _get_output_suffix(self, **kwargs) -> str:
         """Get output filename suffix."""
-        brightness = kwargs.get("brightness", self.DEFAULT_BRIGHTNESS)
-        contrast = kwargs.get("contrast", self.DEFAULT_CONTRAST)
-        saturation = kwargs.get("saturation", self.DEFAULT_SATURATION)
-        gamma = kwargs.get("gamma", self.DEFAULT_GAMMA)
-        return f"_eq_b{brightness:.2f}_c{contrast:.2f}_s{saturation:.2f}_g{gamma:.2f}"
+        return "_eq"
 
     def process(self) -> None:
         """Main workflow execution method."""

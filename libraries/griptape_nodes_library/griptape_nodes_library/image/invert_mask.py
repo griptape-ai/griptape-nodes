@@ -5,11 +5,11 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -97,8 +97,10 @@ class InvertMask(DataNode):
                 inverted_mask = inverted_mask.convert("L")
                 logger.debug(f"{self.name}: Converted output to grayscale")
 
-            # Save output mask and create URL artifact
-            output_artifact = save_pil_image_to_static_file(inverted_mask, image_format="PNG")
+            # Save output mask and create URL artifact with proper filename
+            # Generate a meaningful filename
+            filename = self._generate_filename_with_suffix("_inverted_mask", "png")
+            output_artifact = save_pil_image_with_named_filename(inverted_mask, filename, "PNG")
             self.set_parameter_value("output_mask", output_artifact)
             self.publish_update_to_parameter("output_mask", output_artifact)
             logger.debug(f"{self.name}: Successfully saved inverted mask")
@@ -110,3 +112,30 @@ class InvertMask(DataNode):
             import traceback
 
             logger.debug(f"{self.name}: {traceback.format_exc()}")
+
+    def _generate_filename_with_suffix(self, suffix: str, extension: str) -> str:
+        """Generate a meaningful filename based on workflow and node information."""
+        from datetime import UTC, datetime
+
+        # Get workflow and node context
+        workflow_name = "unknown_workflow"
+        node_name = self.name
+
+        # Try to get workflow name from context
+        try:
+            context_manager = GriptapeNodes.ContextManager()
+            workflow_name = context_manager.get_current_workflow_name()
+        except Exception as e:
+            logger.warning(f"{self.name}: Error getting workflow name: {e}")
+
+        # Clean up names for filename use
+        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
+        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
+
+        # Get current timestamp for cache busting
+        timestamp = int(datetime.now(UTC).timestamp())
+
+        # Create filename with meaningful structure and timestamp as query parameter
+        filename = f"{workflow_name}_{node_name}{suffix}.{extension}?t={timestamp}"
+
+        return filename

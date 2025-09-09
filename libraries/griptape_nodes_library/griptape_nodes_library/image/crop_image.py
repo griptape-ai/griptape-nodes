@@ -288,6 +288,10 @@ class CropImage(ControlNode):
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename)
         self.parameter_output_values["output"] = ImageUrlArtifact(value=static_url)
 
+    def _get_output_suffix(self, **kwargs) -> str:
+        """Get output filename suffix."""
+        return "_crop"
+
     def _generate_filename(self, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
         # Get workflow and node context
@@ -309,8 +313,12 @@ class CropImage(ControlNode):
         # Get current timestamp for cache busting
         timestamp = int(datetime.now(UTC).timestamp())
 
+        # Get processing suffix
+        params = self._get_crop_parameters()
+        processing_suffix = self._get_output_suffix(**params)
+
         # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"crop_{workflow_name}_{node_name}.{extension}?t={timestamp}"
+        filename = f"crop_{workflow_name}_{node_name}{processing_suffix}.{extension}?t={timestamp}"
 
         return filename
 

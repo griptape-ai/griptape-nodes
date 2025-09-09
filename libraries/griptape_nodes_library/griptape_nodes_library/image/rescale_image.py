@@ -185,11 +185,4 @@ class RescaleImage(BaseImageProcessor):
 
     def _get_output_suffix(self, **kwargs) -> str:
         """Get output filename suffix."""
-        resize_mode = kwargs.get("resize_mode", self.RESIZE_MODE_PERCENTAGE)
-        target_size = kwargs.get("target_size", self.DEFAULT_TARGET_SIZE)
-        percentage_scale = kwargs.get("percentage_scale", self.DEFAULT_PERCENTAGE_SCALE)
-        resample_filter = kwargs.get("resample_filter", "lanczos")
-
-        if resize_mode == self.RESIZE_MODE_PERCENTAGE:
-            return f"_rescaled_{percentage_scale}pct_{resample_filter}"
-        return f"_rescaled_{resize_mode}{target_size}_{resample_filter}"
+        return "_rescaled"

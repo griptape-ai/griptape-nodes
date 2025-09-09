@@ -3,9 +3,15 @@ from typing import Any
 from PIL import Image, ImageChops
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
+from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
+    load_pil_from_url,
+    save_pil_image_with_named_filename,
+)
 
 
 class ImageBlendCompositor(BaseImageProcessor):
@@ -160,40 +166,32 @@ class ImageBlendCompositor(BaseImageProcessor):
         try:
             # Convert to ImageUrlArtifact if needed
             if isinstance(image_value, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 image_artifact = dict_to_image_url_artifact(image_value)
             else:
                 image_artifact = image_value
 
             if isinstance(blend_image_value, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 blend_image_artifact = dict_to_image_url_artifact(blend_image_value)
             else:
                 blend_image_artifact = blend_image_value
 
             # Load PIL images
-            from griptape_nodes_library.utils.image_utils import load_pil_from_url
-
             image_pil = load_pil_from_url(image_artifact.value)
             blend_pil = load_pil_from_url(blend_image_artifact.value)
 
             # Process with current settings
             processed_image = self._process_images(image_pil, blend_pil, **self._get_custom_parameters())
 
-            # Save and set output
-            from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
-
-            output_artifact = save_pil_image_to_static_file(processed_image, "PNG")
+            # Save and set output with proper filename
+            # Generate a meaningful filename with processing parameters
+            filename = self._generate_processed_image_filename("png")
+            output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
 
             self.set_parameter_value("output", output_artifact)
             self.publish_update_to_parameter("output", output_artifact)
 
         except Exception as e:
             # Log error but don't fail the node
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
             logger.warning(f"{self.name}: Live preview failed: {e}")
 
     def _get_processing_description(self) -> str:
@@ -379,9 +377,7 @@ class ImageBlendCompositor(BaseImageProcessor):
 
     def _get_output_suffix(self, **kwargs) -> str:
         """Get output filename suffix."""
-        blend_mode = kwargs.get("blend_mode", "normal")
-        opacity = kwargs.get("opacity", self.DEFAULT_OPACITY)
-        return f"_blend_{blend_mode}_op{opacity:.2f}"
+        return "_blend"
 
     def process(self) -> None:
         """Main workflow execution method."""
@@ -396,34 +392,26 @@ class ImageBlendCompositor(BaseImageProcessor):
         try:
             # Convert to ImageUrlArtifact if needed
             if isinstance(base_image, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 base_image = dict_to_image_url_artifact(base_image)
 
             if isinstance(blend_image, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 blend_image = dict_to_image_url_artifact(blend_image)
 
             # Load PIL images
-            from griptape_nodes_library.utils.image_utils import load_pil_from_url
-
             image_pil = load_pil_from_url(base_image.value)
             blend_pil = load_pil_from_url(blend_image.value)
 
             # Process with current settings
             processed_image = self._process_images(image_pil, blend_pil, **self._get_custom_parameters())
 
-            # Save and set output
-            from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
-
-            output_artifact = save_pil_image_to_static_file(processed_image, "PNG")
+            # Save and set output with proper filename
+            # Generate a meaningful filename with processing parameters
+            filename = self._generate_processed_image_filename("png")
+            output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
 
             self.set_parameter_value("output", output_artifact)
             self.publish_update_to_parameter("output", output_artifact)
 
         except Exception as e:
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
             logger.error(f"{self.name}: Processing failed: {e}")
             raise

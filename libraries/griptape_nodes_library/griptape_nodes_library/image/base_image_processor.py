@@ -367,3 +367,18 @@ class BaseImageProcessor(ControlNode, ABC):
         filename = f"{workflow_name}_{node_name}{suffix}.{extension}?t={timestamp}"
 
         return filename
+
+    def _generate_processed_image_filename(self, extension: str = "png") -> str:
+        """Generate a meaningful filename for processed images with processing parameters."""
+        # Get the processing suffix from the node's _get_output_suffix method if it exists
+        processing_suffix = ""
+        try:
+            # Get current processing parameters
+            custom_params = self._get_custom_parameters()
+            if custom_params:
+                processing_suffix = self._get_output_suffix(**custom_params)
+        except Exception:
+            # If _get_output_suffix doesn't exist or fails, use empty suffix
+            processing_suffix = ""
+
+        return self._generate_filename(processing_suffix, extension)
