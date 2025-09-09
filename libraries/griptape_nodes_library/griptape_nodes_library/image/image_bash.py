@@ -1,5 +1,4 @@
 import base64
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -14,6 +13,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -735,25 +735,6 @@ class ImageBash(DataNode):
 
     def _generate_filename(self, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
-        # Get workflow and node context
-        workflow_name = "unknown_workflow"
-        node_name = self.name
-
-        # Try to get workflow name from context
-        try:
-            context_manager = GriptapeNodes.ContextManager()
-            workflow_name = context_manager.get_current_workflow_name()
-        except Exception as e:
-            msg = f"{self.name}: Error getting workflow name: {e}"
-            logger.warning(msg)
-
-        # Clean up names for filename use
-        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
-        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
-
-        # Get current timestamp for cache busting
-        timestamp = int(datetime.now(UTC).timestamp())
-
         # Get processing suffix
         processing_suffix = self._get_output_suffix(
             canvas_size=self.get_parameter_value("canvas_size"),
@@ -762,10 +743,15 @@ class ImageBash(DataNode):
             background_color=self.get_parameter_value("background_color"),
         )
 
-        # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"image_bash_{workflow_name}_{node_name}{processing_suffix}.{extension}?t={timestamp}"
+        # Use the general filename utility but with a custom prefix
+        base_filename = generate_filename(
+            node_name=self.name,
+            suffix=processing_suffix,
+            extension=extension,
+        )
 
-        return filename
+        # Add the "image_bash" prefix that this node specifically uses
+        return base_filename.replace(f"{self.name}{processing_suffix}", f"image_bash_{self.name}{processing_suffix}")
 
     def _pil_to_bytes(self, img: Image.Image, img_format: str) -> bytes:
         """Convert PIL Image to bytes."""

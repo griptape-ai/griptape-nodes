@@ -1,6 +1,5 @@
 import io
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -13,6 +12,7 @@ from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS, parse_color_to_rgba
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -294,33 +294,19 @@ class CropImage(ControlNode):
 
     def _generate_filename(self, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
-        # Get workflow and node context
-        workflow_name = "unknown_workflow"
-        node_name = self.name
-
-        # Try to get workflow name from context
-        try:
-            context_manager = GriptapeNodes.ContextManager()
-            workflow_name = context_manager.get_current_workflow_name()
-        except Exception as e:
-            msg = f"{self.name}: Error getting workflow name: {e}"
-            logger.warning(msg)
-
-        # Clean up names for filename use
-        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
-        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
-
-        # Get current timestamp for cache busting
-        timestamp = int(datetime.now(UTC).timestamp())
-
         # Get processing suffix
         params = self._get_crop_parameters()
         processing_suffix = self._get_output_suffix(**params)
 
-        # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"crop_{workflow_name}_{node_name}{processing_suffix}.{extension}?t={timestamp}"
+        # Use the general filename utility but with a custom prefix
+        base_filename = generate_filename(
+            node_name=self.name,
+            suffix=processing_suffix,
+            extension=extension,
+        )
 
-        return filename
+        # Add the "crop" prefix that this node specifically uses
+        return base_filename.replace(f"{self.name}{processing_suffix}", f"crop_{self.name}{processing_suffix}")
 
     def _apply_zoom_to_crop_area(self, crop_area: CropArea, zoom: float, img_width: int, img_height: int) -> CropArea:
         """Apply zoom by scaling the crop area size."""

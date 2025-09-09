@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode

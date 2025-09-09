@@ -1,12 +1,11 @@
-from datetime import UTC, datetime
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     extract_channel_from_image,
@@ -131,25 +130,8 @@ class DisplayMask(DataNode):
 
     def _generate_filename_with_suffix(self, suffix: str, extension: str) -> str:
         """Generate a meaningful filename based on workflow and node information."""
-        # Get workflow and node context
-        workflow_name = "unknown_workflow"
-        node_name = self.name
-
-        # Try to get workflow name from context
-        try:
-            context_manager = GriptapeNodes.ContextManager()
-            workflow_name = context_manager.get_current_workflow_name()
-        except Exception as e:
-            logger.warning(f"{self.name}: Error getting workflow name: {e}")
-
-        # Clean up names for filename use
-        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
-        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
-
-        # Get current timestamp for cache busting
-        timestamp = int(datetime.now(UTC).timestamp())
-
-        # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"{workflow_name}_{node_name}{suffix}.{extension}?t={timestamp}"
-
-        return filename
+        return generate_filename(
+            node_name=self.name,
+            suffix=suffix,
+            extension=extension,
+        )
