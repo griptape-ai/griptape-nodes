@@ -5,6 +5,7 @@ from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.options import Options
 
 
 class UnionTwoFluxControlNetParameters:
@@ -65,7 +66,7 @@ class UnionTwoFluxControlNetParameters:
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
-    
+
     def get_quantization_mode(self) -> str:
         return str(self._node.get_parameter_value("quantization_mode"))
 

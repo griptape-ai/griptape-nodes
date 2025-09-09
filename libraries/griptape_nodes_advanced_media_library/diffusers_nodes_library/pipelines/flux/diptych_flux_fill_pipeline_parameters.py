@@ -200,7 +200,7 @@ class DiptychFluxFillPipelineParameters:
 
     def get_guidance_scale(self) -> float:
         return float(self._node.get_parameter_value("guidance_scale"))
-    
+
     def get_quantization_mode(self) -> str:
         return str(self._node.get_parameter_value("quantization_mode"))
 

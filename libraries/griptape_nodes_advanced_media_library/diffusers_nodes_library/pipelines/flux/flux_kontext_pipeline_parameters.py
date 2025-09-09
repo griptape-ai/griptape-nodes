@@ -284,7 +284,7 @@ class FluxKontextPipelineParameters:
     def get_effective_size(self) -> tuple[int, int]:
         """Get the effective width and height."""
         return self.get_width(), self.get_height()
-    
+
     def get_quantization_mode(self) -> str:
         return str(self._node.get_parameter_value("quantization_mode"))
 

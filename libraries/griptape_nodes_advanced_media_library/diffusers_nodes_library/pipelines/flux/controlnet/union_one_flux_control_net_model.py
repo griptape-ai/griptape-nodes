@@ -88,7 +88,7 @@ class UnionOneFluxControlNetParameters:
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
-    
+
     def get_quantization_mode(self) -> str:
         return str(self._node.get_parameter_value("quantization_mode"))
 
