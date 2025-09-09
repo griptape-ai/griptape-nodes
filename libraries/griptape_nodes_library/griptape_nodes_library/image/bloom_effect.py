@@ -144,7 +144,7 @@ class BloomEffect(BaseImageProcessor):
             "bloom_radius": self.get_parameter_value("bloom_radius"),
         }
 
-    def _get_output_suffix(self, **kwargs) -> str:
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_bloom"
 

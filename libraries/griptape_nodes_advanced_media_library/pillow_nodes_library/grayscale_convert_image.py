@@ -70,7 +70,7 @@ class GrayscaleConvertImage(ControlNode):
             context_manager = GriptapeNodes.ContextManager()
             workflow_name = context_manager.get_current_workflow_name()
         except Exception as e:
-            logger.warning(f"{self.name}: Error getting workflow name: {e}")
+            logger.warning("%s: Error getting workflow name: %s", self.name, e)
 
         # Clean up names for filename use
         workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()

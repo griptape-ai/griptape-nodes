@@ -183,6 +183,6 @@ class RescaleImage(BaseImageProcessor):
             "resample_filter": self.get_parameter_value("resample_filter"),
         }
 
-    def _get_output_suffix(self, **kwargs) -> str:
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_rescaled"

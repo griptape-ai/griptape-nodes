@@ -288,7 +288,7 @@ class CropImage(ControlNode):
         static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename)
         self.parameter_output_values["output"] = ImageUrlArtifact(value=static_url)
 
-    def _get_output_suffix(self, **kwargs) -> str:
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_crop"
 

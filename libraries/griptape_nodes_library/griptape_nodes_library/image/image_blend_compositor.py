@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from PIL import Image, ImageChops
 
@@ -18,7 +18,7 @@ class ImageBlendCompositor(BaseImageProcessor):
     """Compose two images using various blend modes with positioning and advanced compositing options."""
 
     # Blend mode options
-    BLEND_MODE_OPTIONS = [
+    BLEND_MODE_OPTIONS: ClassVar[list[str]] = [
         "normal",
         "multiply",
         "screen",
@@ -198,7 +198,7 @@ class ImageBlendCompositor(BaseImageProcessor):
         """Get description of what this processor does."""
         return "image blend compositing"
 
-    def _process_image(self, pil_image: Image.Image, **kwargs) -> Image.Image:
+    def _process_image(self, pil_image: Image.Image, **kwargs) -> Image.Image:  # noqa: ARG002
         """Process a single image (required by BaseImageProcessor)."""
         # This method is required by the abstract base class but not used for this node
         # since we work with two images. Return the input image unchanged.
@@ -265,39 +265,8 @@ class ImageBlendCompositor(BaseImageProcessor):
         base_rgb = base.convert("RGB")
         blend_rgb = blend.convert("RGB")
 
-        # Apply the blend mode first
-        if mode == "multiply":
-            # Custom multiply implementation to ensure correct math
-            result = self._custom_multiply(base_rgb, blend_rgb)
-        elif mode == "screen":
-            result = ImageChops.screen(base_rgb, blend_rgb)
-        elif mode == "overlay":
-            result = ImageChops.overlay(base_rgb, blend_rgb)
-        elif mode == "soft_light":
-            result = ImageChops.soft_light(base_rgb, blend_rgb)
-        elif mode == "hard_light":
-            result = ImageChops.hard_light(base_rgb, blend_rgb)
-        elif mode == "darken":
-            result = ImageChops.darker(base_rgb, blend_rgb)
-        elif mode == "lighten":
-            result = ImageChops.lighter(base_rgb, blend_rgb)
-        elif mode == "difference":
-            result = ImageChops.difference(base_rgb, blend_rgb)
-        elif mode == "exclusion":
-            result = ImageChops.logical_xor(base_rgb, blend_rgb)
-        elif mode == "add":
-            result = ImageChops.add(base_rgb, blend_rgb)
-        elif mode == "subtract":
-            result = ImageChops.subtract(base_rgb, blend_rgb)
-        elif mode == "logicaland":
-            result = ImageChops.logical_and(base_rgb, blend_rgb)
-        elif mode == "logical_or":
-            result = ImageChops.logical_or(base_rgb, blend_rgb)
-        elif mode == "logical_xor":
-            result = ImageChops.logical_xor(base_rgb, blend_rgb)
-        else:
-            # Default to normal blending
-            result = blend_rgb
+        # Apply the blend mode using a mapping approach
+        result = self._get_blend_result(base_rgb, blend_rgb, mode)
 
         # Apply opacity by blending the result with the base image
         if opacity < 1.0:
@@ -305,6 +274,30 @@ class ImageBlendCompositor(BaseImageProcessor):
             result = Image.blend(base_rgb, result, opacity)
 
         return result
+
+    def _get_blend_result(self, base_rgb: Image.Image, blend_rgb: Image.Image, mode: str) -> Image.Image:
+        """Get the result of applying a specific blend mode."""
+        # Map blend modes to their corresponding ImageChops functions
+        blend_functions = {
+            "multiply": lambda: self._custom_multiply(base_rgb, blend_rgb),
+            "screen": lambda: ImageChops.screen(base_rgb, blend_rgb),
+            "overlay": lambda: ImageChops.overlay(base_rgb, blend_rgb),
+            "soft_light": lambda: ImageChops.soft_light(base_rgb, blend_rgb),
+            "hard_light": lambda: ImageChops.hard_light(base_rgb, blend_rgb),
+            "darken": lambda: ImageChops.darker(base_rgb, blend_rgb),
+            "lighten": lambda: ImageChops.lighter(base_rgb, blend_rgb),
+            "difference": lambda: ImageChops.difference(base_rgb, blend_rgb),
+            "exclusion": lambda: ImageChops.logical_xor(base_rgb, blend_rgb),
+            "add": lambda: ImageChops.add(base_rgb, blend_rgb),
+            "subtract": lambda: ImageChops.subtract(base_rgb, blend_rgb),
+            "logicaland": lambda: ImageChops.logical_and(base_rgb, blend_rgb),
+            "logical_or": lambda: ImageChops.logical_or(base_rgb, blend_rgb),
+            "logical_xor": lambda: ImageChops.logical_xor(base_rgb, blend_rgb),
+        }
+
+        # Get the blend function or default to normal blending
+        blend_func = blend_functions.get(mode, lambda: blend_rgb)
+        return blend_func()
 
     def _custom_multiply(self, base: Image.Image, blend: Image.Image) -> Image.Image:
         """Custom multiply implementation to ensure correct math."""
@@ -375,7 +368,7 @@ class ImageBlendCompositor(BaseImageProcessor):
             "invert_blend": self.get_parameter_value("invert_blend"),
         }
 
-    def _get_output_suffix(self, **kwargs) -> str:
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_blend"
 

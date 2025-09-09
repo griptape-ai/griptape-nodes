@@ -729,7 +729,7 @@ class ImageBash(DataNode):
         self.publish_update_to_parameter("output_image", output_artifact)
         logger.debug(f"Output image saved to {output_artifact.value}")
 
-    def _get_output_suffix(self, **kwargs) -> str:
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_image_bash"
 
