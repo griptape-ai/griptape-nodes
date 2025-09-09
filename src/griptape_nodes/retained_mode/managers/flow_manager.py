@@ -522,6 +522,7 @@ class FlowManager:
 
             # Clean up ControlFlowMachine and DAG orchestrator for this flow
             self._global_control_flow_machine = None
+            self._global_dag_builder = None
 
         details = f"Successfully deleted Flow '{flow_name}'."
         result = DeleteFlowResultSuccess(result_details=details)
@@ -1629,6 +1630,7 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
+        self._global_dag_builder = None
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
@@ -1711,7 +1713,7 @@ class FlowManager:
         # Set that we are only working on one node right now! no other stepping allowed
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
-            errormsg = "This workflow is already in progress. Please wait for the current process to finish before starting again."
+            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
             raise RuntimeError(errormsg)
 
         self._global_single_node_resolution = True

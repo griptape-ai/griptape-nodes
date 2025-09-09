@@ -5,7 +5,6 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -24,6 +23,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 
 if TYPE_CHECKING:
+    from griptape_nodes.common.directed_graph import DirectedGraph
     from griptape_nodes.machines.dag_builder import DagBuilder, DagNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -64,17 +64,19 @@ class ParallelResolutionContext:
 
     @property
     def network(self) -> DirectedGraph:
-        """Get network from dag_builder if available, otherwise create empty one."""
-        if self.dag_builder:
-            return self.dag_builder.network
-        return DirectedGraph()
+        """Get network from dag_builder if available."""
+        if not self.dag_builder:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
+        return self.dag_builder.network
 
     @property
     def node_to_reference(self) -> dict[str, DagNode]:
-        """Get node_to_reference from dag_builder if available, otherwise create empty dict."""
-        if self.dag_builder:
-            return self.dag_builder.node_to_reference
-        return {}
+        """Get node_to_reference from dag_builder if available."""
+        if not self.dag_builder:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
+        return self.dag_builder.node_to_reference
 
     def reset(self, *, cancel: bool = False) -> None:
         self.paused = False
@@ -259,12 +261,10 @@ class ExecuteDagState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
-        waiting_nodes = []
-        for node_name, node in context.node_to_reference.items():
-            # Only queue nodes that are waiting - preserve state of already processed nodes
+        for node in context.node_to_reference.values():
+            # Only queue nodes that are waiting - preserve state of already processed nodes.
             if node.node_state == NodeState.WAITING:
                 node.node_state = NodeState.QUEUED
-                waiting_nodes.append(node_name)
 
         context.workflow_state = WorkflowState.NO_ERROR
 
