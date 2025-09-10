@@ -33,6 +33,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
     ):
+        super().__init__()
         self._set_storage_backend(storage_backend=storage_backend)
 
     async def __aenter__(self) -> Self:
