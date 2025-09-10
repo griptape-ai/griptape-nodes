@@ -12,6 +12,19 @@ class WorkflowExecutionMode(StrEnum):
     PARALLEL = "parallel"
 
 
+class LogLevel(StrEnum):
+    """Logging level for the application."""
+
+    CRITICAL = "CRITICAL"
+    FATAL = "FATAL"
+    ERROR = "ERROR"
+    WARN = "WARN"
+    WARNING = "WARNING"
+    INFO = "INFO"
+    DEBUG = "DEBUG"
+    NOTSET = "NOTSET"
+
+
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(default_factory=list)
     workflows_to_register: list[str] = Field(default_factory=list)
@@ -96,7 +109,7 @@ class Settings(BaseModel):
             "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
         }
     )
-    log_level: str = Field(default="INFO")
+    log_level: LogLevel = Field(default=LogLevel.INFO)
     workflow_execution_mode: WorkflowExecutionMode = Field(
         default=WorkflowExecutionMode.SEQUENTIAL, description="Workflow execution mode for node processing"
     )
@@ -116,6 +129,22 @@ class Settings(BaseModel):
         else:
             # Return default for any other type
             return WorkflowExecutionMode.SEQUENTIAL
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def validate_log_level(cls, v: Any) -> LogLevel:
+        """Convert string values to LogLevel enum."""
+        if isinstance(v, str):
+            try:
+                return LogLevel(v.upper())
+            except ValueError:
+                # Return default if invalid string
+                return LogLevel.INFO
+        elif isinstance(v, LogLevel):
+            return v
+        else:
+            # Return default for any other type
+            return LogLevel.INFO
 
     max_nodes_in_parallel: int | None = Field(
         default=5, description="Maximum number of nodes executing at a time for parallel execution."
