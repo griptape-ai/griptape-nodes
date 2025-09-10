@@ -7,7 +7,6 @@ import os
 import sys
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
@@ -18,8 +17,6 @@ from rich.panel import Panel
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError, WebSocketException
 
-from griptape_nodes.app.api import start_static_server
-from griptape_nodes.mcp_server.server import start_mcp_server
 from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
@@ -80,9 +77,6 @@ websocket_event_loop: asyncio.AbstractEventLoop | None = None
 websocket_event_loop_ready = threading.Event()
 
 
-# Whether to enable the static server
-STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
-
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 
@@ -135,14 +129,6 @@ async def astart_app() -> None:
     main_loop = asyncio.get_running_loop()
 
     try:
-        # Start MCP server in daemon thread
-        threading.Thread(target=start_mcp_server, args=(api_key,), daemon=True, name="mcp-server").start()
-
-        # Start static server in daemon thread if enabled
-        if STATIC_SERVER_ENABLED:
-            static_dir = _build_static_dir()
-            threading.Thread(target=start_static_server, args=(static_dir,), daemon=True, name="static-server").start()
-
         # Start WebSocket tasks in daemon thread
         threading.Thread(
             target=_start_websocket_connection, args=(api_key, main_loop), daemon=True, name="websocket-tasks"
@@ -231,12 +217,6 @@ def _ensure_api_key() -> str:
         sys.exit(1)
 
     return api_key
-
-
-def _build_static_dir() -> Path:
-    """Build the static directory path based on the workspace configuration."""
-    config_manager = griptape_nodes.ConfigManager()
-    return Path(config_manager.workspace_path) / config_manager.merged_config["static_files_directory"]
 
 
 async def _process_incoming_messages(ws_connection: Any, main_loop: asyncio.AbstractEventLoop) -> None:
