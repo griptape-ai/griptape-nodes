@@ -317,17 +317,25 @@ class WorkflowManager:
 
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
-        # See if there are USER workflow JSONs to load.
+        # Discover workflows from both config and workspace.
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
 
-        # Use the request/response pattern for workflow registration
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        workflows_to_register = []
 
-        register_request = RegisterWorkflowsFromConfigRequest(config_section=default_workflow_section)
-        register_result = GriptapeNodes.handle_request(register_request)
+        # Add from config
+        config_workflows = self._discover_workflows_from_config(default_workflow_section)
+        workflows_to_register.extend(config_workflows)
 
-        if not isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
-            logger.warning("Failed to register workflows from configuration during library initialization")
+        # Add from workspace (avoiding duplicates)
+        workspace_workflows = self._discover_workflows_from_workspace()
+        workflows_to_register.extend(w for w in workspace_workflows if w not in workflows_to_register)
+
+        # Register all discovered workflows at once if any were found
+        if workflows_to_register:
+            succeeded, failed = self._process_workflows_for_registration(workflows_to_register)
+            logger.info("Workflow registration complete: %d succeeded, %d failed", len(succeeded), len(failed))
+        else:
+            logger.debug("No workflows found to register during library initialization")
 
         # Print it all out nicely.
         self.print_workflow_load_status()
@@ -569,17 +577,34 @@ class WorkflowManager:
         return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
     def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
-        # get workflow from registry
+        # Validate that exactly one of workflow_name or workflow_path is provided
+        if (request.workflow_name is None) == (request.workflow_path is None):
+            details = "Exactly one of 'workflow_name' or 'workflow_path' must be provided."
+            return RunWorkflowFromRegistryResultFailure(result_details=details)
+
+        # Get workflow from registry
+        workflow = None
+        workflow_identifier = request.workflow_name or request.workflow_path
+
         try:
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-        except KeyError:
-            details = f"Failed to get workflow '{request.workflow_name}' from registry."
+            if request.workflow_path:
+                # Get by path
+                workflow = WorkflowRegistry.get_workflow_by_path(request.workflow_path)
+            else:
+                # Get by name
+                workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except (KeyError, ValueError) as e:
+            if isinstance(e, ValueError):
+                # Multiple workflows with same name - use the error message from the registry
+                details = str(e)
+            else:
+                details = f"Failed to get workflow '{workflow_identifier}' from registry."
             return RunWorkflowFromRegistryResultFailure(result_details=details)
 
         # Update current context for workflow.
         context_warning = None
         if GriptapeNodes.ContextManager().has_current_workflow():
-            context_warning = f"Started a new workflow '{request.workflow_name}' but a workflow '{GriptapeNodes.ContextManager().get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
+            context_warning = f"Started a new workflow '{workflow_identifier}' but a workflow '{GriptapeNodes.ContextManager().get_current_workflow_name()}' was already in the Current Context. Replacing the old with the new."
 
         # get file_path from workflow
         relative_file_path = workflow.file_path
@@ -591,11 +616,11 @@ class WorkflowManager:
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
                 clear_all_result = GriptapeNodes.handle_request(clear_all_request)
                 if not clear_all_result.succeeded():
-                    details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
+                    details = f"Failed to clear the existing object state when preparing to run workflow '{workflow_identifier}'."
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
 
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
-            GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
+            GriptapeNodes.ContextManager().push_workflow(workflow_identifier)
             # run file
             execution_result = self.run_workflow(relative_file_path=relative_file_path)
 
@@ -644,9 +669,23 @@ class WorkflowManager:
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
 
-        # Check if workflow is already registered
+        # Check if workflow is already registered by path
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        try:
+            full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
+            config_mgr = GriptapeNodes.ConfigManager()
+            workspace_path = config_mgr.workspace_path
+            if Path(full_path).is_relative_to(workspace_path):
+                relative_path = Path(full_path).relative_to(workspace_path)
+                file_path_to_check = str(relative_path)
+            else:
+                file_path_to_check = request.file_path
+        except Exception:
+            file_path_to_check = request.file_path
+
         workflow_name = load_metadata_result.metadata.name
-        if WorkflowRegistry.has_workflow_with_name(workflow_name):
+        if WorkflowRegistry.has_workflow_with_path(file_path_to_check):
             # Workflow already exists - no need to re-register
             return ImportWorkflowResultSuccess(
                 workflow_name=workflow_name,
@@ -682,6 +721,7 @@ class WorkflowManager:
         except Exception:
             details = "Failed to list all workflows."
             return ListAllWorkflowsResultFailure(result_details=details)
+
         return ListAllWorkflowsResultSuccess(
             workflows=workflows, result_details=f"Successfully retrieved {len(workflows)} workflows."
         )
@@ -1050,26 +1090,35 @@ class WorkflowManager:
             metadata=workflow_metadata, result_details="Workflow metadata loaded successfully."
         )
 
-    def register_workflows_from_config(self, config_section: str) -> None:
-        workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
-        if workflows_to_register:
-            self.register_list_of_workflows(workflows_to_register)
-
     def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        config_mgr = GriptapeNodes.ConfigManager()
+        workspace_path = config_mgr.workspace_path
+
         for workflow_to_register in workflows_to_register:
             path = Path(workflow_to_register)
 
             if path.is_dir():
-                # If it's a directory, register all the workflows in it.
-                for workflow_file in path.glob("*.py"):
+                # If it's a directory, register all workflows recursively.
+                for workflow_file in path.rglob("*.py"):
                     # Check that the python file has script metadata
                     metadata_blocks = self.get_workflow_metadata(
                         workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
                     )
                     if len(metadata_blocks) == 1:
-                        self._register_workflow(str(workflow_file))
+                        # Convert to relative path if the workflow is under workspace_path
+                        if workflow_file.is_relative_to(workspace_path):
+                            relative_path = workflow_file.relative_to(workspace_path)
+                            self._register_workflow(str(relative_path))
+                        else:
+                            self._register_workflow(str(workflow_file))
+            # If it's a file, register it directly.
+            # Convert to relative path if the workflow is under workspace_path
+            elif path.is_relative_to(workspace_path):
+                relative_path = path.relative_to(workspace_path)
+                self._register_workflow(str(relative_path))
             else:
-                # If it's a file, register it directly.
                 self._register_workflow(str(path))
 
     def _register_workflow(self, workflow_to_register: str) -> bool:
@@ -1453,8 +1502,7 @@ class WorkflowManager:
             return SaveWorkflowResultFailure(result_details=details)
 
         # save the created workflow as an entry in the JSON config file.
-        registered_workflows = WorkflowRegistry.list_workflows()
-        if file_name not in registered_workflows:
+        if not WorkflowRegistry.has_workflow_with_path(relative_file_path):
             # Only add to config if it's in the workspace directory (not an external file)
             if not Path(relative_file_path).is_absolute():
                 try:
@@ -1463,9 +1511,10 @@ class WorkflowManager:
                     details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
                     return SaveWorkflowResultFailure(result_details=details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
-        # Update existing workflow's metadata in the registry
-        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-        existing_workflow.metadata = workflow_metadata
+        else:
+            # Update existing workflow's metadata in the registry
+            existing_workflow = WorkflowRegistry.get_workflow_by_path(relative_file_path)
+            existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {file_path}"
         return SaveWorkflowResultSuccess(
             file_path=str(file_path), result_details=ResultDetails(message=details, level="INFO")
@@ -3800,6 +3849,66 @@ class WorkflowManager:
 
         self._walk_object_tree(obj, collect_class_import)
 
+    def _discover_workflows_from_config(self, config_section: str) -> list[str]:
+        """Discover workflow paths from a configuration section.
+
+        Args:
+            config_section: Configuration section path containing workflow paths
+
+        Returns:
+            List of workflow file paths from the configuration
+        """
+        try:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            workflows_to_register = GriptapeNodes.ConfigManager().get_config_value(config_section)
+        except Exception:
+            logger.debug("No workflows found in configuration section '%s'", config_section)
+            return []
+        else:
+            return workflows_to_register or []
+
+    def _discover_workflows_from_workspace(self, workspace_path: Path | None = None) -> list[str]:
+        """Discover workflow files in the workspace directory.
+
+        Args:
+            workspace_path: Path to workspace directory (None for default workspace)
+
+        Returns:
+            List of relative workflow file paths found in the workspace
+        """
+        try:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            # Get workspace path or use default
+            if workspace_path is None:
+                workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+            if not workspace_path.exists():
+                logger.debug("Workspace path '%s' does not exist", workspace_path)
+                return []
+
+            # Find all Python files with workflow metadata in the workspace
+            workflow_files = []
+            for python_file in workspace_path.rglob("*.py"):
+                # Check if the file has workflow metadata
+                metadata_blocks = self.get_workflow_metadata(
+                    python_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
+                )
+                if len(metadata_blocks) == 1:
+                    # Convert to relative path from workspace
+                    if python_file.is_relative_to(workspace_path):
+                        relative_path = python_file.relative_to(workspace_path)
+                        workflow_files.append(str(relative_path))
+                    else:
+                        workflow_files.append(str(python_file))
+
+        except Exception as e:
+            logger.debug("Failed to discover workflows from workspace: %s", e)
+            return []
+        else:
+            return workflow_files
+
     def on_register_workflows_from_config_request(self, request: RegisterWorkflowsFromConfigRequest) -> ResultPayload:
         """Register workflows from a configuration section."""
         try:
@@ -3852,7 +3961,7 @@ class WorkflowManager:
         return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
     def _process_workflow_directory(self, directory_path: Path) -> WorkflowRegistrationResult:
-        """Process all workflow files in a directory.
+        """Process all workflow files in a directory recursively.
 
         Returns:
             WorkflowRegistrationResult with succeeded and failed workflow names
@@ -3860,7 +3969,7 @@ class WorkflowManager:
         succeeded = []
         failed = []
 
-        for workflow_file in directory_path.glob("*.py"):
+        for workflow_file in directory_path.rglob("*.py"):
             # Check that the python file has script metadata
             metadata_blocks = self.get_workflow_metadata(
                 workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
@@ -3880,6 +3989,8 @@ class WorkflowManager:
         Returns:
             Workflow name if registered successfully, None if failed or skipped
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
@@ -3890,15 +4001,25 @@ class WorkflowManager:
 
         workflow_metadata = load_metadata_result.metadata
 
-        # Check if workflow is already registered using the parsed metadata
-        if WorkflowRegistry.has_workflow_with_name(workflow_metadata.name):
+        # Convert to relative path if the workflow is under workspace_path
+        config_mgr = GriptapeNodes.ConfigManager()
+        workspace_path = config_mgr.workspace_path
+
+        if workflow_file.is_relative_to(workspace_path):
+            relative_path = workflow_file.relative_to(workspace_path)
+            file_path_to_register = str(relative_path)
+        else:
+            file_path_to_register = str(workflow_file)
+
+        # Check if workflow is already registered using the file path
+        if WorkflowRegistry.has_workflow_with_path(file_path_to_register):
             logger.debug("Skipping already registered workflow: %s", workflow_file)
             return None
 
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
-        if self._register_workflow(str(workflow_file)):
+        if self._register_workflow(file_path_to_register):
             return workflow_metadata.name
         return None
 

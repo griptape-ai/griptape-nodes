@@ -75,17 +75,19 @@ class RunWorkflowWithCurrentStateResultFailure(ResultPayloadFailure):
 class RunWorkflowFromRegistryRequest(RequestPayload):
     """Run a workflow from the registry.
 
-    Use when: Executing registered workflows, running workflows by name,
+    Use when: Executing registered workflows, running workflows by name or path,
     using workflow templates, automated workflow execution.
 
     Args:
-        workflow_name: Name of the workflow in the registry to execute
+        workflow_name: Name of the workflow in the registry to execute (mutually exclusive with workflow_path)
+        workflow_path: Path of the workflow in the registry to execute (mutually exclusive with workflow_name)
         run_with_clean_slate: Whether to start with a clean state (default: True)
 
     Results: RunWorkflowFromRegistryResultSuccess | RunWorkflowFromRegistryResultFailure (workflow not found, execution error)
     """
 
-    workflow_name: str
+    workflow_name: str | None = None
+    workflow_path: str | None = None
     run_with_clean_slate: bool = True
 
 
