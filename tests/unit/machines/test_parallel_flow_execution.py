@@ -4,8 +4,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
@@ -16,6 +14,13 @@ from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 class TestParallelFlowExecution:
     """Test cases for parallel flow execution functionality."""
+
+    def teardown_method(self) -> None:
+        """Clean up after each test method to prevent resource leaks."""
+        # Force garbage collection to clean up mock objects and circular references
+        import gc
+
+        gc.collect()
 
     def test_control_flow_machine_creates_parallel_resolution_with_dag_builder(self) -> None:
         """Test that ControlFlowMachine creates ParallelResolutionMachine with DAG builder when execution type is PARALLEL."""
@@ -121,12 +126,20 @@ class TestParallelFlowExecution:
         context = ParallelResolutionContext(flow_name, dag_builder=None)
 
         # Accessing network property should raise ValueError
-        with pytest.raises(ValueError, match="DagBuilder is not initialized"):
+        try:
             _ = context.network
+            msg = "Should have raised ValueError"
+            raise AssertionError(msg)
+        except ValueError as e:
+            assert "DagBuilder is not initialized" in str(e)  # noqa: PT017
 
         # Accessing node_to_reference property should raise ValueError
-        with pytest.raises(ValueError, match="DagBuilder is not initialized"):
+        try:
             _ = context.node_to_reference
+            msg = "Should have raised ValueError"
+            raise AssertionError(msg)
+        except ValueError as e:
+            assert "DagBuilder is not initialized" in str(e)  # noqa: PT017
 
     def test_parallel_resolution_context_reset_calls_dag_builder_clear(self) -> None:
         """Test that ParallelResolutionContext.reset() calls DAG builder's clear() method."""
@@ -177,7 +190,13 @@ class TestParallelFlowExecution:
 class TestFlowManagerDagBuilderIntegration:
     """Test cases for FlowManager's DAG builder integration during flow execution."""
 
-    @pytest.mark.asyncio
+    def teardown_method(self) -> None:
+        """Clean up after each test method to prevent resource leaks."""
+        # Force garbage collection to clean up mock objects and async contexts
+        import gc
+
+        gc.collect()
+
     async def test_flow_manager_creates_dag_builder_for_parallel_flow(self) -> None:
         """Test that FlowManager creates a DAG builder when starting a parallel flow."""
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -219,7 +238,6 @@ class TestFlowManagerDagBuilderIntegration:
                 mock_dag_builder_class.assert_called_once()
                 assert flow_manager._global_dag_builder is mock_dag_builder_instance
 
-    @pytest.mark.asyncio
     async def test_flow_manager_preserves_dag_builder_between_single_node_resolutions(self) -> None:
         """Test that FlowManager preserves DAG builder between single node resolutions."""
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -255,7 +273,6 @@ class TestFlowManagerDagBuilderIntegration:
             # Verify that the existing DAG builder was reused
             initial_dag_builder.add_node_with_dependencies.assert_called_once_with(mock_node)
 
-    @pytest.mark.asyncio
     async def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
         """Test that FlowManager clears DAG builder reference when canceling a flow."""
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -311,6 +328,13 @@ class TestFlowManagerDagBuilderIntegration:
 
 class TestDagBuilderLifecycle:
     """Test cases for DAG builder lifecycle management."""
+
+    def teardown_method(self) -> None:
+        """Clean up after each test method to prevent resource leaks."""
+        # Force garbage collection to clean up DAG builder objects
+        import gc
+
+        gc.collect()
 
     def test_dag_builder_initialization_state(self) -> None:
         """Test that DAG builder starts with clean state."""
