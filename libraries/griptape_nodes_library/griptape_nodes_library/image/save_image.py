@@ -1,4 +1,5 @@
 from enum import StrEnum, auto
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -160,23 +161,18 @@ class SaveImage(ControlNode):
             )
             raise ValueError(error_details) from e
 
-        # Save to static storage
-        try:
-            saved_path = GriptapeNodes.StaticFilesManager().save_static_file(image_artifact.to_bytes(), output_file)
-        except Exception as e:
-            error_details = f"Failed to save image to static storage: {e!s}"
-            self._handle_execution_result(
-                status=SaveImageStatus.FAILURE,
-                saved_path="",
-                input_info=input_info,
-                output_file=output_file,
-                details=error_details,
-                exception=e,
-            )
-            raise ValueError(error_details) from e
+        # Determine save method based on path type
+        output_path = Path(output_file)
+        if output_path.is_absolute():
+            # Full path: save directly to filesystem
+            saved_path = self._save_to_filesystem(image_artifact, output_path, input_info, output_file)
+        else:
+            # Relative path: use static file manager
+            saved_path = self._save_to_static_storage(image_artifact, output_file, input_info, output_file)
 
-        # Success case
-        success_details = "Image saved successfully"
+        # Success case with path method info
+        path_method = "filesystem" if output_path.is_absolute() else "static storage"
+        success_details = f"Image saved successfully via {path_method}"
         self._handle_execution_result(
             status=SaveImageStatus.SUCCESS,
             saved_path=saved_path,
@@ -274,6 +270,89 @@ class SaveImage(ControlNode):
                 )
 
                 self._assign_result_details(f"{status}: {result_details}")
+
+    def _save_to_filesystem(self, image_artifact: Any, output_path: Path, input_info: str, output_file: str) -> str:
+        """Save image directly to filesystem at the specified absolute path."""
+        # Ensure parent directory exists
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            error_details = f"Failed to create directory structure for path: {e!s}"
+            self._handle_execution_result(
+                status=SaveImageStatus.FAILURE,
+                saved_path="",
+                input_info=input_info,
+                output_file=output_file,
+                details=error_details,
+                exception=e,
+            )
+            raise ValueError(error_details) from e
+
+        # Convert image to bytes
+        try:
+            image_bytes = image_artifact.to_bytes()
+        except Exception as e:
+            error_details = f"Failed to convert image artifact to bytes: {e!s}"
+            self._handle_execution_result(
+                status=SaveImageStatus.FAILURE,
+                saved_path="",
+                input_info=input_info,
+                output_file=output_file,
+                details=error_details,
+                exception=e,
+            )
+            raise ValueError(error_details) from e
+
+        # Write image bytes directly to file
+        try:
+            output_path.write_bytes(image_bytes)
+        except Exception as e:
+            error_details = f"Failed to write image file to filesystem: {e!s}"
+            self._handle_execution_result(
+                status=SaveImageStatus.FAILURE,
+                saved_path="",
+                input_info=input_info,
+                output_file=output_file,
+                details=error_details,
+                exception=e,
+            )
+            raise ValueError(error_details) from e
+
+        return str(output_path)
+
+    def _save_to_static_storage(
+        self, image_artifact: Any, output_file: str, input_info: str, output_file_for_error: str
+    ) -> str:
+        """Save image using the static file manager (existing behavior)."""
+        # Convert image to bytes
+        try:
+            image_bytes = image_artifact.to_bytes()
+        except Exception as e:
+            error_details = f"Failed to convert image artifact to bytes: {e!s}"
+            self._handle_execution_result(
+                status=SaveImageStatus.FAILURE,
+                saved_path="",
+                input_info=input_info,
+                output_file=output_file_for_error,
+                details=error_details,
+                exception=e,
+            )
+            raise ValueError(error_details) from e
+
+        # Save to static storage
+        try:
+            return GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, output_file)
+        except Exception as e:
+            error_details = f"Failed to save image to static storage: {e!s}"
+            self._handle_execution_result(
+                status=SaveImageStatus.FAILURE,
+                saved_path="",
+                input_info=input_info,
+                output_file=output_file_for_error,
+                details=error_details,
+                exception=e,
+            )
+            raise ValueError(error_details) from e
 
     def _assign_result_details(self, message: str) -> None:
         """Helper to assign result_details using publish_update_to_parameter."""
