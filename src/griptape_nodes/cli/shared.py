@@ -8,10 +8,6 @@ from typing import Any
 from rich.console import Console
 from xdg_base_dirs import xdg_config_home, xdg_data_home
 
-from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-
 
 @dataclass
 class InitConfig:
@@ -60,11 +56,6 @@ ENV_LIBRARIES_SYNC = (
 )
 ENV_GTN_BUCKET_NAME = os.getenv("GTN_BUCKET_NAME")
 ENV_LIBRARIES_BASE_DIR = os.getenv("GTN_LIBRARIES_BASE_DIR", str(DATA_DIR / "libraries"))
-
-# Initialize managers
-config_manager = ConfigManager()
-secrets_manager = SecretsManager(config_manager)
-os_manager = OSManager()
 
 
 def init_system_config() -> None:

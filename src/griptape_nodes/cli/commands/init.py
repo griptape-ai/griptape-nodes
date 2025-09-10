@@ -20,12 +20,14 @@ from griptape_nodes.cli.shared import (
     GT_CLOUD_BASE_URL,
     NODES_APP_URL,
     InitConfig,
-    config_manager,
     console,
-    secrets_manager,
 )
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+config_manager = GriptapeNodes.ConfigManager()
+secrets_manager = GriptapeNodes.SecretsManager()
 
 
 def init_command(  # noqa: PLR0913
@@ -98,7 +100,7 @@ def _run_init(config: InitConfig) -> None:
 
     # Sync libraries
     if config.libraries_sync is not False:
-        asyncio.run(_sync_libraries())
+        asyncio.run(_sync_libraries(load_libraries_from_config=False))
 
     console.print("[bold green]Initialization complete![/bold green]")
 
