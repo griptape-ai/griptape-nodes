@@ -715,6 +715,9 @@ class BaseNode(ABC):
             raise KeyError(err)
 
     def get_next_control_output(self) -> Parameter | None:
+        # The default behavior for nodes is to find the first control output found.
+        # Advanced nodes can override this behavior (e.g., nodes that have multiple possible
+        # control paths).
         for param in self.parameters:
             if (
                 ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
@@ -1158,19 +1161,23 @@ class ControlNode(BaseNode):
         self.add_parameter(control_parameter_in)
         self.add_parameter(control_parameter_out)
 
-    def get_next_control_output(self) -> Parameter | None:
-        for param in self.parameters:
-            if (
-                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
-                and ParameterMode.OUTPUT in param.allowed_modes
-            ):
-                return param
-        return None
-
 
 class DataNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
+
+        # Create control parameters like ControlNode, but initialize them as hidden
+        # This allows the user to turn a DataNode "into" a Control Node; useful when
+        # in situations like within a For Loop.
+        self.control_parameter_in = ControlParameterInput()
+        self.control_parameter_out = ControlParameterOutput()
+
+        # Hide the control parameters by default
+        self.control_parameter_in.ui_options["hide"] = True
+        self.control_parameter_out.ui_options["hide"] = True
+
+        self.add_parameter(self.control_parameter_in)
+        self.add_parameter(self.control_parameter_out)
 
 
 class StartNode(BaseNode):
