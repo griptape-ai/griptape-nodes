@@ -1299,6 +1299,14 @@ class SuccessFailureNode(BaseNode):
 
         self.add_node_element(self.status_group)
 
+    def _clear_execution_status(self) -> None:
+        """Clear execution status and reset status parameters.
+
+        This method should be called at the start of process() to reset the node state.
+        """
+        self._execution_succeeded = None
+        self._set_status_results(was_successful=False, result_details="Beginning execution...")
+
     def _set_status_results(self, *, was_successful: bool, result_details: str) -> None:
         """Set status results and update execution state.
 
@@ -1313,6 +1321,27 @@ class SuccessFailureNode(BaseNode):
         self.parameter_output_values[self.was_successful.name] = was_successful
         self.parameter_output_values[self.result_details.name] = result_details
         self.publish_update_to_parameter(self.result_details.name, result_details)
+
+    def _handle_failure_exception(self, exception: Exception) -> None:
+        """Handle failure exceptions based on whether failure output is connected.
+
+        If the failure output has outgoing connections, logs the error and continues execution
+        to allow graceful failure handling. If no connections exist, raises the exception
+        to crash the flow and provide immediate feedback.
+
+        Args:
+            exception: The exception that caused the failure
+        """
+        if self._has_outgoing_connections(self.failure_output):
+            # User has connected something to Failed output, they want to handle errors gracefully
+            logger.error(
+                "Error in node '%s': %s. Continuing execution since failure output is connected for graceful handling.",
+                self.name,
+                exception,
+            )
+        else:
+            # No graceful handling, raise the exception to crash the flow
+            raise exception
 
 
 class StartNode(BaseNode):

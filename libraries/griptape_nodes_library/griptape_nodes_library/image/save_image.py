@@ -91,8 +91,7 @@ class SaveImage(SuccessFailureNode):
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
-        self._execution_succeeded = None
-        self._set_status_results(was_successful=False, result_details="")
+        self._clear_execution_status()
 
         image = self.get_parameter_value("image")
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
@@ -246,7 +245,7 @@ class SaveImage(SuccessFailureNode):
         # Check if file exists and overwrite is disabled
         if output_path.exists() and not overwrite_existing:
             error_details = f"File already exists and overwrite_existing is disabled: {output_path}"
-            raise ValueError(error_details)
+            raise RuntimeError(error_details)
 
         # Handle parent directory creation
         if allow_creating_folders:
@@ -254,26 +253,26 @@ class SaveImage(SuccessFailureNode):
                 output_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 error_details = f"Failed to create directory structure for path: {e!s}"
-                raise ValueError(error_details) from e
+                raise RuntimeError(error_details) from e
         elif not output_path.parent.exists():
             error_details = (
                 f"Parent directory does not exist and allow_creating_folders is disabled: {output_path.parent}"
             )
-            raise ValueError(error_details)
+            raise RuntimeError(error_details)
 
         # Convert image to bytes
         try:
             image_bytes = image_artifact.to_bytes()
         except Exception as e:
             error_details = f"Failed to convert image artifact to bytes: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         # Write image bytes directly to file
         try:
             output_path.write_bytes(image_bytes)
         except Exception as e:
             error_details = f"Failed to write image file to filesystem: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         return str(output_path)
 
@@ -294,21 +293,21 @@ class SaveImage(SuccessFailureNode):
                 error_details = (
                     f"File already exists in static storage and overwrite_existing is disabled: {output_file}"
                 )
-                raise ValueError(error_details)
+                raise RuntimeError(error_details)
 
         # Convert image to bytes
         try:
             image_bytes = image_artifact.to_bytes()
         except Exception as e:
             error_details = f"Failed to convert image artifact to bytes: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         # Save to static storage
         try:
             return GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, output_file)
         except Exception as e:
             error_details = f"Failed to save image to static storage: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
     def _handle_error_with_graceful_exit(
         self, error_details: str, exception: Exception, input_info: str, output_file: str
@@ -322,22 +321,5 @@ class SaveImage(SuccessFailureNode):
             details=error_details,
             exception=exception,
         )
-        # If user has connected something to Failed output, they want to handle errors gracefully
-        # in their workflow rather than crashing the entire process with an exception
-        if not self._has_outgoing_connections(self.failure_output):
-            raise ValueError(error_details) from exception
-
-    def _has_outgoing_connections(self, parameter: Parameter) -> bool:
-        """Check if a specific parameter has outgoing connections."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Check if node has any outgoing connections
-        node_connections = connections.outgoing_index.get(self.name)
-        if node_connections is None:
-            return False
-
-        # Check if this specific parameter has any outgoing connections
-        param_connections = node_connections.get(parameter.name, [])
-        return len(param_connections) > 0
+        # Use the helper to handle exception based on connection status
+        self._handle_failure_exception(RuntimeError(error_details))
