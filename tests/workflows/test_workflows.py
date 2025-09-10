@@ -8,8 +8,6 @@ import pytest_asyncio
 from dotenv import load_dotenv
 
 # Signal the server to shutdown gracefully using the API module function
-from griptape_nodes.app.api import start_static_server
-from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
@@ -84,19 +82,6 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=original_libraries,
     )
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def api_server() -> AsyncGenerator[None, None]:
-    """Start the API server in a separate thread that can be gracefully shutdown."""
-    import threading
-
-    static_dir = _build_static_dir()
-
-    server_thread = threading.Thread(target=lambda: start_static_server(static_dir), daemon=True)
-    server_thread.start()
-
-    yield
 
 
 @pytest.fixture(autouse=True)

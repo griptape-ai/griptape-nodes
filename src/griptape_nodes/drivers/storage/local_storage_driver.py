@@ -18,7 +18,7 @@ class LocalStorageDriver(BaseStorageDriver):
         Args:
             base_url: The base URL for the static file server. If not provided, it will be constructed
         """
-        from griptape_nodes.app.api import (
+        from griptape_nodes.servers.static import (
             STATIC_SERVER_ENABLED,
             STATIC_SERVER_HOST,
             STATIC_SERVER_PORT,

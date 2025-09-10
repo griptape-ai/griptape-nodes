@@ -1,6 +1,8 @@
 import base64
 import binascii
 import logging
+import threading
+from pathlib import Path
 
 import httpx
 from xdg_base_dirs import xdg_config_home
@@ -8,6 +10,7 @@ from xdg_base_dirs import xdg_config_home
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
@@ -22,6 +25,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.servers.static import start_static_server
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -46,9 +50,9 @@ class StaticFilesManager:
         """
         self.config_manager = config_manager
 
-        storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
+        self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
 
-        match storage_backend:
+        match self.storage_backend:
             case StorageBackend.GTC:
                 bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
 
@@ -69,7 +73,7 @@ class StaticFilesManager:
             case StorageBackend.LOCAL:
                 self.storage_driver = LocalStorageDriver()
             case _:
-                msg = f"Invalid storage backend: {storage_backend}"
+                msg = f"Invalid storage backend: {self.storage_backend}"
                 raise ValueError(msg)
 
         if event_manager is not None:
@@ -81,6 +85,10 @@ class StaticFilesManager:
             )
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
+            )
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
             )
 
     def on_handle_create_static_file_request(
@@ -155,6 +163,14 @@ class StaticFilesManager:
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url, result_details="Successfully created static file download URL"
         )
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        # Start static server in daemon thread if enabled
+        if self.storage_backend == StorageBackend.LOCAL:
+            static_dir = (
+                Path(self.config_manager.workspace_path) / self.config_manager.merged_config["static_files_directory"]
+            )
+            threading.Thread(target=start_static_server, args=(static_dir,), daemon=True, name="static-server").start()
 
     def save_static_file(self, data: bytes, file_name: str) -> str:
         """Saves a static file to the workspace directory.
