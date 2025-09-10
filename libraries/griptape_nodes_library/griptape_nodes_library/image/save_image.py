@@ -92,10 +92,13 @@ class SaveImage(ControlNode):
                 name="result_details",
                 tooltip="Details about the image save operation result",
                 type="str",
-                default_value="The output of the operation will be presented here.",
+                default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
-                ui_options={"multiline": True},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Details on the save attempt will be presented here.",
+                },
             )
 
         self.add_node_element(group)
