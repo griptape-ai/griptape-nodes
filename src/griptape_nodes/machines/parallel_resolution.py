@@ -399,6 +399,9 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
 
     async def resolve_node(self, node: BaseNode | None = None) -> None:  # noqa: ARG002
         """Execute the DAG structure using the existing DagBuilder."""
+        if self.context.dag_builder is None:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
         await self.start(ExecuteDagState)
 
     def change_debug_mode(self, *, debug_mode: bool) -> None:

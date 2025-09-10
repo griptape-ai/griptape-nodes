@@ -1725,9 +1725,11 @@ class FlowManager:
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
         # Build the DAG for the node
-        if self._global_dag_builder is None:
-            self._global_dag_builder = DagBuilder()
-        self._global_dag_builder.add_node_with_dependencies(node)
+        if isinstance(resolution_machine, ParallelResolutionMachine):
+            if self._global_dag_builder is None:
+                self._global_dag_builder = DagBuilder()
+            self._global_dag_builder.add_node_with_dependencies(node)
+            resolution_machine.context.dag_builder = self._global_dag_builder
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
