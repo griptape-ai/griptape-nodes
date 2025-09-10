@@ -5,7 +5,10 @@ import sys
 
 import typer
 
-from griptape_nodes.cli.shared import config_manager, console
+from griptape_nodes.cli.shared import console
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+config_manager = GriptapeNodes.ConfigManager()
 
 app = typer.Typer(help="Manage configuration.")
 
