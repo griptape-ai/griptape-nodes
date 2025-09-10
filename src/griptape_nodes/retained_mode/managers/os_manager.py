@@ -209,14 +209,9 @@ class OSManager:
         Args:
             args: The command and arguments to execute.
         """
-        if self.is_windows():
-            # excecvp is a nightmare on Windows, so we use subprocess.Popen instead
-            # https://stackoverflow.com/questions/7004687/os-exec-on-windows
-            subprocess.Popen(args)  # noqa: S603
-            sys.exit(0)
-        else:
-            sys.stdout.flush()  # Recommended here https://docs.python.org/3/library/os.html#os.execvpe
-            os.execvp(args[0], args)  # noqa: S606
+        # https://stackoverflow.com/questions/1750757/restarting-a-self-updating-python-script
+        os.chdir(Path.cwd())
+        os.execv(args[0], args)  # noqa: S606
 
     def on_open_associated_file_request(self, request: OpenAssociatedFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Validate that exactly one of path_to_file or file_entry is provided
