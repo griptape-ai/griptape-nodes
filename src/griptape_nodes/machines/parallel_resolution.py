@@ -300,8 +300,13 @@ class ExecuteDagState(State):
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
-                node = context.task_to_node.pop(task)
-                node.node_state = NodeState.DONE
+                try:
+                    node = context.task_to_node.pop(task)
+                    node.node_state = NodeState.DONE
+                except KeyError:
+                    # Task was already cleaned up, ignore
+                    logger.debug(f"Ignoring task completion for already cleaned up task: {task}")
+                    pass
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
