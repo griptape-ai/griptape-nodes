@@ -73,7 +73,7 @@ class SaveImage(ControlNode):
         )
 
         # Advanced parameters in a collapsible ParameterGroup
-        with ParameterGroup(name="Advanced") as group:
+        with ParameterGroup(name="Status") as group:
             group.ui_options = {"collapsed": True}
 
             # Boolean parameter to indicate success/failure
