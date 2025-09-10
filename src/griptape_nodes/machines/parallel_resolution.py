@@ -82,8 +82,10 @@ class ParallelResolutionContext:
         self.paused = False
         if cancel:
             self.workflow_state = WorkflowState.CANCELED
-            for node in self.node_to_reference.values():
-                node.node_state = NodeState.CANCELED
+            # Only access node_to_reference if dag_builder exists
+            if self.dag_builder:
+                for node in self.node_to_reference.values():
+                    node.node_state = NodeState.CANCELED
         else:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
