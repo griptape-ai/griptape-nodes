@@ -66,8 +66,8 @@ class OnClickMessageResultPayload(NodeMessagePayload):
 @dataclass(eq=False)
 class Button(Trait):
     # Specific callback types for better type safety and clarity
-    type OnClickCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
-    type GetButtonStateCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
+    type OnClickCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult | None]
+    type GetButtonStateCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult | None]
 
     # Static message type constants
     ON_CLICK_MESSAGE_TYPE = "on_click"
@@ -169,7 +169,7 @@ class Button(Trait):
 
         return options
 
-    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
+    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:  # noqa: PLR0911
         """Handle messages sent to this button trait.
 
         Args:
@@ -185,7 +185,16 @@ class Button(Trait):
                     try:
                         # Pre-fill button details with current state and pass to callback
                         button_details = self.get_button_details()
-                        return self.on_click_callback(self, button_details)
+                        result = self.on_click_callback(self, button_details)
+
+                        # If callback returns None, provide optimistic success result
+                        if result is None:
+                            result = NodeMessageResult(
+                                success=True,
+                                details=f"Button '{self.label}' clicked successfully",
+                                response=button_details,
+                            )
+                        return result
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
@@ -202,7 +211,17 @@ class Button(Trait):
                     try:
                         # Pre-fill button details with current state and pass to callback
                         button_details = self.get_button_details()
-                        return self.get_button_state_callback(self, button_details)
+                        result = self.get_button_state_callback(self, button_details)
+
+                        # If callback returns None, provide optimistic success result
+                        if result is None:
+                            result = NodeMessageResult(
+                                success=True,
+                                details=f"Button '{self.label}' state retrieved successfully",
+                                response=button_details,
+                                altered_workflow_state=False,
+                            )
+                        return result
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
