@@ -85,6 +85,7 @@ class SaveImage(ControlNode):
                 tooltip="Indicates whether it completed without errors.",
                 type="bool",
                 default_value=False,
+                settable=False,
                 allowed_modes={ParameterMode.OUTPUT},
             )
 
@@ -94,7 +95,7 @@ class SaveImage(ControlNode):
                 tooltip="Details about the image save operation result",
                 type="str",
                 default_value="",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
                 ui_options={"multiline": True},
             )
@@ -105,7 +106,7 @@ class SaveImage(ControlNode):
         # Reset execution state and result details at the start of each run
         self._execution_succeeded = None
         self._assign_result_details("")
-        self.set_parameter_value(self.was_successful.name, False)
+        self.parameter_output_values[self.was_successful.name] = False
 
         image = self.get_parameter_value("image")
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
@@ -230,7 +231,7 @@ class SaveImage(ControlNode):
         match status:
             case SaveImageStatus.FAILURE:
                 self._execution_succeeded = False
-                self.set_parameter_value(self.was_successful.name, False)
+                self.parameter_output_values[self.was_successful.name] = False
 
                 # Get detailed input info for failures (including dictionary preview)
                 detailed_input_info = self._get_input_info_for_failure(self.get_parameter_value("image"))
@@ -247,7 +248,7 @@ class SaveImage(ControlNode):
 
             case SaveImageStatus.WARNING:
                 self._execution_succeeded = True
-                self.set_parameter_value(self.was_successful.name, True)
+                self.parameter_output_values[self.was_successful.name] = True
 
                 result_details = (
                     f"No image to save (warning)\n"
@@ -260,7 +261,7 @@ class SaveImage(ControlNode):
 
             case SaveImageStatus.SUCCESS:
                 self._execution_succeeded = True
-                self.set_parameter_value(self.was_successful.name, True)
+                self.parameter_output_values[self.was_successful.name] = True
 
                 result_details = (
                     f"Image saved successfully\n"
