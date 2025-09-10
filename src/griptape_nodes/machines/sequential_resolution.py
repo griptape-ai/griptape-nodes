@@ -375,7 +375,10 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
         resolution_context = ResolutionContext()
         super().__init__(resolution_context)
 
-    async def resolve_node(self, node: BaseNode) -> None:
+    async def resolve_node(self, node: BaseNode | None = None) -> None:
+        if node is None:
+            msg = "SequentialResolutionMachine requires a node to resolve"
+            raise ValueError(msg)
         self._context.focus_stack.append(Focus(node=node))
         await self.start(InitializeSpotlightState)
 

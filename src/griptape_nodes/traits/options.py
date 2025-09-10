@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import Parameter, Trait
 
 @dataclass(eq=False)
 class Options(Trait):
-    choices: list[str] = field(default_factory=lambda: ["choice 1", "choice 2", "choice 3"])
+    choices: list = field(default_factory=lambda: ["choice 1", "choice 2", "choice 3"])
     element_id: str = field(default_factory=lambda: "Options")
 
     @classmethod
