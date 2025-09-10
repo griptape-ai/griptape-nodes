@@ -1521,8 +1521,9 @@ class NodeManager:
             return result
 
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
-        # This check comes after before_value_set to allow nodes to temporarily modify settable state
-        if not parameter.settable and not request.initial_setup:
+        # We skip this if it's a passthru from a connection or if we're on initial setup; those always trump settable.
+        # This check comes *AFTER* before_value_set() to allow nodes to temporarily modify settable state
+        if not parameter.settable and not incoming_node_set and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
