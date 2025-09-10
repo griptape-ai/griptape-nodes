@@ -147,7 +147,7 @@ class FlowManager:
     _global_flow_queue: Queue[QueueItem]
     _global_control_flow_machine: ControlFlowMachine | None
     _global_single_node_resolution: bool
-    _global_dag_builder: DagBuilder | None
+    _global_dag_builder: DagBuilder
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -191,14 +191,14 @@ class FlowManager:
         self._global_flow_queue = Queue[QueueItem]()
         self._global_control_flow_machine = None  # Track the current control flow machine
         self._global_single_node_resolution = False
-        self._global_dag_builder = None
+        self._global_dag_builder = DagBuilder()
 
     @property
     def global_flow_queue(self) -> Queue[QueueItem]:
         return self._global_flow_queue
 
     @property
-    def global_dag_builder(self) -> DagBuilder | None:
+    def global_dag_builder(self) -> DagBuilder:
         return self._global_dag_builder
 
     def get_connections(self) -> Connections:
@@ -522,7 +522,7 @@ class FlowManager:
 
             # Clean up ControlFlowMachine and DAG orchestrator for this flow
             self._global_control_flow_machine = None
-            self._global_dag_builder = None
+            self._global_dag_builder.clear()
 
         details = f"Successfully deleted Flow '{flow_name}'."
         result = DeleteFlowResultSuccess(result_details=details)
@@ -1600,7 +1600,6 @@ class FlowManager:
 
         # Initialize global control flow machine and DAG builder
 
-        self._global_dag_builder = DagBuilder()
         self._global_control_flow_machine = ControlFlowMachine(flow.name)
         try:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
@@ -1630,7 +1629,7 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
         self._global_single_node_resolution = False
-        self._global_dag_builder = None
+        self._global_dag_builder.clear()
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
@@ -1725,9 +1724,9 @@ class FlowManager:
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
         # Build the DAG for the node
-        if self._global_dag_builder is None:
-            self._global_dag_builder = DagBuilder()
-        self._global_dag_builder.add_node_with_dependencies(node)
+        if isinstance(resolution_machine, ParallelResolutionMachine):
+            self._global_dag_builder.add_node_with_dependencies(node)
+            resolution_machine.context.dag_builder = self._global_dag_builder
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False

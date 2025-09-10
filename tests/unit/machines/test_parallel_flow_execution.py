@@ -251,8 +251,8 @@ class TestFlowManagerDagBuilderIntegration:
             assert flow_manager._global_dag_builder is initial_dag_builder
 
             # Test that it can be cleared and reset
-            flow_manager._global_dag_builder = None
-            assert flow_manager._global_dag_builder is None
+            flow_manager._global_dag_builder.clear()
+            assert flow_manager._global_dag_builder is not None
 
         except Exception:  # noqa: S110
             # If FlowManager requires complex setup, skip this test
