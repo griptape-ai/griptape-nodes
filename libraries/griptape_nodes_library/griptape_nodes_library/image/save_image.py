@@ -125,7 +125,7 @@ class SaveImage(ControlNode):
 
         self.add_node_element(group)
 
-    def process(self) -> None:  # noqa: C901, PLR0912, PLR0915
+    def process(self) -> None:
         # Reset execution state and result details at the start of each run
         self._execution_succeeded = None
         self._assign_result_details("")
@@ -161,70 +161,41 @@ class SaveImage(ControlNode):
             except Exception as e:
                 error_details = f"Failed to load image from URL: {e!s}"
                 self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+                return
+
+        # Convert to appropriate artifact type
+        try:
+            image_artifact = to_image_artifact(processed_image)
+        except Exception as e:
+            error_details = f"Failed to convert image to artifact: {e!s}"
+            self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+            return
+
+        # Save image using appropriate method based on path type
+        try:
+            output_path = Path(output_file)
+            if output_path.is_absolute():
+                # Full path: save directly to filesystem
+                saved_path = self._save_to_filesystem(image_artifact, output_path)
             else:
-                # Convert to appropriate artifact type
-                try:
-                    image_artifact = to_image_artifact(processed_image)
-                except Exception as e:
-                    error_details = f"Failed to convert image to artifact: {e!s}"
-                    self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                else:
-                    # Save image using appropriate method based on path type
-                    try:
-                        output_path = Path(output_file)
-                        if output_path.is_absolute():
-                            # Full path: save directly to filesystem
-                            saved_path = self._save_to_filesystem(image_artifact, output_path)
-                        else:
-                            # Relative path: use static file manager
-                            saved_path = self._save_to_static_storage(image_artifact, output_file)
-                    except Exception as e:
-                        error_details = f"Failed to save image: {e!s}"
-                        self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                    else:
-                        # Success case with path method info
-                        path_method = "filesystem" if output_path.is_absolute() else "static storage"
-                        success_details = f"Image saved successfully via {path_method}"
-                        self._handle_execution_result(
-                            status=SaveImageStatus.SUCCESS,
-                            saved_path=saved_path,
-                            input_info=input_info,
-                            output_file=output_file,
-                            details=success_details,
-                        )
-                        logger.info(f"Saved image: {saved_path}")
-        else:
-            # Convert to appropriate artifact type
-            try:
-                image_artifact = to_image_artifact(processed_image)
-            except Exception as e:
-                error_details = f"Failed to convert image to artifact: {e!s}"
-                self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-            else:
-                # Save image using appropriate method based on path type
-                try:
-                    output_path = Path(output_file)
-                    if output_path.is_absolute():
-                        # Full path: save directly to filesystem
-                        saved_path = self._save_to_filesystem(image_artifact, output_path)
-                    else:
-                        # Relative path: use static file manager
-                        saved_path = self._save_to_static_storage(image_artifact, output_file)
-                except Exception as e:
-                    error_details = f"Failed to save image: {e!s}"
-                    self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                else:
-                    # Success case with path method info
-                    path_method = "filesystem" if output_path.is_absolute() else "static storage"
-                    success_details = f"Image saved successfully via {path_method}"
-                    self._handle_execution_result(
-                        status=SaveImageStatus.SUCCESS,
-                        saved_path=saved_path,
-                        input_info=input_info,
-                        output_file=output_file,
-                        details=success_details,
-                    )
-                    logger.info(f"Saved image: {saved_path}")
+                # Relative path: use static file manager
+                saved_path = self._save_to_static_storage(image_artifact, output_file)
+        except Exception as e:
+            error_details = f"Failed to save image: {e!s}"
+            self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+            return
+
+        # Success case with path method info
+        path_method = "filesystem" if output_path.is_absolute() else "static storage"
+        success_details = f"Image saved successfully via {path_method}"
+        self._handle_execution_result(
+            status=SaveImageStatus.SUCCESS,
+            saved_path=saved_path,
+            input_info=input_info,
+            output_file=output_file,
+            details=success_details,
+        )
+        logger.info(f"Saved image: {saved_path}")
 
     def get_next_control_output(self) -> Parameter | None:
         """Determine which control output to follow based on execution result."""
