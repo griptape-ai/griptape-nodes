@@ -1150,13 +1150,23 @@ class TrackedParameterOutputValues(dict[str, Any]):
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
-    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+        input_control_name: str | None = None,
+        output_control_name: str | None = None,
+    ) -> None:
         super().__init__(name, metadata=metadata)
-        control_parameter_in = ControlParameterInput()
-        control_parameter_out = ControlParameterOutput()
+        self.control_parameter_in = ControlParameterInput(
+            display_name=input_control_name if input_control_name is not None else "Flow In"
+        )
+        self.control_parameter_out = ControlParameterOutput(
+            display_name=output_control_name if output_control_name is not None else "Flow Out"
+        )
 
-        self.add_parameter(control_parameter_in)
-        self.add_parameter(control_parameter_out)
+        self.add_parameter(self.control_parameter_in)
+        self.add_parameter(self.control_parameter_out)
 
     def get_next_control_output(self) -> Parameter | None:
         for param in self.parameters:
