@@ -18,6 +18,9 @@ from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryResultSuccess,
     GetConfigPathRequest,
     GetConfigPathResultSuccess,
+    GetConfigSchemaRequest,
+    GetConfigSchemaResultFailure,
+    GetConfigSchemaResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultFailure,
     GetConfigValueResultSuccess,
@@ -84,6 +87,9 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
             event_manager.assign_manager_to_request_type(GetConfigPathRequest, self.on_handle_get_config_path_request)
+            event_manager.assign_manager_to_request_type(
+                GetConfigSchemaRequest, self.on_handle_get_config_schema_request
+            )
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
 
             event_manager.add_listener_to_app_event(
@@ -411,6 +417,16 @@ class ConfigManager:
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         result_details = "Successfully returned the config path."
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
+
+    def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
+        """Handle request to get the configuration schema."""
+        try:
+            schema = Settings.model_json_schema()
+            result_details = "Successfully returned the configuration schema."
+            return GetConfigSchemaResultSuccess(schema=schema, result_details=result_details)
+        except Exception as e:
+            result_details = f"Failed to generate configuration schema: {e}"
+            return GetConfigSchemaResultFailure(result_details=result_details)
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:
