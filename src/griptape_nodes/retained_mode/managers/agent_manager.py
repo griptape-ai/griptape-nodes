@@ -111,6 +111,7 @@ class AgentManager:
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
+            # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop mcp server
 
     def _initialize_prompt_driver(self) -> GriptapeCloudPromptDriver:
         api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)

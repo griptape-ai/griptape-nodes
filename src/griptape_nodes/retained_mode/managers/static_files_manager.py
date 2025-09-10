@@ -90,6 +90,7 @@ class StaticFilesManager:
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
+            # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
 
     def on_handle_create_static_file_request(
         self,
