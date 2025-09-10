@@ -73,6 +73,28 @@ class SaveImage(ControlNode):
         # Track execution state for control flow routing
         self._execution_succeeded: bool | None = None
 
+        # Save options parameters in a collapsible ParameterGroup
+        with ParameterGroup(name="Save Options") as save_options_group:
+            save_options_group.ui_options = {"collapsed": True}
+
+            self.allow_creating_folders = Parameter(
+                name="allow_creating_folders",
+                tooltip="Allow creating parent directories if they don't exist",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            self.overwrite_existing = Parameter(
+                name="overwrite_existing",
+                tooltip="Allow overwriting existing files",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+        self.add_node_element(save_options_group)
+
         # Advanced parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Status") as group:
             group.ui_options = {"collapsed": True}
