@@ -11,10 +11,9 @@ from griptape_nodes.cli.shared import (
     GITHUB_UPDATE_URL,
     LATEST_TAG,
     PYPI_UPDATE_URL,
-    config_manager,
     console,
-    os_manager,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import (
     get_complete_version_string,
@@ -22,6 +21,10 @@ from griptape_nodes.utils.version_utils import (
     get_latest_version_git,
     get_latest_version_pypi,
 )
+
+config_manager = GriptapeNodes.ConfigManager()
+secrets_manager = GriptapeNodes.SecretsManager()
+os_manager = GriptapeNodes.OSManager()
 
 app = typer.Typer(help="Manage this CLI installation.")
 
