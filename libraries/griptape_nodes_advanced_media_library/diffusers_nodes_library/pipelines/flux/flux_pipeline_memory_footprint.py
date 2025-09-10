@@ -9,6 +9,12 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     print_pipeline_memory_footprint,
     to_human_readable_size,  # type: ignore[reportMissingImports]
 )
+from diffusers_nodes_library.pipelines.flux.diptych_flux_fill_pipeline_parameters import (
+    DiptychFluxFillPipelineParameters,
+)
+from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import (
+    FluxFillPipelineParameters,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import FluxPipelineParameters
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -70,7 +76,9 @@ def _log_memory_info(
 
 
 def _quantize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, quantization_mode: str, device: torch.device
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    quantization_mode: str,
+    device: torch.device,
 ) -> None:
     """Uses optimum.quanto to quantize the pipeline components."""
     from optimum.quanto import freeze, qfloat8, qint4, qint8, quantize  # type: ignore[reportMissingImports]
@@ -102,7 +110,7 @@ def _quantize_flux_pipeline(
 
 
 def _optimize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
     quantization_mode: str,
     device: torch.device,
 ) -> None:
@@ -171,7 +179,8 @@ def _optimize_flux_pipeline(
 
 
 def optimize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline, pipe_params: FluxPipelineParameters
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
 ) -> None:
     """Optimize pipeline performance and memory."""
     device = get_best_device()
