@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+from rich.console import Console
+
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
@@ -12,8 +14,9 @@ def main() -> None:
     # but current engine relies on importing files rather than packages.
     sys.path.append(str(Path.cwd()))
 
-    # Import and run the new CLI
-    from griptape_nodes.cli.main import app
+    console = Console()
+    with console.status("[bold green]Loading Griptape Nodes...", spinner="dots"):
+        from griptape_nodes.cli.main import app
 
     app()
 
