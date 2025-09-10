@@ -73,6 +73,28 @@ class SaveImage(ControlNode):
         # Track execution state for control flow routing
         self._execution_succeeded: bool | None = None
 
+        # Save options parameters in a collapsible ParameterGroup
+        with ParameterGroup(name="Save Options") as save_options_group:
+            save_options_group.ui_options = {"collapsed": True}
+
+            self.allow_creating_folders = Parameter(
+                name="allow_creating_folders",
+                tooltip="Allow creating parent directories if they don't exist",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            self.overwrite_existing = Parameter(
+                name="overwrite_existing",
+                tooltip="Allow overwriting existing files",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+        self.add_node_element(save_options_group)
+
         # Advanced parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Status") as group:
             group.ui_options = {"collapsed": True}
@@ -103,7 +125,7 @@ class SaveImage(ControlNode):
 
         self.add_node_element(group)
 
-    def process(self) -> None:  # noqa: C901, PLR0912, PLR0915
+    def process(self) -> None:
         # Reset execution state and result details at the start of each run
         self._execution_succeeded = None
         self._assign_result_details("")
@@ -139,70 +161,52 @@ class SaveImage(ControlNode):
             except Exception as e:
                 error_details = f"Failed to load image from URL: {e!s}"
                 self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+                return
+
+        # Convert to appropriate artifact type
+        try:
+            image_artifact = to_image_artifact(processed_image)
+        except Exception as e:
+            error_details = f"Failed to convert image to artifact: {e!s}"
+            self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+            return
+
+        # Get save options
+        allow_creating_folders = self.get_parameter_value(self.allow_creating_folders.name)
+        overwrite_existing = self.get_parameter_value(self.overwrite_existing.name)
+
+        # Save image using appropriate method based on path type
+        try:
+            output_path = Path(output_file)
+            if output_path.is_absolute():
+                # Full path: save directly to filesystem
+                saved_path = self._save_to_filesystem(
+                    image_artifact=image_artifact,
+                    output_path=output_path,
+                    allow_creating_folders=allow_creating_folders,
+                    overwrite_existing=overwrite_existing,
+                )
             else:
-                # Convert to appropriate artifact type
-                try:
-                    image_artifact = to_image_artifact(processed_image)
-                except Exception as e:
-                    error_details = f"Failed to convert image to artifact: {e!s}"
-                    self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                else:
-                    # Save image using appropriate method based on path type
-                    try:
-                        output_path = Path(output_file)
-                        if output_path.is_absolute():
-                            # Full path: save directly to filesystem
-                            saved_path = self._save_to_filesystem(image_artifact, output_path)
-                        else:
-                            # Relative path: use static file manager
-                            saved_path = self._save_to_static_storage(image_artifact, output_file)
-                    except Exception as e:
-                        error_details = f"Failed to save image: {e!s}"
-                        self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                    else:
-                        # Success case with path method info
-                        path_method = "filesystem" if output_path.is_absolute() else "static storage"
-                        success_details = f"Image saved successfully via {path_method}"
-                        self._handle_execution_result(
-                            status=SaveImageStatus.SUCCESS,
-                            saved_path=saved_path,
-                            input_info=input_info,
-                            output_file=output_file,
-                            details=success_details,
-                        )
-                        logger.info(f"Saved image: {saved_path}")
-        else:
-            # Convert to appropriate artifact type
-            try:
-                image_artifact = to_image_artifact(processed_image)
-            except Exception as e:
-                error_details = f"Failed to convert image to artifact: {e!s}"
-                self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-            else:
-                # Save image using appropriate method based on path type
-                try:
-                    output_path = Path(output_file)
-                    if output_path.is_absolute():
-                        # Full path: save directly to filesystem
-                        saved_path = self._save_to_filesystem(image_artifact, output_path)
-                    else:
-                        # Relative path: use static file manager
-                        saved_path = self._save_to_static_storage(image_artifact, output_file)
-                except Exception as e:
-                    error_details = f"Failed to save image: {e!s}"
-                    self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
-                else:
-                    # Success case with path method info
-                    path_method = "filesystem" if output_path.is_absolute() else "static storage"
-                    success_details = f"Image saved successfully via {path_method}"
-                    self._handle_execution_result(
-                        status=SaveImageStatus.SUCCESS,
-                        saved_path=saved_path,
-                        input_info=input_info,
-                        output_file=output_file,
-                        details=success_details,
-                    )
-                    logger.info(f"Saved image: {saved_path}")
+                # Relative path: use static file manager
+                saved_path = self._save_to_static_storage(
+                    image_artifact=image_artifact, output_file=output_file, overwrite_existing=overwrite_existing
+                )
+        except Exception as e:
+            error_details = f"Failed to save image: {e!s}"
+            self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
+            return
+
+        # Success case with path method info
+        path_method = "filesystem" if output_path.is_absolute() else "static storage"
+        success_details = f"Image saved successfully via {path_method}"
+        self._handle_execution_result(
+            status=SaveImageStatus.SUCCESS,
+            saved_path=saved_path,
+            input_info=input_info,
+            output_file=output_file,
+            details=success_details,
+        )
+        logger.info(f"Saved image: {saved_path}")
 
     def get_next_control_output(self) -> Parameter | None:
         """Determine which control output to follow based on execution result."""
@@ -293,14 +297,27 @@ class SaveImage(ControlNode):
 
                 self._assign_result_details(f"{status}: {result_details}")
 
-    def _save_to_filesystem(self, image_artifact: Any, output_path: Path) -> str:
+    def _save_to_filesystem(
+        self, image_artifact: Any, output_path: Path, *, allow_creating_folders: bool, overwrite_existing: bool
+    ) -> str:
         """Save image directly to filesystem at the specified absolute path."""
-        # Ensure parent directory exists
-        try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            error_details = f"Failed to create directory structure for path: {e!s}"
-            raise ValueError(error_details) from e
+        # Check if file exists and overwrite is disabled
+        if output_path.exists() and not overwrite_existing:
+            error_details = f"File already exists and overwrite_existing is disabled: {output_path}"
+            raise ValueError(error_details)
+
+        # Handle parent directory creation
+        if allow_creating_folders:
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                error_details = f"Failed to create directory structure for path: {e!s}"
+                raise ValueError(error_details) from e
+        elif not output_path.parent.exists():
+            error_details = (
+                f"Parent directory does not exist and allow_creating_folders is disabled: {output_path.parent}"
+            )
+            raise ValueError(error_details)
 
         # Convert image to bytes
         try:
@@ -318,8 +335,25 @@ class SaveImage(ControlNode):
 
         return str(output_path)
 
-    def _save_to_static_storage(self, image_artifact: Any, output_file: str) -> str:
-        """Save image using the static file manager (existing behavior)."""
+    def _save_to_static_storage(self, image_artifact: Any, output_file: str, *, overwrite_existing: bool) -> str:
+        """Save image using the static file manager."""
+        # Check if file exists in static storage and overwrite is disabled
+        if not overwrite_existing:
+            from griptape_nodes.retained_mode.events.static_file_events import (
+                CreateStaticFileDownloadUrlRequest,
+                CreateStaticFileDownloadUrlResultFailure,
+            )
+
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            request = CreateStaticFileDownloadUrlRequest(file_name=output_file)
+            result = static_files_manager.on_handle_create_static_file_download_url_request(request)
+
+            if not isinstance(result, CreateStaticFileDownloadUrlResultFailure):
+                error_details = (
+                    f"File already exists in static storage and overwrite_existing is disabled: {output_file}"
+                )
+                raise ValueError(error_details)
+
         # Convert image to bytes
         try:
             image_bytes = image_artifact.to_bytes()
