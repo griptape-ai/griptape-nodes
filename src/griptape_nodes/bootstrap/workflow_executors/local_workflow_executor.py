@@ -4,6 +4,7 @@ from typing import Any
 from griptape_nodes.bootstrap.workflow_executors.workflow_executor import WorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     ExecutionGriptapeNodeEvent,
@@ -155,6 +156,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
         await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+
+        await GriptapeNodes.EventManager().broadcast_app_event(AppInitializationComplete())
 
         # Now send the run command to actually execute it
         start_flow_request = StartFlowRequest(flow_name=flow_name)

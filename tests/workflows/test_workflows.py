@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 # Signal the server to shutdown gracefully using the API module function
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -73,7 +72,6 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=test_libraries,
     )
-    await griptape_nodes.EventManager().broadcast_app_event(AppInitializationComplete())
 
     yield  # Run all tests
 
