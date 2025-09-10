@@ -445,7 +445,7 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_name = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_name, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_name is not None:
@@ -458,15 +458,15 @@ class NodeManager:
                             f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                         )
                         return DeleteNodeResultFailure(result_details=details)
-            if resolving_node_name is not None and not cancelled:
-                resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
-                if resolving_node in connected_nodes:
-                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                    if not result.succeeded():
-                        details = (
-                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
-                        )
-                        return DeleteNodeResultFailure(result_details=details)
+            if resolving_node_names is not None and not cancelled:
+                for resolving_node_name in resolving_node_names:
+                    resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
+                    if resolving_node in connected_nodes:
+                        result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                        if not result.succeeded():
+                            details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                            return DeleteNodeResultFailure(result_details=details)
+                        break  # Only need to cancel once
             # Clear the execution queue, because we don't want to hit this node eventually.
             parent_flow.clear_execution_queue()
         return None

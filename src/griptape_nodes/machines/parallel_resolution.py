@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING
 
-from griptape_nodes.common.directed_graph import DirectedGraph
-from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
@@ -19,38 +18,15 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentDataNodeEvent,
     NodeResolvedEvent,
-    ParameterSpotlightEvent,
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 
+if TYPE_CHECKING:
+    from griptape_nodes.common.directed_graph import DirectedGraph
+    from griptape_nodes.machines.dag_builder import DagBuilder, DagNode
+
 logger = logging.getLogger("griptape_nodes")
-
-
-class NodeState(StrEnum):
-    """Individual node execution states."""
-
-    QUEUED = "queued"
-    PROCESSING = "processing"
-    DONE = "done"
-    CANCELED = "canceled"
-    ERRORED = "errored"
-    WAITING = "waiting"
-
-
-@dataclass(kw_only=True)
-class DagNode:
-    """Represents a node in the DAG with runtime references."""
-
-    task_reference: asyncio.Task | None = field(default=None)
-    node_state: NodeState = field(default=NodeState.WAITING)
-    node_reference: BaseNode
-
-
-@dataclass
-class Focus:
-    node: BaseNode
-    scheduled_value: Any | None = None
 
 
 class WorkflowState(StrEnum):
@@ -63,174 +39,66 @@ class WorkflowState(StrEnum):
 
 
 class ParallelResolutionContext:
-    focus_stack: list[Focus]
     paused: bool
     flow_name: str
-    build_only: bool
-    batched_nodes: list[BaseNode]
     error_message: str | None
     workflow_state: WorkflowState
-    # DAG fields moved from DagOrchestrator
-    network: DirectedGraph
-    node_to_reference: dict[str, DagNode]
+    # Execution fields
     async_semaphore: asyncio.Semaphore
     task_to_node: dict[asyncio.Task, DagNode]
+    dag_builder: DagBuilder | None
 
-    def __init__(self, flow_name: str, max_nodes_in_parallel: int | None = None) -> None:
+    def __init__(
+        self, flow_name: str, max_nodes_in_parallel: int | None = None, dag_builder: DagBuilder | None = None
+    ) -> None:
         self.flow_name = flow_name
-        self.focus_stack = []
         self.paused = False
-        self.build_only = False
-        self.batched_nodes = []
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
+        self.dag_builder = dag_builder
 
-        # Initialize DAG fields
-        self.network = DirectedGraph()
-        self.node_to_reference = {}
+        # Initialize execution fields
         max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
         self.async_semaphore = asyncio.Semaphore(max_nodes_in_parallel)
         self.task_to_node = {}
 
+    @property
+    def network(self) -> DirectedGraph:
+        """Get network from dag_builder if available."""
+        if not self.dag_builder:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
+        return self.dag_builder.graph
+
+    @property
+    def node_to_reference(self) -> dict[str, DagNode]:
+        """Get node_to_reference from dag_builder if available."""
+        if not self.dag_builder:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
+        return self.dag_builder.node_to_reference
+
     def reset(self, *, cancel: bool = False) -> None:
-        if self.focus_stack:
-            node = self.focus_stack[-1].node
-            node.clear_node()
-        self.focus_stack.clear()
         self.paused = False
         if cancel:
             self.workflow_state = WorkflowState.CANCELED
-            for node in self.node_to_reference.values():
-                node.node_state = NodeState.CANCELED
+            # Only access node_to_reference if dag_builder exists
+            if self.dag_builder:
+                for node in self.node_to_reference.values():
+                    node.node_state = NodeState.CANCELED
         else:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
-            self.network.clear()
-            self.node_to_reference.clear()
             self.task_to_node.clear()
 
-
-class InitializeDagSpotlightState(State):
-    @staticmethod
-    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        current_node = context.focus_stack[-1].node
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
-            )
-        )
-        if not context.paused:
-            return InitializeDagSpotlightState
-        return None
-
-    @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
-        if not len(context.focus_stack):
-            return DagCompleteState
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        current_node = context.focus_stack[-1].node
-        if current_node.state == NodeResolutionState.UNRESOLVED:
-            GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
-            current_node.initialize_spotlight()
-        current_node.state = NodeResolutionState.RESOLVING
-        if current_node.get_current_parameter() is None:
-            if current_node.advance_parameter():
-                return EvaluateDagParameterState
-            return BuildDagNodeState
-        return EvaluateDagParameterState
-
-
-class EvaluateDagParameterState(State):
-    @staticmethod
-    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
-        current_parameter = current_node.get_current_parameter()
-        if current_parameter is None:
-            return BuildDagNodeState
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(
-                    payload=ParameterSpotlightEvent(
-                        node_name=current_node.name,
-                        parameter_name=current_parameter.name,
-                    )
-                )
-            )
-        )
-        if not context.paused:
-            return EvaluateDagParameterState
-        return None
-
-    @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        current_node = context.focus_stack[-1].node
-        current_parameter = current_node.get_current_parameter()
-        connections = GriptapeNodes.FlowManager().get_connections()
-        if current_parameter is None:
-            msg = "No current parameter set."
-            raise ValueError(msg)
-        next_node = connections.get_connected_node(current_node, current_parameter)
-        if next_node:
-            next_node, _ = next_node
-        if next_node:
-            if next_node.state == NodeResolutionState.UNRESOLVED:
-                focus_stack_names = {focus.node.name for focus in context.focus_stack}
-                if next_node.name in focus_stack_names:
-                    msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
-                    raise RuntimeError(msg)
-                context.network.add_edge(next_node.name, current_node.name)
-                context.focus_stack.append(Focus(node=next_node))
-                return InitializeDagSpotlightState
-            if next_node.state == NodeResolutionState.RESOLVED and next_node in context.batched_nodes:
-                context.network.add_edge(next_node.name, current_node.name)
-        if current_node.advance_parameter():
-            return InitializeDagSpotlightState
-        return BuildDagNodeState
-
-
-class BuildDagNodeState(State):
-    @staticmethod
-    async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
-
-        # Add the current node to the DAG
-        node_reference = DagNode(node_reference=current_node)
-        context.node_to_reference[current_node.name] = node_reference
-        # Add node name to DAG (has to be a hashable value)
-        context.network.add_node(node_for_adding=current_node.name)
-
-        if not context.paused:
-            return BuildDagNodeState
-        return None
-
-    @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
-        current_node = context.focus_stack[-1].node
-
-        # Mark node as resolved for DAG building purposes
-        current_node.state = NodeResolutionState.RESOLVED
-        # Add to batched nodes
-        context.batched_nodes.append(current_node)
-
-        context.focus_stack.pop()
-        if len(context.focus_stack):
-            return EvaluateDagParameterState
-
-        if context.build_only:
-            return DagCompleteState
-        return ExecuteDagState
+        # Clear DAG builder state to allow re-adding nodes on subsequent runs
+        if self.dag_builder:
+            self.dag_builder.clear()
 
 
 class ExecuteDagState(State):
     @staticmethod
-    def handle_done_nodes(done_node: DagNode) -> None:
+    async def handle_done_nodes(done_node: DagNode) -> None:
         current_node = done_node.node_reference
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -252,7 +120,7 @@ class ExecuteDagState(State):
                 data_type = ParameterTypeBuiltin.NONE.value
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            GriptapeNodes.EventManager().put_event(
+            await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ParameterValueUpdateEvent(
@@ -272,7 +140,7 @@ class ExecuteDagState(State):
             library_name = None
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        GriptapeNodes.EventManager().put_event(
+        await GriptapeNodes.EventManager().aput_event(
             ExecutionGriptapeNodeEvent(
                 wrapped_event=ExecutionEvent(
                     payload=NodeResolvedEvent(
@@ -286,7 +154,7 @@ class ExecuteDagState(State):
         )
 
     @staticmethod
-    def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
+    async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
         """Collect output values from resolved upstream nodes and pass them to the current node.
 
         This method iterates through all input parameters of the current node, finds their
@@ -318,53 +186,21 @@ class ExecuteDagState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
-                        incoming_connection_source_node_name=upstream_node.name,
-                        incoming_connection_source_parameter_name=upstream_parameter.name,
+                # Skip propagation for Control Parameters as they should not receive values
+                if (
+                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
+                    != ParameterTypeBuiltin.CONTROL_TYPE
+                ):
+                    await GriptapeNodes.get_instance().ahandle_request(
+                        SetParameterValueRequest(
+                            parameter_name=parameter.name,
+                            node_name=current_node.name,
+                            value=output_value,
+                            data_type=upstream_parameter.output_type,
+                            incoming_connection_source_node_name=upstream_node.name,
+                            incoming_connection_source_parameter_name=upstream_parameter.name,
+                        )
                     )
-                )
-
-    @staticmethod
-    def clear_parameter_output_values(node_reference: DagNode) -> None:
-        """Clear all parameter output values for the given node and publish events.
-
-        This method iterates through each parameter output value stored in the node,
-        removes it from the node's parameter_output_values dictionary, and publishes an event
-        to notify the system about the parameter value being set to None.
-
-        Args:
-            node_reference (DagOrchestrator.DagNode): The DAG node to clear values for.
-
-        Raises:
-            ValueError: If a parameter name in parameter_output_values doesn't correspond
-                to an actual parameter in the node.
-        """
-        current_node = node_reference.node_reference
-        for parameter_name in current_node.parameter_output_values:
-            parameter = current_node.get_parameter_by_name(parameter_name)
-            if parameter is None:
-                err = f"Attempted to clear output values for node '{current_node.name}' but could not find parameter '{parameter_name}' that was indicated as having a value."
-                raise ValueError(err)
-            parameter_type = parameter.type
-            if parameter_type is None:
-                parameter_type = ParameterTypeBuiltin.NONE.value
-            payload = ParameterValueUpdateEvent(
-                node_name=current_node.name,
-                parameter_name=parameter_name,
-                data_type=parameter_type,
-                value=None,
-            )
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=payload))
-            )
-        current_node.parameter_output_values.clear()
 
     @staticmethod
     def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
@@ -397,17 +233,23 @@ class ExecuteDagState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         # Start DAG execution after resolution is complete
-        context.batched_nodes.clear()
         for node in context.node_to_reference.values():
-            # We have a DAG. Flag all nodes in DAG as queued. Workflow state is NO_ERROR
-            node.node_state = NodeState.QUEUED
+            # Only queue nodes that are waiting - preserve state of already processed nodes.
+            if node.node_state == NodeState.WAITING:
+                node.node_state = NodeState.QUEUED
+
         context.workflow_state = WorkflowState.NO_ERROR
+
         if not context.paused:
             return ExecuteDagState
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
+        # Check if execution is paused
+        if context.paused:
+            return None
+
         # Check if DAG execution is complete
         network = context.network
         # Check and see if there are leaf nodes that are cancelled.
@@ -418,7 +260,7 @@ class ExecuteDagState(State):
             # Remove the leaf node from the graph.
             network.remove_node(node)
             # Return thread to thread pool.
-            ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
+            await ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
         # Reinitialize leaf nodes since maybe we changed things up.
         if len(done_nodes) > 0:
             # We removed nodes from the network. There may be new leaf nodes.
@@ -439,7 +281,7 @@ class ExecuteDagState(State):
 
             # Collect parameter values from upstream nodes before executing
             try:
-                ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
+                await ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
             except Exception as e:
                 logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
                 context.error_message = (
@@ -448,23 +290,18 @@ class ExecuteDagState(State):
                 context.workflow_state = WorkflowState.ERRORED
                 return ErrorState
 
-            # Clear parameter output values before execution
-            try:
-                ExecuteDagState.clear_parameter_output_values(node_reference)
-            except Exception as e:
-                logger.exception(
-                    "Error clearing parameter output values for node '%s'", node_reference.node_reference.name
-                )
-                context.error_message = (
-                    f"Parameter clearing failed for node '{node_reference.node_reference.name}': {e}"
-                )
-                context.workflow_state = WorkflowState.ERRORED
+            # Clear all of the current output values but don't broadcast the clearing.
+            # to avoid any flickering in subscribers (UI).
+            node_reference.node_reference.parameter_output_values.silent_clear()
+            exceptions = node_reference.node_reference.validate_before_node_run()
+            if exceptions:
+                msg = f"Canceling flow run. Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
+                logger.error(msg)
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
                 node = context.task_to_node.pop(task)
                 node.node_state = NodeState.DONE
-                logger.info("Task done: %s", node.node_reference.name)
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
@@ -474,9 +311,18 @@ class ExecuteDagState(State):
             node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
+
+            # Send an event that this is a current data node:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            await GriptapeNodes.EventManager().aput_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
+            )
             # Wait for a task to finish
         await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Once a task has finished, loop back to the top.
+        if context.paused:
+            return None
         return ExecuteDagState
 
 
@@ -530,8 +376,9 @@ class ErrorState(State):
 class DagCompleteState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        # Set build_only back to False.
-        context.build_only = False
+        # Clear the DAG builder so we don't have any leftover nodes in node_to_reference.
+        if context.dag_builder is not None:
+            context.dag_builder.clear()
         return None
 
     @staticmethod
@@ -542,19 +389,17 @@ class DagCompleteState(State):
 class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     """State machine for building DAG structure without execution."""
 
-    def __init__(self, flow_name: str, max_nodes_in_parallel: int | None = None) -> None:
-        resolution_context = ParallelResolutionContext(flow_name, max_nodes_in_parallel=max_nodes_in_parallel)
+    def __init__(
+        self, flow_name: str, max_nodes_in_parallel: int | None = None, dag_builder: DagBuilder | None = None
+    ) -> None:
+        resolution_context = ParallelResolutionContext(
+            flow_name, max_nodes_in_parallel=max_nodes_in_parallel, dag_builder=dag_builder
+        )
         super().__init__(resolution_context)
 
-    async def resolve_node(self, node: BaseNode, *, build_only: bool = False) -> None:
-        """Build DAG structure starting from the given node."""
-        self._context.focus_stack.append(Focus(node=node))
-        self._context.build_only = build_only
-        await self.start(InitializeDagSpotlightState)
-
-    async def build_dag_for_node(self, node: BaseNode) -> None:
-        """Build DAG structure starting from the given node. (Deprecated: use resolve_node)."""
-        await self.resolve_node(node)
+    async def resolve_node(self, node: BaseNode | None = None) -> None:  # noqa: ARG002
+        """Execute the DAG structure using the existing DagBuilder."""
+        await self.start(ExecuteDagState)
 
     def change_debug_mode(self, *, debug_mode: bool) -> None:
         self._context.paused = debug_mode
