@@ -16,13 +16,10 @@ class LogLevel(StrEnum):
     """Logging level for the application."""
 
     CRITICAL = "CRITICAL"
-    FATAL = "FATAL"
     ERROR = "ERROR"
-    WARN = "WARN"
     WARNING = "WARNING"
     INFO = "INFO"
     DEBUG = "DEBUG"
-    NOTSET = "NOTSET"
 
 
 class AppInitializationComplete(BaseModel):
