@@ -1841,6 +1841,17 @@
       }
     },
     {
+      "class_name": "CancelWorkflow",
+      "file_path": "griptape_nodes_library/execution/cancel_workflow.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Cancel the workflow execution with a custom reason",
+        "display_name": "Cancel Workflow",
+        "icon": "x-circle",
+        "group": "flow control"
+      }
+    },
+    {
       "class_name": "CreateVariable",
       "file_path": "griptape_nodes_library/variables/create_variable.py",
       "metadata": {
