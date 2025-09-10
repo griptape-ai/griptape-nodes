@@ -72,32 +72,6 @@ class SaveImage(ControlNode):
             )
         )
 
-        # Advanced parameters in a collapsible ParameterGroup
-        with ParameterGroup(name="Status") as group:
-            group.ui_options = {"collapsed": True}
-
-            # Boolean parameter to indicate success/failure
-            self.was_successful = Parameter(
-                name="was_successful",
-                tooltip="Indicates whether it completed without errors.",
-                type="bool",
-                default_value=False,
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-
-            # Result details parameter with multiline option
-            self.result_details = Parameter(
-                name="result_details",
-                tooltip="Details about the image save operation result",
-                type="str",
-                default_value="",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                settable=False,
-                ui_options={"multiline": True},
-            )
-
-        self.add_node_element(group)
-
         # Track execution state for control flow routing
         self._execution_succeeded: bool | None = None
 
@@ -126,9 +100,6 @@ class SaveImage(ControlNode):
             )
 
         self.add_node_element(group)
-
-        # Track execution state for control flow routing
-        self._execution_succeeded: bool | None = None
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
