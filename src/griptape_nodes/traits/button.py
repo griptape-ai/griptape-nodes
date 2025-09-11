@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 from griptape_nodes.exe_types.core_types import NodeMessagePayload, NodeMessageResult, Trait
 
@@ -63,15 +63,22 @@ class OnClickMessageResultPayload(NodeMessagePayload):
     button_details: ButtonDetailsMessagePayload
 
 
+class SetButtonStatusMessagePayload(NodeMessagePayload):
+    """Payload for setting button status with explicit field updates."""
+
+    updates: dict[str, str | bool | None]
+
+
 @dataclass(eq=False)
 class Button(Trait):
     # Specific callback types for better type safety and clarity
-    type OnClickCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
-    type GetButtonStateCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult]
+    type OnClickCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult | None]
+    type GetButtonStateCallback = Callable[[Button, ButtonDetailsMessagePayload], NodeMessageResult | None]
 
     # Static message type constants
     ON_CLICK_MESSAGE_TYPE = "on_click"
     GET_BUTTON_STATUS_MESSAGE_TYPE = "get_button_status"
+    SET_BUTTON_STATUS_MESSAGE_TYPE = "set_button_status"
 
     # Button styling and behavior properties
     label: str = "Button"
@@ -169,7 +176,7 @@ class Button(Trait):
 
         return options
 
-    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
+    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:  # noqa: PLR0911
         """Handle messages sent to this button trait.
 
         Args:
@@ -185,7 +192,16 @@ class Button(Trait):
                     try:
                         # Pre-fill button details with current state and pass to callback
                         button_details = self.get_button_details()
-                        return self.on_click_callback(self, button_details)
+                        result = self.on_click_callback(self, button_details)
+
+                        # If callback returns None, provide optimistic success result
+                        if result is None:
+                            result = NodeMessageResult(
+                                success=True,
+                                details=f"Button '{self.label}' clicked successfully",
+                                response=button_details,
+                            )
+                        return result  # noqa: TRY300
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
@@ -202,7 +218,17 @@ class Button(Trait):
                     try:
                         # Pre-fill button details with current state and pass to callback
                         button_details = self.get_button_details()
-                        return self.get_button_state_callback(self, button_details)
+                        result = self.get_button_state_callback(self, button_details)
+
+                        # If callback returns None, provide optimistic success result
+                        if result is None:
+                            result = NodeMessageResult(
+                                success=True,
+                                details=f"Button '{self.label}' state retrieved successfully",
+                                response=button_details,
+                                altered_workflow_state=False,
+                            )
+                        return result  # noqa: TRY300
                     except Exception as e:
                         return NodeMessageResult(
                             success=False,
@@ -211,6 +237,9 @@ class Button(Trait):
                         )
                 else:
                     return self._default_get_button_status(message_type, message)
+
+            case self.SET_BUTTON_STATUS_MESSAGE_TYPE:
+                return self._handle_set_button_status(message)
 
         # Delegate to parent implementation for unhandled messages or no callback
         return super().on_message_received(message_type, message)
@@ -228,4 +257,93 @@ class Button(Trait):
             details=f"Button '{self.label}' details retrieved",
             response=button_details,
             altered_workflow_state=False,
+        )
+
+    def _handle_set_button_status(self, message: NodeMessagePayload | None) -> NodeMessageResult:  # noqa: C901
+        """Handle set button status messages by updating fields specified in the updates dict."""
+        if not message:
+            return NodeMessageResult(
+                success=False,
+                details="No message payload provided for set_button_status",
+                response=None,
+                altered_workflow_state=False,
+            )
+
+        if not isinstance(message, SetButtonStatusMessagePayload):
+            return NodeMessageResult(
+                success=False,
+                details="Invalid message payload type for set_button_status",
+                response=None,
+                altered_workflow_state=False,
+            )
+
+        # Track which fields were updated
+        updated_fields = []
+        validation_errors = []
+
+        # Valid field names and their expected types
+        valid_fields = {
+            "label": str,
+            "variant": str,  # Will validate against ButtonVariant literals
+            "size": str,  # Will validate against ButtonSize literals
+            "state": str,  # Will validate against ButtonState literals
+            "icon": str,
+            "icon_class": str,
+            "icon_position": str,  # Will validate against IconPosition literals
+            "full_width": bool,
+            "loading_label": str,
+            "loading_icon": str,
+            "loading_icon_class": str,
+        }
+
+        # Process each update
+        for field_name, value in message.updates.items():
+            # Check if field is valid
+            if field_name not in valid_fields:
+                validation_errors.append(f"Invalid field: {field_name}")
+                continue
+
+            # Type check if value is not None
+            if value is not None and not isinstance(value, valid_fields[field_name]):
+                validation_errors.append(
+                    f"Invalid type for {field_name}: expected {valid_fields[field_name].__name__}, got {type(value).__name__}"
+                )
+                continue
+
+            # Additional validation for Literal types
+            if field_name == "variant" and value is not None and value not in get_args(ButtonVariant):
+                validation_errors.append(f"Invalid variant: {value}")
+                continue
+            if field_name == "size" and value is not None and value not in get_args(ButtonSize):
+                validation_errors.append(f"Invalid size: {value}")
+                continue
+            if field_name == "state" and value is not None and value not in get_args(ButtonState):
+                validation_errors.append(f"Invalid state: {value}")
+                continue
+            if field_name == "icon_position" and value is not None and value not in get_args(IconPosition):
+                validation_errors.append(f"Invalid icon_position: {value}")
+                continue
+
+            # Update the field
+            setattr(self, field_name, value)
+            updated_fields.append(field_name)
+
+        # Return validation errors if any
+        if validation_errors:
+            return NodeMessageResult(
+                success=False,
+                details=f"Validation errors: {'; '.join(validation_errors)}",
+                response=None,
+                altered_workflow_state=False,
+            )
+
+        # Return success with updated button details
+        button_details = self.get_button_details()
+        fields_str = ", ".join(updated_fields) if updated_fields else "no fields"
+
+        return NodeMessageResult(
+            success=True,
+            details=f"Button '{self.label}' updated ({fields_str})",
+            response=button_details,
+            altered_workflow_state=True,
         )
