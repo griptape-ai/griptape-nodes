@@ -27,23 +27,55 @@ PROMPT_TRUNCATE_LENGTH = 100
 MODEL_MAPPING = {
     "seedream-4.0": "seedream-4-0-250828",
     "seedream-3.0-t2i": "seedream-3-0-t2i-250415",
+    "seededit-3.0-i2i": "seededit-3-0-i2i-250628",
+}
+
+# Size options for different models
+SIZE_OPTIONS = {
+    "seedream-4.0": [
+        "1K",
+        "2K",
+        "4K",
+        "2048x2048",
+        "2304x1728",
+        "1728x2304",
+        "2560x1440",
+        "1440x2560",
+        "2496x1664",
+        "1664x2496",
+        "3024x1296",
+    ],
+    "seedream-3.0-t2i": [
+        "2048x2048",
+        "2304x1728",
+        "1728x2304",
+        "2560x1440",
+        "1440x2560",
+        "2496x1664",
+        "1664x2496",
+        "3024x1296",
+    ],
+    "seededit-3.0-i2i": [
+        "adaptive",
+    ],
 }
 
 
 class SeedreamImageGeneration(DataNode):
     """Generate images using Seedream models via Griptape model proxy.
 
-    Supports two models:
-    - seedream-4.0: Advanced model with optional input images (single image output)
-    - seedream-3.0-t2i: Text-to-image generation only
+    Supports three models:
+    - seedream-4.0: Advanced model with optional image input and shorthand size options (1K, 2K, 4K)
+    - seedream-3.0-t2i: Text-to-image only model with explicit size dimensions (WIDTHxHEIGHT format)
+    - seededit-3.0-i2i: Image-to-image editing model requiring input image (WIDTHxHEIGHT format)
 
     Inputs:
-        - model (str): Model selection (seedream-4.0, seedream-3.0-t2i)
+        - model (str): Model selection (seedream-4.0, seedream-3.0-t2i, seededit-3.0-i2i)
         - prompt (str): Text prompt for image generation
-        - image (str/ImageArtifact): Optional input image for seedream-4.0
-        - size (str): Image size specification
+        - image (ImageArtifact): Input image (optional for v4, required for seededit i2i, hidden for t2i)
+        - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
-        - guidance_scale (float): Guidance scale for seedream-3.0-t2i
+        - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
 
     Outputs:
         - generation_id (str): Generation ID from the API
@@ -74,7 +106,7 @@ class SeedreamImageGeneration(DataNode):
                 default_value="seedream-4.0",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["seedream-4.0", "seedream-3.0-t2i"])},
+                traits={Options(choices=["seedream-4.0", "seedream-3.0-t2i", "seededit-3.0-i2i"])},
             )
         )
 
@@ -94,45 +126,29 @@ class SeedreamImageGeneration(DataNode):
             )
         )
 
-        # Optional image input for seedream-4.0
+        # Optional image input for seedream-4.0 and seededit-3.0-i2i
         self.add_parameter(
             Parameter(
                 name="image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
                 default_value=None,
-                tooltip="Optional input image (seedream-4.0 only)",
+                tooltip="Input image (required for seededit-3.0-i2i, optional for seedream-4.0)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
             )
         )
 
-        # Size parameter
+        # Size parameter - will be updated dynamically based on model selection
         self.add_parameter(
             Parameter(
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="2K",
+                default_value="2048x2048",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "1K",
-                            "2K",
-                            "4K",
-                            "2048x2048",
-                            "2304x1728",
-                            "1728x2304",
-                            "2560x1440",
-                            "1440x2560",
-                            "2496x1664",
-                            "1664x2496",
-                            "3024x1296",
-                        ]
-                    )
-                },
+                traits={Options(choices=SIZE_OPTIONS["seedream-4.0"])},
             )
         )
 
@@ -196,18 +212,36 @@ class SeedreamImageGeneration(DataNode):
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Show/hide parameters based on model selection."""
-        if parameter.name == "model":
+        """Update size options and parameter visibility based on model selection."""
+        if parameter.name == "model" and value in SIZE_OPTIONS:
+            new_choices = SIZE_OPTIONS[value]
+
+            # Set appropriate parameters for each model
             if value == "seedream-4.0":
-                # Show image input, hide guidance scale
+                # Show image input (optional), hide guidance scale
                 self.show_parameter_by_name("image")
                 self.hide_parameter_by_name("guidance_scale")
+                # Update size choices and set default to 2K for v4
+                default_size = "2K" if "2K" in new_choices else new_choices[0]
+                self._update_option_choices("size", new_choices, default_size)
+
             elif value == "seedream-3.0-t2i":
-                # Hide image input, show guidance scale
+                # Hide image input (not supported), show guidance scale
                 self.hide_parameter_by_name("image")
                 self.show_parameter_by_name("guidance_scale")
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
+                # Update size choices and set default to 2048x2048 for v3 t2i
+                self._update_option_choices("size", new_choices, "2048x2048")
+
+            elif value == "seededit-3.0-i2i":
+                # Show image input (required), show guidance scale
+                self.show_parameter_by_name("image")
+                self.show_parameter_by_name("guidance_scale")
+                # Set default guidance scale
+                self.set_parameter_value("guidance_scale", 2.5)
+                # Update size choices and set default to adaptive for seededit
+                self._update_option_choices("size", new_choices, "adaptive")
 
         return super().after_value_set(parameter, value)
 
@@ -237,7 +271,7 @@ class SeedreamImageGeneration(DataNode):
             "model": self.get_parameter_value("model") or "seedream-4.0",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": self.get_parameter_value("image"),
-            "size": self.get_parameter_value("size") or "2K",
+            "size": self.get_parameter_value("size") or "2048x2048",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
@@ -294,45 +328,82 @@ class SeedreamImageGeneration(DataNode):
 
         # Model-specific parameters
         if model == "seedream-4.0":
-            # Add input image if provided
+            # Add input image if provided for v4
             image_data = self._process_input_image(params["image"])
             if image_data:
                 payload["image"] = image_data
 
         elif model == "seedream-3.0-t2i":
-            # Add guidance scale
+            # Add guidance scale for v3 t2i
             payload["guidance_scale"] = params["guidance_scale"]
+
+        elif model == "seededit-3.0-i2i":
+            # Add guidance scale and required image for seededit
+            payload["guidance_scale"] = params["guidance_scale"]
+            image_data = self._process_input_image(params["image"])
+            if image_data:
+                payload["image"] = image_data
 
         return payload
 
     def _process_input_image(self, image_input: Any) -> str | None:
-        """Process input image and convert to base64 data URI or URL."""
+        """Process input image and convert to base64 data URI."""
         if not image_input:
             return None
 
-        if isinstance(image_input, str):
-            # Already a URL or base64 string
-            if image_input.startswith(("http://", "https://", "data:image/")):
-                return image_input
-            # Assume it's base64 without data URI prefix
-            return f"data:image/png;base64,{image_input}"
+        # Extract string value from input
+        image_value = self._extract_image_value(image_input)
+        if not image_value:
+            return None
 
-        # Handle artifact objects
+        return self._convert_to_base64_data_uri(image_value)
+
+    def _extract_image_value(self, image_input: Any) -> str | None:
+        """Extract string value from various image input types."""
+        if isinstance(image_input, str):
+            return image_input
+
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
-                if isinstance(value, str) and value.startswith(("http://", "https://", "data:image/")):
+                if isinstance(value, str):
                     return value
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
                 b64 = getattr(image_input, "base64", None)
                 if isinstance(b64, str) and b64:
-                    return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
+                    return b64
         except Exception as e:
-            self._log(f"Failed to process input image: {e}")
+            self._log(f"Failed to extract image value: {e}")
 
+        return None
+
+    def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
+        """Convert image value to base64 data URI."""
+        # If it's already a data URI, return it
+        if image_value.startswith("data:image/"):
+            return image_value
+
+        # If it's a URL, download and convert to base64
+        if image_value.startswith(("http://", "https://")):
+            return self._download_and_encode_image(image_value)
+
+        # Assume it's raw base64 without data URI prefix
+        return f"data:image/png;base64,{image_value}"
+
+    def _download_and_encode_image(self, url: str) -> str | None:
+        """Download image from URL and encode as base64 data URI."""
+        try:
+            image_bytes = self._download_bytes_from_url(url)
+            if image_bytes:
+                import base64
+
+                b64_string = base64.b64encode(image_bytes).decode("utf-8")
+                return f"data:image/png;base64,{b64_string}"
+        except Exception as e:
+            self._log(f"Failed to download image from URL {url}: {e}")
         return None
 
     def _log_request(self, payload: dict[str, Any]) -> None:
