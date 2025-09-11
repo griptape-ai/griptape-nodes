@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
@@ -38,7 +38,7 @@ def auto_determine_filename(base_filename: str, detected_format: str | None) -> 
     return f"{base_name}.{detected_format}"
 
 
-class SaveVideo(ControlNode):
+class SaveVideo(SuccessFailureNode):
     """Save a video to a file."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -65,6 +65,12 @@ class SaveVideo(ControlNode):
                 default_value=DEFAULT_FILENAME,
                 tooltip="The output filename. The file extension will be auto-determined from video format.",
             )
+        )
+
+        # Add status parameters using the helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video save operation result",
+            result_details_placeholder="Details on the save attempt will be presented here.",
         )
 
     def _get_video_extension(self, video_value: Any) -> str | None:
@@ -120,9 +126,24 @@ class SaveVideo(ControlNode):
         return exceptions if exceptions else None
 
     def process(self) -> None:
-        video = self.parameter_values.get("video")
+        # Reset execution state and result details at the start of each run
+        self._clear_execution_status()
 
+        video = self.parameter_values.get("video")
         output_file = self.parameter_values.get("output_path", DEFAULT_FILENAME)
+
+        # Set output values BEFORE processing
+        self.parameter_output_values["output_path"] = output_file
+
+        if not video:
+            # Blank video is a warning, not a failure
+            warning_details = "No video provided to save"
+            logger.warning(warning_details)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"WARNING: No video to save (warning)\nRequested filename: {output_file}\nResult: No file created",
+            )
+            return
 
         try:
             # Detect video format before converting to artifact
@@ -132,15 +153,13 @@ class SaveVideo(ControlNode):
             if detected_format:
                 output_file = auto_determine_filename(output_file, detected_format)
                 logger.debug(f"Auto-detected video format: {detected_format}, using filename: {output_file}")
-
-            # Set output values BEFORE transforming to workspace-relative
-            self.parameter_output_values["output_path"] = output_file
+                # Update output path after auto-determination
+                self.parameter_output_values["output_path"] = output_file
 
             video_artifact = to_video_artifact(video)
 
             if isinstance(video_artifact, VideoUrlArtifact):
                 # For VideoUrlArtifact, we need to get the bytes from the URL
-                # This might need adjustment based on how VideoUrlArtifact is implemented
                 video_bytes = video_artifact.to_bytes()
             else:
                 # Assume it has a value attribute with bytes
@@ -148,10 +167,26 @@ class SaveVideo(ControlNode):
 
             saved_path = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, output_file)
 
-            success_msg = f"Saved video: {saved_path}"
-            logger.info(success_msg)
+            # Success case
+            success_details = (
+                f"Video saved successfully\n"
+                f"Detected format: {detected_format or 'unknown'}\n"
+                f"Requested filename: {output_file}\n"
+                f"Saved to: {saved_path}"
+            )
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+            logger.info(f"Saved video: {saved_path}")
 
         except Exception as e:
-            error_message = str(e)
-            msg = f"Error saving video: {error_message}"
-            raise ValueError(msg) from e
+            error_details = f"Failed to save video: {e!s}"
+            failure_details = (
+                f"Video save failed\n"
+                f"Input: {type(video).__name__}\n"
+                f"Requested filename: {output_file}\n"
+                f"Error: {error_details}"
+            )
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
+            logger.error(f"Error saving video: {error_details}")
+
+            # Use the helper to handle exception based on connection status
+            self._handle_failure_exception(RuntimeError(error_details))
