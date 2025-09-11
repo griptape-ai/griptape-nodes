@@ -606,7 +606,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
                 # Get workflow file path from registry
                 if WorkflowRegistry.has_workflow_with_name(workflow_name):
-                    workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+                    workflow = WorkflowRegistry.get_workflow_from_identifier(workflow_name)
                     absolute_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
                     workflow_info["workflow_file_path"] = absolute_path
 

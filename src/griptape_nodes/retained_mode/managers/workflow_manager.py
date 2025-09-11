@@ -575,7 +575,7 @@ class WorkflowManager:
     def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         # get workflow from registry
         try:
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError:
             details = f"Failed to get workflow '{request.workflow_name}' from registry."
             return RunWorkflowFromRegistryResultFailure(result_details=details)
@@ -734,7 +734,7 @@ class WorkflowManager:
     def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
         try:
             # Validate source workflow exists
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError:
             details = f"Failed to move workflow '{request.workflow_name}' because it does not exist."
             return MoveWorkflowResultFailure(result_details=details)
@@ -1357,7 +1357,7 @@ class WorkflowManager:
         creation_date = None
         if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
             # Get the metadata.
-            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+            prior_workflow = WorkflowRegistry.get_workflow_from_identifier(file_name)
             # We'll use its creation date.
             creation_date = prior_workflow.metadata.creation_date
         elif file_name:
@@ -1367,7 +1367,7 @@ class WorkflowManager:
             if context_manager.has_current_workflow():
                 current_workflow_name = context_manager.get_current_workflow_name()
                 if current_workflow_name and WorkflowRegistry.has_workflow_with_name(current_workflow_name):
-                    prior_workflow = WorkflowRegistry.get_workflow_by_name(current_workflow_name)
+                    prior_workflow = WorkflowRegistry.get_workflow_from_identifier(current_workflow_name)
                     creation_date = prior_workflow.metadata.creation_date
 
         if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
@@ -1454,7 +1454,7 @@ class WorkflowManager:
                     return SaveWorkflowResultFailure(result_details=details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
         # Update existing workflow's metadata in the registry
-        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+        existing_workflow = WorkflowRegistry.get_workflow_from_identifier(file_name)
         existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {file_path}"
         return SaveWorkflowResultSuccess(
@@ -3271,7 +3271,7 @@ class WorkflowManager:
 
     def _get_workflow_by_name(self, workflow_name: str) -> Workflow:
         """Get workflow by name from the registry."""
-        return WorkflowRegistry.get_workflow_by_name(workflow_name)
+        return WorkflowRegistry.get_workflow_from_identifier(workflow_name)
 
     def _execute_workflow_import(
         self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str
@@ -3336,7 +3336,7 @@ class WorkflowManager:
         """Create a branch (copy) of an existing workflow with branch tracking."""
         try:
             # Validate source workflow exists
-            source_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            source_workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError:
             details = f"Failed to branch workflow '{request.workflow_name}' because it does not exist"
             return BranchWorkflowResultFailure(result_details=details)
@@ -3421,7 +3421,7 @@ class WorkflowManager:
         """Merge a branch back into its source workflow, removing the branch when complete."""
         try:
             # Validate branch workflow exists
-            branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            branch_workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError as e:
             details = f"Failed to merge workflow branch because it does not exist: {e!s}"
             return MergeWorkflowBranchResultFailure(result_details=details)
@@ -3434,7 +3434,7 @@ class WorkflowManager:
 
         # Validate source workflow exists
         try:
-            source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
+            source_workflow = WorkflowRegistry.get_workflow_from_identifier(source_workflow_name)
         except KeyError:
             details = f"Failed to merge workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
             return MergeWorkflowBranchResultFailure(result_details=details)
@@ -3504,7 +3504,7 @@ class WorkflowManager:
         """Reset a branch to match its source workflow, discarding branch changes."""
         try:
             # Validate branch workflow exists
-            branch_workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            branch_workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError as e:
             details = f"Failed to reset workflow branch because it does not exist: {e!s}"
             return ResetWorkflowBranchResultFailure(result_details=details)
@@ -3517,7 +3517,7 @@ class WorkflowManager:
 
         # Validate source workflow exists
         try:
-            source_workflow = WorkflowRegistry.get_workflow_by_name(source_workflow_name)
+            source_workflow = WorkflowRegistry.get_workflow_from_identifier(source_workflow_name)
         except KeyError:
             details = f"Failed to reset workflow branch '{request.workflow_name}' because source workflow '{source_workflow_name}' does not exist"
             return ResetWorkflowBranchResultFailure(result_details=details)
@@ -3571,7 +3571,7 @@ class WorkflowManager:
         """Compare two workflows to determine if one is ahead, behind, or up-to-date relative to the other."""
         try:
             # Get the workflow to evaluate
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            workflow = WorkflowRegistry.get_workflow_from_identifier(request.workflow_name)
         except KeyError:
             details = f"Failed to compare workflow '{request.workflow_name}' because it does not exist"
             return CompareWorkflowsResultFailure(result_details=details)
@@ -3581,7 +3581,7 @@ class WorkflowManager:
 
         # Try to get the source workflow
         try:
-            source_workflow = WorkflowRegistry.get_workflow_by_name(compare_workflow_name)
+            source_workflow = WorkflowRegistry.get_workflow_from_identifier(compare_workflow_name)
         except KeyError:
             # Source workflow no longer exists
             details = f"Source workflow '{compare_workflow_name}' for '{request.workflow_name}' no longer exists"

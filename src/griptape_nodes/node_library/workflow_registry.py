@@ -40,62 +40,139 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     @classmethod
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
-        if metadata.name in instance._workflows:
-            msg = f"Workflow with name '{metadata.name}' already registered."
+        if file_path in instance._workflows:
+            msg = f"Workflow with file path '{file_path}' already registered."
             raise KeyError(msg)
         workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
-        instance._workflows[metadata.name] = workflow
+        instance._workflows[file_path] = workflow
         return workflow
 
     @classmethod
     def get_workflow_by_name(cls, name: str) -> Workflow:
         instance = cls()
-        if name not in instance._workflows:
+        matching_workflows = [workflow for workflow in instance._workflows.values() if workflow.metadata.name == name]
+
+        if not matching_workflows:
             msg = f"Failed to get Workflow. Workflow with name '{name}' has not been registered."
             raise KeyError(msg)
-        return instance._workflows[name]
+
+        if len(matching_workflows) > 1:
+            file_paths = [workflow.file_path for workflow in matching_workflows]
+            msg = f"Multiple workflows found with name '{name}' at paths: {file_paths}. Use get_workflow_by_file_path() instead."
+            raise ValueError(msg)
+
+        return matching_workflows[0]
 
     @classmethod
     def has_workflow_with_name(cls, name: str) -> bool:
-        instance = cls()
-        return name in instance._workflows
+        try:
+            cls.get_workflow_by_name(name)
+        except (KeyError, ValueError):
+            return False
+        else:
+            return True
 
     @classmethod
     def list_workflows(cls) -> dict[str, dict]:
         instance = cls()
-        return {key: instance._workflows[key].get_workflow_metadata() for key in instance._workflows}
+        return {file_path: workflow.get_workflow_metadata() for file_path, workflow in instance._workflows.items()}
 
     @classmethod
-    def get_complete_file_path(cls, relative_file_path: str) -> str:
+    def get_complete_file_path(cls, file_path: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # If the path is already absolute, return it as-is
-        if Path(relative_file_path).is_absolute():
-            return relative_file_path
+        if Path(file_path).is_absolute():
+            return file_path
 
         # Otherwise, resolve it relative to the workspace
         config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
-        complete_file_path = workspace_path / relative_file_path
+        complete_file_path = workspace_path / file_path
         return str(complete_file_path)
 
     @classmethod
     def delete_workflow_by_name(cls, name: str) -> Workflow:
         instance = cls()
-        if name not in instance._workflows:
+        matching_workflows = [
+            (file_path, workflow)
+            for file_path, workflow in instance._workflows.items()
+            if workflow.metadata.name == name
+        ]
+
+        if not matching_workflows:
             msg = f"Failed to delete Workflow. Workflow with name '{name}' has not been registered."
             raise KeyError(msg)
-        return instance._workflows.pop(name)
+
+        if len(matching_workflows) > 1:
+            file_paths = [workflow.file_path for _, workflow in matching_workflows]
+            msg = f"Multiple workflows found with name '{name}' at paths: {file_paths}. Use delete_workflow_by_file_path() instead."
+            raise ValueError(msg)
+
+        file_path, workflow = matching_workflows[0]
+        return instance._workflows.pop(file_path)
+
+    @classmethod
+    def get_workflow_by_file_path(cls, file_path: str) -> Workflow:
+        instance = cls()
+
+        # First try the path as-provided
+        if file_path in instance._workflows:
+            return instance._workflows[file_path]
+
+        # If not found, try the normalized version
+        complete_file_path = cls.get_complete_file_path(file_path)
+        if complete_file_path in instance._workflows:
+            return instance._workflows[complete_file_path]
+
+        msg = f"Failed to get Workflow. Workflow with file path '{file_path}' has not been registered."
+        raise KeyError(msg)
+
+    @classmethod
+    def has_workflow_with_file_path(cls, file_path: str) -> bool:
+        try:
+            cls.get_workflow_by_file_path(file_path)
+        except KeyError:
+            return False
+        else:
+            return True
+
+    @classmethod
+    def delete_workflow_by_file_path(cls, file_path: str) -> Workflow:
+        # First get the workflow to ensure it exists and get the actual stored key
+        workflow = cls.get_workflow_by_file_path(file_path)
+
+        # Remove using the workflow's actual stored file path
+        instance = cls()
+        return instance._workflows.pop(workflow.file_path)
+
+    @classmethod
+    def get_workflow_from_identifier(cls, identifier: str) -> Workflow:
+        """Get workflow by name or file path.
+
+        Args:
+            identifier: Either a workflow name or file path ending in .py
+
+        Returns:
+            Workflow instance
+
+        Raises:
+            KeyError: If workflow not found
+            ValueError: If multiple workflows found with same name
+        """
+        if identifier.endswith(".py"):
+            return cls.get_workflow_by_file_path(identifier)
+        return cls.get_workflow_by_name(identifier)
 
     @classmethod
     def get_branches_of_workflow(cls, workflow_name: str) -> list[str]:
         """Get all workflows that are branches of the specified workflow."""
         instance = cls()
-        branches = []
-        for name, workflow in instance._workflows.items():
-            if workflow.metadata.branched_from == workflow_name:
-                branches.append(name)
-        return branches
+        return [
+            workflow.metadata.name
+            for workflow in instance._workflows.values()
+            if workflow.metadata.branched_from == workflow_name
+        ]
 
 
 class Workflow:
@@ -113,7 +190,7 @@ class Workflow:
         self.file_path = file_path
 
         # Get the absolute file path.
-        complete_path = WorkflowRegistry.get_complete_file_path(relative_file_path=file_path)
+        complete_path = WorkflowRegistry.get_complete_file_path(file_path=file_path)
         if not Path(complete_path).is_file():
             msg = f"File path '{complete_path}' does not exist."
             raise ValueError(msg)
