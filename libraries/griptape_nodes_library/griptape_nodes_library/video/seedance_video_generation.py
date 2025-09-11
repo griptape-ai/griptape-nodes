@@ -167,6 +167,17 @@ class SeedanceVideoGeneration(DataNode):
 
         self.add_parameter(
             Parameter(
+                name="provider_response",
+                output_type="dict",
+                type="dict",
+                tooltip="Verbatim response from API (initial POST)",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
                 name="video_url",
                 output_type="VideoUrlArtifact",
                 type="VideoUrlArtifact",
@@ -240,8 +251,10 @@ class SeedanceVideoGeneration(DataNode):
 
         post_json = post_resp.json()
         generation_id = str(post_json.get("generation_id") or "")
+        provider_response = post_json.get("provider_response")
 
         self.parameter_output_values["generation_id"] = generation_id
+        self.parameter_output_values["provider_response"] = provider_response
 
         if generation_id:
             self._log(f"Submitted. generation_id={generation_id}")
