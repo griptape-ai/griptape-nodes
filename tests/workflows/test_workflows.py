@@ -56,6 +56,13 @@ def griptape_nodes() -> GriptapeNodes:
     return GriptapeNodes()
 
 
+@pytest_asyncio.fixture(scope="session")
+async def workflow_executor() -> AsyncGenerator[LocalWorkflowExecutor, Any]:
+    """Create and manage a single LocalWorkflowExecutor for all tests."""
+    async with LocalWorkflowExecutor() as executor:
+        yield executor
+
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[None, Any]:
     """Set up libraries for testing and restore original state afterwards."""
@@ -100,7 +107,6 @@ def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> Generator[Non
 
 @pytest.mark.parametrize("workflow_path", get_workflows())
 @pytest.mark.asyncio
-async def test_workflow_runs(workflow_path: str) -> None:
+async def test_workflow_runs(workflow_path: str, workflow_executor: LocalWorkflowExecutor) -> None:
     """Simple test to check if the workflow runs without errors."""
-    runner = LocalWorkflowExecutor()
-    await runner.arun(workflow_name="main", flow_input={}, workflow_path=workflow_path)
+    await workflow_executor.arun(workflow_name="main", flow_input={}, workflow_path=workflow_path)

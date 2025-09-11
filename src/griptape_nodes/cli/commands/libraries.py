@@ -28,8 +28,13 @@ def sync() -> None:
     asyncio.run(_sync_libraries())
 
 
-async def _sync_libraries() -> None:
-    """Download and sync Griptape Nodes libraries, copying only directories from synced libraries."""
+async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
+    """Download and sync Griptape Nodes libraries, copying only directories from synced libraries.
+
+    Args:
+        load_libraries_from_config (bool): If True, re-initialize all libraries from config
+
+    """
     install_source, _ = get_install_source()
     # Unless we're installed from PyPi, grab libraries from the 'latest' tag
     if install_source == "pypi":
@@ -80,11 +85,12 @@ async def _sync_libraries() -> None:
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
     # Re-initialize all libraries from config
-    console.print("[bold cyan]Initializing libraries...[/bold cyan]")
-    try:
-        await GriptapeNodes.LibraryManager().load_all_libraries_from_config()
-        console.print("[bold green]Libraries Initialized successfully.[/bold green]")
-    except Exception as e:
-        console.print(f"[red]Error initializing libraries: {e}[/red]")
+    if load_libraries_from_config:
+        console.print("[bold cyan]Initializing libraries...[/bold cyan]")
+        try:
+            await GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+            console.print("[bold green]Libraries Initialized successfully.[/bold green]")
+        except Exception as e:
+            console.print(f"[red]Error initializing libraries: {e}[/red]")
 
     console.print("[bold green]Libraries synced.[/bold green]")

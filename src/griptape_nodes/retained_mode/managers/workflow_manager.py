@@ -1615,7 +1615,7 @@ class WorkflowManager:
             ),
         )
 
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor()
+        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum)
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
             value=ast.BoolOp(
@@ -1625,31 +1625,45 @@ class WorkflowManager:
                     ast.Call(
                         func=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
                         args=[],
-                        keywords=[],
+                        keywords=[
+                            ast.keyword(
+                                arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
+                            ),
+                        ],
                     ),
                 ],
             ),
         )
-        run_call = ast.Expr(
-            value=ast.Await(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="workflow_executor", ctx=ast.Load()),
-                        attr="arun",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[
-                        ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
-                        ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                        ast.keyword(arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())),
-                    ],
+        # Use async context manager for workflow execution
+        with_stmt = ast.AsyncWith(
+            items=[
+                ast.withitem(
+                    context_expr=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                    optional_vars=ast.Name(id="executor", ctx=ast.Store()),
                 )
-            )
+            ],
+            body=[
+                ast.Expr(
+                    value=ast.Await(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="executor", ctx=ast.Load()),
+                                attr="arun",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[
+                                ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
+                                ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                            ],
+                        )
+                    )
+                )
+            ],
         )
         return_stmt = ast.Return(
             value=ast.Attribute(
-                value=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                value=ast.Name(id="executor", ctx=ast.Load()),
                 attr="output",
                 ctx=ast.Load(),
             )
@@ -1659,7 +1673,7 @@ class WorkflowManager:
         async_func_def = ast.AsyncFunctionDef(
             name="aexecute_workflow",
             args=args,
-            body=[ensure_context_call, storage_backend_convert, executor_assign, run_call, return_stmt],
+            body=[ensure_context_call, storage_backend_convert, executor_assign, with_stmt, return_stmt],
             decorator_list=[],
             returns=return_annotation,
             type_params=[],
