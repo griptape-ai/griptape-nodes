@@ -63,20 +63,20 @@ class ParallelResolutionContext:
         self.task_to_node = {}
 
     @property
-    def network(self) -> DirectedGraph:
-        """Get network from dag_builder if available."""
-        if not self.dag_builder:
-            msg = "DagBuilder is not initialized"
-            raise ValueError(msg)
-        return self.dag_builder.graph
-
-    @property
     def node_to_reference(self) -> dict[str, DagNode]:
         """Get node_to_reference from dag_builder if available."""
         if not self.dag_builder:
             msg = "DagBuilder is not initialized"
             raise ValueError(msg)
         return self.dag_builder.node_to_reference
+
+    @property
+    def networks(self) -> dict[str, DirectedGraph]:
+        """Get node_to_reference from dag_builder if available."""
+        if not self.dag_builder:
+            msg = "DagBuilder is not initialized"
+            raise ValueError(msg)
+        return self.dag_builder.graphs
 
     def reset(self, *, cancel: bool = False) -> None:
         self.paused = False
@@ -98,7 +98,7 @@ class ParallelResolutionContext:
 
 class ExecuteDagState(State):
     @staticmethod
-    async def handle_done_nodes(done_node: DagNode) -> None:
+    async def handle_done_nodes(context:ParallelResolutionContext, done_node: DagNode, network_name:str) -> None:
         current_node = done_node.node_reference
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -152,6 +152,33 @@ class ExecuteDagState(State):
                 )
             )
         )
+        # Now the final thing to do, is to take their directed graph and update it.
+        ExecuteDagState.get_next_control_graph(context, current_node, network_name)
+
+
+    @staticmethod
+    def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
+        """Get next control flow nodes and add them to the DAG graph."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        # Check stop_flow first
+        if node.stop_flow:
+            node.stop_flow = False
+            return  # No more nodes to add
+        next_output = node.get_next_control_output()
+        if next_output is not None:
+            # Get connected node from control flow
+            node_connection = GriptapeNodes.FlowManager().get_connections().get_connected_node(node, next_output)
+            if node_connection is not None:
+                next_node, _ = node_connection
+                # Add the next control node to the DAG
+                if not next_node.lock:
+                    next_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+            )
+                if context.dag_builder:
+                    context.dag_builder.add_node_with_dependencies(next_node, network_name)
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -203,10 +230,15 @@ class ExecuteDagState(State):
                     )
 
     @staticmethod
-    def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str], list[str]]:
-        network = context.network
-        leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
-        done_nodes = []
+    def build_node_states(context: ParallelResolutionContext) -> tuple[list[str], list[str], list[str]]:
+        networks = context.networks
+        leaf_nodes = []
+        for network in networks.values():
+            # Check and see if there are leaf nodes that are cancelled.
+            # Reinitialize leaf nodes since maybe we changed things up.
+            # We removed nodes from the network. There may be new leaf nodes.
+            # Add all leaf nodes from all networks
+            leaf_nodes.extend([n for n in network.nodes() if network.in_degree(n) == 0])
         canceled_nodes = []
         queued_nodes = []
         for node in leaf_nodes:
@@ -214,16 +246,30 @@ class ExecuteDagState(State):
             # If the node is locked, mark it as done so it skips execution
             if node_reference.node_reference.lock:
                 node_reference.node_state = NodeState.DONE
-                done_nodes.append(node)
                 continue
             node_state = node_reference.node_state
-            if node_state == NodeState.DONE:
-                done_nodes.append(node)
-            elif node_state == NodeState.CANCELED:
+            if node_state == NodeState.CANCELED:
                 canceled_nodes.append(node)
             elif node_state == NodeState.QUEUED:
                 queued_nodes.append(node)
-        return done_nodes, canceled_nodes, queued_nodes, leaf_nodes
+        return canceled_nodes, queued_nodes, leaf_nodes
+
+    @staticmethod
+    async def pop_done_states(context: ParallelResolutionContext) -> None:
+        networks = context.networks
+        for network_name, network in networks.items():
+            # Check and see if there are leaf nodes that are cancelled.
+            # Reinitialize leaf nodes since maybe we changed things up.
+            # We removed nodes from the network. There may be new leaf nodes.
+            leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+            for node in leaf_nodes:
+                node_reference = context.node_to_reference[node]
+                node_state = node_reference.node_state
+                # If the node is locked, mark it as done so it skips execution
+                if node_reference.node_reference.lock or node_state == NodeState.DONE:
+                    node_reference.node_state = NodeState.DONE
+                    network.remove_node(node)
+                    await ExecuteDagState.handle_done_nodes(context, context.node_to_reference[node], network_name)
 
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
@@ -245,26 +291,16 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: PLR0911
         # Check if execution is paused
         if context.paused:
             return None
 
         # Check if DAG execution is complete
-        network = context.network
         # Check and see if there are leaf nodes that are cancelled.
-        done_nodes, canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
-        # Are there any nodes in Done state?
-        for node in done_nodes:
-            # We have nodes in done state.
-            # Remove the leaf node from the graph.
-            network.remove_node(node)
-            # Return thread to thread pool.
-            await ExecuteDagState.handle_done_nodes(context.node_to_reference[node])
         # Reinitialize leaf nodes since maybe we changed things up.
-        if len(done_nodes) > 0:
-            # We removed nodes from the network. There may be new leaf nodes.
-            done_nodes, canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
+        # We removed nodes from the network. There may be new leaf nodes.
+        canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
         # We have no more leaf nodes. Quit early.
         if not leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
@@ -321,6 +357,8 @@ class ExecuteDagState(State):
             # Wait for a task to finish
         await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
         # Once a task has finished, loop back to the top.
+        await ExecuteDagState.pop_done_states(context)
+        # Remove all nodes that are done
         if context.paused:
             return None
         return ExecuteDagState
@@ -365,7 +403,7 @@ class ErrorState(State):
         if len(task_to_node) == 0:
             # Finish up. We failed.
             context.workflow_state = WorkflowState.ERRORED
-            context.network.clear()
+            context.networks.clear()
             context.node_to_reference.clear()
             context.task_to_node.clear()
             return DagCompleteState

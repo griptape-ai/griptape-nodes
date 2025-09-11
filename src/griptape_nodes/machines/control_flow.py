@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from tracemalloc import start
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -287,7 +288,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
         # Build with the first node:
-        dag_builder.add_node_with_dependencies(start_node)
+        dag_builder.add_node_with_dependencies(start_node, start_node.name)
         queue_items = list(flow_manager.global_flow_queue.queue)
 
         # Find data_nodes and remove them from queue
@@ -298,7 +299,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Build here.
-                dag_builder.add_node_with_dependencies(node)
+                dag_builder.add_node_with_dependencies(node, node.name)
                 flow_manager.global_flow_queue.queue.remove(item)
 
     def reset_machine(self, *, cancel: bool = False) -> None:
