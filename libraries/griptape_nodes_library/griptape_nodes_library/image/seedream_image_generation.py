@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 import os
@@ -45,8 +44,6 @@ class SeedreamImageGeneration(DataNode):
         - size (str): Image size specification
         - seed (int): Random seed for reproducible results
         - guidance_scale (float): Guidance scale for seedream-3.0-t2i
-        - response_format (str): Output format (url or b64_json)
-        - watermark (bool): Add watermark to generated image
 
     Outputs:
         - generation_id (str): Generation ID from the API
@@ -164,31 +161,6 @@ class SeedreamImageGeneration(DataNode):
             )
         )
 
-        # Output format
-        self.add_parameter(
-            Parameter(
-                name="response_format",
-                input_types=["str"],
-                type="str",
-                default_value="url",
-                tooltip="Response format for generated image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["url", "b64_json"])},
-            )
-        )
-
-        # Watermark
-        self.add_parameter(
-            Parameter(
-                name="watermark",
-                input_types=["bool"],
-                type="bool",
-                default_value=True,
-                tooltip="Add watermark to generated image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -268,10 +240,7 @@ class SeedreamImageGeneration(DataNode):
             "size": self.get_parameter_value("size") or "2K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
-            "response_format": self.get_parameter_value("response_format") or "url",
-            "watermark": self.get_parameter_value("watermark")
-            if self.get_parameter_value("watermark") is not None
-            else True,
+            "watermark": False,
         }
 
     def _validate_api_key(self) -> str:
@@ -315,10 +284,8 @@ class SeedreamImageGeneration(DataNode):
             "model": api_model_id,
             "prompt": params["prompt"],
             "size": params["size"],
-            "response_format": params["response_format"],
+            "response_format": "url",
             "watermark": params["watermark"],
-            # Always disable batch generation to ensure single image output
-            "sequential_image_generation": "disabled",
         }
 
         # Add seed if not -1
@@ -403,21 +370,13 @@ class SeedreamImageGeneration(DataNode):
         # Take first image from response
         image_data = data[0]
 
-        if self.get_parameter_value("response_format") == "url":
-            image_url = image_data.get("url")
-            if image_url:
-                self._save_image_from_url(image_url)
-            else:
-                self._log("No image URL in response")
-                self.parameter_output_values["image_url"] = None
+        # Always using URL format
+        image_url = image_data.get("url")
+        if image_url:
+            self._save_image_from_url(image_url)
         else:
-            # Handle base64 response
-            b64_data = image_data.get("b64_json")
-            if b64_data:
-                self._save_image_from_base64(b64_data)
-            else:
-                self._log("No base64 data in response")
-                self.parameter_output_values["image_url"] = None
+            self._log("No image URL in response")
+            self.parameter_output_values["image_url"] = None
 
     def _save_image_from_url(self, image_url: str) -> None:
         try:
@@ -436,20 +395,6 @@ class SeedreamImageGeneration(DataNode):
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
-
-    def _save_image_from_base64(self, b64_data: str) -> None:
-        try:
-            image_bytes = base64.b64decode(b64_data)
-            filename = f"seedream_image_{int(time.time())}.jpg"
-            from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved image from base64 to static storage as {filename}")
-        except Exception as e:
-            self._log(f"Failed to save image from base64: {e}")
-            self.parameter_output_values["image_url"] = None
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
