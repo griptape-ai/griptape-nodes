@@ -631,7 +631,8 @@ class WorkflowManager:
         return RegisterWorkflowResultSuccess(
             workflow_name=workflow.metadata.name,
             result_details=ResultDetails(
-                message=f"Successfully registered workflow: {workflow.metadata.name}", level="INFO"
+                message=f"Successfully registered workflow: {workflow.metadata.name}",
+                level="DEBUG",
             ),
         )
 

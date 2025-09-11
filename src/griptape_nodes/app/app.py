@@ -173,7 +173,7 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
     initialized = False
 
     async for ws_connection in connection_stream:
-        logger.info("WebSocket connection established")
+        logger.debug("WebSocket connection established")
         try:
             # Emit initialization event only for the first connection
             if not initialized:
@@ -346,7 +346,7 @@ async def _send_unsubscribe_command(ws_connection: Any, topic: str) -> None:
 
 async def _process_event_queue() -> None:
     """Process events concurrently - runs on main thread."""
-    logger.info("Starting event queue processor on main thread")
+    logger.debug("Starting event queue processor on main thread")
     background_tasks = set()
 
     def _handle_task_result(task: asyncio.Task) -> None:
@@ -379,7 +379,7 @@ async def _process_event_queue() -> None:
             task.add_done_callback(_handle_task_result)
             event_queue.task_done()
     except asyncio.CancelledError:
-        logger.info("Event queue processor shutdown complete")
+        logger.debug("Event queue processor shutdown complete")
         raise
 
 
