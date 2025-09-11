@@ -23,6 +23,7 @@ from utils.image_utils import load_image_from_url_artifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
+from libraries.griptape_nodes_advanced_media_library.utils.directory_utils import get_intermediates_directory_path
 from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("spandrel_nodes_library")
@@ -154,7 +155,10 @@ class TilingSPAN(ControlNode):
 
         def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
             if i < num_tiles:
-                self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_image_pil))
+                self.publish_update_to_parameter(
+                    "output_image",
+                    pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
+                )
                 self.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
                 self.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
 
