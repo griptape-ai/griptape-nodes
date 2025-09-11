@@ -79,7 +79,15 @@ class SeedanceVideoGeneration(DataNode):
                     "display_name": "Model ID",
                     "hide": True,
                 },
-                traits={Options(choices=["seedance-1-0-pro-250528", "seedance-1-0-lite-t2v-250428", "seedance-1-0-lite-i2v-250428"])},
+                traits={
+                    Options(
+                        choices=[
+                            "seedance-1-0-pro-250528",
+                            "seedance-1-0-lite-t2v-250428",
+                            "seedance-1-0-lite-i2v-250428",
+                        ]
+                    )
+                },
             )
         )
 
