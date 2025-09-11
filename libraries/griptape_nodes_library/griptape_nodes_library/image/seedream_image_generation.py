@@ -1,0 +1,466 @@
+from __future__ import annotations
+
+import base64
+import json as _json
+import logging
+import os
+import time
+from contextlib import suppress
+from copy import deepcopy
+from typing import Any
+from urllib.parse import urljoin
+
+import requests
+from griptape.artifacts import ImageUrlArtifact
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.traits.options import Options
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["SeedreamImageGeneration"]
+
+# Define constant for prompt truncation length
+PROMPT_TRUNCATE_LENGTH = 100
+
+# Model mapping from human-friendly names to API model IDs
+MODEL_MAPPING = {
+    "seedream-4.0": "seedream-4-0-250828",
+    "seedream-3.0-t2i": "seedream-3-0-t2i-250415",
+}
+
+
+class SeedreamImageGeneration(DataNode):
+    """Generate images using Seedream models via Griptape model proxy.
+
+    Supports two models:
+    - seedream-4.0: Advanced model with optional input images (single image output)
+    - seedream-3.0-t2i: Text-to-image generation only
+
+    Inputs:
+        - model (str): Model selection (seedream-4.0, seedream-3.0-t2i)
+        - prompt (str): Text prompt for image generation
+        - image (str/ImageArtifact): Optional input image for seedream-4.0
+        - size (str): Image size specification
+        - seed (int): Random seed for reproducible results
+        - guidance_scale (float): Guidance scale for seedream-3.0-t2i
+        - response_format (str): Output format (url or b64_json)
+        - watermark (bool): Add watermark to generated image
+
+    Outputs:
+        - generation_id (str): Generation ID from the API
+        - provider_response (dict): Verbatim provider response from the model proxy
+        - image_url (ImageUrlArtifact): Generated image as URL artifact
+    """
+
+    SERVICE_NAME = "Griptape"
+    API_KEY_NAME = "GT_CLOUD_API_KEY"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.category = "API Nodes"
+        self.description = "Generate images using Seedream models via Griptape model proxy"
+
+        # Compute API base once
+        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
+        api_base = urljoin(base_slash, "api/")
+        self._proxy_base = urljoin(api_base, "proxy/models/")
+
+        # Model selection
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                default_value="seedream-4.0",
+                tooltip="Select the Seedream model to use",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["seedream-4.0", "seedream-3.0-t2i"])},
+            )
+        )
+
+        # Core parameters
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                input_types=["str"],
+                type="str",
+                tooltip="Text prompt for image generation (max 600 words recommended)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the image you want to generate...",
+                    "display_name": "Prompt",
+                },
+            )
+        )
+
+        # Optional image input for seedream-4.0
+        self.add_parameter(
+            Parameter(
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                default_value=None,
+                tooltip="Optional input image (seedream-4.0 only)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Input Image"},
+            )
+        )
+
+        # Size parameter
+        self.add_parameter(
+            Parameter(
+                name="size",
+                input_types=["str"],
+                type="str",
+                default_value="2K",
+                tooltip="Image size specification",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={
+                    Options(
+                        choices=[
+                            "1K",
+                            "2K",
+                            "4K",
+                            "2048x2048",
+                            "2304x1728",
+                            "1728x2304",
+                            "2560x1440",
+                            "1440x2560",
+                            "2496x1664",
+                            "1664x2496",
+                            "3024x1296",
+                        ]
+                    )
+                },
+            )
+        )
+
+        # Seed parameter
+        self.add_parameter(
+            Parameter(
+                name="seed",
+                input_types=["int"],
+                type="int",
+                default_value=-1,
+                tooltip="Random seed for reproducible results (-1 for random)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # Guidance scale for seedream-3.0-t2i
+        self.add_parameter(
+            Parameter(
+                name="guidance_scale",
+                input_types=["float"],
+                type="float",
+                default_value=2.5,
+                tooltip="Guidance scale (seedream-3.0-t2i only, default: 2.5)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"hide": True},
+            )
+        )
+
+        # Output format
+        self.add_parameter(
+            Parameter(
+                name="response_format",
+                input_types=["str"],
+                type="str",
+                default_value="url",
+                tooltip="Response format for generated image",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["url", "b64_json"])},
+            )
+        )
+
+        # Watermark
+        self.add_parameter(
+            Parameter(
+                name="watermark",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip="Add watermark to generated image",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # OUTPUTS
+        self.add_parameter(
+            Parameter(
+                name="generation_id",
+                output_type="str",
+                tooltip="Generation ID from the API",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="provider_response",
+                output_type="dict",
+                type="dict",
+                tooltip="Verbatim response from Griptape model proxy",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="image_url",
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
+                tooltip="Generated image as URL artifact",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"is_full_width": True, "pulse_on_run": True},
+            )
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Show/hide parameters based on model selection."""
+        if parameter.name == "model":
+            if value == "seedream-4.0":
+                # Show image input, hide guidance scale
+                self.show_parameter_by_name("image")
+                self.hide_parameter_by_name("guidance_scale")
+            elif value == "seedream-3.0-t2i":
+                # Hide image input, show guidance scale
+                self.hide_parameter_by_name("image")
+                self.show_parameter_by_name("guidance_scale")
+                # Set default guidance scale
+                self.set_parameter_value("guidance_scale", 2.5)
+
+        return super().after_value_set(parameter, value)
+
+    def _log(self, message: str) -> None:
+        with suppress(Exception):
+            logger.info(message)
+
+    def process(self) -> AsyncResult[None]:
+        yield lambda: self._process()
+
+    def _process(self) -> None:
+        params = self._get_parameters()
+        api_key = self._validate_api_key()
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+        model = params["model"]
+        self._log(f"Generating image with {model}")
+
+        response = self._submit_request(params, headers)
+        if response:
+            self._handle_response(response)
+        else:
+            self._set_safe_defaults()
+
+    def _get_parameters(self) -> dict[str, Any]:
+        return {
+            "model": self.get_parameter_value("model") or "seedream-4.0",
+            "prompt": self.get_parameter_value("prompt") or "",
+            "image": self.get_parameter_value("image"),
+            "size": self.get_parameter_value("size") or "2K",
+            "seed": self.get_parameter_value("seed") or -1,
+            "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
+            "response_format": self.get_parameter_value("response_format") or "url",
+            "watermark": self.get_parameter_value("watermark")
+            if self.get_parameter_value("watermark") is not None
+            else True,
+        }
+
+    def _validate_api_key(self) -> str:
+        api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
+        if not api_key:
+            self._set_safe_defaults()
+            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
+            raise ValueError(msg)
+        return api_key
+
+    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
+        payload = self._build_payload(params)
+        # Map friendly model name to API model ID
+        api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
+        proxy_url = urljoin(self._proxy_base, api_model_id)
+
+        self._log(f"Submitting request to Griptape model proxy with model: {params['model']}")
+        self._log_request(payload)
+
+        try:
+            response = requests.post(proxy_url, json=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+            response_json = response.json()
+            self._log("Request submitted successfully")
+        except requests.exceptions.HTTPError as e:
+            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            msg = f"{self.name} API error: {e.response.status_code}"
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            self._log(f"Request failed: {e}")
+            msg = f"{self.name} request failed: {e}"
+            raise RuntimeError(msg) from e
+        else:
+            return response_json
+
+    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+        model = params["model"]
+        # Map friendly model name to API model ID
+        api_model_id = MODEL_MAPPING.get(model, model)
+        payload = {
+            "model": api_model_id,
+            "prompt": params["prompt"],
+            "size": params["size"],
+            "response_format": params["response_format"],
+            "watermark": params["watermark"],
+            # Always disable batch generation to ensure single image output
+            "sequential_image_generation": "disabled",
+        }
+
+        # Add seed if not -1
+        if params["seed"] != -1:
+            payload["seed"] = params["seed"]
+
+        # Model-specific parameters
+        if model == "seedream-4.0":
+            # Add input image if provided
+            image_data = self._process_input_image(params["image"])
+            if image_data:
+                payload["image"] = image_data
+
+        elif model == "seedream-3.0-t2i":
+            # Add guidance scale
+            payload["guidance_scale"] = params["guidance_scale"]
+
+        return payload
+
+    def _process_input_image(self, image_input: Any) -> str | None:
+        """Process input image and convert to base64 data URI or URL."""
+        if not image_input:
+            return None
+
+        if isinstance(image_input, str):
+            # Already a URL or base64 string
+            if image_input.startswith(("http://", "https://", "data:image/")):
+                return image_input
+            # Assume it's base64 without data URI prefix
+            return f"data:image/png;base64,{image_input}"
+
+        # Handle artifact objects
+        try:
+            # ImageUrlArtifact: .value holds URL string
+            if hasattr(image_input, "value"):
+                value = getattr(image_input, "value", None)
+                if isinstance(value, str) and value.startswith(("http://", "https://", "data:image/")):
+                    return value
+
+            # ImageArtifact: .base64 holds raw or data-URI
+            if hasattr(image_input, "base64"):
+                b64 = getattr(image_input, "base64", None)
+                if isinstance(b64, str) and b64:
+                    return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
+        except Exception as e:
+            self._log(f"Failed to process input image: {e}")
+
+        return None
+
+    def _log_request(self, payload: dict[str, Any]) -> None:
+        with suppress(Exception):
+            sanitized_payload = deepcopy(payload)
+            # Truncate long prompts
+            prompt = sanitized_payload.get("prompt", "")
+            if len(prompt) > PROMPT_TRUNCATE_LENGTH:
+                sanitized_payload["prompt"] = prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
+            # Redact base64 image data
+            if "image" in sanitized_payload:
+                image_data = sanitized_payload["image"]
+                if isinstance(image_data, str) and image_data.startswith("data:image/"):
+                    parts = image_data.split(",", 1)
+                    header = parts[0] if parts else "data:image/"
+                    b64_len = len(parts[1]) if len(parts) > 1 else 0
+                    sanitized_payload["image"] = f"{header},<base64 data length={b64_len}>"
+
+            self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
+
+    def _handle_response(self, response: dict[str, Any]) -> None:
+        self.parameter_output_values["provider_response"] = response
+
+        # Extract generation ID if available
+        generation_id = response.get("id", response.get("created", ""))
+        self.parameter_output_values["generation_id"] = str(generation_id)
+
+        # Extract image data (expecting single image)
+        data = response.get("data", [])
+        if not data:
+            self._log("No image data in response")
+            self.parameter_output_values["image_url"] = None
+            return
+
+        # Take first image from response
+        image_data = data[0]
+
+        if self.get_parameter_value("response_format") == "url":
+            image_url = image_data.get("url")
+            if image_url:
+                self._save_image_from_url(image_url)
+            else:
+                self._log("No image URL in response")
+                self.parameter_output_values["image_url"] = None
+        else:
+            # Handle base64 response
+            b64_data = image_data.get("b64_json")
+            if b64_data:
+                self._save_image_from_base64(b64_data)
+            else:
+                self._log("No base64 data in response")
+                self.parameter_output_values["image_url"] = None
+
+    def _save_image_from_url(self, image_url: str) -> None:
+        try:
+            self._log("Downloading image from URL")
+            image_bytes = self._download_bytes_from_url(image_url)
+            if image_bytes:
+                filename = f"seedream_image_{int(time.time())}.jpg"
+                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
+
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved image to static storage as {filename}")
+            else:
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+        except Exception as e:
+            self._log(f"Failed to save image from URL: {e}")
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+
+    def _save_image_from_base64(self, b64_data: str) -> None:
+        try:
+            image_bytes = base64.b64decode(b64_data)
+            filename = f"seedream_image_{int(time.time())}.jpg"
+            from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
+
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+            self._log(f"Saved image from base64 to static storage as {filename}")
+        except Exception as e:
+            self._log(f"Failed to save image from base64: {e}")
+            self.parameter_output_values["image_url"] = None
+
+    def _set_safe_defaults(self) -> None:
+        self.parameter_output_values["generation_id"] = ""
+        self.parameter_output_values["provider_response"] = None
+        self.parameter_output_values["image_url"] = None
+
+    @staticmethod
+    def _download_bytes_from_url(url: str) -> bytes | None:
+        try:
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        else:
+            return resp.content
