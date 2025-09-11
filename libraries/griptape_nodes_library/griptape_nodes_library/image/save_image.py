@@ -5,12 +5,11 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameterOutput,
     Parameter,
     ParameterGroup,
     ParameterMode,
 )
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
 
@@ -33,19 +32,11 @@ def to_image_artifact(image: ImageArtifact | dict) -> ImageArtifact | ImageUrlAr
     return image
 
 
-class SaveImage(ControlNode):
+class SaveImage(SuccessFailureNode):
     """Save an image to a file."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
-        super().__init__(name, metadata, output_control_name="Succeeded")
-
-        # Add Failed control output
-        self.failure_output = ControlParameterOutput(
-            name="failure",
-            tooltip="Control path when the image save fails",
-            display_name="Failed",
-        )
-        self.add_parameter(self.failure_output)
+        super().__init__(name, metadata)
 
         # Add image input parameter
         self.add_parameter(
@@ -70,9 +61,6 @@ class SaveImage(ControlNode):
             )
         )
 
-        # Track execution state for control flow routing
-        self._execution_succeeded: bool | None = None
-
         # Save options parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Save Options") as save_options_group:
             save_options_group.ui_options = {"collapsed": True}
@@ -95,41 +83,15 @@ class SaveImage(ControlNode):
 
         self.add_node_element(save_options_group)
 
-        # Advanced parameters in a collapsible ParameterGroup
-        with ParameterGroup(name="Status") as group:
-            group.ui_options = {"collapsed": True}
-
-            # Boolean parameter to indicate success/failure
-            self.was_successful = Parameter(
-                name="was_successful",
-                tooltip="Indicates whether it completed without errors.",
-                type="bool",
-                default_value=False,
-                settable=False,
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-
-            # Result details parameter with multiline option
-            self.result_details = Parameter(
-                name="result_details",
-                tooltip="Details about the image save operation result",
-                type="str",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                settable=False,
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Details on the save attempt will be presented here.",
-                },
-            )
-
-        self.add_node_element(group)
+        # Add status parameters using the helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the image save operation result",
+            result_details_placeholder="Details on the save attempt will be presented here.",
+        )
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
-        self._execution_succeeded = None
-        self._assign_result_details("")
-        self.parameter_output_values[self.was_successful.name] = False
+        self._clear_execution_status()
 
         image = self.get_parameter_value("image")
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
@@ -208,18 +170,6 @@ class SaveImage(ControlNode):
         )
         logger.info(f"Saved image: {saved_path}")
 
-    def get_next_control_output(self) -> Parameter | None:
-        """Determine which control output to follow based on execution result."""
-        if self._execution_succeeded is None:
-            # Execution hasn't completed yet
-            self.stop_flow = True
-            return None
-
-        if self._execution_succeeded:
-            # Return the existing control output (now renamed to "Succeeded")
-            return self.control_parameter_out
-        return self.failure_output
-
     def _get_input_info(self, image: Any) -> str:
         """Get input information for forensics logging."""
         input_type = type(image).__name__
@@ -255,9 +205,6 @@ class SaveImage(ControlNode):
         """Handle execution result for all cases."""
         match status:
             case SaveImageStatus.FAILURE:
-                self._execution_succeeded = False
-                self.parameter_output_values[self.was_successful.name] = False
-
                 # Get detailed input info for failures (including dictionary preview)
                 detailed_input_info = self._get_input_info_for_failure(self.get_parameter_value("image"))
 
@@ -268,13 +215,10 @@ class SaveImage(ControlNode):
                     if exception.__cause__:
                         failure_details += f"\nCause: {exception.__cause__}"
 
-                self._assign_result_details(f"{status}: {failure_details}")
+                self._set_status_results(was_successful=False, result_details=f"{status}: {failure_details}")
                 logger.error(f"Error saving image: {details}")
 
             case SaveImageStatus.WARNING:
-                self._execution_succeeded = True
-                self.parameter_output_values[self.was_successful.name] = True
-
                 result_details = (
                     f"No image to save (warning)\n"
                     f"Input: {input_info}\n"
@@ -282,12 +226,9 @@ class SaveImage(ControlNode):
                     f"Result: No file created"
                 )
 
-                self._assign_result_details(f"{status}: {result_details}")
+                self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
 
             case SaveImageStatus.SUCCESS:
-                self._execution_succeeded = True
-                self.parameter_output_values[self.was_successful.name] = True
-
                 result_details = (
                     f"Image saved successfully\n"
                     f"Input: {input_info}\n"
@@ -295,7 +236,7 @@ class SaveImage(ControlNode):
                     f"Saved to: {saved_path}"
                 )
 
-                self._assign_result_details(f"{status}: {result_details}")
+                self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
 
     def _save_to_filesystem(
         self, image_artifact: Any, output_path: Path, *, allow_creating_folders: bool, overwrite_existing: bool
@@ -304,7 +245,7 @@ class SaveImage(ControlNode):
         # Check if file exists and overwrite is disabled
         if output_path.exists() and not overwrite_existing:
             error_details = f"File already exists and overwrite_existing is disabled: {output_path}"
-            raise ValueError(error_details)
+            raise RuntimeError(error_details)
 
         # Handle parent directory creation
         if allow_creating_folders:
@@ -312,26 +253,26 @@ class SaveImage(ControlNode):
                 output_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 error_details = f"Failed to create directory structure for path: {e!s}"
-                raise ValueError(error_details) from e
+                raise RuntimeError(error_details) from e
         elif not output_path.parent.exists():
             error_details = (
                 f"Parent directory does not exist and allow_creating_folders is disabled: {output_path.parent}"
             )
-            raise ValueError(error_details)
+            raise RuntimeError(error_details)
 
         # Convert image to bytes
         try:
             image_bytes = image_artifact.to_bytes()
         except Exception as e:
             error_details = f"Failed to convert image artifact to bytes: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         # Write image bytes directly to file
         try:
             output_path.write_bytes(image_bytes)
         except Exception as e:
             error_details = f"Failed to write image file to filesystem: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         return str(output_path)
 
@@ -352,26 +293,21 @@ class SaveImage(ControlNode):
                 error_details = (
                     f"File already exists in static storage and overwrite_existing is disabled: {output_file}"
                 )
-                raise ValueError(error_details)
+                raise RuntimeError(error_details)
 
         # Convert image to bytes
         try:
             image_bytes = image_artifact.to_bytes()
         except Exception as e:
             error_details = f"Failed to convert image artifact to bytes: {e!s}"
-            raise ValueError(error_details) from e
+            raise RuntimeError(error_details) from e
 
         # Save to static storage
         try:
             return GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, output_file)
         except Exception as e:
             error_details = f"Failed to save image to static storage: {e!s}"
-            raise ValueError(error_details) from e
-
-    def _assign_result_details(self, message: str) -> None:
-        """Helper to assign result_details using publish_update_to_parameter."""
-        self.parameter_output_values[self.result_details.name] = message
-        self.publish_update_to_parameter(self.result_details.name, message)
+            raise RuntimeError(error_details) from e
 
     def _handle_error_with_graceful_exit(
         self, error_details: str, exception: Exception, input_info: str, output_file: str
@@ -385,22 +321,5 @@ class SaveImage(ControlNode):
             details=error_details,
             exception=exception,
         )
-        # If user has connected something to Failed output, they want to handle errors gracefully
-        # in their workflow rather than crashing the entire process with an exception
-        if not self._has_outgoing_connections(self.failure_output):
-            raise ValueError(error_details) from exception
-
-    def _has_outgoing_connections(self, parameter: Parameter) -> bool:
-        """Check if a specific parameter has outgoing connections."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Check if node has any outgoing connections
-        node_connections = connections.outgoing_index.get(self.name)
-        if node_connections is None:
-            return False
-
-        # Check if this specific parameter has any outgoing connections
-        param_connections = node_connections.get(parameter.name, [])
-        return len(param_connections) > 0
+        # Use the helper to handle exception based on connection status
+        self._handle_failure_exception(RuntimeError(error_details))

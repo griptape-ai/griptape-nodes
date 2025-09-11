@@ -1190,6 +1190,160 @@ class DataNode(BaseNode):
         self.add_parameter(self.control_parameter_out)
 
 
+class SuccessFailureNode(BaseNode):
+    """Base class for nodes that have success/failure branching with control outputs.
+
+    This class provides:
+    - Control input parameter
+    - Two control outputs: success ("exec_out") and failure ("failure")
+    - Execution state tracking for control flow routing
+    - Helper method to check outgoing connections
+    - Helper method to create standard status output parameters
+    """
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+
+        # Track execution state for control flow routing
+        self._execution_succeeded: bool | None = None
+
+        # Add control input parameter
+        self.control_parameter_in = ControlParameterInput()
+        self.add_parameter(self.control_parameter_in)
+
+        # Add success control output (uses default "exec_out" name)
+        self.control_parameter_out = ControlParameterOutput(
+            display_name="Succeeded", tooltip="Control path when the operation succeeds"
+        )
+        self.add_parameter(self.control_parameter_out)
+
+        # Add failure control output
+        self.failure_output = ControlParameterOutput(
+            name="failure",
+            display_name="Failed",
+            tooltip="Control path when the operation fails",
+        )
+        self.add_parameter(self.failure_output)
+
+    def get_next_control_output(self) -> Parameter | None:
+        """Determine which control output to follow based on execution result."""
+        if self._execution_succeeded is None:
+            # Execution hasn't completed yet
+            self.stop_flow = True
+            return None
+
+        if self._execution_succeeded:
+            return self.control_parameter_out
+        return self.failure_output
+
+    def _has_outgoing_connections(self, parameter: Parameter) -> bool:
+        """Check if a specific parameter has outgoing connections."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Check if node has any outgoing connections
+        node_connections = connections.outgoing_index.get(self.name)
+        if node_connections is None:
+            return False
+
+        # Check if this specific parameter has any outgoing connections
+        param_connections = node_connections.get(parameter.name, [])
+        return len(param_connections) > 0
+
+    def _create_status_parameters(
+        self,
+        result_details_tooltip: str = "Details about the operation result",
+        result_details_placeholder: str = "Details on the operation will be presented here.",
+    ) -> None:
+        """Create and add standard status output parameters in a collapsible group.
+
+        This method creates a "Status" ParameterGroup and immediately adds it to the node.
+        Nodes that use this are responsible for calling this at their desired location
+        in their class constructor.
+
+        Creates and adds:
+        - was_successful: Boolean parameter indicating success/failure
+        - result_details: String parameter with operation details
+
+        Args:
+            result_details_tooltip: Custom tooltip for result_details parameter
+            result_details_placeholder: Custom placeholder text for result_details parameter
+        """
+        with ParameterGroup(name="Status") as self.status_group:
+            self.status_group.ui_options = {"collapsed": True}
+
+            # Boolean parameter to indicate success/failure
+            self.was_successful = Parameter(
+                name="was_successful",
+                tooltip="Indicates whether it completed without errors.",
+                type="bool",
+                default_value=False,
+                settable=False,
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+
+            # Result details parameter with multiline option
+            self.result_details = Parameter(
+                name="result_details",
+                tooltip=result_details_tooltip,
+                type="str",
+                default_value=None,
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": result_details_placeholder,
+                },
+            )
+
+        self.add_node_element(self.status_group)
+
+    def _clear_execution_status(self) -> None:
+        """Clear execution status and reset status parameters.
+
+        This method should be called at the start of process() to reset the node state.
+        """
+        self._execution_succeeded = None
+        self._set_status_results(was_successful=False, result_details="Beginning execution...")
+
+    def _set_status_results(self, *, was_successful: bool, result_details: str) -> None:
+        """Set status results and update execution state.
+
+        This method should be called from the process() method to communicate success or failure.
+        It sets the execution state for control flow routing and updates the status output parameters.
+
+        Args:
+            was_successful: Whether the operation succeeded
+            result_details: Details about the operation result
+        """
+        self._execution_succeeded = was_successful
+        self.parameter_output_values[self.was_successful.name] = was_successful
+        self.parameter_output_values[self.result_details.name] = result_details
+        self.publish_update_to_parameter(self.result_details.name, result_details)
+
+    def _handle_failure_exception(self, exception: Exception) -> None:
+        """Handle failure exceptions based on whether failure output is connected.
+
+        If the failure output has outgoing connections, logs the error and continues execution
+        to allow graceful failure handling. If no connections exist, raises the exception
+        to crash the flow and provide immediate feedback.
+
+        Args:
+            exception: The exception that caused the failure
+        """
+        if self._has_outgoing_connections(self.failure_output):
+            # User has connected something to Failed output, they want to handle errors gracefully
+            logger.error(
+                "Error in node '%s': %s. Continuing execution since failure output is connected for graceful handling.",
+                self.name,
+                exception,
+            )
+        else:
+            # No graceful handling, raise the exception to crash the flow
+            raise exception
+
+
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
