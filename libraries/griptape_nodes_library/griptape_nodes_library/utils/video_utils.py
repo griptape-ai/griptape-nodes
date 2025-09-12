@@ -1,10 +1,18 @@
 import base64
 import re
+import tempfile
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+
+DEFAULT_DOWNLOAD_TIMEOUT = 30.0
+DOWNLOAD_CHUNK_SIZE = 8192
 
 RATE_TOLERANCE = 0.1
 NOMINAL_30FPS = 30
@@ -32,6 +40,10 @@ def detect_video_format(video: Any | dict) -> str | None:
     Returns:
         The detected format (e.g., 'mp4', 'avi', 'mov') or None if not detected.
     """
+    # Handle DownloadedVideoArtifact from SaveVideo
+    if hasattr(video, "detected_format") and hasattr(video, "value") and isinstance(video.value, bytes):
+        return video.detected_format
+
     if isinstance(video, dict):
         # Check for MIME type in dictionary
         if "type" in video and "/" in video["type"]:
@@ -164,3 +176,54 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r"[^\w\s\-.]+", "_", name.strip())
     name = re.sub(r"\s+", "_", name)
     return name or "segment"
+
+
+@dataclass
+class VideoDownloadResult:
+    """Result of video download operation."""
+
+    temp_file_path: Path
+    detected_format: str | None = None
+
+
+async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
+    """Download video from URL to temporary file using async httpx streaming.
+
+    Args:
+        url: The video URL to download
+
+    Returns:
+        VideoDownloadResult with path to temp file and detected format
+
+    Raises:
+        ValueError: If URL is invalid or download fails
+    """
+    # Validate URL first using existing function
+    if not validate_url(url):
+        error_details = f"Invalid or unsafe URL: {url}"
+        raise ValueError(error_details)
+
+    # Create temp file with generic extension initially
+    with tempfile.NamedTemporaryFile(suffix=".video", delete=False) as temp_file:
+        temp_path = Path(temp_file.name)
+
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
+            response.raise_for_status()
+
+            # Use sync file operations for writing chunks - this is appropriate for streaming
+            with temp_path.open("wb") as f:  # noqa: ASYNC230
+                async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                    f.write(chunk)
+
+        # Detect format from URL or use default
+        detected_format = detect_video_format({"value": url})
+
+        return VideoDownloadResult(temp_file_path=temp_path, detected_format=detected_format)
+
+    except Exception as e:
+        # Cleanup on failure
+        if temp_path.exists():
+            temp_path.unlink()
+        error_details = f"Failed to download video from {url}: {e}"
+        raise ValueError(error_details) from e

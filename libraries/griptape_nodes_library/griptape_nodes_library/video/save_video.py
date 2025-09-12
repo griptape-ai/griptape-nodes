@@ -9,11 +9,24 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact
+from griptape_nodes_library.utils.video_utils import (
+    VideoDownloadResult,
+    detect_video_format,
+    download_video_to_temp_file,
+    to_video_artifact,
+)
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 DEFAULT_FILENAME = "griptape_nodes.mp4"
 PREVIEW_LENGTH = 50
+
+
+class DownloadedVideoArtifact:
+    """Simple artifact for downloaded video bytes."""
+
+    def __init__(self, value: bytes, detected_format: str | None = None):
+        self.value = value
+        self.detected_format = detected_format
 
 
 class SaveVideoStatus(StrEnum):
@@ -147,6 +160,42 @@ class SaveVideo(SuccessFailureNode):
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
+    def _is_video_url_needing_download(self, video: Any) -> bool:
+        """Check if video input is a URL string that needs downloading."""
+        if isinstance(video, str):
+            # Direct URL string
+            return video.startswith(("http://", "https://"))
+
+        # Check for any VideoUrlArtifact-like object (regardless of which library it's from)
+        if hasattr(video, "value") and hasattr(video, "__class__") and "VideoUrlArtifact" in video.__class__.__name__:
+            # Any VideoUrlArtifact with URL that might need downloading
+            return video.value.startswith(("http://", "https://"))
+
+        return False
+
+    def _extract_url_from_video(self, video: Any) -> str:
+        """Extract URL from video input."""
+        if isinstance(video, str):
+            return video
+
+        # Check for any VideoUrlArtifact-like object (regardless of which library it's from)
+        if hasattr(video, "value") and hasattr(video, "__class__") and "VideoUrlArtifact" in video.__class__.__name__:
+            return video.value
+
+        error_details = f"Cannot extract URL from video type: {type(video).__name__}"
+        raise ValueError(error_details)
+
+    def _create_video_artifact_from_temp_file(self, download_result: VideoDownloadResult) -> DownloadedVideoArtifact:
+        """Create video artifact from downloaded temp file."""
+        # Read video bytes from temp file
+        video_bytes = download_result.temp_file_path.read_bytes()
+
+        # Use detected format or default to mp4
+        format_ext = download_result.detected_format or "mp4"
+
+        # Create artifact that bypasses the dict_to_video_url_artifact conversion
+        return DownloadedVideoArtifact(video_bytes, format_ext)
+
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
 
@@ -157,11 +206,8 @@ class SaveVideo(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    def process(self) -> None:
-        # Reset execution state and result details at the start of each run
-        self._clear_execution_status()
-
-        video = self.get_parameter_value("video")
+    def _process_video_save(self, video: Any, downloaded_from_url: str | None = None) -> None:
+        """Process video saving with the provided video input."""
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
 
         # Set output values BEFORE processing
@@ -177,13 +223,96 @@ class SaveVideo(SuccessFailureNode):
                 input_info="No video input",
                 output_file=output_file,
                 details=warning_details,
+                downloaded_from_url=downloaded_from_url,
             )
             return
 
         # Process the video
-        self._process_video(video, output_file)
+        self._process_video(video, output_file, downloaded_from_url=downloaded_from_url)
 
-    def _process_video(self, video: Any, output_file: str) -> None:
+    async def aprocess(self) -> None:
+        """Async process method to handle URL downloading."""
+        # Reset execution state at the very top
+        self._clear_execution_status()
+
+        video = self.get_parameter_value("video")
+
+        # Check if we need to download from URL
+        if self._is_video_url_needing_download(video):
+            await self._handle_url_download_and_process(video)
+        else:
+            # No URL download needed - process original video
+            self._process_video_save(video)
+
+    def process(self) -> None:
+        """Sync process method - handles non-URL videos only."""
+        # Reset execution state and result details at the start of each run
+        self._clear_execution_status()
+
+        video = self.get_parameter_value("video")
+
+        # For sync processing, we can only handle non-URL videos
+        if self._is_video_url_needing_download(video):
+            error_details = "URL video downloads require async processing. This should not happen in normal operation."
+            self._handle_execution_result(
+                status=SaveVideoStatus.FAILURE,
+                saved_path="",
+                input_info=f"URL: {self._extract_url_from_video(video)}",
+                output_file=self.get_parameter_value("output_path") or DEFAULT_FILENAME,
+                details=error_details,
+            )
+            self._handle_failure_exception(RuntimeError(error_details))
+            return
+
+        # Process non-URL video normally
+        self._process_video_save(video)
+
+    async def _handle_url_download_and_process(self, video: Any) -> None:
+        """Handle URL download and processing with tight error handling."""
+        url = self._extract_url_from_video(video)
+        temp_file_to_cleanup = None
+
+        try:
+            # Update status to show download starting
+            self._set_status_results(was_successful=True, result_details=f"Downloading video from URL: {url}")
+
+            # Download to temp file
+            download_result = await download_video_to_temp_file(url)
+            temp_file_to_cleanup = download_result.temp_file_path
+
+            # Update status to show download completed
+            file_size = download_result.temp_file_path.stat().st_size
+            size_mb = file_size / (1024 * 1024)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Downloaded video ({size_mb:.1f}MB) to temporary file, processing...",
+            )
+
+            # Create video artifact from temp file
+            downloaded_video = self._create_video_artifact_from_temp_file(download_result)
+
+            # Call process method with downloaded video
+            self._process_video_save(downloaded_video, downloaded_from_url=url)
+
+        except Exception as e:
+            # Handle URL download errors with existing error pipeline
+            error_details = f"Failed to download video from URL: {e}"
+            self._handle_execution_result(
+                status=SaveVideoStatus.FAILURE,
+                saved_path="",
+                input_info=f"URL: {url}",
+                output_file=self.get_parameter_value("output_path") or DEFAULT_FILENAME,
+                details=error_details,
+                exception=e,
+            )
+            # Use the helper to handle exception based on connection status
+            self._handle_failure_exception(RuntimeError(error_details))
+        finally:
+            # Always cleanup temp file
+            if temp_file_to_cleanup and temp_file_to_cleanup.exists():
+                temp_file_to_cleanup.unlink(missing_ok=True)
+
+    def _process_video(self, video: Any, output_file: str, downloaded_from_url: str | None = None) -> None:
         """Process the video through all steps."""
         # Capture input source details for forensics
         input_info = self._get_input_info(video)
@@ -219,6 +348,7 @@ class SaveVideo(SuccessFailureNode):
             input_info=input_info,
             output_file=output_file,
             details=success_details,
+            downloaded_from_url=downloaded_from_url,
         )
         logger.info(f"Saved video: {saved_path}")
 
@@ -345,6 +475,7 @@ class SaveVideo(SuccessFailureNode):
         output_file: str,
         details: str,
         exception: Exception | None = None,
+        downloaded_from_url: str | None = None,
     ) -> None:
         """Handle execution result for all cases."""
         match status:
@@ -373,12 +504,20 @@ class SaveVideo(SuccessFailureNode):
                 self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
 
             case SaveVideoStatus.SUCCESS:
+                # Include download information if available
+                if downloaded_from_url:
+                    details = f"Downloaded from {downloaded_from_url}, then {details}"
+
                 result_details = (
                     f"Video saved successfully\n"
                     f"Input: {input_info}\n"
                     f"Requested filename: {output_file}\n"
                     f"Saved to: {saved_path}"
                 )
+
+                # Add download info to result details if available
+                if downloaded_from_url:
+                    result_details = f"Downloaded from: {downloaded_from_url}\n{result_details}"
 
                 self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
 
