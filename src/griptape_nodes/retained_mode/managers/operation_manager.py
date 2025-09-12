@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import RequestPayload
     from griptape_nodes.retained_mode.events.config_events import (
         GetConfigCategoryRequest,
+        GetConfigSchemaRequest,
         GetConfigValueRequest,
         SetConfigCategoryRequest,
         SetConfigValueRequest,
@@ -398,6 +399,11 @@ class PayloadConverter:
     def _handle_SetConfigCategoryRequest(payload: SetConfigCategoryRequest) -> str:
         """Handle SetConfigCategoryRequest payloads."""
         return f"""cmd.set_config_category(category="{getattr(payload, "category", None)}",contents="{payload.contents}")"""
+
+    @staticmethod
+    def _handle_GetConfigSchemaRequest(payload: GetConfigSchemaRequest) -> str:
+        """Handle GetConfigSchemaRequest payloads."""
+        return """cmd.get_config_schema()"""
 
     # FLOW OPERATIONS
     @staticmethod

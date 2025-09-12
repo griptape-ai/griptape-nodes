@@ -59,16 +59,20 @@ class AppEvents(BaseModel):
 class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    workspace_directory: str = Field(default=str(Path().cwd() / "GriptapeNodes"))
+    workspace_directory: str = Field(
+        default=str(Path().cwd() / "GriptapeNodes"), json_schema_extra={"category": "File System"}
+    )
     static_files_directory: str = Field(
         default="staticfiles",
         description="Path to the static files directory, relative to the workspace directory.",
+        json_schema_extra={"category": "File System"},
     )
     sandbox_library_directory: str = Field(
         default="sandbox_library",
         description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",
+        json_schema_extra={"category": "File System"},
     )
-    app_events: AppEvents = Field(default_factory=AppEvents)
+    app_events: AppEvents = Field(default_factory=AppEvents, json_schema_extra={"category": "Application Events"})
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
             "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
@@ -104,11 +108,14 @@ class Settings(BaseModel):
             },
             "Tavily": {"TAVILY_API_KEY": "$TAVILY_API_KEY"},
             "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
-        }
+        },
+        json_schema_extra={"category": "API Keys"},
     )
-    log_level: LogLevel = Field(default=LogLevel.INFO)
+    log_level: LogLevel = Field(default=LogLevel.INFO, json_schema_extra={"category": "Logging"})
     workflow_execution_mode: WorkflowExecutionMode = Field(
-        default=WorkflowExecutionMode.SEQUENTIAL, description="Workflow execution mode for node processing"
+        default=WorkflowExecutionMode.SEQUENTIAL,
+        description="Workflow execution mode for node processing",
+        json_schema_extra={"category": "Execution"},
     )
 
     @field_validator("workflow_execution_mode", mode="before")
@@ -144,17 +151,23 @@ class Settings(BaseModel):
             return LogLevel.INFO
 
     max_nodes_in_parallel: int | None = Field(
-        default=5, description="Maximum number of nodes executing at a time for parallel execution."
+        default=5,
+        description="Maximum number of nodes executing at a time for parallel execution.",
+        json_schema_extra={"category": "Execution"},
     )
-    storage_backend: Literal["local", "gtc"] = Field(default="local")
+    storage_backend: Literal["local", "gtc"] = Field(default="local", json_schema_extra={"category": "Storage"})
     minimum_disk_space_gb_libraries: float = Field(
         default=10.0,
         description="Minimum disk space in GB required for library installation and virtual environment operations",
+        json_schema_extra={"category": "System Requirements"},
     )
     minimum_disk_space_gb_workflows: float = Field(
-        default=1.0, description="Minimum disk space in GB required for saving workflows"
+        default=1.0,
+        description="Minimum disk space in GB required for saving workflows",
+        json_schema_extra={"category": "System Requirements"},
     )
     synced_workflows_directory: str = Field(
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
+        json_schema_extra={"category": "File System"},
     )

@@ -419,11 +419,41 @@ class ConfigManager:
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle request to get the configuration schema."""
+        """Handle request to get the configuration schema with default values and library settings."""
         try:
+            # Start with the base Settings schema
             schema = Settings.model_json_schema()
-            result_details = "Successfully returned the configuration schema."
-            return GetConfigSchemaResultSuccess(schema=schema, result_details=result_details)
+
+            # Create a default instance to get default values
+            default_instance = Settings()
+            default_values = default_instance.model_dump()
+
+            # Get the merged config to include library settings
+            merged_config = self.merged_config
+
+            # Add library settings to the schema properties
+            for key, value in merged_config.items():
+                if key not in schema["properties"]:
+                    # This is a library setting, add it to the schema
+                    # Only include settings that are actually library-specific (not duplicates of core settings)
+                    if isinstance(value, dict) and not any(
+                        core_key in value for core_key in schema["properties"].keys()
+                    ):
+                        schema["properties"][key] = {
+                            "type": "object",
+                            "title": key.replace("_", " ").title(),
+                            "category": "Library Settings",
+                        }
+
+                        # Add to default values if not already present
+                        if key not in default_values:
+                            default_values[key] = value
+
+            # Add default values to the schema response
+            schema_with_defaults = {"schema": schema, "default_values": default_values}
+
+            result_details = "Successfully returned the configuration schema with default values and library settings."
+            return GetConfigSchemaResultSuccess(schema=schema_with_defaults, result_details=result_details)
         except Exception as e:
             result_details = f"Failed to generate configuration schema: {e}"
             return GetConfigSchemaResultFailure(result_details=result_details)
