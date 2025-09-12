@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -522,13 +523,17 @@ class ModelManager:
             query_info=query_info,
         )
 
-    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event by downloading configured models and resuming unfinished downloads.
 
         Args:
-            payload: The app initialization complete payload containing models_to_download
+            payload: The app initialization complete payload
         """
-        models_to_download = payload.models_to_download or []
+        # Get models to download from configuration
+        config_manager = GriptapeNodes.ConfigManager()
+        models_to_download = config_manager.get_config_value(
+            "app_events.on_app_initialization_complete.models_to_download", default=[]
+        )
 
         # Find unfinished downloads to resume
         unfinished_models = await asyncio.to_thread(self._find_unfinished_downloads)

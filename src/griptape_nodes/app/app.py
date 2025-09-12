@@ -177,7 +177,7 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
         try:
             # Emit initialization event only for the first connection
             if not initialized:
-                _broadcast_app_initialization_complete()
+                griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
                 initialized = True
 
             # Emit connection established event for every connection
@@ -195,37 +195,6 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
             logger.exception("WebSocket tasks failed")
             await asyncio.sleep(2.0)  # Wait before retry
             continue
-
-
-def _broadcast_app_initialization_complete() -> None:
-    """Broadcast AppInitializationComplete event."""
-    # Get configuration values for initialization
-    config_manager = griptape_nodes.ConfigManager()
-
-    # Get libraries to register
-    libraries_to_register = config_manager.get_config_value(
-        "app_events.on_app_initialization_complete.libraries_to_register", default=[]
-    )
-
-    # Get workflows to register
-    workflows_to_register = config_manager.get_config_value(
-        "app_events.on_app_initialization_complete.workflows_to_register", default=[]
-    )
-
-    # Get models to download
-    models_to_download = config_manager.get_config_value(
-        "app_events.on_app_initialization_complete.models_to_download", default=[]
-    )
-
-    griptape_nodes.EventManager().put_event(
-        AppEvent(
-            payload=app_events.AppInitializationComplete(
-                libraries_to_register=libraries_to_register,
-                workflows_to_register=workflows_to_register,
-                models_to_download=models_to_download,
-            )
-        )
-    )
 
 
 def _ensure_api_key() -> str:
