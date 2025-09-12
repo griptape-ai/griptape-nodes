@@ -516,15 +516,14 @@ class OSManager:
 
         # Check if file is already in the static files directory
         config_manager = GriptapeNodes.ConfigManager()
-        static_files_directory = config_manager.get_config_value("static_files_directory", default="staticfiles")
-        static_dir = config_manager.workspace_path / static_files_directory
+        static_dir = config_manager.workspace_path
 
         try:
             # Check if file is within the static files directory
             file_relative_to_static = file_path.relative_to(static_dir)
             # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/static/{file_relative_to_static}"
-            msg = f"Image already in static directory, returning URL: {static_url}"
+            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+            msg = f"Image already in workspace directory, returning URL: {static_url}"
             logger.debug(msg)
         except ValueError:
             # File is not in static directory, create small preview

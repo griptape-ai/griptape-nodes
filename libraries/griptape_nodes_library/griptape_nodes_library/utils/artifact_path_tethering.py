@@ -140,6 +140,9 @@ class ArtifactPathValidator(Trait):
         """Validate that the file path exists and has a supported extension."""
         path = Path(file_path)
 
+        if not path.is_absolute():
+            path = GriptapeNodes.ConfigManager().workspace_path / path
+
         if not path.exists():
             error_msg = f"File not found: '{file_path}'"
             raise FileNotFoundError(error_msg)
@@ -527,7 +530,7 @@ class ArtifactPathTethering:
         file_name = path.name
 
         # Create upload URL
-        upload_request = CreateStaticFileUploadUrlRequest(file_name=file_name)
+        upload_request = CreateStaticFileUploadUrlRequest(file_name=file_path)
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
@@ -539,6 +542,8 @@ class ArtifactPathTethering:
             raise TypeError(error_msg)
 
         # Read and upload file
+        if not path.is_absolute():
+            path = GriptapeNodes.ConfigManager().workspace_path / path
         try:
             file_data = path.read_bytes()
             file_size = len(file_data)
@@ -559,7 +564,7 @@ class ArtifactPathTethering:
             raise ValueError(error_msg) from e
 
         # Get download URL
-        download_request = CreateStaticFileDownloadUrlRequest(file_name=file_name)
+        download_request = CreateStaticFileDownloadUrlRequest(file_name=file_path)
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):

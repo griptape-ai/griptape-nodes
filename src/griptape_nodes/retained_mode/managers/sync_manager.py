@@ -209,7 +209,10 @@ class SyncManager:
             msg = "Cloud storage api_key not configured. Set GT_CLOUD_API_KEY secret."
             raise RuntimeError(msg)
 
+        workspace_directory = Path(self._config_manager.get_config_value("workspace_directory"))
+
         return GriptapeCloudStorageDriver(
+            workspace_directory,
             bucket_id=bucket_id,
             base_url=base_url,
             api_key=api_key,
@@ -232,7 +235,7 @@ class SyncManager:
             sync_dir = self._sync_dir
 
             # Download file content from cloud
-            file_content = storage_driver.download_file(filename)
+            file_content = storage_driver.download_file(Path(filename))
 
             # Write to local sync directory
             local_file_path = sync_dir / filename
@@ -283,7 +286,7 @@ class SyncManager:
 
             # Upload to cloud storage using the upload_file method
             filename = file_path.name
-            storage_driver.upload_file(filename, file_content)
+            storage_driver.upload_file(Path(filename), file_content)
 
             logger.info("Successfully uploaded workflow file to cloud: %s", filename)
 
@@ -301,7 +304,7 @@ class SyncManager:
             filename = file_path.name
 
             # Use the storage driver's delete method
-            storage_driver.delete_file(filename)
+            storage_driver.delete_file(Path(filename))
             logger.info("Successfully deleted workflow file from cloud: %s", filename)
 
         except Exception as e:
@@ -388,7 +391,7 @@ class SyncManager:
         """
         try:
             # Download file content
-            file_content = storage_driver.download_file(file_name)
+            file_content = storage_driver.download_file(Path(file_name))
 
             # Extract just the filename (remove any directory prefixes)
             local_filename = Path(file_name).name
