@@ -159,6 +159,10 @@ class ExecuteDagState(State):
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
+        if context.dag_builder is not None:
+            network = context.dag_builder.graphs.get(network_name, None)
+            if network is None or len(network) == 0:
+                return
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         # Check stop_flow first
         if node.stop_flow:
@@ -177,7 +181,7 @@ class ExecuteDagState(State):
                         {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                     )
             )
-                if context.dag_builder:
+                if context.dag_builder is not None:
                     context.dag_builder.add_node_with_dependencies(next_node, network_name)
 
     @staticmethod

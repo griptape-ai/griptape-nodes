@@ -12,6 +12,10 @@ class DirectedGraph:
         self._nodes: set[str] = set()
         self._predecessors: dict[str, set[str]] = {}
 
+    def __len__(self) -> int:
+        """Return the number of nodes in the graph."""
+        return len(self._nodes)
+
     def add_node(self, node_for_adding: str) -> None:
         """Add a node to the graph."""
         self._nodes.add(node_for_adding)
