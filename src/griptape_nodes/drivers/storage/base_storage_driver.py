@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TypedDict
 
 import httpx
@@ -18,12 +19,31 @@ class CreateSignedUploadUrlResponse(TypedDict):
 class BaseStorageDriver(ABC):
     """Base class for storage drivers."""
 
-    @abstractmethod
-    def create_signed_upload_url(self, file_name: str) -> CreateSignedUploadUrlResponse:
-        """Create a signed upload URL for the given file name.
+    def __init__(self, workspace_directory: Path) -> None:
+        """Initialize the storage driver with a workspace directory.
 
         Args:
-            file_name: The name of the file to create a signed URL for.
+            workspace_directory: The base workspace directory path.
+        """
+        self.workspace_directory = workspace_directory
+
+    def _get_full_path(self, path: Path) -> Path:
+        """Get the full path by joining workspace directory with the given path.
+
+        Args:
+            path: The relative path to join with workspace directory.
+
+        Returns:
+            The full path as workspace_directory / path.
+        """
+        return self.workspace_directory / path
+
+    @abstractmethod
+    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+        """Create a signed upload URL for the given path.
+
+        Args:
+            path: The path of the file to create a signed URL for.
 
         Returns:
             CreateSignedUploadUrlResponse: A dictionary containing the signed URL, headers, and operation type.
@@ -31,11 +51,11 @@ class BaseStorageDriver(ABC):
         ...
 
     @abstractmethod
-    def create_signed_download_url(self, file_name: str) -> str:
-        """Create a signed download URL for the given file name.
+    def create_signed_download_url(self, path: Path) -> str:
+        """Create a signed download URL for the given path.
 
         Args:
-            file_name: The name of the file to create a signed URL for.
+            path: The path of the file to create a signed URL for.
 
         Returns:
             str: The signed URL for downloading the file.
@@ -43,11 +63,11 @@ class BaseStorageDriver(ABC):
         ...
 
     @abstractmethod
-    def delete_file(self, file_name: str) -> None:
+    def delete_file(self, path: Path) -> None:
         """Delete a file from storage.
 
         Args:
-            file_name: The name of the file to delete.
+            path: The path of the file to delete.
         """
         ...
 
@@ -60,11 +80,11 @@ class BaseStorageDriver(ABC):
         """
         ...
 
-    def upload_file(self, file_name: str, file_content: bytes) -> str:
+    def upload_file(self, path: Path, file_content: bytes) -> str:
         """Upload a file to storage.
 
         Args:
-            file_name: The name of the file to upload.
+            path: The path of the file to upload.
             file_content: The file content as bytes.
 
         Returns:
@@ -75,7 +95,7 @@ class BaseStorageDriver(ABC):
         """
         try:
             # Get signed upload URL
-            upload_response = self.create_signed_upload_url(file_name)
+            upload_response = self.create_signed_upload_url(path)
 
             # Upload the file using the signed URL
             response = httpx.request(
@@ -87,21 +107,21 @@ class BaseStorageDriver(ABC):
             response.raise_for_status()
 
             # Return the download URL
-            return self.create_signed_download_url(file_name)
+            return self.create_signed_download_url(path)
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to upload file {file_name}: {e}"
+            msg = f"Failed to upload file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
         except Exception as e:
-            msg = f"Unexpected error uploading file {file_name}: {e}"
+            msg = f"Unexpected error uploading file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
-    def download_file(self, file_name: str) -> bytes:
-        """Download a file from the bucket.
+    def download_file(self, path: Path) -> bytes:
+        """Download a file from storage.
 
         Args:
-            file_name: The name of the file to download.
+            path: The path of the file to download.
 
         Returns:
             The file content as bytes.
@@ -111,17 +131,17 @@ class BaseStorageDriver(ABC):
         """
         try:
             # Get signed download URL
-            download_url = self.create_signed_download_url(file_name)
+            download_url = self.create_signed_download_url(path)
 
             # Download the file
             response = httpx.get(download_url)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to download file {file_name}: {e}"
+            msg = f"Failed to download file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
         except Exception as e:
-            msg = f"Unexpected error downloading file {file_name}: {e}"
+            msg = f"Unexpected error downloading file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
         else:
