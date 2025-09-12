@@ -134,20 +134,20 @@ async def _download_model(
 
         if isinstance(result, DownloadModelResultSuccess):
             # Success case
-            console.print("[bold green]✓ Model downloaded successfully![/bold green]")
+            console.print("[bold green]Model downloaded successfully![/bold green]")
             console.print("[green]Model files downloaded successfully[/green]")
         elif isinstance(result, DownloadModelResultFailure):
             # Failure case
-            console.print("[bold red]✗ Model download failed:[/bold red]")
+            console.print("[bold red]Model download failed:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Model download failed: Unknown error occurred[/bold red]")
+            console.print("[bold red]Model download failed: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error during model download:[/bold red]")
+        console.print("[bold red]Unexpected error during model download:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
@@ -165,7 +165,7 @@ async def _list_models() -> None:
             # Success case
             models = result.models
             if models:
-                console.print(f"[bold green]✓ Found {len(models)} cached models:[/bold green]")
+                console.print(f"[bold green]Found {len(models)} cached models:[/bold green]")
 
                 table = Table()
                 table.add_column("Model ID", style="green")
@@ -181,16 +181,16 @@ async def _list_models() -> None:
         # Failure case
 
         elif isinstance(result, ListModelsResultFailure):
-            console.print("[bold red]✗ Model listing failed:[/bold red]")
+            console.print("[bold red]Model listing failed:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Model listing failed: Unknown error occurred[/bold red]")
+            console.print("[bold red]Model listing failed: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error during model listing:[/bold red]")
+        console.print("[bold red]Unexpected error during model listing:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
@@ -211,21 +211,21 @@ async def _delete_model(model_id: str) -> None:
 
         if isinstance(result, DeleteModelResultSuccess):
             # Success case
-            console.print("[bold green]✓ Model deleted successfully![/bold green]")
+            console.print("[bold green]Model deleted successfully![/bold green]")
             console.print(f"[green]Deleted: {result.deleted_path}[/green]")
         # Failure case
 
         elif isinstance(result, DeleteModelResultFailure):
-            console.print("[bold red]✗ Model deletion failed:[/bold red]")
+            console.print("[bold red]Model deletion failed:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Model deletion failed: Unknown error occurred[/bold red]")
+            console.print("[bold red]Model deletion failed: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error during model deletion:[/bold red]")
+        console.print("[bold red]Unexpected error during model deletion:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
@@ -318,7 +318,7 @@ def _display_downloads_table(downloads: list["ModelDownloadStatus"]) -> None:
     Args:
         downloads: List of ModelDownloadStatus objects
     """
-    console.print(f"[bold green]✓ Found {len(downloads)} download(s):[/bold green]")
+    console.print(f"[bold green]Found {len(downloads)} download(s):[/bold green]")
 
     table = Table()
     table.add_column("Model ID", style="green")
@@ -364,16 +364,16 @@ async def _get_model_status(model_id: str | None) -> None:
                 console.print("[yellow]No downloads found[/yellow]")
 
         elif isinstance(result, ListModelDownloadsResultFailure):
-            console.print("[bold red]✗ Failed to get download status:[/bold red]")
+            console.print("[bold red]Failed to get download status:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Failed to get download status: Unknown error occurred[/bold red]")
+            console.print("[bold red]Failed to get download status: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error getting download status:[/bold red]")
+        console.print("[bold red]Unexpected error getting download status:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
@@ -423,16 +423,16 @@ async def _search_models(
                 console.print("[yellow]No models found matching the search criteria[/yellow]")
 
         elif isinstance(result, SearchModelsResultFailure):
-            console.print("[bold red]✗ Model search failed:[/bold red]")
+            console.print("[bold red]Model search failed:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Model search failed: Unknown error occurred[/bold red]")
+            console.print("[bold red]Model search failed: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error during model search:[/bold red]")
+        console.print("[bold red]Unexpected error during model search:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
@@ -443,7 +443,7 @@ def _display_search_results(models: list[ModelInfo], query_info: QueryInfo) -> N
         models: List of model information
         query_info: Information about the search query
     """
-    console.print(f"[bold green]✓ Found {len(models)} models[/bold green]")
+    console.print(f"[bold green]Found {len(models)} models[/bold green]")
 
     # Show search parameters if any were used
     params = []
@@ -505,19 +505,19 @@ async def _delete_model_status(model_id: str) -> None:
 
         if isinstance(result, DeleteModelDownloadResultSuccess):
             # Success case
-            console.print("[bold green]✓ Download status deleted successfully![/bold green]")
+            console.print("[bold green]Download status deleted successfully![/bold green]")
             console.print(f"[green]Deleted status file: {result.deleted_path}[/green]")
         # Failure case
 
         elif isinstance(result, DeleteModelDownloadResultFailure):
-            console.print("[bold red]✗ Download status deletion failed:[/bold red]")
+            console.print("[bold red]Download status deletion failed:[/bold red]")
             if result.result_details:
                 console.print(f"[red]{result.result_details}[/red]")
             if result.exception:
                 console.print(f"[dim]Error: {result.exception}[/dim]")
         else:
-            console.print("[bold red]✗ Download status deletion failed: Unknown error occurred[/bold red]")
+            console.print("[bold red]Download status deletion failed: Unknown error occurred[/bold red]")
 
     except Exception as e:
-        console.print("[bold red]✗ Unexpected error during download status deletion:[/bold red]")
+        console.print("[bold red]Unexpected error during download status deletion:[/bold red]")
         console.print(f"[red]{e}[/red]")

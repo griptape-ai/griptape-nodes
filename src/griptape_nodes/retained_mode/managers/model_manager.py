@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import threading
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -50,6 +51,15 @@ HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
 
 MIN_CACHE_DIR_PARTS = 3
+
+
+@dataclass
+class SearchResultsData:
+    """Data class for model search results."""
+
+    models: list[ModelInfo]
+    total_results: int
+    query_info: QueryInfo
 
 
 class ModelDownloadTracker(tqdm):
@@ -418,24 +428,22 @@ class ModelManager:
         try:
             # Search models in a thread to avoid blocking the event loop
             search_results = await asyncio.to_thread(self._search_models, request)
-
-            result_details = f"Found {len(search_results['models'])} models"
-
-            return SearchModelsResultSuccess(
-                models=search_results["models"],
-                total_results=search_results["total_results"],
-                query_info=search_results["query_info"],
-                result_details=result_details,
-            )
-
         except Exception as e:
             error_msg = f"Failed to search models: {e}"
             return SearchModelsResultFailure(
                 result_details=error_msg,
                 exception=e,
             )
+        else:
+            result_details = f"Found {len(search_results.models)} models"
+            return SearchModelsResultSuccess(
+                models=search_results.models,
+                total_results=search_results.total_results,
+                query_info=search_results.query_info,
+                result_details=result_details,
+            )
 
-    def _search_models(self, request: SearchModelsRequest) -> dict[str, Any]:
+    def _search_models(self, request: SearchModelsRequest) -> SearchResultsData:
         """Synchronous model search implementation.
 
         Searches for models on Hugging Face Hub using the huggingface_hub API.
@@ -444,7 +452,7 @@ class ModelManager:
             request: The search request parameters
 
         Returns:
-            dict: Dictionary containing models list, total results, and query info
+            SearchResultsData: Dataclass containing models list, total results, and query info
         """
         # Build search parameters
         search_params = {}
@@ -508,11 +516,11 @@ class ModelManager:
             direction=request.direction,  # Keep the original user-friendly format
         )
 
-        return {
-            "models": models_list,
-            "total_results": len(models_list),
-            "query_info": query_info,
-        }
+        return SearchResultsData(
+            models=models_list,
+            total_results=len(models_list),
+            query_info=query_info,
+        )
 
     async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event by downloading configured models and resuming unfinished downloads.
