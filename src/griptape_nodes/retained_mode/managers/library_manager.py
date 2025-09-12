@@ -103,7 +103,7 @@ from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
     from types import ModuleType
 
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
@@ -480,32 +480,24 @@ class LibraryManager:
         successful_libraries = []
         failed_libraries = []
 
-        # Load metadata from config libraries
-        config_mgr = GriptapeNodes.ConfigManager()
+        # Build list of libraries to process metadata for
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
+        config_mgr = GriptapeNodes.ConfigManager()
 
-        if libraries_to_register is not None:
-            for library_to_register in libraries_to_register:
-                if library_to_register and library_to_register.endswith(".json"):
-                    # Load metadata for this library file
-                    metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_to_register)
-                    metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+        libraries_to_process = []
 
-                    if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
-                        successful_libraries.append(metadata_result)
-                    else:
-                        failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
-                # Note: We skip requirement specifier libraries (non-.json) as they don't have
-                # JSON files we can load metadata from without installation
+        # Add from config
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+        libraries_to_process.extend(config_libraries)
 
-        # Generate sandbox library metadata
-        sandbox_result = self._generate_sandbox_library_metadata()
-        if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
-            successful_libraries.append(sandbox_result)
-        elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
-            failed_libraries.append(sandbox_result)
-        # If sandbox_result is None, sandbox was not configured or no files found - skip it
+        # Add sandbox library (will be handled specially)
+        sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+        if sandbox_library_subdir:
+            sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+            libraries_to_process.append(str(sandbox_library_dir))
+
+        # Process all libraries for metadata
+        self._process_libraries_for_metadata(libraries_to_process, successful_libraries, failed_libraries)
 
         details = (
             f"Successfully loaded metadata for {len(successful_libraries)} libraries, {len(failed_libraries)} failed"
@@ -515,6 +507,38 @@ class LibraryManager:
             failed_libraries=failed_libraries,
             result_details=details,
         )
+
+    async def _process_libraries_for_metadata(
+        self,
+        libraries_to_process: list[str],
+        successful_libraries: list[LoadLibraryMetadataFromFileResultSuccess],
+        failed_libraries: list[LoadLibraryMetadataFromFileResultFailure],
+    ) -> None:
+        """Process a list of library paths for metadata loading, handling both files and directories."""
+
+        async def process_library_file(library_file: Path) -> None:
+            """Process a single library file for metadata loading."""
+            # Load metadata for this library file
+            metadata_request = LoadLibraryMetadataFromFileRequest(file_path=str(library_file))
+            metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+            if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                successful_libraries.append(metadata_result)
+            else:
+                failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
+
+        async def process_sandbox_directory() -> None:
+            """Process sandbox directory specially to generate sandbox library metadata."""
+            # Generate sandbox library metadata
+            sandbox_result = self._generate_sandbox_library_metadata()
+            if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
+                successful_libraries.append(sandbox_result)
+            elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+                failed_libraries.append(sandbox_result)
+            # If sandbox_result is None, sandbox was not configured or no files found - skip it
+
+        # Use the generic processing method with metadata-specific processors
+        await self._process_libraries(libraries_to_process, process_library_file, process_sandbox_directory)
 
     def _generate_sandbox_library_metadata(
         self,
@@ -1503,47 +1527,101 @@ class LibraryManager:
 
         return node_class
 
-    async def load_all_libraries_from_config(self) -> None:
-        # Comment out lines 1503-1545 and call the _load libraries from provenance system to test the other functionality.
+    async def register_list_of_libraries(self, libraries_to_register: list[str]) -> None:
+        """Register multiple libraries from a list of file paths and directory paths.
 
-        # Load metadata for all libraries to determine which ones can be safely loaded
-        metadata_request = LoadMetadataForAllLibrariesRequest()
-        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
+        This method processes each path in the list, handling both explicit library JSON files
+        and directories (which are recursively searched for griptape_nodes_library.json files).
 
-        # Check if metadata loading succeeded
-        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
-            logger.error("Failed to load metadata for all libraries, skipping library registration")
-            return
+        Args:
+            libraries_to_register: List of file paths and directory paths to process
+        """
+        await self._process_libraries_for_registration(libraries_to_register)
 
-        # Record all failed libraries in our tracking immediately
-        for failed_library in metadata_result.failed_libraries:
-            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
-                library_path=failed_library.library_path,
-                library_name=failed_library.library_name,
-                status=failed_library.status,
-                problems=failed_library.problems,
-            )
-
-        # Use metadata results to selectively load libraries
+    def _build_libraries_to_register_list(self) -> list[str]:
+        """Build list of library paths from config, workspace, and sandbox sources."""
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        config_mgr = GriptapeNodes.ConfigManager()
 
-        # Load libraries that had successful metadata loading
-        for library_result in metadata_result.successful_libraries:
-            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
-                # Handle sandbox library - use the schema we already have
-                self._attempt_generate_sandbox_library_from_schema(
-                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
-                )
-            else:
-                # Handle config-based library - register it directly using the file path
-                register_request = RegisterLibraryFromFileRequest(
-                    file_path=library_result.file_path, load_as_default_library=False
-                )
-                register_result = await self.register_library_from_file_request(register_request)
-                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
-                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
-                    # by register_library_from_file_request, so we just log it here for visibility
-                    logger.warning(f"Failed to register library from {library_result.file_path}")  # noqa: G004
+        libraries_to_register = []
+
+        # Add from config
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+        libraries_to_register.extend(config_libraries)
+
+        # Add from workspace (avoiding duplicates)
+        workspace_path = config_mgr.workspace_path
+        libraries_to_register.extend([str(workspace_path)])
+
+        # Add sandbox library (will be handled specially by the process method)
+        sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+        if sandbox_library_subdir:
+            sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+            libraries_to_register.append(str(sandbox_library_dir))
+
+        return libraries_to_register
+
+    async def _process_libraries(  # noqa: C901
+        self,
+        libraries_to_process: list[str],
+        library_file_processor: Callable[[Path], Awaitable[None]],
+        sandbox_processor: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Generic method to process library paths with custom processors for files and sandbox.
+
+        Args:
+            libraries_to_process: List of library paths to process
+            library_file_processor: Async function to process individual library files
+            sandbox_processor: Async function to process sandbox directory
+        """
+
+        async def process_path(path: Path) -> None:
+            """Process a path, handling both files and directories."""
+            config_mgr = GriptapeNodes.ConfigManager()
+            sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+
+            # Check if this is the sandbox directory
+            if sandbox_library_subdir:
+                sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+                if path == sandbox_library_dir:
+                    await sandbox_processor()
+                    return
+
+            if path.is_dir():
+                # Process all griptape_nodes_library.json files recursively in the directory
+                for library_file in path.rglob("griptape_nodes_library.json"):
+                    await library_file_processor(library_file)
+            elif path.name == "griptape_nodes_library.json":
+                await library_file_processor(path)
+            elif not path.suffix:
+                # Treat as requirement specifier - skip for now
+                logger.debug("Skipping potential requirement specifier: %s", path)
+
+        for library_to_process in libraries_to_process:
+            path = Path(library_to_process)
+
+            # Handle different types of entries:
+            # 1. griptape_nodes_library.json files (explicit library files)
+            # 2. Directories (to be searched recursively for griptape_nodes_library.json or handled as sandbox)
+            # 3. Requirement specifiers (skip for now)
+            if path.exists():
+                # Path exists - could be file or directory
+                await process_path(path)
+            elif path.name == "griptape_nodes_library.json":
+                # Explicit griptape_nodes_library.json file that doesn't exist - still try to process
+                # (this allows the existing error handling to capture missing files)
+                await process_path(path)
+
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
+        GriptapeNodes.SessionManager().get_saved_session_id()
+
+        # App just got init'd. See if there are library JSONs to load!
+        # Discover libraries from both config and workspace.
+        libraries_to_register = self._build_libraries_to_register_list()
+
+        # Register all discovered libraries at once if any were found
+        await self.register_list_of_libraries(libraries_to_register)
 
         # Print 'em all pretty
         self.print_library_load_status()
@@ -1551,13 +1629,6 @@ class LibraryManager:
         # Remove any missing libraries AFTER we've printed them for the user.
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
-
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-        GriptapeNodes.SessionManager().get_saved_session_id()
-
-        # App just got init'd. See if there are library JSONs to load!
-        await self.load_all_libraries_from_config()
 
         # We have to load all libraries before we attempt to load workflows.
 
@@ -1965,6 +2036,54 @@ class LibraryManager:
         )
         self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_load_results
 
+    async def _process_libraries_for_registration(self, libraries_to_register: list[str]) -> None:
+        """Process a list of library paths for registration, handling both files and directories."""
+
+        async def process_library_file(library_file: Path) -> None:
+            """Process a single library file for registration."""
+            # Check if the file has library schema before processing
+            metadata_request = LoadLibraryMetadataFromFileRequest(file_path=str(library_file))
+            metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+            if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                # Register the library
+                register_request = RegisterLibraryFromFileRequest(
+                    file_path=str(library_file), load_as_default_library=False
+                )
+                register_result = await self.register_library_from_file_request(register_request)
+                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                    logger.warning(f"Failed to register library from {library_file}")  # noqa: G004
+
+        async def process_sandbox_directory() -> None:
+            """Process sandbox directory specially to generate sandbox library."""
+            config_mgr = GriptapeNodes.ConfigManager()
+            sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+            if not sandbox_library_subdir:
+                return
+
+            sandbox_dir = config_mgr.workspace_path / sandbox_library_subdir
+            if not sandbox_dir.exists():
+                logger.debug("Sandbox directory does not exist: %s", sandbox_dir)
+                return
+
+            # Generate sandbox library metadata
+            sandbox_result = self._generate_sandbox_library_metadata()
+            if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
+                self._attempt_generate_sandbox_library_from_schema(
+                    library_schema=sandbox_result.library_schema, sandbox_directory=str(sandbox_dir)
+                )
+            elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+                # Record the failure
+                self._library_file_path_to_info[str(sandbox_dir)] = LibraryManager.LibraryInfo(
+                    library_path=str(sandbox_dir),
+                    library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
+                    status=sandbox_result.status,
+                    problems=sandbox_result.problems,
+                )
+
+        # Use the generic processing method with registration-specific processors
+        await self._process_libraries(libraries_to_register, process_library_file, process_sandbox_directory)
+
     def _find_files_in_dir(self, directory: Path, extension: str) -> list[Path]:
         ret_val = []
         for root, _, files_found in os.walk(directory):
@@ -2035,7 +2154,10 @@ class LibraryManager:
                 return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Load (or reload, which should trigger a hot reload) all libraries
-        await self.load_all_libraries_from_config()
+        libraries_to_register = self._build_libraries_to_register_list()
+
+        # Register all discovered libraries at once
+        await self.register_list_of_libraries(libraries_to_register)
 
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
