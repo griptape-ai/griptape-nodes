@@ -108,6 +108,65 @@ def to_video_artifact(video: Any | dict) -> Any:
     return video
 
 
+def is_video_url_artifact(obj: Any) -> bool:
+    """Check if object is any kind of VideoUrlArtifact (regardless of library).
+
+    This handles VideoUrlArtifacts from:
+    - griptape_nodes_library.video.video_url_artifact
+    - griptape_nodes.node_libraries.runwayml_library.image_to_video
+    - Any other library that follows the VideoUrlArtifact pattern
+
+    Args:
+        obj: Object to check
+
+    Returns:
+        True if object appears to be a VideoUrlArtifact
+    """
+    if not obj:
+        return False
+
+    # Must have both 'value' attribute and class name containing 'VideoUrlArtifact'
+    return hasattr(obj, "value") and hasattr(obj, "__class__") and "VideoUrlArtifact" in obj.__class__.__name__
+
+
+def is_downloadable_video_url(obj: Any) -> bool:
+    """Check if object contains a URL that needs downloading.
+
+    Args:
+        obj: Object to check (string, VideoUrlArtifact, etc.)
+
+    Returns:
+        True if object contains an http/https URL that needs downloading
+    """
+    # Direct URL string
+    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+        return True
+
+    # Any VideoUrlArtifact-like object with downloadable URL
+    if is_video_url_artifact(obj) and isinstance(obj.value, str):
+        return obj.value.startswith(("http://", "https://"))
+
+    return False
+
+
+def extract_url_from_video_object(obj: Any) -> str | None:
+    """Extract URL from video object if it contains one.
+
+    Args:
+        obj: Video object (string, VideoUrlArtifact, etc.)
+
+    Returns:
+        URL string if found, None otherwise
+    """
+    if isinstance(obj, str):
+        return obj
+
+    if is_video_url_artifact(obj) and isinstance(obj.value, str):
+        return obj.value
+
+    return None
+
+
 def validate_url(url: str) -> bool:
     """Validate that the URL is safe for ffmpeg processing."""
     try:
