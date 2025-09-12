@@ -161,7 +161,7 @@ class ExecuteDagState(State):
         """Get next control flow nodes and add them to the DAG graph."""
         if context.dag_builder is not None:
             network = context.dag_builder.graphs.get(network_name, None)
-            if network is None or len(network) == 0:
+            if network is not None and len(network) > 0:
                 return
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         # Check stop_flow first

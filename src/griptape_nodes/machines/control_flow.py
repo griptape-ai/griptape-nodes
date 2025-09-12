@@ -66,25 +66,41 @@ class ControlFlowContext:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
 
-    def get_next_node(self, output_parameter: Parameter) -> NextNodeInfo | None:
-        """Get the next node and the target parameter that will receive the control flow.
+    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
+        """Get all next nodes from the current nodes.
 
         Returns:
-            NextNodeInfo | None: Information about the next node or None if no connection
+            list[NextNodeInfo]: List of next nodes to process
         """
-        if len(self.current_nodes) > 0:
-            node_connection = (
-                GriptapeNodes.FlowManager().get_connections().get_connected_node(self.current_node, output_parameter)
-            )
-            if node_connection is not None:
-                node, entry_parameter = node_connection
-                return NextNodeInfo(node=node, entry_parameter=entry_parameter)
-            # Continue Execution to the next node that needs to be executed using global execution queue
-            # Get the next node in the execution queue, or None if queue is empty
+        next_nodes = []
+        
+        for current_node in self.current_nodes:
+            if output_parameter is not None:
+                # Get connected node from control flow
+                node_connection = (
+                    GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, output_parameter)
+                )
+                if node_connection is not None:
+                    node, entry_parameter = node_connection
+                    next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
+            else:
+                # Get next control output for this node
+                next_output = current_node.get_next_control_output()
+                if next_output is not None:
+                    node_connection = (
+                        GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
+                    )
+                    if node_connection is not None:
+                        node, entry_parameter = node_connection
+                        next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
+        
+        # If no connections found, check execution queue
+        if not next_nodes:
             node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if node is not None:
-                return NextNodeInfo(node=node, entry_parameter=None)
-        return None
+                next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
+        
+        return next_nodes
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.current_nodes is not None:
@@ -105,20 +121,21 @@ class ResolveNodeState(State):
             # We don't have anything else to do. Move back to Complete State so it has to restart.
             return CompleteState
 
-        # Mark the node unresolved, and broadcast an event to the GUI.
-        if not context.current_node.lock:
-            context.current_node.make_node_unresolved(
-                current_states_to_trigger_change_event=set(
-                    {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        # Mark all current nodes unresolved and broadcast events
+        for current_node in context.current_nodes:
+            if not current_node.lock:
+                current_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+                )
+            # Now broadcast that we have a current control node.
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=current_node.name))
                 )
             )
-        # Now broadcast that we have a current control node.
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=context.current_node.name))
-            )
-        )
-        logger.info("Resolving %s", context.current_node.name)
+            logger.info("Resolving %s", current_node.name)
         if not context.paused:
             # Call the update. Otherwise wait
             return ResolveNodeState
@@ -127,11 +144,13 @@ class ResolveNodeState(State):
     # This is necessary to transition to the next step.
     @staticmethod
     async def on_update(context: ControlFlowContext) -> type[State] | None:
-        # If node has not already been resolved!
-        if context.current_node is None:
+        # If no current nodes, we're done
+        if len(context.current_nodes) == 0:
             return CompleteState
-        if context.current_node.state != NodeResolutionState.RESOLVED:
-            await context.resolution_machine.resolve_node(context.current_node)
+        
+        # Resolve nodes - pass first node for sequential resolution
+        current_node = context.current_nodes[0] if context.current_nodes else None
+        await context.resolution_machine.resolve_node(current_node)
 
         if context.resolution_machine.is_complete():
             return NextNodeState
@@ -141,44 +160,49 @@ class ResolveNodeState(State):
 class NextNodeState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
-        if context.current_node is None:
+        if len(context.current_nodes) == 0:
             return CompleteState
-        # I did define this on the ControlNode.
-        if context.current_node.stop_flow:
-            # We're done here.
-            context.current_node.stop_flow = False
+        
+        # Check for stop_flow on any current nodes
+        for current_node in context.current_nodes[:]:
+            if current_node.stop_flow:
+                current_node.stop_flow = False
+                context.current_nodes.remove(current_node)
+        
+        # If all nodes stopped flow, complete
+        if len(context.current_nodes) == 0:
             return CompleteState
-        next_output = context.current_node.get_next_control_output()
-        next_node_info = None
-
-        if next_output is not None:
-            context.selected_output = next_output
-            next_node_info = context.get_next_node(context.selected_output)
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(
-                        payload=SelectedControlOutputEvent(
-                            node_name=context.current_node.name,
-                            selected_output_parameter_name=next_output.name,
+        
+        # Get all next nodes from current nodes
+        next_node_infos = context.get_next_nodes()
+        
+        # Broadcast selected control output events for nodes with outputs
+        for current_node in context.current_nodes:
+            next_output = current_node.get_next_control_output()
+            if next_output is not None:
+                context.selected_output = next_output
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=SelectedControlOutputEvent(
+                                node_name=current_node.name,
+                                selected_output_parameter_name=next_output.name,
+                            )
                         )
                     )
                 )
-            )
-        else:
-            # Get the next node in the execution queue, or None if queue is empty
-            next_node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
-            if next_node is not None:
-                next_node_info = NextNodeInfo(node=next_node, entry_parameter=None)
-
-        # The parameter that will be evaluated next
-        if next_node_info is None:
-            # If no node attached
+        
+        # If no next nodes, we're complete
+        if not next_node_infos:
             return CompleteState
 
-        # Always set the entry control parameter (None for execution queue nodes)
-        next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
-
-        context.current_node = next_node_info.node
+        # Set up next nodes as current nodes
+        next_nodes = []
+        for next_node_info in next_node_infos:
+            next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
+            next_nodes.append(next_node_info.node)
+        
+        context.current_nodes = next_nodes
         context.selected_output = None
         if not context.paused:
             return ResolveNodeState
@@ -192,14 +216,15 @@ class NextNodeState(State):
 class CompleteState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
-        if context.current_node is not None:
+        # Broadcast completion events for any remaining current nodes
+        for current_node in context.current_nodes:
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
-                            end_node_name=context.current_node.name,
+                            end_node_name=current_node.name,
                             parameter_output_values=TypeValidator.safe_serialize(
-                                context.current_node.parameter_output_values
+                                current_node.parameter_output_values
                             ),
                         )
                     )
@@ -235,7 +260,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
-        await self._context.resolution_machine.resolve_node()
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:
@@ -295,7 +319,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         # Build with the first node:
         dag_builder.add_node_with_dependencies(start_node, start_node.name)
         queue_items = list(flow_manager.global_flow_queue.queue)
-        start_nodes = []
+        start_nodes = [start_node]
         # Find data_nodes and remove them from queue
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
@@ -305,7 +329,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 node.state = NodeResolutionState.UNRESOLVED
                 dag_builder.add_node_with_dependencies(node, node.name)
                 flow_manager.global_flow_queue.queue.remove(item)
-                #start_nodes.append(node)
+                start_nodes.append(node)
             elif item.dag_execution_type == DagExecutionType.DATA_NODE:
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
