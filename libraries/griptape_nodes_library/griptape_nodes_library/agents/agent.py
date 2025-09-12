@@ -451,6 +451,9 @@ class Agent(ControlNode):
         Returns:
             The agent structure after processing.
         """
+
+        raise Exception("I wanted this")
+
         include_details = self.get_parameter_value("include_details")
 
         args = [prompt] if prompt else []
