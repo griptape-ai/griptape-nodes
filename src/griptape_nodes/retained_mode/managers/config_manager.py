@@ -200,6 +200,9 @@ class ConfigManager:
             merged_config = merge_dicts(merged_config, self.env_config)
             logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
 
+        # Re-assign workspace path in case env var overrides it
+        self.workspace_path = merged_config["workspace_directory"]
+
         # Validate the full config against the Settings model.
         try:
             Settings.model_validate(merged_config)
