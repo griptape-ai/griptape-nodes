@@ -2,6 +2,12 @@ version = 1
 revision = 3
 requires-python = "==3.12.*"
 
+[manifest]
+members = [
+    "griptape-nodes",
+    "griptape-nodes-advanced-media-library",
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -363,6 +369,11 @@ test = [
     { name = "pytest-mock", specifier = ">=3.14.0" },
     { name = "pytest-xdist", specifier = ">=3.6.1" },
 ]
+
+[[package]]
+name = "griptape-nodes-advanced-media-library"
+version = "0.1.0"
+source = { virtual = "libraries/griptape_nodes_advanced_media_library" }
 
 [[package]]
 name = "h11"

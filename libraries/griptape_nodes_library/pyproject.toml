@@ -1,0 +1,10 @@
+[project]
+name = "griptape-nodes-library"
+version = "0.1.0"
+description = "Standard library for Griptape Nodes."
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
