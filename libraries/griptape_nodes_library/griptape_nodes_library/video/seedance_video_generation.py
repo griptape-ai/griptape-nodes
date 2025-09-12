@@ -27,12 +27,19 @@ class SeedanceVideoGeneration(DataNode):
     """Generate a video using the Seedance model via Griptape Cloud model proxy.
 
     Inputs:
-        - prompt (str): Text prompt (you can include provider flags like --resolution)
+        - prompt (str): Text prompt for the video (supports provider flags like --resolution)
         - model_id (str): Provider model id (default: seedance-1-0-pro-250528)
+        - resolution (str): Output resolution (default: 1080p, options: 480p, 720p, 1080p)
+        - ratio (str): Output aspect ratio (default: 16:9, options: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9)
+        - duration (int): Video duration in seconds (default: 5, options: 5, 10)
+        - camerafixed (bool): Camera fixed flag (default: False)
+        - first_frame (ImageArtifact|ImageUrlArtifact|str): Optional first frame image (URL or base64 data URI)
+        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for i2v model (URL or base64 data URI)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
+        - provider_response (dict): Verbatim response from API (initial POST)
         - video_url (VideoUrlArtifact): Saved static video URL
     """
 
@@ -77,7 +84,7 @@ class SeedanceVideoGeneration(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "Model ID",
-                    "hide": True,
+                    "hide": False,
                 },
                 traits={
                     Options(
@@ -155,6 +162,19 @@ class SeedanceVideoGeneration(DataNode):
             )
         )
 
+        # Optional last frame (image) - accepts artifact or URL/base64 string valid only with seedance-1-0-lite-i2v
+        self.add_parameter(
+            Parameter(
+                name="last_frame",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                default_value=None,
+                tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Last Frame"},
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -221,6 +241,7 @@ class SeedanceVideoGeneration(DataNode):
             "resolution": self.get_parameter_value("resolution") or "1080p",
             "ratio": self.get_parameter_value("ratio") or "16:9",
             "first_frame": self.get_parameter_value("first_frame"),
+            "last_frame": self.get_parameter_value("last_frame"),
             "duration": self.get_parameter_value("duration"),
             "camerafixed": self.get_parameter_value("camerafixed"),
         }
@@ -279,14 +300,64 @@ class SeedanceVideoGeneration(DataNode):
         text_payload = "  ".join([p for p in text_parts if p])
         content_list: list[dict[str, Any]] = [{"type": "text", "text": text_payload}]
 
-        # Handle first frame
-        first_frame_url = self._coerce_image_url_or_data_uri(params["first_frame"])
-        if first_frame_url:
-            first_frame_url = self._inline_external_url(first_frame_url)
-            if first_frame_url:
-                content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}})
+        # Add frame images based on model capabilities
+        self._add_frame_images(content_list, params)
 
         return {"model": params["model_id"], "content": content_list}
+
+    def _add_frame_images(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add frame images to content list based on model capabilities."""
+        model_id = params["model_id"]
+
+        if model_id == "seedance-1-0-pro-250528":
+            self._add_first_frame_only(content_list, params)
+        elif model_id == "seedance-1-0-lite-i2v-250428":
+            self._add_i2v_frames(content_list, params)
+        # Add other model handling here as needed
+
+    def _add_first_frame_only(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add first frame for models that only support single frame input."""
+        frame_url = self._prepare_frame_url(params["first_frame"])
+        if frame_url:
+            content_list.append({"type": "image_url", "image_url": {"url": frame_url}})
+
+    def _add_i2v_frames(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add frames for image-to-video models that support first and last frames."""
+        has_last_frame = params["last_frame"] is not None
+
+        # Add first frame
+        first_frame_url = self._prepare_frame_url(params["first_frame"])
+        if first_frame_url:
+            if has_last_frame:
+                # When both frames present, add role identifiers
+                content_list.append({
+                    "type": "image_url", 
+                    "image_url": {"url": first_frame_url}, 
+                    "role": "first_frame"
+                })
+            else:
+                # When only first frame, no role needed
+                content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}})
+
+        # Add last frame if provided
+        if has_last_frame:
+            last_frame_url = self._prepare_frame_url(params["last_frame"])
+            if last_frame_url:
+                content_list.append({
+                    "type": "image_url", 
+                    "image_url": {"url": last_frame_url}, 
+                    "role": "last_frame"
+                })
+
+    def _prepare_frame_url(self, frame_input: Any) -> str | None:
+        """Convert frame input to a usable URL, handling inlining of external URLs."""
+        if not frame_input:
+            return None
+
+        frame_url = self._coerce_image_url_or_data_uri(frame_input)
+        if not frame_url:
+            return None
+        return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -299,10 +370,10 @@ class SeedanceVideoGeneration(DataNode):
             if not ct.startswith("image/"):
                 ct = "image/jpeg"
             b64 = base64.b64encode(rff.content).decode("utf-8")
-            self._log("First frame URL converted to data URI for proxy")
+            self._log("Frame URL converted to data URI for proxy")
             return f"data:{ct};base64,{b64}"  # noqa: TRY300
         except Exception as e:
-            self._log(f"Warning: failed to inline first frame URL: {e}")
+            self._log(f"Warning: failed to inline frame URL: {e}")
             return url
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
