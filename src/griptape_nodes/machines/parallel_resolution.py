@@ -182,7 +182,14 @@ class ExecuteDagState(State):
                     )
             )
                 if context.dag_builder is not None:
-                    context.dag_builder.add_node_with_dependencies(next_node, network_name)
+                    added_nodes = context.dag_builder.add_node_with_dependencies(next_node, network_name)
+                    if added_nodes:
+                        # Set newly added nodes from WAITING to QUEUED so they get processed
+                        for added_node in added_nodes:
+                            if added_node.name in context.node_to_reference:
+                                dag_node = context.node_to_reference[added_node.name]
+                                if dag_node.node_state == NodeState.WAITING:
+                                    dag_node.node_state = NodeState.QUEUED
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -340,8 +347,9 @@ class ExecuteDagState(State):
                 return ErrorState
 
             def on_task_done(task: asyncio.Task) -> None:
-                node = context.task_to_node.pop(task)
-                node.node_state = NodeState.DONE
+                if task in context.task_to_node:
+                    node = context.task_to_node[task]
+                    node.node_state = NodeState.DONE
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
@@ -359,7 +367,10 @@ class ExecuteDagState(State):
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
             )
             # Wait for a task to finish
-        await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+        # Prevent task being removed before return
+        for task in done:
+            context.task_to_node.pop(task)
         # Once a task has finished, loop back to the top.
         await ExecuteDagState.pop_done_states(context)
         # Remove all nodes that are done
