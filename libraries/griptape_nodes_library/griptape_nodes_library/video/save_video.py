@@ -10,7 +10,6 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.video_utils import (
-    auto_determine_filename,
     download_video_to_temp_file,
     extract_url_from_video_object,
     is_downloadable_video_url,
@@ -160,8 +159,8 @@ class SaveVideo(SuccessFailureNode):
 
                 return base64.b64decode(value.split("base64,")[1])
 
-        if hasattr(artifact, "value") and isinstance(artifact.value, bytes):
-            return artifact.value
+        if hasattr(artifact, "value") and isinstance(artifact.value, bytes):  # type: ignore[attr-defined]
+            return artifact.value  # type: ignore[attr-defined]
 
         return None
 
@@ -169,21 +168,25 @@ class SaveVideo(SuccessFailureNode):
         """Extract format hint from various artifact types."""
         # Check dict-style artifacts
         if isinstance(artifact, dict):
-            if "type" in artifact and "/" in artifact["type"]:
+            if "type" in artifact and isinstance(artifact["type"], str) and "/" in artifact["type"]:
                 return artifact["type"].split("/")[1]
-            if "format" in artifact:
+            if "format" in artifact and isinstance(artifact["format"], str):
                 return artifact["format"]
 
         # Check artifact metadata
-        if hasattr(artifact, "meta") and artifact.meta:
-            if "format" in artifact.meta:
-                return artifact.meta["format"]
-            if "content_type" in artifact.meta and "/" in artifact.meta["content_type"]:
-                return artifact.meta["content_type"].split("/")[1]
+        if hasattr(artifact, "meta"):
+            meta = artifact.meta  # type: ignore[attr-defined]
+            if meta and isinstance(meta, dict):
+                if "format" in meta and isinstance(meta["format"], str):
+                    return meta["format"]
+                if "content_type" in meta and isinstance(meta["content_type"], str) and "/" in meta["content_type"]:
+                    return meta["content_type"].split("/")[1]
 
         # Check for detected_format (our DownloadedVideoArtifact)
         if hasattr(artifact, "detected_format"):
-            return artifact.detected_format
+            detected_format = artifact.detected_format  # type: ignore[attr-defined]
+            if isinstance(detected_format, str):
+                return detected_format
 
         return None
 
@@ -195,7 +198,8 @@ class SaveVideo(SuccessFailureNode):
         # Check if input contains a downloadable URL (handles all URL cases)
         if is_downloadable_video_url(raw_input):
             url = extract_url_from_video_object(raw_input)
-            return VideoInput(source_url=url, format_hint=self._extract_format_from_url(url))
+            if url:
+                return VideoInput(source_url=url, format_hint=self._extract_format_from_url(url))
 
         # Handle all other cases - try to extract bytes and format
         video_bytes = self._extract_bytes_from_artifact(raw_input)
@@ -249,8 +253,11 @@ class SaveVideo(SuccessFailureNode):
 
         # Auto-determine filename with correct extension if we have format hint
         if format_hint:
-            output_file = auto_determine_filename(output_file, format_hint)
-            self.parameter_output_values["output_path"] = output_file
+            output_path = Path(output_file)
+            new_extension = f".{format_hint.lstrip('.')}"  # Ensure leading dot
+            if output_path.suffix.lower() != new_extension.lower():
+                output_file = str(output_path.with_suffix(new_extension))
+                self.parameter_output_values["output_path"] = output_file
 
         # Get save options
         allow_creating_folders = self.get_parameter_value(self.allow_creating_folders.name)
@@ -300,8 +307,6 @@ class SaveVideo(SuccessFailureNode):
 
     def _report_error(self, error_details: str, exception: Exception | None = None) -> None:
         """Report error status."""
-        self.get_parameter_value("output_path") or DEFAULT_FILENAME
-
         failure_details = f"Video save failed\nError: {error_details}"
 
         if exception:

@@ -41,8 +41,8 @@ def detect_video_format(video: Any | dict) -> str | None:
         The detected format (e.g., 'mp4', 'avi', 'mov') or None if not detected.
     """
     # Handle DownloadedVideoArtifact from SaveVideo
-    if hasattr(video, "detected_format") and hasattr(video, "value") and isinstance(video.value, bytes):
-        return video.detected_format
+    if hasattr(video, "detected_format") and hasattr(video, "value") and isinstance(video.value, bytes):  # type: ignore[attr-defined]
+        return video.detected_format  # type: ignore[attr-defined]
 
     if isinstance(video, dict):
         # Check for MIME type in dictionary
@@ -143,8 +143,10 @@ def is_downloadable_video_url(obj: Any) -> bool:
         return True
 
     # Any VideoUrlArtifact-like object with downloadable URL
-    if is_video_url_artifact(obj) and isinstance(obj.value, str):
-        return obj.value.startswith(("http://", "https://"))
+    if is_video_url_artifact(obj) and hasattr(obj, "value"):
+        value = obj.value  # type: ignore[attr-defined]
+        if isinstance(value, str):
+            return value.startswith(("http://", "https://"))
 
     return False
 
@@ -161,8 +163,10 @@ def extract_url_from_video_object(obj: Any) -> str | None:
     if isinstance(obj, str):
         return obj
 
-    if is_video_url_artifact(obj) and isinstance(obj.value, str):
-        return obj.value
+    if is_video_url_artifact(obj) and hasattr(obj, "value"):
+        value = obj.value  # type: ignore[attr-defined]
+        if isinstance(value, str):
+            return value
 
     return None
 
