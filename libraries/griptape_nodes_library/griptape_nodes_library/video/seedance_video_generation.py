@@ -330,11 +330,7 @@ class SeedanceVideoGeneration(DataNode):
         if first_frame_url:
             if has_last_frame:
                 # When both frames present, add role identifiers
-                content_list.append({
-                    "type": "image_url", 
-                    "image_url": {"url": first_frame_url}, 
-                    "role": "first_frame"
-                })
+                content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}, "role": "first_frame"})
             else:
                 # When only first frame, no role needed
                 content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}})
@@ -343,11 +339,7 @@ class SeedanceVideoGeneration(DataNode):
         if has_last_frame:
             last_frame_url = self._prepare_frame_url(params["last_frame"])
             if last_frame_url:
-                content_list.append({
-                    "type": "image_url", 
-                    "image_url": {"url": last_frame_url}, 
-                    "role": "last_frame"
-                })
+                content_list.append({"type": "image_url", "image_url": {"url": last_frame_url}, "role": "last_frame"})
 
     def _prepare_frame_url(self, frame_input: Any) -> str | None:
         """Convert frame input to a usable URL, handling inlining of external URLs."""
