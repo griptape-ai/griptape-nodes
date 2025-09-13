@@ -1219,6 +1219,17 @@
       }
     },
     {
+      "class_name": "FluxImageGeneration",
+      "file_path": "griptape_nodes_library/image/flux_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Flux models via Griptape model proxy",
+        "display_name": "Flux Image Generation",
+        "group": "tasks",
+        "icon": "Zap"
+      }
+    },
+    {
       "class_name": "InvertMask",
       "file_path": "griptape_nodes_library/image/invert_mask.py",
       "metadata": {
