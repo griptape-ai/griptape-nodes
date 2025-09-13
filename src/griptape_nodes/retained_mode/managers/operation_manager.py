@@ -401,7 +401,7 @@ class PayloadConverter:
         return f"""cmd.set_config_category(category="{getattr(payload, "category", None)}",contents="{payload.contents}")"""
 
     @staticmethod
-    def _handle_GetConfigSchemaRequest(payload: GetConfigSchemaRequest) -> str:
+    def _handle_GetConfigSchemaRequest(payload: GetConfigSchemaRequest) -> str:  # noqa: ARG004
         """Handle GetConfigSchemaRequest payloads."""
         return """cmd.get_config_schema()"""
 

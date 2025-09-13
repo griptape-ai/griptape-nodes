@@ -443,35 +443,34 @@ class ConfigManager:
             # Add library settings to the schema properties
             # First, process library settings that exist in merged config
             for key, value in merged_config.items():
-                if key not in schema["properties"]:
+                if key not in schema["properties"] and isinstance(value, dict):
                     # This is a library setting, add it to the schema
-                    if isinstance(value, dict):
-                        # Create a specific category for this library
-                        library_category = f"{key.replace('_', ' ').title()} Library"
+                    # Create a specific category for this library
+                    library_category = f"{key.replace('_', ' ').title()} Library"
 
-                        # Try to get the library definition to parse proper schema
-                        library_schema = self._get_library_schema_for_category(key)
+                    # Try to get the library definition to parse proper schema
+                    library_schema = self._get_library_schema_for_category(key)
 
-                        if library_schema:
-                            # Use the parsed library schema
-                            schema["properties"][key] = library_schema
-                        else:
-                            # Fallback to generic object
-                            schema["properties"][key] = {
-                                "type": "object",
-                                "title": key.replace("_", " ").title(),
-                                "json_schema_extra": {"category": library_category},
-                            }
+                    if library_schema:
+                        # Use the parsed library schema
+                        schema["properties"][key] = library_schema
+                    else:
+                        # Fallback to generic object
+                        schema["properties"][key] = {
+                            "type": "object",
+                            "title": key.replace("_", " ").title(),
+                            "json_schema_extra": {"category": library_category},
+                        }
 
-                        # Add to library settings list for frontend
-                        library_settings.append(
-                            {
-                                "key": key,
-                                "title": key.replace("_", " ").title(),
-                                "category": library_category,
-                                "settings": list(value.keys()) if isinstance(value, dict) else [],
-                            }
-                        )
+                    # Add to library settings list for frontend
+                    library_settings.append(
+                        {
+                            "key": key,
+                            "title": key.replace("_", " ").title(),
+                            "category": library_category,
+                            "settings": list(value.keys()) if isinstance(value, dict) else [],
+                        }
+                    )
 
             # Also process library settings from library definitions that might not be in user config
             self._add_library_settings_from_definitions(schema, library_settings)
@@ -514,7 +513,7 @@ class ConfigManager:
             # Find the library definition file for this category
             for library_path in library_paths:
                 try:
-                    with open(library_path) as f:
+                    with Path(library_path).open() as f:
                         library_def = json.load(f)
 
                     # Check if this library has settings for our category
@@ -524,10 +523,12 @@ class ConfigManager:
                                 return self._parse_library_setting_schema(setting, category)
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
+        except Exception as e:
+            # Log the exception for debugging
+            import logging
 
-            return None
-        except Exception:
-            return None
+            logging.getLogger(__name__).debug("Error getting library schema for category %s: %s", category, e)
+        return None
 
     def _parse_library_setting_schema(self, setting: dict, category: str) -> dict:
         """Parse a library setting definition into proper JSON schema format."""
@@ -577,7 +578,7 @@ class ConfigManager:
             # Find the library definition file for this category
             for library_path in library_paths:
                 try:
-                    with open(library_path) as f:
+                    with Path(library_path).open() as f:
                         library_def = json.load(f)
 
                     # Check if this library has settings for our category
@@ -587,10 +588,12 @@ class ConfigManager:
                                 return self._parse_library_default_values(setting)
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
+        except Exception as e:
+            # Log the exception for debugging
+            import logging
 
-            return None
-        except Exception:
-            return None
+            logging.getLogger(__name__).debug("Error getting library schema for category %s: %s", category, e)
+        return None
 
     def _parse_library_default_values(self, setting: dict) -> dict:
         """Parse library setting definition to extract just the default values."""
@@ -633,7 +636,7 @@ class ConfigManager:
             # Process each library definition file
             for library_path in library_paths:
                 try:
-                    with open(library_path) as f:
+                    with Path(library_path).open() as f:
                         library_def = json.load(f)
 
                     # Check if this library has settings
@@ -661,8 +664,11 @@ class ConfigManager:
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
 
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the exception for debugging
+            import logging
+
+            logging.getLogger(__name__).debug("Error processing library settings: %s", e)
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:
