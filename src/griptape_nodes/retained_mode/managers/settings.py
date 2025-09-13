@@ -111,7 +111,7 @@ class Settings(BaseModel):
         },
         json_schema_extra={"category": "API Keys"},
     )
-    log_level: LogLevel = Field(default=LogLevel.INFO, json_schema_extra={"category": "Logging"})
+    log_level: LogLevel = Field(default=LogLevel.INFO, json_schema_extra={"category": "Execution"})
     workflow_execution_mode: WorkflowExecutionMode = Field(
         default=WorkflowExecutionMode.SEQUENTIAL,
         description="Workflow execution mode for node processing",
