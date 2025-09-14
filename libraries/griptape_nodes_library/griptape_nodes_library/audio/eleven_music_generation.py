@@ -23,6 +23,8 @@ PROMPT_TRUNCATE_LENGTH = 100
 MAX_PROMPT_LENGTH = 2000
 MIN_MUSIC_LENGTH_MS = 10000
 MAX_MUSIC_LENGTH_MS = 300000
+MIN_MUSIC_LENGTH_SEC = 10.0
+MAX_MUSIC_LENGTH_SEC = 300.0
 
 
 class ElevenMusicGeneration(DataNode):
@@ -30,7 +32,7 @@ class ElevenMusicGeneration(DataNode):
 
     Inputs:
         - prompt (str): Text prompt describing the music to generate (max 2000 characters)
-        - music_length_ms (int): Duration of the music in milliseconds (10000-300000ms, optional)
+        - duration_seconds (float): Duration of the music in seconds (10.0-300.0s, optional)
         - output_format (str): Audio output format (e.g., mp3_44100_128, pcm_44100)
 
     Outputs:
@@ -70,13 +72,13 @@ class ElevenMusicGeneration(DataNode):
 
         self.add_parameter(
             Parameter(
-                name="music_length_ms",
-                input_types=["int"],
-                type="int",
-                default_value=30000,
-                tooltip="Duration of the music in milliseconds (10000-300000ms)",
+                name="duration_seconds",
+                input_types=["float"],
+                type="float",
+                default_value=30.0,
+                tooltip="Duration of the music in seconds (10.0-300.0s)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Duration (ms)"},
+                ui_options={"display_name": "Duration (seconds)"},
             )
         )
 
@@ -160,7 +162,7 @@ class ElevenMusicGeneration(DataNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         prompt = self.get_parameter_value("prompt") or ""
-        music_length_ms = self.get_parameter_value("music_length_ms")
+        duration_seconds = self.get_parameter_value("duration_seconds")
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
 
         # Validate prompt length
@@ -168,14 +170,17 @@ class ElevenMusicGeneration(DataNode):
             prompt = prompt[:MAX_PROMPT_LENGTH]
             self._log(f"Prompt truncated to {MAX_PROMPT_LENGTH} characters")
 
-        # Validate music length
-        if music_length_ms is not None:
-            if music_length_ms < MIN_MUSIC_LENGTH_MS:
-                music_length_ms = MIN_MUSIC_LENGTH_MS
-                self._log(f"Music length adjusted to minimum {MIN_MUSIC_LENGTH_MS}ms")
-            elif music_length_ms > MAX_MUSIC_LENGTH_MS:
-                music_length_ms = MAX_MUSIC_LENGTH_MS
-                self._log(f"Music length adjusted to maximum {MAX_MUSIC_LENGTH_MS}ms")
+        # Convert seconds to milliseconds and validate
+        music_length_ms = None
+        if duration_seconds is not None:
+            if duration_seconds < MIN_MUSIC_LENGTH_SEC:
+                duration_seconds = MIN_MUSIC_LENGTH_SEC
+                self._log(f"Duration adjusted to minimum {MIN_MUSIC_LENGTH_SEC}s")
+            elif duration_seconds > MAX_MUSIC_LENGTH_SEC:
+                duration_seconds = MAX_MUSIC_LENGTH_SEC
+                self._log(f"Duration adjusted to maximum {MAX_MUSIC_LENGTH_SEC}s")
+
+            music_length_ms = int(duration_seconds * 1000)
 
         return {
             "prompt": prompt,
