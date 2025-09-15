@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -424,69 +424,27 @@ class ConfigManager:
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
         """Handle request to get the configuration schema with default values and library settings."""
         try:
-            # Start with the base Settings schema
-            schema = Settings.model_json_schema()
+            # Create a dynamic Settings model that includes library settings as proper Pydantic fields
+            dynamic_settings_model = self._create_dynamic_settings_model()
 
-            # Create a default instance to get default values
-            default_instance = Settings()
-            default_values = default_instance.model_dump()
+            # Get the schema from the dynamic model - includes base Settings fields + library settings
+            schema = dynamic_settings_model.model_json_schema()
 
-            # Update with actual configured values from merged config
+            # Get default values from the dynamic model (includes defaults for library settings)
+            default_values = dynamic_settings_model().model_dump()
+
+            # Override defaults with actual configured values from merged config (user + workspace + env)
             default_values.update(self.merged_config)
 
-            # Get the merged config to include library settings
-            merged_config = self.merged_config
+            # Extract library settings metadata for frontend UI organization
+            library_settings_list = self._extract_library_settings_from_schema(schema)
+            schema["library_settings"] = library_settings_list
 
-            # Track library settings for frontend organization
-            library_settings = []
+            # Extract base settings categories for frontend UI organization
+            base_settings_categories = self._extract_base_settings_categories()
+            schema["base_settings_categories"] = base_settings_categories
 
-            # Add library settings to the schema properties
-            # First, process library settings that exist in merged config
-            for key, value in merged_config.items():
-                if key not in schema["properties"] and isinstance(value, dict):
-                    # This is a library setting, add it to the schema
-                    # Create a specific category for this library
-                    library_category = f"{key.replace('_', ' ').title()} Library"
-
-                    # Try to get the library definition to parse proper schema
-                    library_schema = self._get_library_schema_for_category(key)
-
-                    if library_schema:
-                        # Use the parsed library schema
-                        schema["properties"][key] = library_schema
-                    else:
-                        # Fallback to generic object
-                        schema["properties"][key] = {
-                            "type": "object",
-                            "title": key.replace("_", " ").title(),
-                            "json_schema_extra": {"category": library_category},
-                        }
-
-                    # Add to library settings list for frontend
-                    library_settings.append(
-                        {
-                            "key": key,
-                            "title": key.replace("_", " ").title(),
-                            "category": library_category,
-                            "settings": list(value.keys()) if isinstance(value, dict) else [],
-                        }
-                    )
-
-            # Also process library settings from library definitions that might not be in user config
-            self._add_library_settings_from_definitions(schema, library_settings)
-
-            # Add library settings to the schema
-            schema["library_settings"] = library_settings
-
-            # Update default values for library settings to use proper defaults from library definitions
-            for lib_setting in library_settings:
-                key = lib_setting["key"]
-                # This is a library setting, get proper defaults from library definition
-                library_defaults = self._get_library_default_values(key)
-                if library_defaults:
-                    default_values[key] = library_defaults
-
-            # Add default values to the schema response
+            # Package schema and default values for the API response
             schema_with_defaults = {
                 "schema": schema,
                 "default_values": default_values,
@@ -498,131 +456,135 @@ class ConfigManager:
             result_details = f"Failed to generate configuration schema: {e}"
             return GetConfigSchemaResultFailure(result_details=result_details)
 
-    def _get_library_schema_for_category(self, category: str) -> dict | None:
-        """Get the proper JSON schema for a library category by reading its definition file."""
-        try:
-            # Get library paths from the merged config (which includes library paths)
-            library_paths = []
-            if "app_events" in self.merged_config:
-                app_events = self.merged_config["app_events"]
-                if "on_app_initialization_complete" in app_events:
-                    init_complete = app_events["on_app_initialization_complete"]
-                    if "libraries_to_register" in init_complete:
-                        library_paths = init_complete["libraries_to_register"]
+    def _create_dynamic_settings_model(self) -> type[Settings]:
+        """Create a dynamic Settings model that includes library settings as proper Pydantic fields."""
+        # Get all library settings
+        library_settings = self._get_all_library_settings()
+        # Get library schemas
+        library_schemas = self._get_library_schemas_from_definitions()
 
-            # Find the library definition file for this category
-            for library_path in library_paths:
-                try:
-                    with Path(library_path).open() as f:
-                        library_def = json.load(f)
+        # Create field definitions for library settings
+        library_fields = {}
+        for category, settings_data in library_settings.items():
+            if category not in Settings.model_fields:
+                # Get schema information for this category
+                schema_info = library_schemas.get(category, {})
+                # Create a nested model for this library category
+                library_model = self._create_library_settings_model(category, settings_data, schema_info)
+                library_fields[category] = (
+                    library_model,
+                    Field(
+                        default_factory=library_model,
+                        json_schema_extra={"category": f"{category.replace('_', ' ').title()} Library"},
+                    ),
+                )
 
-                    # Check if this library has settings for our category
-                    if "settings" in library_def:
-                        for setting in library_def["settings"]:
-                            if setting.get("category") == category:
-                                return self._parse_library_setting_schema(setting, category)
-                except (FileNotFoundError, json.JSONDecodeError):
-                    continue
-        except Exception as e:
-            # Log the exception for debugging
-            import logging
+        # Create the dynamic model by extending Settings
+        if library_fields:
+            return create_model("DynamicSettings", **library_fields, __base__=Settings)
+        return Settings
 
-            logging.getLogger(__name__).debug("Error getting library schema for category %s: %s", category, e)
-        return None
+    def _create_library_settings_model(self, category: str, settings_data: dict, schema_info: dict) -> type:
+        """Create a Pydantic model for a specific library's settings."""
+        fields = {}
+        for key, value in settings_data.items():
+            # Get schema information for this field
+            field_schema = schema_info.get(key, {})
 
-    def _parse_library_setting_schema(self, setting: dict, category: str) -> dict:
-        """Parse a library setting definition into proper JSON schema format."""
-        title = setting.get("description", category.replace("_", " ").title())
-        contents = setting.get("contents", {})
-        schema_def = setting.get("schema", {})  # Optional schema constraints
-
-        # Create the base schema
-        schema = {
-            "type": "object",
-            "title": title,
-            "json_schema_extra": {"category": f"{category.replace('_', ' ').title()} Library"},
-            "properties": {},
-            "additionalProperties": False,
-        }
-
-        # Parse each setting in the contents
-        for key, value in contents.items():
-            if key in schema_def:
-                # Use schema definition if provided
-                setting_schema = schema_def[key].copy()
-                setting_schema["title"] = key.replace("_", " ").title()
-                setting_schema["default"] = str(value) if value else ""
-                schema["properties"][key] = setting_schema
+            # Determine the field type based on the value
+            if isinstance(value, bool):
+                field_type = bool
+            elif isinstance(value, int):
+                field_type = int
+            elif isinstance(value, float):
+                field_type = float
             else:
-                # Default to simple string
-                schema["properties"][key] = {
-                    "type": "string",
-                    "title": key.replace("_", " ").title(),
-                    "default": str(value) if value else "",
-                }
+                field_type = str
 
-        return schema
+            # Create field with schema information
+            field_kwargs = {"default": value, "title": key.replace("_", " ").title()}
 
-    def _get_library_default_values(self, category: str) -> dict | None:
-        """Get the default values for a library category by reading its definition file."""
-        try:
-            # Get library paths from the merged config
-            library_paths = []
-            if "app_events" in self.merged_config:
-                app_events = self.merged_config["app_events"]
-                if "on_app_initialization_complete" in app_events:
-                    init_complete = app_events["on_app_initialization_complete"]
-                    if "libraries_to_register" in init_complete:
-                        library_paths = init_complete["libraries_to_register"]
+            # Add enum information if available
+            if "enum" in field_schema:
+                field_kwargs["json_schema_extra"] = {"enum": field_schema["enum"]}
 
-            # Find the library definition file for this category
-            for library_path in library_paths:
-                try:
-                    with Path(library_path).open() as f:
-                        library_def = json.load(f)
+            fields[key] = (field_type, Field(**field_kwargs))
 
-                    # Check if this library has settings for our category
-                    if "settings" in library_def:
-                        for setting in library_def["settings"]:
-                            if setting.get("category") == category:
-                                return self._parse_library_default_values(setting)
-                except (FileNotFoundError, json.JSONDecodeError):
-                    continue
-        except Exception as e:
-            # Log the exception for debugging
-            import logging
+        return create_model(f"{category.title()}Settings", **fields)
 
-            logging.getLogger(__name__).debug("Error getting library schema for category %s: %s", category, e)
-        return None
+    def _extract_library_settings_from_schema(self, schema: dict) -> list[dict]:
+        """Extract library settings information from the schema for frontend organization."""
+        library_settings = []
+        defs = schema.get("$defs", {})
 
-    def _parse_library_default_values(self, setting: dict) -> dict:
-        """Parse library setting definition to extract just the default values."""
-        contents = setting.get("contents", {})
-        defaults = {}
+        # Get the base Settings model fields to identify which fields are library settings
+        base_settings_fields = set(Settings.model_fields.keys())
 
-        for key, value in contents.items():
-            # All values in contents are now simple values (strings, numbers, etc.)
-            defaults[key] = str(value) if value else ""
+        for key, field_schema in schema.get("properties", {}).items():
+            # Check if this is a library setting (not in base Settings model)
+            if key not in base_settings_fields:
+                # Get the full schema information for each setting
+                settings_schema = {}
+                if "$ref" in field_schema:
+                    # Extract the definition name from the $ref
+                    ref_path = field_schema["$ref"]
+                    if ref_path.startswith("#/$defs/"):
+                        def_name = ref_path[8:]  # Remove "#/$defs/" prefix
+                        if def_name in defs:
+                            def_schema = defs[def_name]
+                            # Get the full properties schema for each setting
+                            properties = def_schema.get("properties", {})
+                            settings_schema = dict(properties.items())
 
-        return defaults
+                library_settings.append(
+                    {
+                        "key": key,
+                        "title": key.replace("_", " ").title(),
+                        "category": f"{key.replace('_', ' ').title()} Library",
+                        "settings": settings_schema,
+                    }
+                )
 
-    def _parse_typed_setting(self, key: str, value: dict) -> dict:
-        """Parse a typed setting (like enum) into JSON schema format."""
-        setting_type = value.get("type", "string")
-        title = key.replace("_", " ").title()
+        return library_settings
 
-        if setting_type == "enum":
-            return {
-                "type": "string",
-                "title": title,
-                "enum": value.get("options", []),
-                "default": value.get("default", ""),
+    def _extract_base_settings_categories(self) -> dict[str, str]:
+        """Extract category information from base Settings model fields."""
+        categories = {}
+        for field_name, field_info in Settings.model_fields.items():
+            if (
+                hasattr(field_info, "json_schema_extra")
+                and field_info.json_schema_extra
+                and isinstance(field_info.json_schema_extra, dict)
+                and "category" in field_info.json_schema_extra
+            ):
+                categories[field_name] = field_info.json_schema_extra["category"]
+        return categories
+
+    def _get_all_library_settings(self) -> dict[str, dict]:
+        """Get all library settings from merged config and library definitions."""
+        library_settings = {}
+
+        # First, get settings from merged config
+        library_settings.update(
+            {
+                key: value
+                for key, value in self.merged_config.items()
+                if key not in Settings.model_fields and isinstance(value, dict)
             }
-        # For other types, create a basic schema
-        return {"type": setting_type, "title": title, "default": value.get("default", "")}
+        )
 
-    def _add_library_settings_from_definitions(self, schema: dict, library_settings: list) -> None:
-        """Add library settings from library definitions that might not be in user config."""
+        # Then, get settings from library definitions that might not be in user config
+        library_definitions = self._get_library_settings_from_definitions()
+        for category, setting_data in library_definitions.items():
+            if category not in library_settings:
+                library_settings[category] = setting_data["contents"]
+
+        return library_settings
+
+    def _get_library_schemas_from_definitions(self) -> dict[str, dict]:
+        """Get library schema information from library definition files."""
+        library_schemas = {}
+
         try:
             # Get library paths from the merged config
             library_paths = []
@@ -643,32 +605,51 @@ class ConfigManager:
                     if "settings" in library_def:
                         for setting in library_def["settings"]:
                             category = setting.get("category")
-                            if category and category not in schema["properties"]:
-                                # This is a library setting not in user config, add it
-                                library_category = f"{category.replace('_', ' ').title()} Library"
-
-                                # Parse the library schema
-                                library_schema = self._parse_library_setting_schema(setting, category)
-                                schema["properties"][category] = library_schema
-
-                                # Add to library settings list
-                                library_settings.append(
-                                    {
-                                        "key": category,
-                                        "title": category.replace("_", " ").title(),
-                                        "category": library_category,
-                                        "settings": list(setting.get("contents", {}).keys()),
-                                    }
-                                )
-
+                            schema = setting.get("schema", {})
+                            if category and schema:
+                                library_schemas[category] = schema
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
-
         except Exception as e:
-            # Log the exception for debugging
-            import logging
+            logger.debug("Error processing library schemas from definitions: %s", e)
 
-            logging.getLogger(__name__).debug("Error processing library settings: %s", e)
+        return library_schemas
+
+    def _get_library_settings_from_definitions(self) -> dict[str, dict]:
+        """Get library settings from library definition files."""
+        library_settings = {}
+
+        try:
+            # Get library paths from the merged config
+            library_paths = []
+            if "app_events" in self.merged_config:
+                app_events = self.merged_config["app_events"]
+                if "on_app_initialization_complete" in app_events:
+                    init_complete = app_events["on_app_initialization_complete"]
+                    if "libraries_to_register" in init_complete:
+                        library_paths = init_complete["libraries_to_register"]
+
+            # Process each library definition file
+            for library_path in library_paths:
+                try:
+                    with Path(library_path).open() as f:
+                        library_def = json.load(f)
+
+                    # Check if this library has settings
+                    if "settings" in library_def:
+                        for setting in library_def["settings"]:
+                            category = setting.get("category")
+                            contents = setting.get("contents", {})
+                            schema = setting.get("schema", {})
+                            if category and contents:
+                                # Store both contents and schema information
+                                library_settings[category] = {"contents": contents, "schema": schema}
+                except (FileNotFoundError, json.JSONDecodeError):
+                    continue
+        except Exception as e:
+            logger.debug("Error processing library settings from definitions: %s", e)
+
+        return library_settings
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:
