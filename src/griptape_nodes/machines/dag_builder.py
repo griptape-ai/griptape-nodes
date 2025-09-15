@@ -6,14 +6,13 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
-from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Any
 
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -52,7 +51,6 @@ class DagBuilder:
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
 
         connections = GriptapeNodes.FlowManager().get_connections()
         added_nodes = []
@@ -119,12 +117,12 @@ class DagBuilder:
         self.graphs.clear()
         self.node_to_reference.clear()
 
-
     def can_queue_control_node(self, node: DagNode, network_name: str) -> bool:  # noqa: ARG002
         if len(self.graphs) == 1:
             return True
 
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         connections = GriptapeNodes.FlowManager().get_connections()
 
         if self.get_number_incoming_control_connections(node.node_reference, connections) <= 1:
@@ -167,7 +165,9 @@ class DagBuilder:
 
         return control_connection_count
 
-    def _is_node_in_forward_path(self, start_node: BaseNode, target_node: BaseNode, connections: Connections, visited: set[str] | None = None) -> bool:
+    def _is_node_in_forward_path(
+        self, start_node: BaseNode, target_node: BaseNode, connections: Connections, visited: set[str] | None = None
+    ) -> bool:
         """Check if target_node is reachable from start_node through control flow connections."""
         if visited is None:
             visited = set()

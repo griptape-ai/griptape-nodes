@@ -5,7 +5,7 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
@@ -25,6 +25,7 @@ from griptape_nodes.retained_mode.events.parameter_events import SetParameterVal
 if TYPE_CHECKING:
     from griptape_nodes.common.directed_graph import DirectedGraph
     from griptape_nodes.machines.dag_builder import DagBuilder, DagNode
+    from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -103,10 +104,12 @@ class ExecuteDagState(State):
 
         # Check if node was already resolved (shouldn't happen)
         if current_node.state == NodeResolutionState.RESOLVED:
-            logger.warning("Node '%s' was already RESOLVED but handle_done_nodes was called again from network '%s'",
-                         current_node.name, network_name)
+            logger.warning(
+                "Node '%s' was already RESOLVED but handle_done_nodes was called again from network '%s'",
+                current_node.name,
+                network_name,
+            )
             return
-
 
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
@@ -166,48 +169,80 @@ class ExecuteDagState(State):
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        flow_manager = GriptapeNodes.FlowManager()
+
+        # Early returns for various conditions
+        if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
+            return
+
+        next_output = node.get_next_control_output()
+        if next_output is not None:
+            ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
+
+    @staticmethod
+    def _should_skip_control_flow(
+        context: ParallelResolutionContext, node: BaseNode, network_name: str, flow_manager: FlowManager
+    ) -> bool:
+        """Check if control flow processing should be skipped."""
+        if flow_manager.global_single_node_resolution:
+            return True
+
         if context.dag_builder is not None:
             network = context.dag_builder.graphs.get(network_name, None)
             if network is not None and len(network) > 0:
-                return
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+                return True
 
-        # Check stop_flow first
-        flow_manager = GriptapeNodes.FlowManager()
-        if flow_manager.global_single_node_resolution:
-            return
         if node.stop_flow:
             node.stop_flow = False
-            return  # No more nodes to add
-        next_output = node.get_next_control_output()
-        if next_output is not None:
-            # Get connected node from control flow
-            node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
-            if node_connection is not None:
-                next_node, _ = node_connection
-                # Add the next control node to the DAG
-                if not next_node.lock:
-                    next_node.make_node_unresolved(
-                        current_states_to_trigger_change_event=set(
-                            {
-                                NodeResolutionState.UNRESOLVED,
-                                NodeResolutionState.RESOLVED,
-                                NodeResolutionState.RESOLVING,
-                            }
-                        )
+            return True
+
+        return False
+
+    @staticmethod
+    def _process_next_control_node(
+        context: ParallelResolutionContext,
+        node: BaseNode,
+        next_output: Parameter,
+        network_name: str,
+        flow_manager: FlowManager,
+    ) -> None:
+        """Process the next control node in the flow."""
+        node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
+        if node_connection is not None:
+            next_node, _ = node_connection
+
+            # Prepare next node for execution
+            if not next_node.lock:
+                next_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {
+                            NodeResolutionState.UNRESOLVED,
+                            NodeResolutionState.RESOLVED,
+                            NodeResolutionState.RESOLVING,
+                        }
                     )
-                if context.dag_builder is not None:
-                    added_nodes = context.dag_builder.add_node_with_dependencies(next_node, network_name)
-                    if next_node not in added_nodes:
-                        added_nodes.append(next_node)
-                    # Also check any other nodes that were added as dependencies
-                    if added_nodes:
-                        for added_node in added_nodes:
-                            dag_node = context.node_to_reference[added_node.name]
-                            if dag_node.node_state == NodeState.WAITING:
-                                can_queue = context.dag_builder.can_queue_control_node(dag_node, network_name)
-                                if can_queue:
-                                    dag_node.node_state = NodeState.QUEUED
+                )
+
+            ExecuteDagState._add_and_queue_nodes(context, next_node, network_name)
+
+    @staticmethod
+    def _add_and_queue_nodes(context: ParallelResolutionContext, next_node: BaseNode, network_name: str) -> None:
+        """Add nodes to DAG and queue them if ready."""
+        if context.dag_builder is not None:
+            added_nodes = context.dag_builder.add_node_with_dependencies(next_node, network_name)
+            if next_node not in added_nodes:
+                added_nodes.append(next_node)
+
+            # Queue nodes that are ready for execution
+            if added_nodes:
+                for added_node in added_nodes:
+                    dag_node = context.node_to_reference[added_node.name]
+                    if dag_node.node_state == NodeState.WAITING:
+                        can_queue = context.dag_builder.can_queue_control_node(dag_node, network_name)
+                        if can_queue:
+                            dag_node.node_state = NodeState.QUEUED
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -377,10 +412,11 @@ class ExecuteDagState(State):
 
             # Check if node is already being processed (shouldn't happen)
             if node_reference.node_reference.state == NodeResolutionState.RESOLVING:
-                logger.warning("Node '%s' is already RESOLVING but was queued for execution again",
-                             node_reference.node_reference.name)
+                logger.warning(
+                    "Node '%s' is already RESOLVING but was queued for execution again",
+                    node_reference.node_reference.name,
+                )
                 continue
-
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))

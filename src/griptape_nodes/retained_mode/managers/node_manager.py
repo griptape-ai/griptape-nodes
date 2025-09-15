@@ -455,9 +455,7 @@ class NodeManager:
                         result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
                         cancelled = True
                         if not result.succeeded():
-                            details = (
-                                f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
-                            )
+                            details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                             return DeleteNodeResultFailure(result_details=details)
             if resolving_node_names is not None and not cancelled:
                 for resolving_node_name in resolving_node_names:
