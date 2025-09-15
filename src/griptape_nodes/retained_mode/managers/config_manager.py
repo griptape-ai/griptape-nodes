@@ -5,13 +5,11 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic import Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.base_events import (
-    ResultPayload,
-)
+from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultFailure,
@@ -37,10 +35,14 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
+from griptape_nodes.utils.json_schema_utils import infer_type_from_value, json_schema_to_pydantic_model
 
 logger = logging.getLogger("griptape_nodes")
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
+
+# Configuration path constants
+LIBRARIES_TO_REGISTER_PATH = "app_events.on_app_initialization_complete.libraries_to_register"
 
 
 class ConfigManager:
@@ -200,9 +202,6 @@ class ConfigManager:
             merged_config = merge_dicts(merged_config, self.env_config)
             logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
 
-        # Re-assign workspace path in case env var overrides it
-        self.workspace_path = merged_config["workspace_directory"]
-
         # Validate the full config against the Settings model.
         try:
             Settings.model_validate(merged_config)
@@ -265,7 +264,7 @@ class ConfigManager:
         existing_workflows = self.get_config_value(config_loc)
         if not existing_workflows:
             existing_workflows = []
-        existing_workflows.append(workflow_file_name) if workflow_file_name not in existing_workflows else None
+        existing_workflows.append(workflow_file_name)
         self.set_config_value(config_loc, existing_workflows)
 
     def delete_user_workflow(self, workflow_file_name: str) -> None:
@@ -364,33 +363,39 @@ class ConfigManager:
         if request.category is None or request.category == "":
             # Return the whole shebang. Start with the defaults and then layer on the user config.
             contents = self.merged_config
-            result_details = "Successfully returned the entire config dictionary."
-            return GetConfigCategoryResultSuccess(contents=contents, result_details=result_details)
+            details = "Successfully returned the entire config dictionary."
+            logger.debug(details)
+            return GetConfigCategoryResultSuccess(contents=contents, result_details=details)
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category)
         if find_results is None:
-            result_details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
-            return GetConfigCategoryResultFailure(result_details=result_details)
+            details = f"Attempted to get config details for category '{request.category}'. Failed because no such category could be found."
+            logger.error(details)
+            return GetConfigCategoryResultFailure(result_details=details)
 
         if not isinstance(find_results, dict):
-            result_details = f"Attempted to get config details for category '{request.category}'. Failed because this was was not a dictionary."
-            return GetConfigCategoryResultFailure(result_details=result_details)
+            details = f"Attempted to get config details for category '{request.category}'. Failed because this was was not a dictionary."
+            logger.error(details)
+            return GetConfigCategoryResultFailure(result_details=details)
 
-        result_details = f"Successfully returned the config dictionary for section '{request.category}'."
-        return GetConfigCategoryResultSuccess(contents=find_results, result_details=result_details)
+        details = f"Successfully returned the config dictionary for section '{request.category}'."
+        logger.debug(details)
+        return GetConfigCategoryResultSuccess(contents=find_results, result_details=details)
 
     def on_handle_set_config_category_request(self, request: SetConfigCategoryRequest) -> ResultPayload:
         # Validate the value is a dict
         if not isinstance(request.contents, dict):
-            result_details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
-            return SetConfigCategoryResultFailure(result_details=result_details)
+            details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
+            logger.error(details)
+            return SetConfigCategoryResultFailure(result_details=details)
 
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self._write_user_config_delta(request.contents)
-            result_details = "Successfully assigned the entire config dictionary."
-            return SetConfigCategoryResultSuccess(result_details=result_details)
+            details = "Successfully assigned the entire config dictionary."
+            logger.debug(details)
+            return SetConfigCategoryResultSuccess(result_details=details)
 
         self.set_config_value(key=request.category, value=request.contents)
 
@@ -400,26 +405,30 @@ class ConfigManager:
         for after_env_var in after_env_vars_set:
             self._update_secret_from_env_var(after_env_var)
 
-        result_details = f"Successfully assigned the config dictionary for section '{request.category}'."
-        return SetConfigCategoryResultSuccess(result_details=result_details)
+        details = f"Successfully assigned the config dictionary for section '{request.category}'."
+        logger.debug(details)
+        return SetConfigCategoryResultSuccess(result_details=details)
 
     def on_handle_get_config_value_request(self, request: GetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
-            result_details = "Attempted to get config value but no category or key was specified."
-            return GetConfigValueResultFailure(result_details=result_details)
+            details = "Attempted to get config value but no category or key was specified."
+            logger.error(details)
+            return GetConfigValueResultFailure(result_details=details)
 
         # See if we got something valid.
         find_results = self.get_config_value(request.category_and_key)
         if find_results is None:
-            result_details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
-            return GetConfigValueResultFailure(result_details=result_details)
+            details = f"Attempted to get config value for category.key '{request.category_and_key}'. Failed because no such category.key could be found."
+            logger.error(details)
+            return GetConfigValueResultFailure(result_details=details)
 
-        result_details = f"Successfully returned the config value for section '{request.category_and_key}'."
-        return GetConfigValueResultSuccess(value=find_results, result_details=result_details)
+        details = f"Successfully returned the config value for section '{request.category_and_key}'."
+        logger.debug(details)
+        return GetConfigValueResultSuccess(value=find_results, result_details=details)
 
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
-        result_details = "Successfully returned the config path."
-        return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
+        details = "Successfully returned the config path."
+        return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
         """Handle request to get the configuration schema with default values and library settings."""
@@ -455,6 +464,135 @@ class ConfigManager:
         except Exception as e:
             result_details = f"Failed to generate configuration schema: {e}"
             return GetConfigSchemaResultFailure(result_details=result_details)
+
+    def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
+        try:
+            self.reset_user_config()
+            self._set_log_level(str(self.merged_config["log_level"]))
+            self.workspace_path = Path(self.merged_config["workspace_directory"])
+
+            details = "Successfully reset the user configuration."
+            return ResetConfigResultSuccess(result_details=details)
+        except Exception as e:
+            details = f"Attempted to reset user configuration but failed: {e}."
+            logger.error(details)
+            return ResetConfigResultFailure(result_details=details)
+
+    def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
+        """Generate a diff between the old and new values."""
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            diff = {
+                key: (old_value.get(key), new_value.get(key))
+                for key in new_value
+                if old_value.get(key) != new_value.get(key)
+            }
+        elif isinstance(old_value, list) and isinstance(new_value, list):
+            diff = {
+                str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
+            }
+
+            # Handle added or removed elements
+            if len(old_value) > len(new_value):
+                for i in range(len(new_value), len(old_value)):
+                    diff[str(i)] = (old_value[i], None)
+            elif len(new_value) > len(old_value):
+                for i in range(len(old_value), len(new_value)):
+                    diff[str(i)] = (None, new_value[i])
+        else:
+            diff = {"old": old_value, "new": new_value}
+        return diff
+
+    def _format_diff(self, diff: dict[Any, Any]) -> str:
+        """Format the diff dictionary into a readable string."""
+        formatted_lines = []
+        for key, (old, new) in diff.items():
+            if old is None:
+                formatted_lines.append(f"[{key}]: ADDED: '{new}'")
+            elif new is None:
+                formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
+            else:
+                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
+        return "\n".join(formatted_lines)
+
+    def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
+        if request.category_and_key == "":
+            details = "Attempted to set config value but no category or key was specified."
+            logger.error(details)
+            return SetConfigValueResultFailure(result_details=details)
+
+        # Fetch the existing value (don't go to the env vars directly; we want the key)
+        old_value = self.get_config_value(request.category_and_key, should_load_env_var_if_detected=False)
+
+        # Make a copy of the existing value if it is a dict or list
+        if isinstance(old_value, (dict, list)):
+            old_value_copy = copy.deepcopy(old_value)
+        else:
+            old_value_copy = old_value
+
+        # Set the new value
+        self.set_config_value(key=request.category_and_key, value=request.value)
+
+        # Update any added env vars (this is dumb)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
+        after_env_vars_set = set(self.gather_env_var_names())
+        for after_env_var in after_env_vars_set:
+            self._update_secret_from_env_var(after_env_var)
+
+        # For container types, indicate the change with a diff
+        if isinstance(request.value, (dict, list)):
+            if old_value_copy is not None:
+                diff = self._get_diff(old_value_copy, request.value)
+                formatted_diff = self._format_diff(diff)
+                if formatted_diff:
+                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
+                else:
+                    details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. No changes detected."
+            else:
+                details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
+        else:
+            details = f"Successfully assigned the config value for '{request.category_and_key}':\n\tFROM '{old_value_copy}'\n\tTO: '{request.value}'"
+
+        logger.debug(details)
+        return SetConfigValueResultSuccess(result_details=details)
+
+    def _write_user_config_delta(self, user_config_delta: dict) -> None:
+        """Write the user configuration to the config file.
+
+        This method creates the config file if it doesn't exist and writes the
+        current configuration to it.
+
+        Args:
+            user_config_delta: The user configuration delta to write to the file Will be merged with the existing config on disk.
+            workspace_dir: The path to the config file
+        """
+        if not USER_CONFIG_PATH.exists():
+            USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            USER_CONFIG_PATH.touch()
+            USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
+        try:
+            current_config = json.loads(USER_CONFIG_PATH.read_text())
+        except json.JSONDecodeError:
+            backup = USER_CONFIG_PATH.rename(USER_CONFIG_PATH.with_suffix(".bak"))
+            logger.error(
+                "Error parsing user config file %s. Saved this to a backup %s and created a new one.",
+                USER_CONFIG_PATH,
+                backup,
+            )
+            current_config = {}
+        merged_config = merge_dicts(current_config, user_config_delta)
+        USER_CONFIG_PATH.write_text(json.dumps(merged_config, indent=2))
+
+    def _set_log_level(self, level: str) -> None:
+        """Set the log level for the logger.
+
+        Args:
+            level: The log level to set (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
+        """
+        try:
+            logger.setLevel(level.upper())
+        except ValueError:
+            logger.error("Invalid log level %s. Defaulting to INFO.", level)
+            logger.setLevel(logging.INFO)
 
     def _create_dynamic_settings_model(self) -> type[Settings]:
         """Create a dynamic Settings model that includes library settings as proper Pydantic fields."""
@@ -504,7 +642,7 @@ class ConfigManager:
 
             # Build proper JSON schema property
             prop_schema = {
-                "type": field_schema.get("type", self._infer_type_from_value(value)),
+                "type": field_schema.get("type", infer_type_from_value(value)),
                 "title": key.replace("_", " ").title(),
             }
 
@@ -523,114 +661,7 @@ class ConfigManager:
                 json_schema["required"].append(key)
 
         # Convert JSON schema to Pydantic model with proper type handling
-        return self._json_schema_to_pydantic_model(json_schema)
-
-    def _infer_type_from_value(self, value: Any) -> str:
-        """Infer JSON schema type from Python value."""
-        if isinstance(value, bool):
-            return "boolean"
-        if isinstance(value, int):
-            return "integer"
-        if isinstance(value, float):
-            return "number"
-        if isinstance(value, list):
-            return "array"
-        if isinstance(value, dict):
-            return "object"
-        return "string"
-
-    def _json_schema_to_pydantic_model(self, schema: dict[str, Any]) -> type[BaseModel]:
-        """Convert JSON schema to Pydantic model with support for enums, nested objects, arrays, and nullable types."""
-        type_mapping: dict[str, type] = {
-            "string": str,
-            "integer": int,
-            "number": float,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-
-        properties = schema.get("properties", {})
-        required_fields = schema.get("required", [])
-        model_fields = {}
-
-        def process_field(field_name: str, field_props: dict[str, Any]) -> tuple:
-            """Recursively processes a field and returns its type and Field instance."""
-            field_type = self._determine_field_type(field_props, type_mapping)
-            field_type = self._handle_nullable_type(field_type, field_props)
-
-            default_value = self._get_default_value(field_name, field_props, required_fields)
-            description = field_props.get("title", "")
-
-            return (field_type, Field(default_value, description=description))
-
-        # Process all fields
-        for field_name, field_props in properties.items():
-            model_fields[field_name] = process_field(field_name, field_props)
-
-        return create_model(schema.get("title", "DynamicModel"), **model_fields)
-
-    def _determine_field_type(self, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
-        """Determine the appropriate Python type for a JSON schema field, handling enums, objects, and arrays."""
-        json_type = field_props.get("type", "string")
-        enum_values = field_props.get("enum")
-
-        # Handle Enums - use Literal types to avoid serialization warnings
-        # Problem: Using Enum() classes causes Pydantic serialization warnings during schema generation
-        # Solution: Use Literal[tuple(enum_values)] which serializes cleanly without warnings
-        # The tuple() is required because Literal expects individual arguments, not a list
-        if enum_values:
-            return Literal[tuple(enum_values)]
-
-        # Handle Nested Objects
-        if json_type == "object" and "properties" in field_props:
-            return self._json_schema_to_pydantic_model(field_props)
-
-        # Handle Arrays
-        if json_type == "array":
-            return self._handle_array_type(field_props, type_mapping)
-
-        # Handle primitive types
-        return type_mapping.get(json_type, str)
-
-    def _handle_array_type(self, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
-        """Determine the type for array fields, supporting arrays of primitives, enums, and nested objects."""
-        if "items" not in field_props:
-            return list[str]
-
-        item_props = field_props["items"]
-
-        # Handle Arrays with Nested Objects
-        if item_props.get("type") == "object":
-            nested_model_type = self._json_schema_to_pydantic_model(item_props)
-            return list[nested_model_type]
-
-        # Handle Arrays with Enums - use Literal types to avoid serialization warnings
-        # Same issue as above: Enum() classes cause warnings, Literal[tuple()] works cleanly
-        if "enum" in item_props:
-            enum_values = item_props["enum"]
-            return list[Literal[tuple(enum_values)]]
-
-        # Handle Arrays with primitive types
-        primitive_type = type_mapping.get(item_props.get("type", "string"), str)
-        return list[primitive_type]
-
-    def _handle_nullable_type(self, field_type: Any, field_props: dict[str, Any]) -> Any:
-        """Convert field type to nullable (Optional) type if specified in schema."""
-        nullable = field_props.get("nullable", False)
-        if nullable:
-            return field_type | None
-        return field_type
-
-    def _get_default_value(self, field_name: str, field_props: dict[str, Any], required_fields: list[str]) -> Any:
-        """Get the appropriate default value for a field based on whether it's required."""
-        if field_name not in required_fields:
-            default_value = field_props.get("default")
-            # For enum fields, ensure we return the string value, not an enum instance
-            if "enum" in field_props and default_value is not None:
-                return str(default_value)
-            return default_value
-        return field_props.get("default", ...)
+        return json_schema_to_pydantic_model(json_schema)
 
     def _extract_library_settings_from_schema(self, schema: dict) -> list[dict]:
         """Extract library settings information from the schema for frontend organization."""
@@ -701,33 +732,23 @@ class ConfigManager:
 
         return library_settings
 
+    def _get_library_paths_from_config(self) -> list[str]:
+        """Get library paths from the merged configuration using dot notation."""
+        return get_dot_value(self.merged_config, LIBRARIES_TO_REGISTER_PATH, [])
+
     def _get_library_schemas_from_definitions(self) -> dict[str, dict]:
         """Get library schema information from library definition files."""
         library_schemas = {}
 
         try:
-            # Get library paths from the merged config
-            library_paths = []
-            if "app_events" in self.merged_config:
-                app_events = self.merged_config["app_events"]
-                if "on_app_initialization_complete" in app_events:
-                    init_complete = app_events["on_app_initialization_complete"]
-                    if "libraries_to_register" in init_complete:
-                        library_paths = init_complete["libraries_to_register"]
+            library_paths = self._get_library_paths_from_config()
 
             # Process each library definition file
             for library_path in library_paths:
                 try:
-                    with Path(library_path).open() as f:
-                        library_def = json.load(f)
-
-                    # Check if this library has settings
-                    if "settings" in library_def:
-                        for setting in library_def["settings"]:
-                            category = setting.get("category")
-                            schema = setting.get("schema", {})
-                            if category and schema:
-                                library_schemas[category] = schema
+                    library_def = self._load_library_definition(library_path)
+                    if library_def:
+                        self._extract_schemas_from_library_def(library_def, library_schemas)
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
         except Exception as e:
@@ -740,30 +761,14 @@ class ConfigManager:
         library_settings = {}
 
         try:
-            # Get library paths from the merged config
-            library_paths = []
-            if "app_events" in self.merged_config:
-                app_events = self.merged_config["app_events"]
-                if "on_app_initialization_complete" in app_events:
-                    init_complete = app_events["on_app_initialization_complete"]
-                    if "libraries_to_register" in init_complete:
-                        library_paths = init_complete["libraries_to_register"]
+            library_paths = self._get_library_paths_from_config()
 
             # Process each library definition file
             for library_path in library_paths:
                 try:
-                    with Path(library_path).open() as f:
-                        library_def = json.load(f)
-
-                    # Check if this library has settings
-                    if "settings" in library_def:
-                        for setting in library_def["settings"]:
-                            category = setting.get("category")
-                            contents = setting.get("contents", {})
-                            schema = setting.get("schema", {})
-                            if category and contents:
-                                # Store both contents and schema information
-                                library_settings[category] = {"contents": contents, "schema": schema}
+                    library_def = self._load_library_definition(library_path)
+                    if library_def:
+                        self._extract_settings_from_library_def(library_def, library_settings)
                 except (FileNotFoundError, json.JSONDecodeError):
                     continue
         except Exception as e:
@@ -771,128 +776,47 @@ class ConfigManager:
 
         return library_settings
 
-    def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
+    def _load_library_definition(self, library_path: str) -> dict | None:
+        """Load and validate a library definition file."""
         try:
-            self.reset_user_config()
-            self._set_log_level(str(self.merged_config["log_level"]))
-            self.workspace_path = Path(self.merged_config["workspace_directory"])
+            with Path(library_path).open() as f:
+                library_def = json.load(f)
 
-            result_details = "Successfully reset user configuration."
-            return ResetConfigResultSuccess(result_details=result_details)
-        except Exception as e:
-            result_details = f"Attempted to reset user configuration but failed: {e}."
-            return ResetConfigResultFailure(result_details=result_details)
+            # Basic validation
+            if not isinstance(library_def, dict):
+                logger.warning("Library definition at %s is not a valid JSON object", library_path)
+                return None
+            return library_def
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.debug("Failed to load library definition from %s: %s", library_path, e)
+            return None
 
-    def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
-        """Generate a diff between the old and new values."""
-        if isinstance(old_value, dict) and isinstance(new_value, dict):
-            diff = {
-                key: (old_value.get(key), new_value.get(key))
-                for key in new_value
-                if old_value.get(key) != new_value.get(key)
-            }
-        elif isinstance(old_value, list) and isinstance(new_value, list):
-            diff = {
-                str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
-            }
+    def _extract_schemas_from_library_def(self, library_def: dict, library_schemas: dict) -> None:
+        """Extract schema information from a library definition."""
+        if "settings" not in library_def:
+            return
 
-            # Handle added or removed elements
-            if len(old_value) > len(new_value):
-                for i in range(len(new_value), len(old_value)):
-                    diff[str(i)] = (old_value[i], None)
-            elif len(new_value) > len(old_value):
-                for i in range(len(old_value), len(new_value)):
-                    diff[str(i)] = (None, new_value[i])
-        else:
-            diff = {"old": old_value, "new": new_value}
-        return diff
+        for setting in library_def["settings"]:
+            if not isinstance(setting, dict):
+                continue
 
-    def _format_diff(self, diff: dict[Any, Any]) -> str:
-        """Format the diff dictionary into a readable string."""
-        formatted_lines = []
-        for key, (old, new) in diff.items():
-            if old is None:
-                formatted_lines.append(f"[{key}]: ADDED: '{new}'")
-            elif new is None:
-                formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
-            else:
-                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
-        return "\n".join(formatted_lines)
+            category = setting.get("category")
+            schema = setting.get("schema", {})
+            if category and schema:
+                library_schemas[category] = schema
 
-    def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
-        if request.category_and_key == "":
-            result_details = "Attempted to set config value but no category or key was specified."
-            return SetConfigValueResultFailure(result_details=result_details)
+    def _extract_settings_from_library_def(self, library_def: dict, library_settings: dict) -> None:
+        """Extract settings information from a library definition."""
+        if "settings" not in library_def:
+            return
 
-        # Fetch the existing value (don't go to the env vars directly; we want the key)
-        old_value = self.get_config_value(request.category_and_key, should_load_env_var_if_detected=False)
+        for setting in library_def["settings"]:
+            if not isinstance(setting, dict):
+                continue
 
-        # Make a copy of the existing value if it is a dict or list
-        if isinstance(old_value, (dict, list)):
-            old_value_copy = copy.deepcopy(old_value)
-        else:
-            old_value_copy = old_value
-
-        # Set the new value
-        self.set_config_value(key=request.category_and_key, value=request.value)
-
-        # Update any added env vars (this is dumb)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
-        after_env_vars_set = set(self.gather_env_var_names())
-        for after_env_var in after_env_vars_set:
-            self._update_secret_from_env_var(after_env_var)
-
-        # For container types, indicate the change with a diff
-        if isinstance(request.value, (dict, list)):
-            if old_value_copy is not None:
-                diff = self._get_diff(old_value_copy, request.value)
-                formatted_diff = self._format_diff(diff)
-                if formatted_diff:
-                    result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
-                else:
-                    result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. No changes detected."
-            else:
-                result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'"
-        else:
-            result_details = f"Successfully assigned the config value for '{request.category_and_key}':\n\tFROM '{old_value_copy}'\n\tTO: '{request.value}'"
-
-        return SetConfigValueResultSuccess(result_details=result_details)
-
-    def _write_user_config_delta(self, user_config_delta: dict) -> None:
-        """Write the user configuration to the config file.
-
-        This method creates the config file if it doesn't exist and writes the
-        current configuration to it.
-
-        Args:
-            user_config_delta: The user configuration delta to write to the file Will be merged with the existing config on disk.
-            workspace_dir: The path to the config file
-        """
-        if not USER_CONFIG_PATH.exists():
-            USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            USER_CONFIG_PATH.touch()
-            USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
-        try:
-            current_config = json.loads(USER_CONFIG_PATH.read_text())
-        except json.JSONDecodeError:
-            backup = USER_CONFIG_PATH.rename(USER_CONFIG_PATH.with_suffix(".bak"))
-            logger.error(
-                "Error parsing user config file %s. Saved this to a backup %s and created a new one.",
-                USER_CONFIG_PATH,
-                backup,
-            )
-            current_config = {}
-        merged_config = merge_dicts(current_config, user_config_delta)
-        USER_CONFIG_PATH.write_text(json.dumps(merged_config, indent=2))
-
-    def _set_log_level(self, level: str) -> None:
-        """Set the log level for the logger.
-
-        Args:
-            level: The log level to set (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
-        """
-        try:
-            logger.setLevel(level.upper())
-        except ValueError:
-            logger.error("Invalid log level %s. Defaulting to INFO.", level)
-            logger.setLevel(logging.INFO)
+            category = setting.get("category")
+            contents = setting.get("contents", {})
+            schema = setting.get("schema", {})
+            if category and contents:
+                # Store both contents and schema information
+                library_settings[category] = {"contents": contents, "schema": schema}
