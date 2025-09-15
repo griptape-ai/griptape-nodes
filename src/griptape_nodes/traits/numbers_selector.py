@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
 @dataclass(eq=False)
 class NumbersSelector(Trait):
-    defaults: dict[str, float]
+    defaults: dict[str, float] = field(kw_only=True)
     step: float = 1.0
     overall_min: float | None = None
     overall_max: float | None = None
