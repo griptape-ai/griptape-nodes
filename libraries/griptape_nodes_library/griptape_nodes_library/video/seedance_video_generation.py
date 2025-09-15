@@ -217,7 +217,7 @@ class SeedanceVideoGeneration(DataNode):
                 self.show_parameter_by_name("last_frame")
             else:
                 self.hide_parameter_by_name("last_frame")
-        
+
         return super().after_value_set(parameter, value)
 
     def _log(self, message: str) -> None:
