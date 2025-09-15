@@ -2,16 +2,11 @@ import copy
 import json
 import logging
 import os
-import warnings
-from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
-
-# Suppress harmless Pydantic serialization warnings for enum fields
-warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
@@ -436,7 +431,7 @@ class ConfigManager:
             schema = dynamic_settings_model.model_json_schema()
 
             # Get default values from the dynamic model (includes defaults for library settings)
-            default_values = dynamic_settings_model().model_dump()
+            default_values = dynamic_settings_model().model_dump(mode="json")
 
             # Override defaults with actual configured values from merged config (user + workspace + env)
             default_values.update(self.merged_config)
@@ -516,13 +511,7 @@ class ConfigManager:
             # Add schema properties
             if "enum" in field_schema:
                 prop_schema["enum"] = field_schema["enum"]
-                # Store the default value for Pydantic Field creation, but don't put it in JSON schema
-                if "default" in field_schema:
-                    prop_schema["_default_for_pydantic"] = field_schema["default"]
-                elif value is not None:
-                    prop_schema["_default_for_pydantic"] = value
-            # Set defaults for non-enum fields
-            elif "default" in field_schema:
+            if "default" in field_schema:
                 prop_schema["default"] = field_schema["default"]
             elif value is not None:
                 prop_schema["default"] = value
@@ -570,8 +559,7 @@ class ConfigManager:
             field_type = self._determine_field_type(field_name, field_props, type_mapping)
             field_type = self._handle_nullable_type(field_type, field_props)
 
-            # Get default value - for enum fields, we need to get it from the original schema
-            default_value = self._get_default_value(field_name, field_props, required_fields, schema)
+            default_value = self._get_default_value(field_name, field_props, required_fields)
             description = field_props.get("title", "")
 
             return (field_type, Field(default_value, description=description))
@@ -587,10 +575,12 @@ class ConfigManager:
         json_type = field_props.get("type", "string")
         enum_values = field_props.get("enum")
 
-        # Handle Enums
+        # Handle Enums - use Literal types to avoid serialization warnings
+        # Problem: Using Enum() classes causes Pydantic serialization warnings during schema generation
+        # Solution: Use Literal[tuple(enum_values)] which serializes cleanly without warnings
+        # The tuple() is required because Literal expects individual arguments, not a list
         if enum_values:
-            enum_name = f"{field_name.capitalize()}Enum"
-            return Enum(enum_name, {v: v for v in enum_values})
+            return Literal[tuple(enum_values)]
 
         # Handle Nested Objects
         if json_type == "object" and "properties" in field_props:
@@ -598,12 +588,12 @@ class ConfigManager:
 
         # Handle Arrays
         if json_type == "array":
-            return self._handle_array_type(field_name, field_props, type_mapping)
+            return self._handle_array_type(field_props, type_mapping)
 
         # Handle primitive types
         return type_mapping.get(json_type, str)
 
-    def _handle_array_type(self, field_name: str, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
+    def _handle_array_type(self, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
         """Determine the type for array fields, supporting arrays of primitives, enums, and nested objects."""
         if "items" not in field_props:
             return list[str]
@@ -615,12 +605,11 @@ class ConfigManager:
             nested_model_type = self._json_schema_to_pydantic_model(item_props)
             return list[nested_model_type]
 
-        # Handle Arrays with Enums
+        # Handle Arrays with Enums - use Literal types to avoid serialization warnings
+        # Same issue as above: Enum() classes cause warnings, Literal[tuple()] works cleanly
         if "enum" in item_props:
             enum_values = item_props["enum"]
-            enum_name = f"{field_name.capitalize()}ItemEnum"
-            item_enum_type = Enum(enum_name, {v: v for v in enum_values})
-            return list[item_enum_type]
+            return list[Literal[tuple(enum_values)]]
 
         # Handle Arrays with primitive types
         primitive_type = type_mapping.get(item_props.get("type", "string"), str)
@@ -633,19 +622,13 @@ class ConfigManager:
             return field_type | None
         return field_type
 
-    def _get_default_value(
-        self, field_name: str, field_props: dict[str, Any], required_fields: list[str], schema: dict
-    ) -> Any:
+    def _get_default_value(self, field_name: str, field_props: dict[str, Any], required_fields: list[str]) -> Any:
         """Get the appropriate default value for a field based on whether it's required."""
         if field_name not in required_fields:
-            # For enum fields, get the default from the special _default_for_pydantic key
-            if "enum" in field_props:
-                default_value = field_props.get("_default_for_pydantic")
-                if default_value is not None:
-                    return default_value
-
-            # For non-enum fields, use the field_props default
             default_value = field_props.get("default")
+            # For enum fields, ensure we return the string value, not an enum instance
+            if "enum" in field_props and default_value is not None:
+                return str(default_value)
             return default_value
         return field_props.get("default", ...)
 
