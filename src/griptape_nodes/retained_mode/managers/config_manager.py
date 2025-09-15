@@ -465,13 +465,26 @@ class ConfigManager:
         library_schemas = self._get_library_schemas_from_definitions()
 
         # Create field definitions for library settings
+        library_fields = self._create_library_field_definitions(library_settings, library_schemas)
+
+        # Create the dynamic model by extending Settings
+        if library_fields:
+            return create_model("DynamicSettings", **library_fields, __base__=Settings)
+        return Settings
+
+    def _create_library_field_definitions(self, library_settings: dict, library_schemas: dict) -> dict:
+        """Create field definitions for library settings to be used in dynamic model creation."""
         library_fields = {}
+
         for category, settings_data in library_settings.items():
             if category not in Settings.model_fields:
                 # Get schema information for this category
                 schema_info = library_schemas.get(category, {})
+
                 # Create a nested model for this library category
                 library_model = self._create_library_settings_model(category, settings_data, schema_info)
+
+                # Create field definition with proper metadata
                 library_fields[category] = (
                     library_model,
                     Field(
@@ -480,10 +493,7 @@ class ConfigManager:
                     ),
                 )
 
-        # Create the dynamic model by extending Settings
-        if library_fields:
-            return create_model("DynamicSettings", **library_fields, __base__=Settings)
-        return Settings
+        return library_fields
 
     def _create_library_settings_model(self, category: str, settings_data: dict, schema_info: dict) -> type:
         """Create a Pydantic model for a specific library's settings by converting library definitions to JSON schema format."""
