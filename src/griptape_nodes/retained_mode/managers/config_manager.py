@@ -556,7 +556,7 @@ class ConfigManager:
 
         def process_field(field_name: str, field_props: dict[str, Any]) -> tuple:
             """Recursively processes a field and returns its type and Field instance."""
-            field_type = self._determine_field_type(field_name, field_props, type_mapping)
+            field_type = self._determine_field_type(field_props, type_mapping)
             field_type = self._handle_nullable_type(field_type, field_props)
 
             default_value = self._get_default_value(field_name, field_props, required_fields)
@@ -570,7 +570,7 @@ class ConfigManager:
 
         return create_model(schema.get("title", "DynamicModel"), **model_fields)
 
-    def _determine_field_type(self, field_name: str, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
+    def _determine_field_type(self, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
         """Determine the appropriate Python type for a JSON schema field, handling enums, objects, and arrays."""
         json_type = field_props.get("type", "string")
         enum_values = field_props.get("enum")
