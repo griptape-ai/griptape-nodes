@@ -41,7 +41,7 @@ async def _create_static_file_upload_url(request: Request) -> dict:
     """
     base_url = request.base_url
     body = await request.json()
-    file_path = body["file_path"]
+    file_path = body["file_path"].lstrip("/")
     url = urljoin(str(base_url), f"/static-uploads/{file_path}")
 
     return {"url": url}
