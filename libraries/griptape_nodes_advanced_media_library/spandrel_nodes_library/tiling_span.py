@@ -18,12 +18,12 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
+from utils.directory_utils import get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
-from libraries.griptape_nodes_advanced_media_library.utils.directory_utils import get_intermediates_directory_path
 from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("spandrel_nodes_library")
