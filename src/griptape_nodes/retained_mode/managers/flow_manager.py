@@ -193,7 +193,6 @@ class FlowManager:
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder()
 
-
     @property
     def global_single_node_resolution(self) -> bool:
         return self._global_single_node_resolution
@@ -1801,7 +1800,9 @@ class FlowManager:
             return None, None
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
-            [control_flow_node.name for control_flow_node in control_flow_context.current_nodes] if control_flow_context.current_nodes is not None else None
+            [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
+            if control_flow_context.current_nodes is not None
+            else None
         )
         # focus_stack is no longer available in the new architecture
         if isinstance(control_flow_context.resolution_machine, ParallelResolutionMachine):

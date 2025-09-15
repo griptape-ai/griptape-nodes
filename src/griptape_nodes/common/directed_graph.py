@@ -38,6 +38,16 @@ class DirectedGraph:
             return 0
         return len(self._predecessors.get(node, set()))
 
+    def out_degree(self, node: str) -> int:
+        """Return the out-degree of a node (number of outgoing edges)."""
+        if node not in self._nodes:
+            return 0
+        count = 0
+        for predecessors in self._predecessors.values():
+            if node in predecessors:
+                count += 1
+        return count
+
     def remove_node(self, node: str) -> None:
         """Remove a node and all its edges from the graph."""
         if node not in self._nodes:

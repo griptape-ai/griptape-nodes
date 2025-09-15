@@ -98,8 +98,16 @@ class ParallelResolutionContext:
 
 class ExecuteDagState(State):
     @staticmethod
-    async def handle_done_nodes(context:ParallelResolutionContext, done_node: DagNode, network_name:str) -> None:
+    async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:
         current_node = done_node.node_reference
+
+        # Check if node was already resolved (shouldn't happen)
+        if current_node.state == NodeResolutionState.RESOLVED:
+            logger.warning("Node '%s' was already RESOLVED but handle_done_nodes was called again from network '%s'",
+                         current_node.name, network_name)
+            return
+
+
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
         # Serialization can be slow so only do it if the user wants debug details.
@@ -155,7 +163,6 @@ class ExecuteDagState(State):
         # Now the final thing to do, is to take their directed graph and update it.
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
-
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
@@ -164,6 +171,7 @@ class ExecuteDagState(State):
             if network is not None and len(network) > 0:
                 return
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Check stop_flow first
         flow_manager = GriptapeNodes.FlowManager()
         if flow_manager.global_single_node_resolution:
@@ -180,18 +188,25 @@ class ExecuteDagState(State):
                 # Add the next control node to the DAG
                 if not next_node.lock:
                     next_node.make_node_unresolved(
-                    current_states_to_trigger_change_event=set(
-                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                        current_states_to_trigger_change_event=set(
+                            {
+                                NodeResolutionState.UNRESOLVED,
+                                NodeResolutionState.RESOLVED,
+                                NodeResolutionState.RESOLVING,
+                            }
+                        )
                     )
-            )
                 if context.dag_builder is not None:
                     added_nodes = context.dag_builder.add_node_with_dependencies(next_node, network_name)
+                    if next_node not in added_nodes:
+                        added_nodes.append(next_node)
+                    # Also check any other nodes that were added as dependencies
                     if added_nodes:
-                        # Set newly added nodes from WAITING to QUEUED so they get processed
                         for added_node in added_nodes:
-                            if added_node.name in context.node_to_reference:
-                                dag_node = context.node_to_reference[added_node.name]
-                                if dag_node.node_state == NodeState.WAITING:
+                            dag_node = context.node_to_reference[added_node.name]
+                            if dag_node.node_state == NodeState.WAITING:
+                                can_queue = context.dag_builder.can_queue_control_node(dag_node, network_name)
+                                if can_queue:
                                     dag_node.node_state = NodeState.QUEUED
 
     @staticmethod
@@ -271,6 +286,8 @@ class ExecuteDagState(State):
     @staticmethod
     async def pop_done_states(context: ParallelResolutionContext) -> None:
         networks = context.networks
+        handled_nodes = set()  # Track nodes we've already processed to avoid duplicates
+
         for network_name, network in networks.items():
             # Check and see if there are leaf nodes that are cancelled.
             # Reinitialize leaf nodes since maybe we changed things up.
@@ -283,7 +300,11 @@ class ExecuteDagState(State):
                 if node_reference.node_reference.lock or node_state == NodeState.DONE:
                     node_reference.node_state = NodeState.DONE
                     network.remove_node(node)
-                    await ExecuteDagState.handle_done_nodes(context, context.node_to_reference[node], network_name)
+
+                    # Only call handle_done_nodes once per node (first network that processes it)
+                    if node not in handled_nodes:
+                        handled_nodes.add(node)
+                        await ExecuteDagState.handle_done_nodes(context, context.node_to_reference[node], network_name)
 
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
@@ -305,7 +326,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: PLR0911
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
         # Check if execution is paused
         if context.paused:
             return None
@@ -353,6 +374,13 @@ class ExecuteDagState(State):
                 if task in context.task_to_node:
                     node = context.task_to_node[task]
                     node.node_state = NodeState.DONE
+
+            # Check if node is already being processed (shouldn't happen)
+            if node_reference.node_reference.state == NodeResolutionState.RESOLVING:
+                logger.warning("Node '%s' is already RESOLVING but was queued for execution again",
+                             node_reference.node_reference.name)
+                continue
+
 
             # Execute the node asynchronously
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))

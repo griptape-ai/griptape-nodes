@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from tracemalloc import start
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -92,13 +91,13 @@ class ControlFlowContext:
                     if node_connection is not None:
                         node, entry_parameter = node_connection
                         next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
-        
+
         # If no connections found, check execution queue
         if not next_nodes:
             node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if node is not None:
                 next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
-        
+
         return next_nodes
 
     def reset(self, *, cancel: bool = False) -> None:
@@ -146,7 +145,7 @@ class ResolveNodeState(State):
         # If no current nodes, we're done
         if len(context.current_nodes) == 0:
             return CompleteState
-        
+
         # Resolve nodes - pass first node for sequential resolution
         current_node = context.current_nodes[0] if context.current_nodes else None
         await context.resolution_machine.resolve_node(current_node)
@@ -161,20 +160,20 @@ class NextNodeState(State):
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
         if len(context.current_nodes) == 0:
             return CompleteState
-        
+
         # Check for stop_flow on any current nodes
         for current_node in context.current_nodes[:]:
             if current_node.stop_flow:
                 current_node.stop_flow = False
                 context.current_nodes.remove(current_node)
-        
+
         # If all nodes stopped flow, complete
         if len(context.current_nodes) == 0:
             return CompleteState
-        
+
         # Get all next nodes from current nodes
         next_node_infos = context.get_next_nodes()
-        
+
         # Broadcast selected control output events for nodes with outputs
         for current_node in context.current_nodes:
             next_output = current_node.get_next_control_output()
@@ -190,7 +189,7 @@ class NextNodeState(State):
                         )
                     )
                 )
-        
+
         # If no next nodes, we're complete
         if not next_node_infos:
             return CompleteState
@@ -200,7 +199,7 @@ class NextNodeState(State):
         for next_node_info in next_node_infos:
             next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
             next_nodes.append(next_node_info.node)
-        
+
         context.current_nodes = next_nodes
         context.selected_output = None
         if not context.paused:
@@ -222,9 +221,7 @@ class CompleteState(State):
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
                             end_node_name=current_node.name,
-                            parameter_output_values=TypeValidator.safe_serialize(
-                                current_node.parameter_output_values
-                            ),
+                            parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
                         )
                     )
                 )
