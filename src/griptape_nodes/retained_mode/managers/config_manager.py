@@ -786,7 +786,7 @@ class ConfigManager:
             if not isinstance(library_def, dict):
                 logger.warning("Library definition at %s is not a valid JSON object", library_path)
                 return None
-            return library_def
+            return library_def  # noqa: TRY300
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.debug("Failed to load library definition from %s: %s", library_path, e)
             return None
