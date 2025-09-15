@@ -1,4 +1,7 @@
 {
     "python.analysis.typeCheckingMode": "basic",
-    "austin.path": "${workspaceFolder}/.venv/bin/austin"
+    "austin.path": "${workspaceFolder}/.venv/bin/austin",
+    "[windows]": {
+        "austin.path": "${workspaceFolder}/.venv/Scripts/austin.exe"
+    }
 }
