@@ -73,7 +73,6 @@ class ControlFlowContext:
             list[NextNodeInfo]: List of next nodes to process
         """
         next_nodes = []
-        
         for current_node in self.current_nodes:
             if output_parameter is not None:
                 # Get connected node from control flow
