@@ -2,12 +2,16 @@ import copy
 import json
 import logging
 import os
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
+
+# Suppress harmless Pydantic serialization warnings for enum fields
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
@@ -512,7 +516,13 @@ class ConfigManager:
             # Add schema properties
             if "enum" in field_schema:
                 prop_schema["enum"] = field_schema["enum"]
-            if "default" in field_schema:
+                # Store the default value for Pydantic Field creation, but don't put it in JSON schema
+                if "default" in field_schema:
+                    prop_schema["_default_for_pydantic"] = field_schema["default"]
+                elif value is not None:
+                    prop_schema["_default_for_pydantic"] = value
+            # Set defaults for non-enum fields
+            elif "default" in field_schema:
                 prop_schema["default"] = field_schema["default"]
             elif value is not None:
                 prop_schema["default"] = value
@@ -560,7 +570,8 @@ class ConfigManager:
             field_type = self._determine_field_type(field_name, field_props, type_mapping)
             field_type = self._handle_nullable_type(field_type, field_props)
 
-            default_value = self._get_default_value(field_name, field_props, required_fields)
+            # Get default value - for enum fields, we need to get it from the original schema
+            default_value = self._get_default_value(field_name, field_props, required_fields, schema)
             description = field_props.get("title", "")
 
             return (field_type, Field(default_value, description=description))
@@ -622,10 +633,20 @@ class ConfigManager:
             return field_type | None
         return field_type
 
-    def _get_default_value(self, field_name: str, field_props: dict[str, Any], required_fields: list[str]) -> Any:
+    def _get_default_value(
+        self, field_name: str, field_props: dict[str, Any], required_fields: list[str], schema: dict
+    ) -> Any:
         """Get the appropriate default value for a field based on whether it's required."""
         if field_name not in required_fields:
-            return field_props.get("default")
+            # For enum fields, get the default from the special _default_for_pydantic key
+            if "enum" in field_props:
+                default_value = field_props.get("_default_for_pydantic")
+                if default_value is not None:
+                    return default_value
+
+            # For non-enum fields, use the field_props default
+            default_value = field_props.get("default")
+            return default_value
         return field_props.get("default", ...)
 
     def _extract_library_settings_from_schema(self, schema: dict) -> list[dict]:
