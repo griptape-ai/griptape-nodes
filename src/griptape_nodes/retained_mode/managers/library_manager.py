@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -13,6 +14,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import git
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -79,6 +81,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromFileResultFailure,
     RegisterLibraryFromFileResultSuccess,
+    RegisterLibraryFromGitRepoRequest,
+    RegisterLibraryFromGitRepoResultFailure,
+    RegisterLibraryFromGitRepoResultSuccess,
     RegisterLibraryFromRequirementSpecifierRequest,
     RegisterLibraryFromRequirementSpecifierResultFailure,
     RegisterLibraryFromRequirementSpecifierResultSuccess,
@@ -99,6 +104,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
+from griptape_nodes.utils.git_utils import clone_subdirectory, parse_git_url, sanitize_repo_name
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -191,6 +197,9 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(
             RegisterLibraryFromRequirementSpecifierRequest, self.register_library_from_requirement_specifier_request
+        )
+        event_manager.assign_manager_to_request_type(
+            RegisterLibraryFromGitRepoRequest, self.register_library_from_git_repo_request
         )
         event_manager.assign_manager_to_request_type(
             ListCategoriesInLibraryRequest,
@@ -992,6 +1001,52 @@ class LibraryManager:
             library_name=request.requirement_specifier,
             result_details=f"Successfully registered library from requirement specifier: {request.requirement_specifier}",
         )
+
+    async def register_library_from_git_repo_request(
+        self, request: RegisterLibraryFromGitRepoRequest
+    ) -> RegisterLibraryFromGitRepoResultSuccess | RegisterLibraryFromGitRepoResultFailure:
+        """Register a library by cloning from a Git repository.
+
+        Args:
+            request: Git repository registration request
+
+        Returns:
+            Success or failure result
+        """
+        # Parse and validate the request
+        validation_result = self._parse_and_validate_git_request(request)
+        if isinstance(validation_result, RegisterLibraryFromGitRepoResultFailure):
+            return validation_result
+
+        final_branch, final_subdir = validation_result
+
+        # Prepare the clone directory
+        clone_path = self._prepare_clone_directory(request.git_url)
+
+        try:
+            # Clone the repository
+            self._clone_git_repository(request.git_url, clone_path, final_branch, final_subdir)
+
+            # Find the library config file
+            config_result = self._find_library_config_file(clone_path, final_subdir)
+            if isinstance(config_result, RegisterLibraryFromGitRepoResultFailure):
+                return config_result
+
+            library_config_path = config_result
+        except git.GitCommandError as e:
+            details = f"Git clone failed for repository '{request.git_url}': {e}"
+            logger.error(details)
+            return RegisterLibraryFromGitRepoResultFailure(result_details=details)
+        except Exception as e:
+            # Clean up partial clone on any error
+            if clone_path.exists():
+                shutil.rmtree(clone_path)
+            details = f"Failed to register library from Git repository '{request.git_url}': {e}"
+            logger.error(details)
+            return RegisterLibraryFromGitRepoResultFailure(result_details=details)
+
+        # Register the library (success case at the bottom)
+        return await self._register_cloned_library(library_config_path, request.git_url, final_subdir, clone_path)
 
     async def _init_library_venv(self, library_venv_path: Path) -> Path:
         """Initialize a virtual environment for the library.
@@ -2070,3 +2125,139 @@ class LibraryManager:
                 process_path(library_path)
 
         return library_files
+
+    # Git-related private methods
+    def _parse_and_validate_git_request(
+        self, request: RegisterLibraryFromGitRepoRequest
+    ) -> tuple[str, str | None] | RegisterLibraryFromGitRepoResultFailure:
+        """Parse and validate Git repository request parameters.
+
+        Args:
+            request: Git repository registration request
+
+        Returns:
+            Tuple of (final_branch, final_subdir) on success, or failure result
+        """
+        # Parse the Git URL to extract components
+        parsed = parse_git_url(request.git_url)
+
+        # Apply manual overrides
+        final_branch = request.branch_override if request.branch_override is not None else parsed.branch
+        final_subdir = request.subdir_override if request.subdir_override is not None else parsed.subdir
+
+        # Validate subdirectory path for security
+        if final_subdir is not None and (".." in final_subdir or final_subdir.startswith("/")):
+            details = f"Invalid subdirectory path: {final_subdir}. Subdirectory cannot contain '..' or start with '/'"
+            logger.error(details)
+            return RegisterLibraryFromGitRepoResultFailure(result_details=details)
+
+        return final_branch, final_subdir
+
+    def _prepare_clone_directory(self, git_url: str) -> Path:
+        """Prepare the directory for cloning the Git repository.
+
+        Args:
+            git_url: The Git repository URL
+
+        Returns:
+            Path where the repository should be cloned
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_dir = config_mgr.workspace_path / config_mgr.get_config_value("libraries_directory")
+
+        # Create a safe directory name from the base Git URL
+        repo_name = sanitize_repo_name(git_url)
+        clone_path = libraries_dir / repo_name
+
+        # Create the libraries directory if it doesn't exist
+        libraries_dir.mkdir(parents=True, exist_ok=True)
+
+        # Remove existing clone if it exists
+        if clone_path.exists():
+            shutil.rmtree(clone_path)
+
+        return clone_path
+
+    def _clone_git_repository(self, git_url: str, clone_path: Path, branch: str, subdir: str | None) -> None:
+        """Clone the Git repository to the specified path.
+
+        Args:
+            git_url: The Git repository URL
+            clone_path: Local path where repository should be cloned
+            branch: Git branch to checkout
+            subdir: Subdirectory to clone (optional)
+
+        Raises:
+            git.GitCommandError: If git operations fail
+        """
+        if subdir is not None:
+            logger.info(
+                "Cloning Git repository '%s' (subdirectory: %s) to '%s'",
+                git_url,
+                subdir,
+                clone_path,
+            )
+            clone_subdirectory(git_url, clone_path, branch, subdir)
+        else:
+            logger.info("Cloning Git repository '%s' to '%s'", git_url, clone_path)
+            git.Repo.clone_from(git_url, clone_path, branch=branch)
+
+    def _find_library_config_file(
+        self, clone_path: Path, subdir: str | None
+    ) -> Path | RegisterLibraryFromGitRepoResultFailure:
+        """Find and validate the library config file in the cloned repository.
+
+        Args:
+            clone_path: Path to the cloned repository
+            subdir: Subdirectory to search in (optional)
+
+        Returns:
+            Path to the config file on success, or failure result
+        """
+        if subdir is not None:
+            library_config_path = clone_path / subdir / self.LIBRARY_CONFIG_FILENAME
+            location_description = f"subdirectory '{subdir}'"
+        else:
+            library_config_path = clone_path / self.LIBRARY_CONFIG_FILENAME
+            location_description = "repository root"
+
+        if not library_config_path.exists():
+            # Clean up the clone
+            shutil.rmtree(clone_path)
+            details = f"Library config file '{self.LIBRARY_CONFIG_FILENAME}' not found in {location_description} of cloned repository"
+            logger.error(details)
+            return RegisterLibraryFromGitRepoResultFailure(result_details=details)
+
+        return library_config_path
+
+    async def _register_cloned_library(
+        self, library_config_path: Path, git_url: str, subdir: str | None, clone_path: Path
+    ) -> RegisterLibraryFromGitRepoResultSuccess | RegisterLibraryFromGitRepoResultFailure:
+        """Register the library from the cloned config file.
+
+        Args:
+            library_config_path: Path to the library config file
+            git_url: Original Git repository URL
+            subdir: Subdirectory that was cloned (optional)
+            clone_path: Path to the cloned repository
+
+        Returns:
+            Success or failure result
+        """
+        file_request = RegisterLibraryFromFileRequest(file_path=str(library_config_path))
+        file_result = await self.register_library_from_file_request(file_request)
+
+        if isinstance(file_result, RegisterLibraryFromFileResultSuccess):
+            if subdir is not None:
+                details = f"Successfully registered library from Git repository: {git_url} (subdirectory: {subdir})"
+            else:
+                details = f"Successfully registered library from Git repository: {git_url}"
+            return RegisterLibraryFromGitRepoResultSuccess(
+                library_name=file_result.library_name, result_details=details
+            )
+
+        # Clean up the clone on failure
+        shutil.rmtree(clone_path)
+        details = f"Failed to register library after cloning from Git repository: {file_result.result_details}"
+        logger.error(details)
+        return RegisterLibraryFromGitRepoResultFailure(result_details=details)

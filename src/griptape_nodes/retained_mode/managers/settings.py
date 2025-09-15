@@ -69,6 +69,10 @@ class Settings(BaseModel):
         default="sandbox_library",
         description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",
     )
+    libraries_directory: str = Field(
+        default="libraries",
+        description="Path to the libraries directory where git repositories are cloned. If presented as just a directory (e.g., 'libraries') it will be interpreted as being relative to the workspace directory.",
+    )
     app_events: AppEvents = Field(default_factory=AppEvents)
     nodes: dict[str, Any] = Field(
         default_factory=lambda: {
