@@ -2,10 +2,11 @@ import copy
 import json
 import logging
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, ValidationError, create_model
+from pydantic import BaseModel, Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -485,32 +486,137 @@ class ConfigManager:
         return Settings
 
     def _create_library_settings_model(self, category: str, settings_data: dict, schema_info: dict) -> type:
-        """Create a Pydantic model for a specific library's settings."""
-        fields = {}
+        """Create a Pydantic model for a specific library's settings by converting library definitions to JSON schema format."""
+        # Convert library settings to proper JSON schema format
+        json_schema = {"type": "object", "properties": {}, "required": [], "title": f"{category.title()}Settings"}
+
         for key, value in settings_data.items():
-            # Get schema information for this field
             field_schema = schema_info.get(key, {})
 
-            # Determine the field type based on the value
-            if isinstance(value, bool):
-                field_type = bool
-            elif isinstance(value, int):
-                field_type = int
-            elif isinstance(value, float):
-                field_type = float
-            else:
-                field_type = str
+            # Build proper JSON schema property
+            prop_schema = {
+                "type": field_schema.get("type", self._infer_type_from_value(value)),
+                "title": key.replace("_", " ").title(),
+            }
 
-            # Create field with schema information
-            field_kwargs = {"default": value, "title": key.replace("_", " ").title()}
-
-            # Add enum information if available
+            # Add schema properties
             if "enum" in field_schema:
-                field_kwargs["json_schema_extra"] = {"enum": field_schema["enum"]}
+                prop_schema["enum"] = field_schema["enum"]
+            if "default" in field_schema:
+                prop_schema["default"] = field_schema["default"]
+            elif value is not None:
+                prop_schema["default"] = value
 
-            fields[key] = (field_type, Field(**field_kwargs))
+            json_schema["properties"][key] = prop_schema
 
-        return create_model(f"{category.title()}Settings", **fields)
+            # Add to required if no default value
+            if "default" not in field_schema and value is None:
+                json_schema["required"].append(key)
+
+        # Convert JSON schema to Pydantic model with proper type handling
+        return self._json_schema_to_pydantic_model(json_schema)
+
+    def _infer_type_from_value(self, value: Any) -> str:
+        """Infer JSON schema type from Python value."""
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int):
+            return "integer"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, list):
+            return "array"
+        if isinstance(value, dict):
+            return "object"
+        return "string"
+
+    def _json_schema_to_pydantic_model(self, schema: dict[str, Any]) -> type[BaseModel]:
+        """Convert JSON schema to Pydantic model with support for enums, nested objects, arrays, and nullable types."""
+        type_mapping: dict[str, type] = {
+            "string": str,
+            "integer": int,
+            "number": float,
+            "boolean": bool,
+            "array": list,
+            "object": dict,
+        }
+
+        properties = schema.get("properties", {})
+        required_fields = schema.get("required", [])
+        model_fields = {}
+
+        def process_field(field_name: str, field_props: dict[str, Any]) -> tuple:
+            """Recursively processes a field and returns its type and Field instance."""
+            field_type = self._determine_field_type(field_name, field_props, type_mapping)
+            field_type = self._handle_nullable_type(field_type, field_props)
+
+            default_value = self._get_default_value(field_name, field_props, required_fields)
+            description = field_props.get("title", "")
+
+            return (field_type, Field(default_value, description=description))
+
+        # Process all fields
+        for field_name, field_props in properties.items():
+            model_fields[field_name] = process_field(field_name, field_props)
+
+        return create_model(schema.get("title", "DynamicModel"), **model_fields)
+
+    def _determine_field_type(self, field_name: str, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
+        """Determine the appropriate Python type for a JSON schema field, handling enums, objects, and arrays."""
+        json_type = field_props.get("type", "string")
+        enum_values = field_props.get("enum")
+
+        # Handle Enums
+        if enum_values:
+            enum_name = f"{field_name.capitalize()}Enum"
+            return Enum(enum_name, {v: v for v in enum_values})
+
+        # Handle Nested Objects
+        if json_type == "object" and "properties" in field_props:
+            return self._json_schema_to_pydantic_model(field_props)
+
+        # Handle Arrays
+        if json_type == "array":
+            return self._handle_array_type(field_name, field_props, type_mapping)
+
+        # Handle primitive types
+        return type_mapping.get(json_type, str)
+
+    def _handle_array_type(self, field_name: str, field_props: dict[str, Any], type_mapping: dict[str, type]) -> Any:
+        """Determine the type for array fields, supporting arrays of primitives, enums, and nested objects."""
+        if "items" not in field_props:
+            return list[str]
+
+        item_props = field_props["items"]
+
+        # Handle Arrays with Nested Objects
+        if item_props.get("type") == "object":
+            nested_model_type = self._json_schema_to_pydantic_model(item_props)
+            return list[nested_model_type]
+
+        # Handle Arrays with Enums
+        if "enum" in item_props:
+            enum_values = item_props["enum"]
+            enum_name = f"{field_name.capitalize()}ItemEnum"
+            item_enum_type = Enum(enum_name, {v: v for v in enum_values})
+            return list[item_enum_type]
+
+        # Handle Arrays with primitive types
+        primitive_type = type_mapping.get(item_props.get("type", "string"), str)
+        return list[primitive_type]
+
+    def _handle_nullable_type(self, field_type: Any, field_props: dict[str, Any]) -> Any:
+        """Convert field type to nullable (Optional) type if specified in schema."""
+        nullable = field_props.get("nullable", False)
+        if nullable:
+            return field_type | None
+        return field_type
+
+    def _get_default_value(self, field_name: str, field_props: dict[str, Any], required_fields: list[str]) -> Any:
+        """Get the appropriate default value for a field based on whether it's required."""
+        if field_name not in required_fields:
+            return field_props.get("default")
+        return field_props.get("default", ...)
 
     def _extract_library_settings_from_schema(self, schema: dict) -> list[dict]:
         """Extract library settings information from the schema for frontend organization."""
