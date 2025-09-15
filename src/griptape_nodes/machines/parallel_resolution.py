@@ -165,13 +165,16 @@ class ExecuteDagState(State):
                 return
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         # Check stop_flow first
+        flow_manager = GriptapeNodes.FlowManager()
+        if flow_manager.global_single_node_resolution:
+            return
         if node.stop_flow:
             node.stop_flow = False
             return  # No more nodes to add
         next_output = node.get_next_control_output()
         if next_output is not None:
             # Get connected node from control flow
-            node_connection = GriptapeNodes.FlowManager().get_connections().get_connected_node(node, next_output)
+            node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
             if node_connection is not None:
                 next_node, _ = node_connection
                 # Add the next control node to the DAG

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 
 if TYPE_CHECKING:
     import asyncio
@@ -72,7 +73,9 @@ class DagBuilder:
                 upstream_connection = connections.get_connected_node(current_node, param)
                 if upstream_connection:
                     upstream_node, _ = upstream_connection
-
+                    # Don't add nodes that have already been resolved.
+                    if upstream_node.state == NodeResolutionState.RESOLVED:
+                        continue
                     # If upstream is already in DAG, just add edge
                     if upstream_node.name in self.node_to_reference:
                         graph.add_edge(upstream_node.name, current_node.name)

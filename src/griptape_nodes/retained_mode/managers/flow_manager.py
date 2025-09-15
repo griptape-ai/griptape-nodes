@@ -193,6 +193,11 @@ class FlowManager:
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder()
 
+
+    @property
+    def global_single_node_resolution(self) -> bool:
+        return self._global_single_node_resolution
+
     @property
     def global_flow_queue(self) -> Queue[QueueItem]:
         return self._global_flow_queue
