@@ -9,7 +9,7 @@ from rich.console import Console
 # Add current directory to path for imports to work
 sys.path.append(str(Path.cwd()))
 
-from griptape_nodes.cli.commands import config, engine, init, libraries, self
+from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
 
 console = Console()
 
@@ -26,6 +26,7 @@ app.command("init", help="Initialize engine configuration.")(init.init_command)
 app.add_typer(config.app, name="config")
 app.add_typer(self.app, name="self")
 app.add_typer(libraries.app, name="libraries")
+app.add_typer(models.app, name="models")
 app.command("engine")(engine.engine_command)
 
 
