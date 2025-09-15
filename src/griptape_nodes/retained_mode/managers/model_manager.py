@@ -106,52 +106,11 @@ class ModelDownloadTracker(tqdm):
         self._update_status_file()
 
     def close(self) -> None:
-        """Override close to mark download as completed and clean up status file."""
+        """Override close to log download completion."""
         super().close()
         logger.debug(
             "ModelDownloadTracker close - model_id: %s, self.n: %s, total: %s", self.model_id, self.n, self.total
         )
-        if not self.model_id:
-            return
-
-        try:
-            with self._file_lock:
-                status_file = self._get_status_file_path()
-                if not status_file.exists():
-                    return
-
-                download_completed = self.n == self.total and self.total > 0
-
-                if download_completed:
-                    logger.info(
-                        "ModelDownloadTracker: Download completed successfully, cleaning up status file: %s",
-                        status_file,
-                    )
-                    status_file.unlink()
-                else:
-                    with status_file.open() as f:
-                        data = json.load(f)
-
-                    current_time = datetime.now(UTC).isoformat()
-
-                    data.update(
-                        {
-                            "status": "failed",
-                            "progress_percent": (self.n / self.total * 100) if self.total else 0,
-                            "downloaded_files": self.n,
-                            "updated_at": current_time,
-                            "failed_at": current_time,
-                            "error_message": f"Download incomplete: {self.n}/{self.total} files downloaded",
-                        }
-                    )
-
-                    with status_file.open("w") as f:
-                        json.dump(data, f, indent=2)
-
-                    logger.info("ModelDownloadTracker: Download incomplete, marked as failed for potential resume")
-
-        except Exception:
-            logger.exception("ModelDownloadTracker.close failed")
 
     def _get_status_file_path(self) -> Path:
         """Get the path to the status file for this model."""
@@ -229,7 +188,7 @@ class ModelDownloadTracker(tqdm):
                 with status_file.open("w") as f:
                     json.dump(data, f, indent=2)
 
-                logger.info("ModelDownloadTracker status file updated successfully")
+                logger.debug("ModelDownloadTracker status file updated successfully")
 
         except Exception:
             logger.exception("ModelDownloadTracker._update_status_file failed")
