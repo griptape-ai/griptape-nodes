@@ -327,6 +327,45 @@ class RegisterLibraryFromRequirementSpecifierResultFailure(ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
+class RegisterLibraryFromGitRepoRequest(RequestPayload):
+    """Register a library from a Git repository.
+
+    Use when: Loading libraries from remote Git repositories, installing development versions,
+    accessing libraries not available through package managers.
+
+    Args:
+        git_url: URL of the Git repository to clone (can be raw URL or formatted with branch/subdir)
+        branch_override: Manual branch override (overrides URL auto-detection if provided)
+        subdir_override: Manual subdirectory override (overrides URL auto-detection if provided)
+
+    Results: RegisterLibraryFromGitRepoResultSuccess (with library name) | RegisterLibraryFromGitRepoResultFailure (clone or load error)
+    """
+
+    git_url: str
+    branch_override: str | None = None
+    subdir_override: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterLibraryFromGitRepoResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library registered successfully from Git repository.
+
+    Args:
+        library_name: Name of the registered library
+    """
+
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterLibraryFromGitRepoResultFailure(ResultPayloadFailure):
+    """Library registration from Git repository failed. Common causes: repository not found, clone error, missing library config, load error."""
+
+
+@dataclass
+@PayloadRegistry.register
 class ListCategoriesInLibraryRequest(RequestPayload):
     """List all categories available in a library.
 

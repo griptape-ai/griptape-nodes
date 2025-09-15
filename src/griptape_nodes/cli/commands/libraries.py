@@ -16,7 +16,16 @@ from griptape_nodes.cli.shared import (
     NODES_TARBALL_URL,
     console,
 )
+from griptape_nodes.retained_mode.events.library_events import (
+    RegisterLibraryFromFileRequest,
+    RegisterLibraryFromFileResultFailure,
+    RegisterLibraryFromFileResultSuccess,
+    RegisterLibraryFromGitRepoRequest,
+    RegisterLibraryFromGitRepoResultFailure,
+    RegisterLibraryFromGitRepoResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.git_utils import is_git_url
 from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
 app = typer.Typer(help="Manage local libraries.")
@@ -26,6 +35,20 @@ app = typer.Typer(help="Manage local libraries.")
 def sync() -> None:
     """Sync libraries with your current engine version."""
     asyncio.run(_sync_libraries())
+
+
+@app.command()
+def register(
+    source: str = typer.Argument(..., help="Library source: file path (.json) or Git URL"),
+    branch: str | None = typer.Option(
+        None, "--branch", "-b", help="Git branch to checkout (overrides URL auto-detection)"
+    ),
+    subdir: str | None = typer.Option(
+        None, "--subdir", "-s", help="Subdirectory path within repository (overrides URL auto-detection)"
+    ),
+) -> None:
+    """Register a library from a file or Git repository."""
+    asyncio.run(_register_library(source, branch, subdir))
 
 
 async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
@@ -94,3 +117,74 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             console.print(f"[red]Error initializing libraries: {e}[/red]")
 
     console.print("[bold green]Libraries synced.[/bold green]")
+
+
+async def _register_library(source: str, branch: str | None, subdir: str | None) -> None:
+    """Register a library from a file path or Git repository.
+
+    Args:
+        source: Library source (file path or Git URL)
+        branch: Git branch to checkout (overrides URL auto-detection)
+        subdir: Subdirectory path (overrides URL auto-detection)
+    """
+    # Initialize GriptapeNodes to ensure managers are available
+    griptape_nodes = GriptapeNodes()
+
+    # Determine if source is a Git URL or file path
+    if is_git_url(source):
+        await _register_git_library(griptape_nodes, source, branch, subdir)
+    else:
+        await _register_file_library(griptape_nodes, source)
+
+
+async def _register_git_library(
+    griptape_nodes: GriptapeNodes, source: str, branch: str | None, subdir: str | None
+) -> None:
+    """Register a library from a Git repository."""
+    console.print(f"[bold cyan]Registering library from Git repository: {source}[/bold cyan]")
+
+    # Create the request with raw URL and overrides
+    request = RegisterLibraryFromGitRepoRequest(git_url=source, branch_override=branch, subdir_override=subdir)
+
+    try:
+        result = await griptape_nodes.LibraryManager().register_library_from_git_repo_request(request)
+
+        if isinstance(result, RegisterLibraryFromGitRepoResultSuccess):
+            console.print(f"[bold green]Successfully registered library: {result.library_name}[/bold green]")
+        elif isinstance(result, RegisterLibraryFromGitRepoResultFailure):
+            console.print(f"[red]Failed to register library: {result.result_details}[/red]")
+        else:
+            console.print(f"[red]Unexpected result type: {type(result)}[/red]")
+
+    except Exception as e:
+        console.print(f"[red]Error registering Git library: {e}[/red]")
+
+
+async def _register_file_library(griptape_nodes: GriptapeNodes, source: str) -> None:
+    """Register a library from a file path."""
+    source_path = Path(source)
+
+    if not source_path.exists():
+        console.print(f"[red]File not found: {source}[/red]")
+        return
+
+    if source_path.suffix != ".json":
+        console.print(f"[red]Library file must have .json extension: {source}[/red]")
+        return
+
+    console.print(f"[bold cyan]Registering library from file: {source}[/bold cyan]")
+
+    request = RegisterLibraryFromFileRequest(file_path=str(source_path.absolute()), load_as_default_library=False)
+
+    try:
+        result = await griptape_nodes.LibraryManager().register_library_from_file_request(request)
+
+        if isinstance(result, RegisterLibraryFromFileResultSuccess):
+            console.print(f"[bold green]Successfully registered library: {result.library_name}[/bold green]")
+        elif isinstance(result, RegisterLibraryFromFileResultFailure):
+            console.print(f"[red]Failed to register library: {result.result_details}[/red]")
+        else:
+            console.print(f"[red]Unexpected result type: {type(result)}[/red]")
+
+    except Exception as e:
+        console.print(f"[red]Error registering file library: {e}[/red]")
