@@ -37,9 +37,12 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 from griptape_nodes.utils.json_schema_utils import (
-    create_library_settings_model,
-    extract_base_settings_categories,
-    extract_library_settings_from_schema,
+    create_pydantic_model_from_schema,
+    extract_custom_field_schemas,
+    extract_custom_fields_from_schema,
+    extract_field_categories,
+    format_diff,
+    get_diff,
 )
 
 logger = logging.getLogger("griptape_nodes")
@@ -460,11 +463,11 @@ class ConfigManager:
             default_values.update(self.merged_config)
 
             # Extract library settings metadata for frontend UI organization
-            library_settings_list = extract_library_settings_from_schema(schema, set(Settings.model_fields.keys()))
+            library_settings_list = extract_custom_fields_from_schema(schema, set(Settings.model_fields.keys()))
             schema["library_settings"] = library_settings_list
 
             # Extract base settings categories for frontend UI organization
-            base_settings_categories = extract_base_settings_categories(Settings.model_fields)
+            base_settings_categories = extract_field_categories(Settings.model_fields)
             schema["base_settings_categories"] = base_settings_categories
 
             # Package schema and default values for the API response
@@ -490,42 +493,6 @@ class ConfigManager:
         except Exception as e:
             result_details = f"Attempted to reset user configuration but failed: {e}."
             return ResetConfigResultFailure(result_details=result_details)
-
-    def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
-        """Generate a diff between the old and new values."""
-        if isinstance(old_value, dict) and isinstance(new_value, dict):
-            diff = {
-                key: (old_value.get(key), new_value.get(key))
-                for key in new_value
-                if old_value.get(key) != new_value.get(key)
-            }
-        elif isinstance(old_value, list) and isinstance(new_value, list):
-            diff = {
-                str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
-            }
-
-            # Handle added or removed elements
-            if len(old_value) > len(new_value):
-                for i in range(len(new_value), len(old_value)):
-                    diff[str(i)] = (old_value[i], None)
-            elif len(new_value) > len(old_value):
-                for i in range(len(old_value), len(new_value)):
-                    diff[str(i)] = (None, new_value[i])
-        else:
-            diff = {"old": old_value, "new": new_value}
-        return diff
-
-    def _format_diff(self, diff: dict[Any, Any]) -> str:
-        """Format the diff dictionary into a readable string."""
-        formatted_lines = []
-        for key, (old, new) in diff.items():
-            if old is None:
-                formatted_lines.append(f"[{key}]: ADDED: '{new}'")
-            elif new is None:
-                formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
-            else:
-                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
-        return "\n".join(formatted_lines)
 
     def on_handle_set_config_value_request(self, request: SetConfigValueRequest) -> ResultPayload:
         if request.category_and_key == "":
@@ -553,8 +520,8 @@ class ConfigManager:
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
             if old_value_copy is not None:
-                diff = self._get_diff(old_value_copy, request.value)
-                formatted_diff = self._format_diff(diff)
+                diff = get_diff(old_value_copy, request.value)
+                formatted_diff = format_diff(diff)
                 if formatted_diff:
                     result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
                 else:
@@ -618,7 +585,9 @@ class ConfigManager:
             return Settings
 
         # Get enum schemas for library settings
-        library_schemas = self._get_library_enum_schemas()
+        library_schemas = extract_custom_field_schemas(
+            self.merged_config, set(Settings.model_fields.keys()), self._load_library_schema
+        )
 
         # Create field definitions for library settings
         library_fields = {}
@@ -628,7 +597,7 @@ class ConfigManager:
 
             if schema_info:
                 # Create a proper Pydantic model for this library setting with enum support
-                library_model = create_library_settings_model(category, schema_info, settings_data)
+                library_model = create_pydantic_model_from_schema(category, schema_info, settings_data)
                 library_fields[category] = (
                     library_model,
                     Field(
@@ -648,25 +617,6 @@ class ConfigManager:
                 )
 
         return create_model("DynamicSettings", **library_fields, __base__=Settings)
-
-    def _get_library_enum_schemas(self) -> dict[str, dict]:
-        """Get enum schema information for library settings from library definition files."""
-        library_schemas = {}
-
-        # Get library settings that are already in merged_config
-        library_settings = {
-            key: value
-            for key, value in self.merged_config.items()
-            if key not in Settings.model_fields and isinstance(value, dict)
-        }
-
-        # For each library setting, try to find its definition file and extract schema
-        for category in library_settings:
-            schema_info = self._load_library_schema(category)
-            if schema_info:
-                library_schemas[category] = schema_info
-
-        return library_schemas
 
     def _load_library_schema(self, category: str) -> dict[str, Any] | None:
         """Load schema information from library definition."""

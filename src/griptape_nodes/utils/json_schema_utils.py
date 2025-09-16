@@ -5,6 +5,7 @@ enabling runtime model generation for configuration settings and library definit
 The implementation is based on the Stack Overflow solution for dynamic Pydantic model creation.
 """
 
+from collections.abc import Callable
 from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, create_model
@@ -127,34 +128,31 @@ def json_schema_to_pydantic_model(schema: dict[str, Any]) -> type[BaseModel]:
     return create_model(schema.get("title", "DynamicModel"), **model_fields)
 
 
-def build_json_schema_from_settings(category: str, settings_data: dict, schema_info: dict) -> dict[str, Any]:
-    """Build a JSON schema from library settings data and schema information.
+def build_json_schema_from_data(category: str, data: dict, schema_info: dict) -> dict[str, Any]:
+    """Build a JSON schema from data and schema information.
 
-    This function converts library configuration data into a proper JSON schema format
+    This function converts configuration data into a proper JSON schema format
     that can be used to generate Pydantic models. It handles default values, type inference,
-    and enum definitions from library definition files.
-
-    The function is essential for the dynamic configuration system, allowing library
-    settings to be properly typed and validated at runtime.
+    and enum definitions from schema information.
 
     Args:
-        category: The category name for the settings (e.g., "flow_production_tracking")
-        settings_data: The actual settings data dictionary with current values
-        schema_info: Schema information from library definition file containing type hints
+        category: The category name for the data (e.g., "flow_production_tracking")
+        data: The actual data dictionary with current values
+        schema_info: Schema information containing type hints and constraints
 
     Returns:
         JSON schema dictionary ready for Pydantic model generation
 
     Example:
-        settings_data = {"auth": "API", "timeout": 30}
+        data = {"auth": "API", "timeout": 30}
         schema_info = {"auth": {"type": "string", "enum": ["API", "user"]}}
-        schema = build_json_schema_from_settings("flow_tracking", settings_data, schema_info)
+        schema = build_json_schema_from_data("flow_tracking", data, schema_info)
     """
     # Initialize the JSON schema structure with basic object properties
     json_schema = {"type": "object", "properties": {}, "required": [], "title": f"{category.title()}Settings"}
 
-    # Process each setting key-value pair to build the schema
-    for key, value in settings_data.items():
+    # Process each data key-value pair to build the schema
+    for key, value in data.items():
         field_schema = schema_info.get(key, {})
 
         # Create property schema with type inference fallback
@@ -264,71 +262,71 @@ def convert_schema_to_pydantic_type(field_schema: dict, default_value: Any) -> A
     return type_mapping.get(field_type, str)
 
 
-def create_library_settings_model(category: str, schema_info: dict, settings_data: dict) -> type:
-    """Create a Pydantic model for a library setting with proper enum support.
+def create_pydantic_model_from_schema(category: str, schema_info: dict, data: dict) -> type:
+    """Create a Pydantic model from schema information with proper enum support.
 
     This function dynamically creates a Pydantic model from schema information,
     handling enum fields with proper JSON schema generation.
 
     Args:
-        category: The category name for the settings (e.g., "flow_production_tracking")
+        category: The category name for the model (e.g., "flow_production_tracking")
         schema_info: Schema information containing field definitions and types
-        settings_data: Current settings data with default values
+        data: Current data with default values
 
     Returns:
         Pydantic model class that can be instantiated and used for validation
 
     Example:
         schema_info = {"auth": {"type": "string", "enum": ["API", "user"]}}
-        settings_data = {"auth": "API"}
-        model_class = create_library_settings_model("flow_tracking", schema_info, settings_data)
+        data = {"auth": "API"}
+        model_class = create_pydantic_model_from_schema("flow_tracking", schema_info, data)
         instance = model_class(auth="user")
     """
     field_definitions = {}
 
     for field_name, field_schema in schema_info.items():
-        field_type = convert_schema_to_pydantic_type(field_schema, settings_data.get(field_name))
+        field_type = convert_schema_to_pydantic_type(field_schema, data.get(field_name))
 
         # Create Field with enum constraint if present
         if "enum" in field_schema:
             field_definitions[field_name] = (
                 field_type,
-                Field(default=settings_data.get(field_name), json_schema_extra={"enum": field_schema["enum"]}),
+                Field(default=data.get(field_name), json_schema_extra={"enum": field_schema["enum"]}),
             )
         else:
-            field_definitions[field_name] = (field_type, Field(default=settings_data.get(field_name)))
+            field_definitions[field_name] = (field_type, Field(default=data.get(field_name)))
 
     return create_model(f"{category.title()}Settings", **field_definitions)
 
 
-def extract_library_settings_from_schema(schema: dict, base_settings_fields: set[str]) -> list[dict]:
-    """Extract library settings information from the schema for frontend organization.
+def extract_custom_fields_from_schema(schema: dict, base_fields: set[str]) -> list[dict]:
+    """Extract custom field information from the schema for frontend organization.
 
-    This function processes a JSON schema to identify library-specific settings
+    This function processes a JSON schema to identify custom fields (not in base fields)
     and extract their metadata for frontend UI organization.
 
     Args:
         schema: Complete JSON schema containing properties and $defs
-        base_settings_fields: Set of field names that belong to base settings (not library settings)
+        base_fields: Set of field names that belong to base fields (not custom fields)
 
     Returns:
-        List of dictionaries containing library setting metadata with keys:
-        - key: The setting key name
+        List of dictionaries containing custom field metadata with keys:
+        - key: The field key name
         - title: Human-readable title
         - category: Category for UI organization
-        - settings: The actual settings schema
+        - settings: The actual field schema
 
     Example:
         base_fields = {"log_level", "workspace_directory"}
-        library_settings = extract_library_settings_from_schema(schema, base_fields)
+        custom_fields = extract_custom_fields_from_schema(schema, base_fields)
         # Returns: [{"key": "flow_production_tracking", "title": "Flow Production Tracking", ...}]
     """
-    library_settings = []
+    custom_fields = []
     defs = schema.get("$defs", {})
 
     for key, field_schema in schema.get("properties", {}).items():
-        # Check if this is a library setting (not in base Settings model)
-        if key not in base_settings_fields:
+        # Check if this is a custom field (not in base fields)
+        if key not in base_fields:
             # Get the full schema information for each setting
             settings_schema = {}
             if "$ref" in field_schema:
@@ -342,7 +340,7 @@ def extract_library_settings_from_schema(schema: dict, base_settings_fields: set
                         properties = def_schema.get("properties", {})
                         settings_schema = dict(properties.items())
 
-            library_settings.append(
+            custom_fields.append(
                 {
                     "key": key,
                     "title": key.replace("_", " ").title(),
@@ -351,23 +349,23 @@ def extract_library_settings_from_schema(schema: dict, base_settings_fields: set
                 }
             )
 
-    return library_settings
+    return custom_fields
 
 
-def extract_base_settings_categories(model_fields: dict) -> dict[str, str]:
-    """Extract category information from base Settings model fields.
+def extract_field_categories(model_fields: dict) -> dict[str, str]:
+    """Extract category information from Pydantic model fields.
 
     This function processes Pydantic model fields to extract category information
     from their json_schema_extra metadata for frontend UI organization.
 
     Args:
-        model_fields: Dictionary of model fields from a Pydantic model (e.g., Settings.model_fields)
+        model_fields: Dictionary of model fields from a Pydantic model
 
     Returns:
         Dictionary mapping field names to their category strings
 
     Example:
-        categories = extract_base_settings_categories(Settings.model_fields)
+        categories = extract_field_categories(Settings.model_fields)
         # Returns: {"synced_workflows_directory": "File System", ...}
     """
     categories = {}
@@ -380,3 +378,107 @@ def extract_base_settings_categories(model_fields: dict) -> dict[str, str]:
         ):
             categories[field_name] = field_info.json_schema_extra["category"]
     return categories
+
+
+def extract_custom_field_schemas(
+    config: dict,
+    base_fields: set[str],
+    schema_loader_func: Callable[[str], dict[str, Any] | None],
+) -> dict[str, dict]:
+    """Extract schema information for custom fields from configuration.
+
+    This function processes a configuration to identify custom fields (not in base fields)
+    and extracts their schema information using a provided loader function.
+
+    Args:
+        config: The configuration containing all fields
+        base_fields: Set of field names that belong to base fields (not custom fields)
+        schema_loader_func: Function to load schema for a specific field category
+
+    Returns:
+        Dictionary mapping field category names to their schema information
+
+    Example:
+        schemas = extract_custom_field_schemas(config, Settings.model_fields, load_func)
+        # Returns: {"flow_production_tracking": {"auth": {"type": "string", "enum": ["API", "user"]}}}
+    """
+    custom_schemas = {}
+
+    # Get custom fields that are already in config
+    custom_fields = {key: value for key, value in config.items() if key not in base_fields and isinstance(value, dict)}
+
+    # For each custom field, try to find its schema definition
+    for category in custom_fields:
+        schema_info = schema_loader_func(category)
+        if schema_info:
+            custom_schemas[category] = schema_info
+
+    return custom_schemas
+
+
+def get_diff(old_value: Any, new_value: Any) -> dict[Any, Any]:
+    """Generate a diff between two values.
+
+    This function compares two values and returns a dictionary representing
+    the differences. It handles dictionaries, lists, and primitive values.
+
+    Args:
+        old_value: The original value to compare
+        new_value: The new value to compare against
+
+    Returns:
+        Dictionary representing the differences between the values
+
+    Example:
+        diff = get_diff({"a": 1, "b": 2}, {"a": 1, "b": 3, "c": 4})
+        # Returns: {"b": (2, 3), "c": (None, 4)}
+    """
+    if isinstance(old_value, dict) and isinstance(new_value, dict):
+        diff = {
+            key: (old_value.get(key), new_value.get(key))
+            for key in new_value
+            if old_value.get(key) != new_value.get(key)
+        }
+    elif isinstance(old_value, list) and isinstance(new_value, list):
+        diff = {
+            str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
+        }
+
+        # Handle added or removed elements
+        if len(old_value) > len(new_value):
+            for i in range(len(new_value), len(old_value)):
+                diff[str(i)] = (old_value[i], None)
+        elif len(new_value) > len(old_value):
+            for i in range(len(old_value), len(new_value)):
+                diff[str(i)] = (None, new_value[i])
+    else:
+        diff = {"old": old_value, "new": new_value}
+    return diff
+
+
+def format_diff(diff: dict[Any, Any]) -> str:
+    """Format a diff dictionary into a readable string.
+
+    This function takes a diff dictionary and formats it into a human-readable
+    string showing what was added, removed, or changed.
+
+    Args:
+        diff: Dictionary representing differences between values
+
+    Returns:
+        Formatted string showing the differences
+
+    Example:
+        diff = {"b": (2, 3), "c": (None, 4)}
+        formatted = format_diff(diff)
+        # Returns: "[b]:\n\tFROM: '2'\n\t  TO: '3'\n[c]: ADDED: '4'"
+    """
+    formatted_lines = []
+    for key, (old, new) in diff.items():
+        if old is None:
+            formatted_lines.append(f"[{key}]: ADDED: '{new}'")
+        elif new is None:
+            formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
+        else:
+            formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
+    return "\n".join(formatted_lines)
