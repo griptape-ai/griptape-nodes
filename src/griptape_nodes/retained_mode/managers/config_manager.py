@@ -257,7 +257,7 @@ class ConfigManager:
     def _update_secret_from_env_var(self, env_var_name: str) -> None:
         # Lazy load to avoid circular import
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-        
+
         if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
             # Set a blank one.
             GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
@@ -330,6 +330,7 @@ class ConfigManager:
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             value = GriptapeNodes.SecretsManager().get_secret(value[1:])
 
         return value
@@ -352,6 +353,7 @@ class ConfigManager:
 
         if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             value = GriptapeNodes.SecretsManager().set_secret(value[1:], "")
 
         # We need to fully reload the user config because we need to regenerate the merged config.
