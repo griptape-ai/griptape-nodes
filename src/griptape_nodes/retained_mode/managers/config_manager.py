@@ -486,22 +486,7 @@ class ConfigManager:
             return ResetConfigResultFailure(result_details=result_details)
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
-        """Generate a diff between two values.
-
-        This function compares two values and returns a dictionary representing
-        the differences. It handles dictionaries, lists, and primitive values.
-
-        Args:
-            old_value: The original value to compare
-            new_value: The new value to compare against
-
-        Returns:
-            Dictionary representing the differences between the values
-
-        Example:
-            diff = self._get_diff({"a": 1, "b": 2}, {"a": 1, "b": 3, "c": 4})
-            # Returns: {"b": (2, 3), "c": (None, 4)}
-        """
+        """Generate a diff between two values."""
         if isinstance(old_value, dict) and isinstance(new_value, dict):
             diff = {
                 key: (old_value.get(key), new_value.get(key))
