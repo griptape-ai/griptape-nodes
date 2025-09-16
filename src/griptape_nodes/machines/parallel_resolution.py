@@ -164,8 +164,9 @@ class ExecuteDagState(State):
         Args:
             node_reference (DagOrchestrator.DagNode): The node to collect values for.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
         import copy
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         current_node = node_reference.node_reference
         connections = GriptapeNodes.FlowManager().get_connections()
