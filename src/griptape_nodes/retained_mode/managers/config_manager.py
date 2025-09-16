@@ -36,7 +36,6 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_diff, get_dot_value, merge_dicts, set_dot_value
 from griptape_nodes.utils.json_schema_utils import (
-    create_field_definition,
     extract_custom_fields_from_schema,
     extract_enum_from_json,
     get_nested_value,
@@ -637,3 +636,18 @@ class ConfigManager:
             else:
                 formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
         return "\n".join(formatted_lines)
+
+
+def create_field_definition(field_type: Any, default_value: Any, field_name: str) -> tuple[Any, Any]:
+    """Create a Pydantic field definition with appropriate defaults and metadata.
+
+    Args:
+        field_type: The Python type for the field.
+        default_value: The default value for the field.
+        field_name: The name of the field (used to generate title).
+
+    Returns:
+        A tuple of (field_type, Field) for use with create_model.
+    """
+    field_kwargs = {"default": default_value, "title": field_name.replace("_", " ").title()}
+    return (field_type, Field(**field_kwargs))

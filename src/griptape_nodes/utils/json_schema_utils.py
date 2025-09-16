@@ -7,8 +7,6 @@ The implementation is based on the Stack Overflow solution for dynamic Pydantic 
 
 from typing import Any
 
-from pydantic import Field
-
 
 def extract_custom_fields_from_schema(schema: dict, base_fields: set[str]) -> list[dict]:
     """Extract custom field information from the schema for frontend organization.
@@ -153,18 +151,3 @@ def infer_field_type(value: Any, enum_info: dict[str, list] | None = None, field
     if isinstance(value, float):
         return float
     return str
-
-
-def create_field_definition(field_type: Any, default_value: Any, field_name: str) -> tuple[Any, Any]:
-    """Create a Pydantic field definition with appropriate defaults and metadata.
-
-    Args:
-        field_type: The Python type for the field.
-        default_value: The default value for the field.
-        field_name: The name of the field (used to generate title).
-
-    Returns:
-        A tuple of (field_type, Field) for use with create_model.
-    """
-    field_kwargs = {"default": default_value, "title": field_name.replace("_", " ").title()}
-    return (field_type, Field(**field_kwargs))
