@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
@@ -81,6 +81,8 @@ class NodeDefinition(BaseModel):
 
 class Setting(BaseModel):
     """Defines a library-specific setting, which will automatically be injected into the user's Configuration."""
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields like 'schema' to be preserved
 
     category: str  # Name of the category in the config
     contents: dict[str, Any]  # The actual settings content

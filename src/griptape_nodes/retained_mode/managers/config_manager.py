@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
@@ -679,46 +680,30 @@ class ConfigManager:
         return library_schemas
 
     def _load_library_schema(self, category: str) -> dict[str, Any] | None:
-        """Load schema information from a library definition file."""
-        try:
-            # Look for library definition files in common locations
-            possible_paths = [
-                self.workspace_path
-                / "libraries"
-                / f"griptape-nodes-library-{category.replace('_', '-')}"
-                / category
-                / "griptape-nodes-library.json",
-                self.workspace_path
-                / "libraries"
-                / f"griptape_nodes_{category}_library"
-                / "griptape_nodes_library.json",
-            ]
+        """Load schema information from library definition."""
+        # Get schema info from the library registration system
+        # Look through all registered libraries to find settings with matching category
+        for library_name in LibraryRegistry.list_libraries():
+            try:
+                library = LibraryRegistry.get_library(library_name)
+                library_data = library.get_library_data()
 
-            for path in possible_paths:
-                if path.exists():
-                    with path.open() as f:
-                        library_def = json.load(f)
-
-                    # Extract schema information from the library definition
-                    return self._extract_schema_from_library_def(library_def, category)
-
-        except Exception as e:
-            msg = f"Could not load schema for library {category}: {e}"
-            logger.debug(msg)
+                # Check if this library has settings with the matching category
+                if library_data.settings:
+                    for setting in library_data.settings:
+                        if (
+                            setting.category == category
+                            and hasattr(setting, "__pydantic_extra__")
+                            and setting.__pydantic_extra__
+                            and "schema" in setting.__pydantic_extra__
+                        ):
+                            return setting.__pydantic_extra__["schema"]
+            except Exception as e:
+                # Skip libraries that can't be accessed
+                logger.debug("Could not access library %s: %s", library_name, e)
+                continue
 
         return None
-
-    def _extract_schema_from_library_def(self, library_def: dict, category: str) -> dict[str, Any]:
-        """Extract schema information from a library definition for a specific category."""
-        schema_info = {}
-
-        # Look through the settings in the library definition
-        for setting in library_def.get("settings", []):
-            if setting.get("category") == category and "schema" in setting:
-                # Merge the schema information
-                schema_info.update(setting["schema"])
-
-        return schema_info
 
     def _extract_library_settings_from_schema(self, schema: dict) -> list[dict]:
         """Extract library settings information from the schema for frontend organization."""
