@@ -67,11 +67,6 @@ class DagBuilder:
 
             # Skip if already in DAG (use DAG membership, not resolved state)
             if current_node.name in self.node_to_reference:
-                logger.info(
-                    "Node '%s' already exists in DAG - adding edge to graph '%s' but not creating new DagNode",
-                    current_node.name,
-                    graph_name,
-                )
                 return
 
             # Process dependencies first (depth-first)
@@ -95,12 +90,6 @@ class DagBuilder:
                         continue
                     # If upstream is already in DAG, skip creating edge (it's in another graph)
                     if upstream_node.name in self.node_to_reference:
-                        logger.info(
-                            "Node '%s' already in DAG - adding cross-graph edge from existing node to '%s' in graph '%s'",
-                            upstream_node.name,
-                            current_node.name,
-                            graph_name,
-                        )
                         graph.add_edge(upstream_node.name, current_node.name)
                     # Otherwise, add it to DAG first then create edge
                     else:
@@ -109,7 +98,6 @@ class DagBuilder:
 
             # Add current node to DAG (but keep original resolution state)
 
-            logger.info("Adding NEW node '%s' to DAG in graph '%s' with state WAITING", current_node.name, graph_name)
             dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
             self.node_to_reference[current_node.name] = dag_node
             graph.add_node(node_for_adding=current_node.name)
@@ -139,15 +127,8 @@ class DagBuilder:
         self.graphs.clear()
         self.node_to_reference.clear()
 
-    def can_queue_control_node(self, node: DagNode, network_name: str) -> bool:
-        logger.info(
-            "Checking if node '%s' can be queued from network '%s'. Total graphs: %d",
-            node.node_reference.name,
-            network_name,
-            len(self.graphs),
-        )
+    def can_queue_control_node(self, node: DagNode) -> bool:
         if len(self.graphs) == 1:
-            logger.info("Only one graph exists - node '%s' can be queued", node.node_reference.name)
             return True
 
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -155,9 +136,7 @@ class DagBuilder:
         connections = GriptapeNodes.FlowManager().get_connections()
 
         control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
-        logger.info("Node '%s' has %d incoming control connections", node.node_reference.name, control_connections)
         if control_connections <= 1:
-            logger.info("Node '%s' has <= 1 control connections - can be queued", node.node_reference.name)
             return True
 
         for graph in self.graphs.values():
@@ -177,15 +156,9 @@ class DagBuilder:
 
                     # Check if the target node is in the forward path from this root
                     if self._is_node_in_forward_path(root_node, node.node_reference, connections):
-                        logger.info(
-                            "Node '%s' is in forward path from root '%s' - cannot queue yet (other graph still active)",
-                            node.node_reference.name,
-                            root_node.name,
-                        )
                         return False  # This graph could still reach the target node
 
         # Otherwise, return true at the end of the function
-        logger.info("No active graphs can reach node '%s' - can be queued", node.node_reference.name)
         return True
 
     def get_number_incoming_control_connections(self, node: BaseNode, connections: Connections) -> int:

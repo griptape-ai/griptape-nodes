@@ -101,7 +101,6 @@ class ExecuteDagState(State):
     @staticmethod
     async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:
         current_node = done_node.node_reference
-        logger.info("HANDLING COMPLETION of node '%s' from network '%s'", current_node.name, network_name)
 
         # Check if node was already resolved (shouldn't happen)
         if current_node.state == NodeResolutionState.RESOLVED:
@@ -239,10 +238,10 @@ class ExecuteDagState(State):
             # Queue nodes that are ready for execution
             if added_nodes:
                 for added_node in added_nodes:
-                    ExecuteDagState._try_queue_waiting_node(context, added_node.name, network_name)
+                    ExecuteDagState._try_queue_waiting_node(context, added_node.name)
 
     @staticmethod
-    def _try_queue_waiting_node(context: ParallelResolutionContext, node_name: str, network_name: str) -> None:
+    def _try_queue_waiting_node(context: ParallelResolutionContext, node_name: str) -> None:
         """Try to queue a specific waiting node if it can now be queued."""
         if context.dag_builder is None:
             logger.warning("DAG builder is None - cannot check queueing for node '%s'", node_name)
@@ -253,33 +252,12 @@ class ExecuteDagState(State):
             return
 
         dag_node = context.node_to_reference[node_name]
-        node_resolution_state = dag_node.node_reference.state
-
-        logger.info(
-            "Checking node '%s' for queueing - current state: %s, resolution state: %s",
-            node_name,
-            dag_node.node_state,
-            node_resolution_state,
-        )
 
         # Only check nodes that are currently waiting
         if dag_node.node_state == NodeState.WAITING:
-            logger.info(
-                "Node '%s' is WAITING - checking if it can be queued from network '%s'", node_name, network_name
-            )
-
-            can_queue = context.dag_builder.can_queue_control_node(dag_node, network_name)
+            can_queue = context.dag_builder.can_queue_control_node(dag_node)
             if can_queue:
-                logger.info("SUCCESS: Queueing node '%s' for execution from network '%s'", node_name, network_name)
                 dag_node.node_state = NodeState.QUEUED
-            else:
-                logger.info(
-                    "BLOCKED: Node '%s' cannot be queued yet from network '%s' - waiting for control flow dependencies",
-                    node_name,
-                    network_name,
-                )
-        else:
-            logger.info("Node '%s' has state %s - not eligible for queueing", node_name, dag_node.node_state)
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -375,34 +353,16 @@ class ExecuteDagState(State):
 
                     # Only call handle_done_nodes once per node (first network that processes it)
                     if node not in handled_nodes:
-                        logger.info(
-                            "Node '%s' completed - calling handle_done_nodes from network '%s' (first time)",
-                            node,
-                            network_name,
-                        )
                         handled_nodes.add(node)
                         await ExecuteDagState.handle_done_nodes(context, context.node_to_reference[node], network_name)
-                    else:
-                        logger.info(
-                            "Node '%s' completed - already handled, skipping handle_done_nodes for network '%s'",
-                            node,
-                            network_name,
-                        )
 
             # After processing completions in this network, check if any remaining leaf nodes can now be queued
             remaining_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
-            logger.info(
-                "Network '%s' has %d remaining leaf nodes after cleanup: %s",
-                network_name,
-                len(remaining_leaf_nodes),
-                remaining_leaf_nodes,
-            )
 
             for leaf_node in remaining_leaf_nodes:
                 if leaf_node in context.node_to_reference:
                     node_state = context.node_to_reference[leaf_node].node_state
-                    logger.info("Leaf node '%s' in network '%s' has state: %s", leaf_node, network_name, node_state)
-                ExecuteDagState._try_queue_waiting_node(context, leaf_node, network_name)
+                ExecuteDagState._try_queue_waiting_node(context, leaf_node)
 
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
@@ -434,12 +394,6 @@ class ExecuteDagState(State):
         # Reinitialize leaf nodes since maybe we changed things up.
         # We removed nodes from the network. There may be new leaf nodes.
         canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
-        logger.info(
-            "Node states - Leaf nodes: %d, Queued: %d, Canceled: %d",
-            len(leaf_nodes),
-            len(queued_nodes),
-            len(canceled_nodes),
-        )
         # We have no more leaf nodes. Quit early.
         if not leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
@@ -453,9 +407,6 @@ class ExecuteDagState(State):
         for node in queued_nodes:
             # Process all queued nodes - the async semaphore will handle concurrency limits
             node_reference = context.node_to_reference[node]
-            logger.info(
-                "Processing queued node '%s' - current resolution state: %s", node, node_reference.node_reference.state
-            )
 
             # Collect parameter values from upstream nodes before executing
             try:
@@ -510,7 +461,6 @@ class ExecuteDagState(State):
             node_task.add_done_callback(lambda t: on_task_done(t))
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
-            logger.info("Node '%s' state changed to PROCESSING and RESOLVING", node_reference.node_reference.name)
 
             # Send an event that this is a current data node:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
