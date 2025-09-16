@@ -440,7 +440,7 @@ class ConfigManager:
         The process involves several steps:
         1. Create a dynamic Pydantic model that extends base Settings with library-specific fields
         2. Convert the dynamic model to JSON Schema format (standard for frontend config UIs)
-        3. Extract current configuration values (user + workspace + env overrides)
+        3. Override default values with actual configured values (user + workspace + env overrides)
         4. Organize settings metadata for frontend UI (categories, library groupings, etc.)
 
         Why this complexity? We need to bridge two worlds: backend type safety (Pydantic models) and
