@@ -486,7 +486,7 @@ class ConfigManager:
             return ResetConfigResultFailure(result_details=result_details)
 
     def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
-        """Generate a diff between two values."""
+        """Generate a diff between the old and new values."""
         if isinstance(old_value, dict) and isinstance(new_value, dict):
             diff = {
                 key: (old_value.get(key), new_value.get(key))
