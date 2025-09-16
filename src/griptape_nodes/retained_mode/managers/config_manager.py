@@ -34,7 +34,7 @@ from griptape_nodes.retained_mode.events.config_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
-from griptape_nodes.utils.dict_utils import get_diff, get_dot_value, merge_dicts, set_dot_value
+from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 from griptape_nodes.utils.json_schema_utils import (
     extract_custom_fields_from_schema,
     extract_enum_from_json,
@@ -511,7 +511,7 @@ class ConfigManager:
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):
             if old_value_copy is not None:
-                diff = get_diff(old_value_copy, request.value)
+                diff = self._get_diff(old_value_copy, request.value)
                 formatted_diff = self._format_diff(diff)
                 if formatted_diff:
                     result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
@@ -623,6 +623,45 @@ class ConfigManager:
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         return None
+
+    def _get_diff(self, old_value: Any, new_value: Any) -> dict[Any, Any]:
+        """Generate a diff between two values.
+
+        This function compares two values and returns a dictionary representing
+        the differences. It handles dictionaries, lists, and primitive values.
+
+        Args:
+            old_value: The original value to compare
+            new_value: The new value to compare against
+
+        Returns:
+            Dictionary representing the differences between the values
+
+        Example:
+            diff = self._get_diff({"a": 1, "b": 2}, {"a": 1, "b": 3, "c": 4})
+            # Returns: {"b": (2, 3), "c": (None, 4)}
+        """
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            diff = {
+                key: (old_value.get(key), new_value.get(key))
+                for key in new_value
+                if old_value.get(key) != new_value.get(key)
+            }
+        elif isinstance(old_value, list) and isinstance(new_value, list):
+            diff = {
+                str(i): (old, new) for i, (old, new) in enumerate(zip(old_value, new_value, strict=False)) if old != new
+            }
+
+            # Handle added or removed elements
+            if len(old_value) > len(new_value):
+                for i in range(len(new_value), len(old_value)):
+                    diff[str(i)] = (old_value[i], None)
+            elif len(new_value) > len(old_value):
+                for i in range(len(old_value), len(new_value)):
+                    diff[str(i)] = (None, new_value[i])
+        else:
+            diff = {"old": old_value, "new": new_value}
+        return diff
 
     def _format_diff(self, diff: dict[Any, Any]) -> str:
         """Format a diff dictionary into a readable string for config changes."""
