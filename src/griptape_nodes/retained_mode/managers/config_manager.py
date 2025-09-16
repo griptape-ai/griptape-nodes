@@ -429,7 +429,23 @@ class ConfigManager:
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle request to get the configuration schema with default values and library settings."""
+        """Handle request to get the configuration schema with default values and library settings.
+
+        This method generates a unified configuration schema that includes both base settings (defined at
+        compile time in Settings model) and dynamic library settings (loaded at runtime from external
+        library definition files). The frontend needs this schema to render configuration UIs with proper
+        type validation, enum dropdowns, and field organization.
+
+        The process involves several steps:
+        1. Create a dynamic Pydantic model that extends base Settings with library-specific fields
+        2. Convert the dynamic model to JSON Schema format (standard for frontend config UIs)
+        3. Extract current configuration values (user + workspace + env overrides)
+        4. Organize settings metadata for frontend UI (categories, library groupings, etc.)
+
+        Why this complexity? We need to bridge two worlds: backend type safety (Pydantic models) and
+        frontend standards (JSON Schema). The dynamic model creation allows us to include library settings
+        that aren't known at compile time, while maintaining proper validation and enum handling.
+        """
         try:
             # Create a dynamic Settings model that includes library settings as proper Pydantic fields
             dynamic_settings_model = self._create_dynamic_settings_model()
