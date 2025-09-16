@@ -7,7 +7,6 @@ from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -18,35 +17,16 @@ logger = logging.getLogger("diffusers_nodes_library")
 class FluxPipelineParameters:
     def __init__(self, node: BaseNode):
         self._node = node
-        self._huggingface_repo_parameter = HuggingFaceRepoParameter(
-            node,
-            repo_ids=[
-                "black-forest-labs/FLUX.1-schnell",
-                "black-forest-labs/FLUX.1-dev",
-            ],
-        )
         self._seed_parameter = SeedParameter(node)
 
     def add_input_parameters(self) -> None:
-        self._huggingface_repo_parameter.add_input_parameters()
         self._node.add_parameter(
             Parameter(
-                name="text_encoder",
-                input_types=["str"],
-                type="str",
-                allowed_modes=set(),
-                tooltip="text_encoder",
-                default_value="openai/clip-vit-large-patch14",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="text_encoder_2",
-                input_types=["str"],
-                type="str",
-                allowed_modes=set(),
-                tooltip="text_encoder_2",
-                default_value="google/t5-v1_1-xxl",
+                name="model",
+                input_types=["diffusers.DiffusionPipeline"],
+                type="diffusers.DiffusionPipeline",
+                tooltip="The diffusion pipeline model to use",
+                # TODO: Make sure is required
             )
         )
         self._node.add_parameter(
@@ -142,17 +122,14 @@ class FluxPipelineParameters:
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        errors = self._huggingface_repo_parameter.validate_before_node_run()
-        return errors or None
+        # TODO: add validation for model
+        return None
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self._seed_parameter.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
-
-    def get_repo_revision(self) -> tuple[str, str]:
-        return self._huggingface_repo_parameter.get_repo_revision()
 
     def publish_output_image_preview_placeholder(self) -> None:
         width = int(self._node.parameter_values["width"])
@@ -169,6 +146,9 @@ class FluxPipelineParameters:
             "output_image",
             pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
         )
+
+    def get_pipe(self) -> diffusers.DiffusionPipeline:
+        return self._node.get_parameter_value("model")
 
     def get_prompt(self) -> str:
         return self._node.get_parameter_value("prompt")
