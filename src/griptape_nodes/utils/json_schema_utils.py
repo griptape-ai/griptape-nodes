@@ -225,7 +225,7 @@ def infer_type_from_value(value: Any) -> str:
     return "string"
 
 
-def convert_schema_to_pydantic_type(field_schema: dict, default_value: Any) -> Any:
+def convert_schema_to_pydantic_type(field_schema: dict, default_value: Any) -> Any:  # noqa: ARG001
     """Convert a JSON schema field definition to a Pydantic type.
 
     This function maps JSON schema field types to their corresponding Python types,
@@ -457,7 +457,7 @@ def get_diff(old_value: Any, new_value: Any) -> dict[Any, Any]:
 
 
 def format_diff(diff: dict[Any, Any]) -> str:
-    """Format a diff dictionary into a readable string.
+    r"""Format a diff dictionary into a readable string.
 
     This function takes a diff dictionary and formats it into a human-readable
     string showing what was added, removed, or changed.
