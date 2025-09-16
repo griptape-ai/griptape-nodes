@@ -38,7 +38,6 @@ from griptape_nodes.utils.dict_utils import get_diff, get_dot_value, merge_dicts
 from griptape_nodes.utils.json_schema_utils import (
     extract_custom_fields_from_schema,
     extract_enum_from_json,
-    get_nested_value,
     infer_field_type,
 )
 
@@ -604,7 +603,7 @@ class ConfigManager:
     def _get_library_enum_info(self, category: str) -> dict[str, list]:
         """Get enum information for a specific library category from library definition files."""
         try:
-            library_paths = get_nested_value(
+            library_paths = get_dot_value(
                 self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
             )
             for library_path in library_paths:

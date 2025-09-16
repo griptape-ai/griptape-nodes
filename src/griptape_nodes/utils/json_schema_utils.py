@@ -61,29 +61,6 @@ def extract_custom_fields_from_schema(schema: dict, base_fields: set[str]) -> li
     return custom_fields
 
 
-def get_nested_value(data: dict[str, Any], dot_path: str, default: Any = None) -> Any:
-    """Get a value from a nested dictionary using dot notation.
-
-    Args:
-        data: The dictionary to search in.
-        dot_path: The dot-separated path to the value (e.g., "app_events.on_app_initialization_complete.libraries_to_register").
-        default: The default value to return if the path is not found.
-
-    Returns:
-        The value at the specified path, or the default value if not found.
-    """
-    keys = dot_path.split(".")
-    current = data
-
-    for key in keys:
-        if isinstance(current, dict) and key in current:
-            current = current[key]
-        else:
-            return default
-
-    return current
-
-
 def extract_enum_from_json(json_data: dict[str, Any], category_key: str, category_value: str) -> dict[str, list] | None:
     """Extract enum information from JSON data for a specific category.
 
