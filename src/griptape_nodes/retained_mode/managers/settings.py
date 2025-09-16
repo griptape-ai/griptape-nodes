@@ -2,7 +2,41 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import Field as PydanticField
+
+
+class Category(BaseModel):
+    """A category with name and optional description."""
+
+    name: str
+    description: str | None = None
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# Predefined categories to avoid repetition
+FILE_SYSTEM = Category(name="File System", description="Directories and file paths for the application")
+APPLICATION_EVENTS = Category(name="Application Events", description="Configuration for application lifecycle events")
+API_KEYS = Category(name="API Keys", description="API keys and authentication credentials")
+EXECUTION = Category(name="Execution", description="Workflow execution and processing settings")
+STORAGE = Category(name="Storage", description="Data storage and persistence configuration")
+SYSTEM_REQUIREMENTS = Category(name="System Requirements", description="System resource requirements and limits")
+
+
+def Field(category: str | Category = "General", **kwargs) -> Any:
+    """Enhanced Field with default category that can be overridden."""
+    if "json_schema_extra" not in kwargs:
+        # Convert Category to dict or use string directly
+        if isinstance(category, Category):
+            category_dict = {"name": category.name}
+            if category.description:
+                category_dict["description"] = category.description
+            kwargs["json_schema_extra"] = {"category": category_dict}
+        else:
+            kwargs["json_schema_extra"] = {"category": category}
+    return PydanticField(**kwargs)
 
 
 class WorkflowExecutionMode(StrEnum):
@@ -61,20 +95,25 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     workspace_directory: str = Field(
-        default=str(Path().cwd() / "GriptapeNodes"), json_schema_extra={"category": "File System"}
+        category=FILE_SYSTEM,
+        default=str(Path().cwd() / "GriptapeNodes"),
     )
     static_files_directory: str = Field(
+        category=FILE_SYSTEM,
         default="staticfiles",
         description="Path to the static files directory, relative to the workspace directory.",
-        json_schema_extra={"category": "File System"},
     )
     sandbox_library_directory: str = Field(
+        category=FILE_SYSTEM,
         default="sandbox_library",
         description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",
-        json_schema_extra={"category": "File System"},
     )
-    app_events: AppEvents = Field(default_factory=AppEvents, json_schema_extra={"category": "Application Events"})
+    app_events: AppEvents = Field(
+        category=APPLICATION_EVENTS,
+        default_factory=AppEvents,
+    )
     nodes: dict[str, Any] = Field(
+        category=API_KEYS,
         default_factory=lambda: {
             "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
             "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
@@ -110,13 +149,12 @@ class Settings(BaseModel):
             "Tavily": {"TAVILY_API_KEY": "$TAVILY_API_KEY"},
             "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
         },
-        json_schema_extra={"category": "API Keys"},
     )
-    log_level: LogLevel = Field(default=LogLevel.INFO, json_schema_extra={"category": "Execution"})
+    log_level: LogLevel = Field(category=EXECUTION, default=LogLevel.INFO)
     workflow_execution_mode: WorkflowExecutionMode = Field(
+        category=EXECUTION,
         default=WorkflowExecutionMode.SEQUENTIAL,
         description="Workflow execution mode for node processing",
-        json_schema_extra={"category": "Execution"},
     )
 
     @field_validator("workflow_execution_mode", mode="before")
@@ -152,23 +190,23 @@ class Settings(BaseModel):
             return LogLevel.INFO
 
     max_nodes_in_parallel: int | None = Field(
+        category=EXECUTION,
         default=5,
         description="Maximum number of nodes executing at a time for parallel execution.",
-        json_schema_extra={"category": "Execution"},
     )
-    storage_backend: Literal["local", "gtc"] = Field(default="local", json_schema_extra={"category": "Storage"})
+    storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
     minimum_disk_space_gb_libraries: float = Field(
+        category=SYSTEM_REQUIREMENTS,
         default=10.0,
         description="Minimum disk space in GB required for library installation and virtual environment operations",
-        json_schema_extra={"category": "System Requirements"},
     )
     minimum_disk_space_gb_workflows: float = Field(
+        category=SYSTEM_REQUIREMENTS,
         default=1.0,
         description="Minimum disk space in GB required for saving workflows",
-        json_schema_extra={"category": "System Requirements"},
     )
     synced_workflows_directory: str = Field(
+        category=FILE_SYSTEM,
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
-        json_schema_extra={"category": "File System"},
     )
