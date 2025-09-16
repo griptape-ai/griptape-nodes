@@ -1582,7 +1582,7 @@ class NodeManager:
                     )
 
         # Cool.
-        details = f"Successfully set value on Node '{node_name}' Parameter '{request.parameter_name}'."
+        details = f"Successfully set value on Node '{node_name}' Parameter '{request.parameter_name}' = {TypeValidator.safe_serialize(finalized_value)}"
         result = SetParameterValueResultSuccess(
             finalized_value=finalized_value, data_type=parameter.type, result_details=details
         )

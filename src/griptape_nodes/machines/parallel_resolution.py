@@ -165,6 +165,7 @@ class ExecuteDagState(State):
             node_reference (DagOrchestrator.DagNode): The node to collect values for.
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        import copy
 
         current_node = node_reference.node_reference
         connections = GriptapeNodes.FlowManager().get_connections()
@@ -181,7 +182,8 @@ class ExecuteDagState(State):
 
                 # If the upstream node is resolved, collect its output value
                 if upstream_parameter.name in upstream_node.parameter_output_values:
-                    output_value = upstream_node.parameter_output_values[upstream_parameter.name]
+                    # CRITICAL: Create a deep copy to prevent stale value issues
+                    output_value = copy.deepcopy(upstream_node.parameter_output_values[upstream_parameter.name])
                 else:
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
