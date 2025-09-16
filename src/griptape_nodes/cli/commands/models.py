@@ -14,9 +14,6 @@ from griptape_nodes.retained_mode.events.model_events import (
     DeleteModelRequest,
     DeleteModelResultFailure,
     DeleteModelResultSuccess,
-    DownloadModelRequest,
-    DownloadModelResultFailure,
-    DownloadModelResultSuccess,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
@@ -45,11 +42,10 @@ app.add_typer(downloads_app, name="downloads")
 def download_command(
     model_id: str = typer.Argument(..., help="Model ID or URL (e.g., 'microsoft/DialoGPT-medium')"),
     local_dir: str | None = typer.Option(None, "--local-dir", help="Local directory to download the model to"),
-    repo_type: str = typer.Option("model", "--repo-type", help="Type of repository (model, dataset, space)"),
     revision: str = typer.Option("main", "--revision", help="Git revision to download"),
 ) -> None:
     """Download a model from Hugging Face Hub."""
-    asyncio.run(_download_model(model_id, local_dir, repo_type, revision))
+    asyncio.run(_download_model(model_id, local_dir, revision))
 
 
 @app.command("list")
@@ -105,7 +101,6 @@ def search_command(
 async def _download_model(
     model_id: str,
     local_dir: str | None,
-    repo_type: str,
     revision: str,
 ) -> None:
     """Download a model from Hugging Face Hub.
@@ -113,41 +108,27 @@ async def _download_model(
     Args:
         model_id: Model ID or URL to download
         local_dir: Local directory to download the model to
-        repo_type: Type of repository (model, dataset, space)
         revision: Git revision to download
     """
     console.print(f"[bold green]Downloading model: {model_id}[/bold green]")
 
-    # Create the download request
-    request = DownloadModelRequest(
-        model_id=model_id,
-        local_dir=local_dir,
-        repo_type=repo_type,
-        revision=revision,
-        allow_patterns=None,
-        ignore_patterns=None,
-    )
-
     try:
-        # Use the ModelManager to handle the download
-        result = await GriptapeNodes.ahandle_request(request)
+        # ModelManager DownloadModelRequest will use this command so it's important that we don't use the request ourselves
+        model_manager = GriptapeNodes.ModelManager()
+        local_path = model_manager.download_model(
+            model_id=model_id,
+            local_dir=local_dir,
+            revision=revision,
+            allow_patterns=None,
+            ignore_patterns=None,
+        )
 
-        if isinstance(result, DownloadModelResultSuccess):
-            # Success case
-            console.print("[bold green]Model downloaded successfully![/bold green]")
-            console.print("[green]Model files downloaded successfully[/green]")
-        elif isinstance(result, DownloadModelResultFailure):
-            # Failure case
-            console.print("[bold red]Model download failed:[/bold red]")
-            if result.result_details:
-                console.print(f"[red]{result.result_details}[/red]")
-            if result.exception:
-                console.print(f"[dim]Error: {result.exception}[/dim]")
-        else:
-            console.print("[bold red]Model download failed: Unknown error occurred[/bold red]")
+        # Success case
+        console.print("[bold green]Model downloaded successfully![/bold green]")
+        console.print(f"[green]Downloaded to: {local_path}[/green]")
 
     except Exception as e:
-        console.print("[bold red]Unexpected error during model download:[/bold red]")
+        console.print("[bold red]Model download failed:[/bold red]")
         console.print(f"[red]{e}[/red]")
 
 
