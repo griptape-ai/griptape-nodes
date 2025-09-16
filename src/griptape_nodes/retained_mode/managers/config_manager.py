@@ -510,7 +510,7 @@ class ConfigManager:
         return diff
 
     def _format_diff(self, diff: dict[Any, Any]) -> str:
-        """Format a diff dictionary into a readable string for config changes."""
+        """Format the diff dictionary into a readable string."""
         formatted_lines = []
         for key, (old, new) in diff.items():
             if old is None:
