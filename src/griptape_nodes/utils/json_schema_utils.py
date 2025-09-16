@@ -225,3 +225,40 @@ def infer_type_from_value(value: Any) -> str:
 
     # Default fallback to string for unknown types
     return "string"
+
+
+def convert_schema_to_pydantic_type(field_schema: dict, default_value: Any) -> Any:
+    """Convert a JSON schema field definition to a Pydantic type.
+
+    This function maps JSON schema field types to their corresponding Python types,
+    with special handling for enum fields to ensure clean JSON schema generation.
+
+    Args:
+        field_schema: JSON schema field definition containing type and constraints
+        default_value: Default value for the field (used for type inference if needed)
+
+    Returns:
+        Python type that can be used in Pydantic model creation
+
+    Example:
+        field_schema = {"type": "string", "enum": ["A", "B"]}
+        field_type = convert_schema_to_pydantic_type(field_schema, "A")
+        # Returns: str (enum constraint handled via Field definition)
+    """
+    field_type = field_schema.get("type", "string")
+
+    if "enum" in field_schema:
+        # For enums, we'll use str type and handle the enum constraint in the Field definition
+        # This ensures the JSON schema shows as a simple "enum" array instead of "anyOf"
+        return str
+
+    # Map field types to Python types
+    type_mapping = {
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+    return type_mapping.get(field_type, str)

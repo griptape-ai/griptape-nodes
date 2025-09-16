@@ -36,6 +36,7 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
+from griptape_nodes.utils.json_schema_utils import convert_schema_to_pydantic_type
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -633,7 +634,7 @@ class ConfigManager:
         field_definitions = {}
 
         for field_name, field_schema in schema_info.items():
-            field_type = self._convert_schema_to_pydantic_type(field_schema, settings_data.get(field_name))
+            field_type = convert_schema_to_pydantic_type(field_schema, settings_data.get(field_name))
 
             # Create Field with enum constraint if present
             if "enum" in field_schema:
@@ -645,26 +646,6 @@ class ConfigManager:
                 field_definitions[field_name] = (field_type, Field(default=settings_data.get(field_name)))
 
         return create_model(f"{category.title()}Settings", **field_definitions)
-
-    def _convert_schema_to_pydantic_type(self, field_schema: dict, default_value: Any) -> Any:  # noqa: ARG002
-        """Convert a JSON schema field definition to a Pydantic type."""
-        field_type = field_schema.get("type", "string")
-
-        if "enum" in field_schema:
-            # For enums, we'll use str type and handle the enum constraint in the Field definition
-            # This ensures the JSON schema shows as a simple "enum" array instead of "anyOf"
-            return str
-
-        # Map field types to Python types
-        type_mapping = {
-            "string": str,
-            "integer": int,
-            "number": float,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-        return type_mapping.get(field_type, str)
 
     def _get_library_enum_schemas(self) -> dict[str, dict]:
         """Get enum schema information for library settings from library definition files."""
