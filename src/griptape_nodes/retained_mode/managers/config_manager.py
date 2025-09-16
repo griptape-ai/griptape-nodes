@@ -632,7 +632,8 @@ class ConfigManager:
         for key, value in settings_data.items():
             # Use generic functions to infer type and create field definition
             field_type = infer_field_type(value, enum_info, key)
-            fields[key] = create_field_definition(field_type, value, key)
+            field_kwargs = {"default": value, "title": key.replace("_", " ").title()}
+            fields[key] = (field_type, Field(**field_kwargs))
 
         return create_model(f"{category.title()}Settings", **fields)
 
@@ -659,18 +660,3 @@ class ConfigManager:
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         return None
-
-
-def create_field_definition(field_type: Any, default_value: Any, field_name: str) -> tuple[Any, Any]:
-    """Create a Pydantic field definition with appropriate defaults and metadata.
-
-    Args:
-        field_type: The Python type for the field.
-        default_value: The default value for the field.
-        field_name: The name of the field (used to generate title).
-
-    Returns:
-        A tuple of (field_type, Field) for use with create_model.
-    """
-    field_kwargs = {"default": default_value, "title": field_name.replace("_", " ").title()}
-    return (field_type, Field(**field_kwargs))
