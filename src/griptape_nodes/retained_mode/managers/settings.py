@@ -158,4 +158,5 @@ class Settings(BaseModel):
     synced_workflows_directory: str = Field(
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
+        json_schema_extra={"category": "File System"},
     )
