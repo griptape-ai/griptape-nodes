@@ -8,7 +8,6 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError, create_model
 from xdg_base_dirs import xdg_config_home
 
-from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
@@ -35,14 +34,13 @@ from griptape_nodes.retained_mode.events.config_events import (
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
-from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
+from griptape_nodes.utils.dict_utils import get_diff, get_dot_value, merge_dicts, set_dot_value
 from griptape_nodes.utils.json_schema_utils import (
-    create_pydantic_model_from_schema,
-    extract_custom_field_schemas,
+    create_field_definition,
     extract_custom_fields_from_schema,
-    extract_field_categories,
-    format_diff,
-    get_diff,
+    extract_enum_from_json,
+    get_nested_value,
+    infer_field_type,
 )
 
 logger = logging.getLogger("griptape_nodes")
@@ -462,13 +460,8 @@ class ConfigManager:
             # Override defaults with actual configured values from merged config (user + workspace + env)
             default_values.update(self.merged_config)
 
-            # Extract library settings metadata for frontend UI organization
-            library_settings_list = extract_custom_fields_from_schema(schema, set(Settings.model_fields.keys()))
-            schema["library_settings"] = library_settings_list
-
-            # Extract base settings categories for frontend UI organization
-            base_settings_categories = extract_field_categories(Settings.model_fields)
-            schema["base_settings_categories"] = base_settings_categories
+            # Add library settings metadata for frontend UI organization
+            schema["library_settings"] = extract_custom_fields_from_schema(schema, set(Settings.model_fields.keys()))
 
             # Package schema and default values for the API response
             schema_with_defaults = {
@@ -521,7 +514,7 @@ class ConfigManager:
         if isinstance(request.value, (dict, list)):
             if old_value_copy is not None:
                 diff = get_diff(old_value_copy, request.value)
-                formatted_diff = format_diff(diff)
+                formatted_diff = self._format_diff(diff)
                 if formatted_diff:
                     result_details = f"Successfully updated {type(request.value).__name__} at '{request.category_and_key}'. Changes:\n{formatted_diff}"
                 else:
@@ -584,62 +577,63 @@ class ConfigManager:
         if not library_settings:
             return Settings
 
-        # Get enum schemas for library settings
-        library_schemas = extract_custom_field_schemas(
-            self.merged_config, set(Settings.model_fields.keys()), self._load_library_schema
-        )
-
         # Create field definitions for library settings
         library_fields = {}
         for category, settings_data in library_settings.items():
-            # Get schema info for this category
-            schema_info = library_schemas.get(category, {})
-
-            if schema_info:
-                # Create a proper Pydantic model for this library setting with enum support
-                library_model = create_pydantic_model_from_schema(category, schema_info, settings_data)
-                library_fields[category] = (
-                    library_model,
-                    Field(
-                        # Create an instance of the library model instead of empty dict to avoid Pydantic serialization warnings
-                        default_factory=lambda model=library_model, data=settings_data: model(**data),  # type: ignore[misc]
-                        json_schema_extra={"category": f"{category.replace('_', ' ').title()} Library"},
-                    ),
-                )
-            else:
-                # Fallback to simple dict type if no schema available
-                library_fields[category] = (
-                    dict,
-                    Field(
-                        default_factory=dict,
-                        json_schema_extra={"category": f"{category.replace('_', ' ').title()} Library"},
-                    ),
-                )
+            # Create a simple nested model for this library category
+            library_model = self._create_library_settings_model(category, settings_data)
+            library_fields[category] = (
+                library_model,
+                Field(default_factory=library_model),
+            )
 
         return create_model("DynamicSettings", **library_fields, __base__=Settings)
 
-    def _load_library_schema(self, category: str) -> dict[str, Any] | None:
-        """Load schema information from library definition."""
-        # Get schema info from the library registration system
-        # Look through all registered libraries to find settings with matching category
-        for library_name in LibraryRegistry.list_libraries():
-            try:
-                library = LibraryRegistry.get_library(library_name)
-                library_data = library.get_library_data()
+    def _create_library_settings_model(self, category: str, settings_data: dict) -> type:
+        """Create a Pydantic model for a specific library's settings."""
+        fields = {}
+        # Get enum information from library definitions
+        enum_info = self._get_library_enum_info(category)
 
-                # Check if this library has settings with the matching category
-                if library_data.settings:
-                    for setting in library_data.settings:
-                        if (
-                            setting.category == category
-                            and hasattr(setting, "__pydantic_extra__")
-                            and setting.__pydantic_extra__
-                            and "schema" in setting.__pydantic_extra__
-                        ):
-                            return setting.__pydantic_extra__["schema"]
-            except Exception as e:
-                # Skip libraries that can't be accessed
-                logger.debug("Could not access library %s: %s", library_name, e)
-                continue
+        for key, value in settings_data.items():
+            # Use generic functions to infer type and create field definition
+            field_type = infer_field_type(value, enum_info, key)
+            fields[key] = create_field_definition(field_type, value, key)
 
+        return create_model(f"{category.title()}Settings", **fields)
+
+    def _get_library_enum_info(self, category: str) -> dict[str, list]:
+        """Get enum information for a specific library category from library definition files."""
+        try:
+            library_paths = get_nested_value(
+                self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
+            )
+            for library_path in library_paths:
+                enum_info = self._extract_enum_from_library_file(library_path, category)
+                if enum_info:
+                    return enum_info
+        except Exception as e:
+            logger.debug("Error getting enum info for %s: %s", category, e)
+        return {}
+
+    def _extract_enum_from_library_file(self, library_path: str, category: str) -> dict[str, list] | None:
+        """Extract enum information from a specific library definition file."""
+        try:
+            with Path(library_path).open() as f:
+                library_def = json.load(f)
+            return extract_enum_from_json(library_def, "category", category)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
         return None
+
+    def _format_diff(self, diff: dict[Any, Any]) -> str:
+        """Format a diff dictionary into a readable string for config changes."""
+        formatted_lines = []
+        for key, (old, new) in diff.items():
+            if old is None:
+                formatted_lines.append(f"[{key}]: ADDED: '{new}'")
+            elif new is None:
+                formatted_lines.append(f"[{key}]: REMOVED: '{old}'")
+            else:
+                formatted_lines.append(f"[{key}]:\n\tFROM: '{old}'\n\t  TO: '{new}'")
+        return "\n".join(formatted_lines)
