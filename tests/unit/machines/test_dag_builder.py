@@ -96,12 +96,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager connections
@@ -137,12 +142,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Add upstream node first
@@ -174,13 +184,19 @@ class TestDagBuilder:
         # Create mock nodes that could create a cycle
         node_a = MagicMock(spec=BaseNode)
         node_a.name = "node_a"
+        node_a.state = MagicMock()
+        node_a.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         node_b = MagicMock(spec=BaseNode)
         node_b.name = "node_b"
+        node_b.state = MagicMock()
+        node_b.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameters
         param_a = MagicMock()
+        param_a.type = "str"  # Not CONTROL_TYPE
         param_b = MagicMock()
+        param_b.type = "str"  # Not CONTROL_TYPE
         node_a.parameters = [param_a]
         node_b.parameters = [param_b]
 
@@ -256,12 +272,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager to create an edge
