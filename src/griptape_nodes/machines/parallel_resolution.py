@@ -182,7 +182,6 @@ class ExecuteDagState(State):
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 
-
     @staticmethod
     def _should_skip_control_flow(
         context: ParallelResolutionContext, node: BaseNode, network_name: str, flow_manager: FlowManager
@@ -245,20 +244,42 @@ class ExecuteDagState(State):
     @staticmethod
     def _try_queue_waiting_node(context: ParallelResolutionContext, node_name: str, network_name: str) -> None:
         """Try to queue a specific waiting node if it can now be queued."""
-        if context.dag_builder is None or node_name not in context.node_to_reference:
+        if context.dag_builder is None:
+            logger.warning("DAG builder is None - cannot check queueing for node '%s'", node_name)
+            return
+
+        if node_name not in context.node_to_reference:
+            logger.warning("Node '%s' not found in node_to_reference - cannot check queueing", node_name)
             return
 
         dag_node = context.node_to_reference[node_name]
+        node_resolution_state = dag_node.node_reference.state
+
+        logger.info(
+            "Checking node '%s' for queueing - current state: %s, resolution state: %s",
+            node_name,
+            dag_node.node_state,
+            node_resolution_state,
+        )
 
         # Only check nodes that are currently waiting
         if dag_node.node_state == NodeState.WAITING:
-            logger.info("Checking if waiting node '%s' can now be queued after changes in network '%s'",
-                       node_name, network_name)
+            logger.info(
+                "Node '%s' is WAITING - checking if it can be queued from network '%s'", node_name, network_name
+            )
 
             can_queue = context.dag_builder.can_queue_control_node(dag_node, network_name)
             if can_queue:
-                logger.info("Post-completion check: Queueing node '%s' for execution", node_name)
+                logger.info("SUCCESS: Queueing node '%s' for execution from network '%s'", node_name, network_name)
                 dag_node.node_state = NodeState.QUEUED
+            else:
+                logger.info(
+                    "BLOCKED: Node '%s' cannot be queued yet from network '%s' - waiting for control flow dependencies",
+                    node_name,
+                    network_name,
+                )
+        else:
+            logger.info("Node '%s' has state %s - not eligible for queueing", node_name, dag_node.node_state)
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -370,7 +391,17 @@ class ExecuteDagState(State):
 
             # After processing completions in this network, check if any remaining leaf nodes can now be queued
             remaining_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+            logger.info(
+                "Network '%s' has %d remaining leaf nodes after cleanup: %s",
+                network_name,
+                len(remaining_leaf_nodes),
+                remaining_leaf_nodes,
+            )
+
             for leaf_node in remaining_leaf_nodes:
+                if leaf_node in context.node_to_reference:
+                    node_state = context.node_to_reference[leaf_node].node_state
+                    logger.info("Leaf node '%s' in network '%s' has state: %s", leaf_node, network_name, node_state)
                 ExecuteDagState._try_queue_waiting_node(context, leaf_node, network_name)
 
     @staticmethod

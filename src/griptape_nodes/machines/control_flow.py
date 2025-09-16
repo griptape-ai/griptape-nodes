@@ -151,6 +151,8 @@ class ResolveNodeState(State):
         await context.resolution_machine.resolve_node(current_node)
 
         if context.resolution_machine.is_complete():
+            if isinstance(context.resolution_machine, ParallelResolutionMachine):
+                return CompleteState
             return NextNodeState
         return None
 

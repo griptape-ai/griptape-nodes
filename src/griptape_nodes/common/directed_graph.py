@@ -35,13 +35,15 @@ class DirectedGraph:
     def in_degree(self, node: str) -> int:
         """Return the in-degree of a node (number of incoming edges)."""
         if node not in self._nodes:
-            return 0
+            msg = f"Node {node} not found in graph"
+            raise KeyError(msg)
         return len(self._predecessors.get(node, set()))
 
     def out_degree(self, node: str) -> int:
         """Return the out-degree of a node (number of outgoing edges)."""
         if node not in self._nodes:
-            return 0
+            msg = f"Node {node} not found in graph"
+            raise KeyError(msg)
         count = 0
         for predecessors in self._predecessors.values():
             if node in predecessors:

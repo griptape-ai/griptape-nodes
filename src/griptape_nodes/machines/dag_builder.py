@@ -48,7 +48,8 @@ class DagBuilder:
         self.graphs = {}
         self.node_to_reference: dict[str, DagNode] = {}
 
-    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
+    # Complex with the inner recursive method, but it needs connections and added_nodes.
+    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -74,9 +75,18 @@ class DagBuilder:
                 return
 
             # Process dependencies first (depth-first)
+            # Skip data dependency processing if node has overridden initialize_spotlight to return None
+            # This is necessary for OutputSelector to still work (it doesn't process data dependencies)
+            should_process_data_dependencies = current_node.initialize_spotlight() is not None
+
             for param in current_node.parameters:
                 if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
                     continue
+
+                # Skip data parameters if node shouldn't process data dependencies (like OutputSelector)
+                if not should_process_data_dependencies:
+                    continue
+
                 upstream_connection = connections.get_connected_node(current_node, param)
                 if upstream_connection:
                     upstream_node, _ = upstream_connection
