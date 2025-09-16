@@ -262,3 +262,121 @@ def convert_schema_to_pydantic_type(field_schema: dict, default_value: Any) -> A
         "object": dict,
     }
     return type_mapping.get(field_type, str)
+
+
+def create_library_settings_model(category: str, schema_info: dict, settings_data: dict) -> type:
+    """Create a Pydantic model for a library setting with proper enum support.
+
+    This function dynamically creates a Pydantic model from schema information,
+    handling enum fields with proper JSON schema generation.
+
+    Args:
+        category: The category name for the settings (e.g., "flow_production_tracking")
+        schema_info: Schema information containing field definitions and types
+        settings_data: Current settings data with default values
+
+    Returns:
+        Pydantic model class that can be instantiated and used for validation
+
+    Example:
+        schema_info = {"auth": {"type": "string", "enum": ["API", "user"]}}
+        settings_data = {"auth": "API"}
+        model_class = create_library_settings_model("flow_tracking", schema_info, settings_data)
+        instance = model_class(auth="user")
+    """
+    field_definitions = {}
+
+    for field_name, field_schema in schema_info.items():
+        field_type = convert_schema_to_pydantic_type(field_schema, settings_data.get(field_name))
+
+        # Create Field with enum constraint if present
+        if "enum" in field_schema:
+            field_definitions[field_name] = (
+                field_type,
+                Field(default=settings_data.get(field_name), json_schema_extra={"enum": field_schema["enum"]}),
+            )
+        else:
+            field_definitions[field_name] = (field_type, Field(default=settings_data.get(field_name)))
+
+    return create_model(f"{category.title()}Settings", **field_definitions)
+
+
+def extract_library_settings_from_schema(schema: dict, base_settings_fields: set[str]) -> list[dict]:
+    """Extract library settings information from the schema for frontend organization.
+
+    This function processes a JSON schema to identify library-specific settings
+    and extract their metadata for frontend UI organization.
+
+    Args:
+        schema: Complete JSON schema containing properties and $defs
+        base_settings_fields: Set of field names that belong to base settings (not library settings)
+
+    Returns:
+        List of dictionaries containing library setting metadata with keys:
+        - key: The setting key name
+        - title: Human-readable title
+        - category: Category for UI organization
+        - settings: The actual settings schema
+
+    Example:
+        base_fields = {"log_level", "workspace_directory"}
+        library_settings = extract_library_settings_from_schema(schema, base_fields)
+        # Returns: [{"key": "flow_production_tracking", "title": "Flow Production Tracking", ...}]
+    """
+    library_settings = []
+    defs = schema.get("$defs", {})
+
+    for key, field_schema in schema.get("properties", {}).items():
+        # Check if this is a library setting (not in base Settings model)
+        if key not in base_settings_fields:
+            # Get the full schema information for each setting
+            settings_schema = {}
+            if "$ref" in field_schema:
+                # Extract the definition name from the $ref
+                ref_path = field_schema["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path[8:]  # Remove "#/$defs/" prefix
+                    if def_name in defs:
+                        def_schema = defs[def_name]
+                        # Get the full properties schema for each setting
+                        properties = def_schema.get("properties", {})
+                        settings_schema = dict(properties.items())
+
+            library_settings.append(
+                {
+                    "key": key,
+                    "title": key.replace("_", " ").title(),
+                    "category": f"{key.replace('_', ' ').title()} Library",
+                    "settings": settings_schema,
+                }
+            )
+
+    return library_settings
+
+
+def extract_base_settings_categories(model_fields: dict) -> dict[str, str]:
+    """Extract category information from base Settings model fields.
+
+    This function processes Pydantic model fields to extract category information
+    from their json_schema_extra metadata for frontend UI organization.
+
+    Args:
+        model_fields: Dictionary of model fields from a Pydantic model (e.g., Settings.model_fields)
+
+    Returns:
+        Dictionary mapping field names to their category strings
+
+    Example:
+        categories = extract_base_settings_categories(Settings.model_fields)
+        # Returns: {"synced_workflows_directory": "File System", ...}
+    """
+    categories = {}
+    for field_name, field_info in model_fields.items():
+        if (
+            hasattr(field_info, "json_schema_extra")
+            and field_info.json_schema_extra
+            and isinstance(field_info.json_schema_extra, dict)
+            and "category" in field_info.json_schema_extra
+        ):
+            categories[field_name] = field_info.json_schema_extra["category"]
+    return categories
