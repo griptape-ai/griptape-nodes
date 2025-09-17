@@ -578,11 +578,3 @@ class ConfigManager:
         except ValueError:
             logger.error("Invalid log level %s. Defaulting to INFO.", level)
             logger.setLevel(logging.INFO)
-
-    def _get_extra_settings(self) -> dict[str, dict]:
-        """Get additional settings from merged_config that are not base Settings fields."""
-        return {
-            key: value
-            for key, value in self.merged_config.items()
-            if key not in Settings.model_fields and isinstance(value, dict)
-        }
