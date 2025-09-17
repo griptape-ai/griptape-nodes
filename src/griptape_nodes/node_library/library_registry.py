@@ -288,48 +288,41 @@ class LibraryRegistry(metaclass=SingletonMeta):
 
     @classmethod
     def get_all_library_schemas(cls, extra_settings: dict[str, dict]) -> dict[str, dict]:
-        """Get schemas from all loaded libraries.
+        """Get schemas from all loaded libraries with fallbacks for extra settings.
 
         Args:
-            extra_settings: Dictionary of extra settings categories that need schemas
+            extra_settings: Dictionary of categories that need schemas
 
         Returns:
             Dictionary mapping category names to their JSON Schema dicts
         """
-        # Get explicit schemas from loaded libraries
-        schemas = cls._get_explicit_library_schemas()
+        schemas = {}
 
-        # Add fallback schemas for categories that don't have explicit schemas
+        # Get explicit schemas from loaded libraries
         for category in extra_settings:
-            if category not in schemas:
-                schemas[category] = {
-                    "type": "object",
-                    "title": f"{category.replace('_', ' ').title()} Settings",
-                }
+            schema = cls.get_schema_from_loaded_libraries(category)
+            if schema:
+                schemas[category] = schema
+            else:
+                # Add fallback schema for categories that have data but no explicit schema
+                schemas[category] = cls._create_fallback_schema(category)
 
         return schemas
 
     @classmethod
-    def _get_explicit_library_schemas(cls) -> dict[str, dict]:
-        """Get explicit schemas from all loaded libraries (internal method).
+    def _create_fallback_schema(cls, category: str) -> dict[str, str]:
+        """Create a fallback schema for a category.
+
+        Args:
+            category: The category name
 
         Returns:
-            Dictionary mapping category names to their JSON Schema dicts
+            Basic JSON Schema dict
         """
-        instance = cls()
-        schemas = {}
-
-        for library_name in instance._libraries:
-            library_data = instance._libraries[library_name].get_library_data()
-            if library_data.settings:
-                for setting in library_data.settings:
-                    if setting.json_schema:
-                        schemas[setting.category] = {
-                            "type": "object",
-                            "properties": setting.json_schema,
-                            "title": setting.description or f"{setting.category.title()} Settings",
-                        }
-        return schemas
+        return {
+            "type": "object",
+            "title": f"{category.replace('_', ' ').title()} Settings",
+        }
 
 
 class Library:
