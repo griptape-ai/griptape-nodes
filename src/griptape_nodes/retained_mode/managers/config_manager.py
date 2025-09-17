@@ -440,14 +440,15 @@ class ConfigManager:
             base_schema = Settings.model_json_schema()
             current_values = self.merged_config.copy()
 
-            # Get library schemas for extra settings
+            # Get library schemas and merge with fallbacks for extra settings
+            library_schemas = LibraryRegistry.get_all_library_schemas()
             extra_settings = self._get_extra_settings()
-            library_schemas = LibraryRegistry.get_all_library_schemas(extra_settings)
+            merged_library_schemas = self._merge_library_schemas_with_extras(library_schemas, extra_settings)
 
             # Return clean structure
             schema_with_defaults = {
                 "base_schema": base_schema,
-                "library_schemas": library_schemas,
+                "library_schemas": merged_library_schemas,
                 "current_values": current_values,
             }
 
@@ -590,3 +591,28 @@ class ConfigManager:
             for key, value in self.merged_config.items()
             if key not in Settings.model_fields and isinstance(value, dict)
         }
+
+    def _merge_library_schemas_with_extras(
+        self, library_schemas: dict[str, dict], extra_settings: dict[str, dict]
+    ) -> dict[str, dict]:
+        """Merge library schemas with fallback schemas for extra settings.
+
+        Args:
+            library_schemas: Dictionary of schemas from loaded libraries
+            extra_settings: Dictionary of categories that need schemas
+
+        Returns:
+            Dictionary mapping category names to their JSON Schema dicts
+        """
+        # Create fallback schemas for categories that have data but no library schema
+        fallback_schemas = {
+            category: {
+                "type": "object",
+                "title": f"{category.replace('_', ' ').title()} Settings",
+            }
+            for category in extra_settings
+            if category not in library_schemas
+        }
+
+        # Merge library schemas with fallback schemas
+        return merge_dicts(library_schemas, fallback_schemas)
