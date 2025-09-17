@@ -1323,6 +1323,16 @@ class SuccessFailureNode(BaseNode):
             # No graceful handling, raise the exception to crash the flow
             raise exception
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Clear result details before workflow runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_workflow_run()
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Clear result details before node runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_node_run()
+
 
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -1365,9 +1375,9 @@ class EndNode(BaseNode):
                 was_successful = False
                 status_prefix = "[FAILED]"
             case _:
-                # Shouldn't happen, but handle gracefully
-                was_successful = False
-                status_prefix = "[ERROR] EndNode entered via unexpected control path"
+                # No specific success/failure connection provided, assume success
+                was_successful = True
+                status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")

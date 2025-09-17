@@ -23,7 +23,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
-    optimize_flux_pipeline_memory_footprint,
+    optimize_flux_pipeline,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
@@ -180,7 +180,7 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline_memory_footprint(pipe)
+            optimize_flux_pipeline(pipe=pipe, pipe_params=self.flux_params)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),
