@@ -234,11 +234,8 @@ class LibraryRegistry(metaclass=SingletonMeta):
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
 
     @classmethod
-    def get_all_library_schemas(cls, extra_settings: dict[str, dict]) -> dict[str, dict]:
-        """Get schemas from all loaded libraries with fallbacks for extra settings.
-
-        Args:
-            extra_settings: Dictionary of categories that need schemas
+    def get_all_library_schemas(cls) -> dict[str, dict]:
+        """Get schemas from all loaded libraries.
 
         Returns:
             Dictionary mapping category names to their JSON Schema dicts
@@ -257,14 +254,12 @@ class LibraryRegistry(metaclass=SingletonMeta):
                             "properties": setting.json_schema,
                             "title": setting.description or f"{setting.category.title()} Settings",
                         }
-
-        # Add fallback schemas for categories that have data but no explicit schema
-        for category in extra_settings:
-            if category not in schemas:
-                schemas[category] = {
-                    "type": "object",
-                    "title": f"{category.replace('_', ' ').title()} Settings",
-                }
+                    else:
+                        # Create fallback schema for settings without explicit schemas
+                        schemas[setting.category] = {
+                            "type": "object",
+                            "title": setting.description or f"{setting.category.title()} Settings",
+                        }
 
         return schemas
 
