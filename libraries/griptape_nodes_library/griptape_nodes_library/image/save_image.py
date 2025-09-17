@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
 
@@ -83,15 +84,19 @@ class SaveImage(SuccessFailureNode):
 
         self.add_node_element(save_options_group)
 
-        # Add status parameters using the helper method
-        self._create_status_parameters(
+        # Create status component directly with OUTPUT modes for SaveImage
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.OUTPUT},
+            result_details_modes={ParameterMode.OUTPUT},
+            parameter_group_initially_collapsed=False,
             result_details_tooltip="Details about the image save operation result",
             result_details_placeholder="Details on the save attempt will be presented here.",
         )
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
-        self._clear_execution_status()
+        self.status_component.clear_execution_status("Beginning execution...")
 
         image = self.get_parameter_value("image")
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
@@ -215,7 +220,9 @@ class SaveImage(SuccessFailureNode):
                     if exception.__cause__:
                         failure_details += f"\nCause: {exception.__cause__}"
 
-                self._set_status_results(was_successful=False, result_details=f"{status}: {failure_details}")
+                self.status_component.set_execution_result(
+                    was_successful=False, result_details=f"{status}: {failure_details}"
+                )
                 logger.error(f"Error saving image: {details}")
 
             case SaveImageStatus.WARNING:
@@ -226,7 +233,9 @@ class SaveImage(SuccessFailureNode):
                     f"Result: No file created"
                 )
 
-                self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
+                self.status_component.set_execution_result(
+                    was_successful=True, result_details=f"{status}: {result_details}"
+                )
 
             case SaveImageStatus.SUCCESS:
                 result_details = (
@@ -236,7 +245,9 @@ class SaveImage(SuccessFailureNode):
                     f"Saved to: {saved_path}"
                 )
 
-                self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
+                self.status_component.set_execution_result(
+                    was_successful=True, result_details=f"{status}: {result_details}"
+                )
 
     def _save_to_filesystem(
         self, image_artifact: Any, output_path: Path, *, allow_creating_folders: bool, overwrite_existing: bool
@@ -313,6 +324,7 @@ class SaveImage(SuccessFailureNode):
         self, error_details: str, exception: Exception, input_info: str, output_file: str
     ) -> None:
         """Handle error with graceful exit if failure output is connected."""
+        # ALWAYS set the result_details first, regardless of connection status
         self._handle_execution_result(
             status=SaveImageStatus.FAILURE,
             saved_path="",
@@ -321,5 +333,7 @@ class SaveImage(SuccessFailureNode):
             details=error_details,
             exception=exception,
         )
-        # Use the helper to handle exception based on connection status
+
+        # Use the standard helper to handle exception based on connection status
+        # The result_details are already set above via _handle_execution_result()
         self._handle_failure_exception(RuntimeError(error_details))
