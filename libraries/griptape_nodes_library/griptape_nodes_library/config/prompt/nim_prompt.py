@@ -19,7 +19,10 @@ API_KEY_URL = "https://build.nvidia.com/settings/api-keys"
 API_KEY_ENV_VAR = "NVIDIA_API_KEY"
 MODEL_CHOICES = [
     "deepseek-ai/deepseek-v3.1",
+    "google/gemma-3-1b-it",
+    "meta/llama3-8b-instruct",
     "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
     "nvidia/nvidia-nemotron-nano-9b-v2",
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
@@ -31,17 +34,17 @@ DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
 class NimPrompt(BasePrompt):
-    """Node for configuring and providing a Nvidia Chat Prompt Driver.
+    """Node for configuring and providing a NVIDIA Chat Prompt Driver.
 
     Inherits from `BasePrompt` to leverage common LLM parameters. This node
-    customizes the available models to those supported by Nvidia,
-    removes parameters not applicable to Nvidia (like 'seed'), and
-    requires a Nvidia API key to be set in the node's configuration
-    under the 'Nvidia' service.
+    customizes the available models to those supported by NVIDIA,
+    removes parameters not applicable to NVIDIA (like 'seed'), and
+    requires a NVIDIA API key to be set in the node's configuration
+    under the 'NVIDIA' service.
 
     The `process` method gathers the configured parameters and the API key,
     utilizes the `_get_common_driver_args` helper from `BasePrompt`, adds
-    Nvidia specific configurations, then instantiates a
+    NVIDIA specific configurations, then instantiates a
     `NvidiaPromptDriver` and assigns it to the 'prompt_model_config'
     output parameter.
     """
@@ -50,37 +53,37 @@ class NimPrompt(BasePrompt):
         """Initializes the NimPrompt node.
 
         Calls the superclass initializer, then modifies the inherited 'model'
-        parameter to use Nvidia specific models and sets a default.
+        parameter to use NVIDIA specific models and sets a default.
         It also removes the 'seed' parameter inherited from `BasePrompt` as it's
-        not directly supported by the Nvidia driver implementation.
+        not directly supported by the NVIDIA driver implementation.
         """
         super().__init__(**kwargs)
 
         # --- Customize Inherited Parameters ---
 
-        # Update the 'model' parameter for Nvidia specifics.
+        # Update the 'model' parameter for NVIDIA specifics.
         self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
 
         # Remove the 'seed' parameter
         self.remove_parameter_element_by_name("seed")
 
-        # Remove `top_k` parameter as it's not used by Nvidia.
+        # Remove `top_k` parameter as it's not used by NVIDIA.
         self.remove_parameter_element_by_name("top_k")
 
         # Replace `min_p` with `top_p` for NIM.
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
 
     def process(self) -> None:
-        """Processes the node configuration to create a NvidiaPromptDriver.
+        """Processes the node configuration to create a NVIDIA PromptDriver.
 
         Retrieves parameter values set on the node and the required API key from
         the node's configuration system. It constructs the arguments dictionary
-        for the `NvidiaPromptDriver`, handles optional parameters and
+        for the `NVIDIA PromptDriver`, handles optional parameters and
         any necessary conversions (like 'min_p' to 'top_p'), instantiates the
         driver, and assigns it to the 'prompt_model_config' output parameter.
 
         Raises:
-            KeyError: If the Nvidia API key is not found in the node configuration
+            KeyError: If the NVIDIA API key is not found in the node configuration
                       (though `validate_before_workflow_run` should prevent this during execution).
         """
         # Retrieve all parameter values set on the node UI or via input connections.
@@ -90,19 +93,19 @@ class NimPrompt(BasePrompt):
         # Use the helper method from BasePrompt to get args like temperature, stream, max_attempts, etc.
         common_args = self._get_common_driver_args(params)
 
-        # --- Prepare Nvidia Specific Arguments ---
+        # --- Prepare NVIDIA Specific Arguments ---
         specific_args = {}
 
         # Retrieve the mandatory API key.
         specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
 
-        # Set the base URL for the Nvidia API.
+        # Set the base URL for the NVIDIA API.
         specific_args["base_url"] = BASE_URL
 
         # Get the selected model.
         specific_args["model"] = self.get_parameter_value("model")
 
-        # Handle parameters that go into 'extra_params' for Nvidia.
+        # Handle parameters that go into 'extra_params' for NVIDIA.
         extra_params = {}
 
         extra_params["top_p"] = self.get_parameter_value("top_p")
