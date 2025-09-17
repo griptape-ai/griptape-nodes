@@ -234,59 +234,6 @@ class LibraryRegistry(metaclass=SingletonMeta):
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
 
     @classmethod
-    def get_schema_from_loaded_libraries(cls, category: str) -> dict | None:
-        """Get schema from loaded libraries for a specific category.
-
-        Args:
-            category: The category to search for
-
-        Returns:
-            JSON Schema dict with the schema wrapped in proper structure, or None if not found
-        """
-        instance = cls()
-
-        for library in instance._libraries.values():
-            library_data = library.get_library_data()
-            if library_data.settings:
-                for setting in library_data.settings:
-                    if setting.category == category and setting.json_schema:
-                        return {
-                            "type": "object",
-                            "properties": setting.json_schema,
-                            "title": setting.description or f"{category.title()} Settings",
-                        }
-        return None
-
-    @classmethod
-    def get_library_schema(cls, library_name: str, category: str) -> dict | None:
-        """Get schema from a specific library for a specific category.
-
-        Args:
-            library_name: Name of the library to get schema from
-            category: The category to search for
-
-        Returns:
-            JSON Schema dict with the schema wrapped in proper structure, or None if not found
-        """
-        instance = cls()
-
-        if library_name not in instance._libraries:
-            return None
-
-        library = instance._libraries[library_name]
-        library_data = library.get_library_data()
-
-        if library_data.settings:
-            for setting in library_data.settings:
-                if setting.category == category and setting.json_schema:
-                    return {
-                        "type": "object",
-                        "properties": setting.json_schema,
-                        "title": setting.description or f"{category.title()} Settings",
-                    }
-        return None
-
-    @classmethod
     def get_all_library_schemas(cls, extra_settings: dict[str, dict]) -> dict[str, dict]:
         """Get schemas from all loaded libraries with fallbacks for extra settings.
 
@@ -296,33 +243,30 @@ class LibraryRegistry(metaclass=SingletonMeta):
         Returns:
             Dictionary mapping category names to their JSON Schema dicts
         """
+        instance = cls()
         schemas = {}
 
         # Get explicit schemas from loaded libraries
+        for library in instance._libraries.values():
+            library_data = library.get_library_data()
+            if library_data.settings:
+                for setting in library_data.settings:
+                    if setting.json_schema:
+                        schemas[setting.category] = {
+                            "type": "object",
+                            "properties": setting.json_schema,
+                            "title": setting.description or f"{setting.category.title()} Settings",
+                        }
+
+        # Add fallback schemas for categories that have data but no explicit schema
         for category in extra_settings:
-            schema = cls.get_schema_from_loaded_libraries(category)
-            if schema:
-                schemas[category] = schema
-            else:
-                # Add fallback schema for categories that have data but no explicit schema
-                schemas[category] = cls._create_fallback_schema(category)
+            if category not in schemas:
+                schemas[category] = {
+                    "type": "object",
+                    "title": f"{category.replace('_', ' ').title()} Settings",
+                }
 
         return schemas
-
-    @classmethod
-    def _create_fallback_schema(cls, category: str) -> dict[str, str]:
-        """Create a fallback schema for a category.
-
-        Args:
-            category: The category name
-
-        Returns:
-            Basic JSON Schema dict
-        """
-        return {
-            "type": "object",
-            "title": f"{category.replace('_', ' ').title()} Settings",
-        }
 
 
 class Library:
