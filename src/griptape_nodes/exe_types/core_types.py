@@ -501,18 +501,48 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "error": "Error",
         "success": "Success",
         "tip": "Tip",
+        "link": "Link",
+        "docs": "Documentation",
+        "help": "Help",
+        "note": "Note",
+        "none": "",
+    }
+
+    # Define default icons as a class-level constant (based on Lucide icons)
+    DEFAULT_ICONS: ClassVar[dict[str, str]] = {
+        "info": "info",
+        "warning": "alert-triangle",
+        "error": "x-circle",
+        "success": "check-circle",
+        "tip": "lightbulb",
+        "link": "external-link",
+        "docs": "book-open",
+        "help": "help-circle",
+        "note": "sticky-note",
+        "primary": "checkmark",
+        "secondary": "chevron-right",
         "none": "",
     }
 
     # Create a type alias using the keys from DEFAULT_TITLES
-    type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
+    type VariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+    type ButtonAlignType = Literal["full-width", "left", "center", "right"]
+    type ButtonType = Literal[
+        "info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none", "primary", "secondary"
+    ]
+    type ButtonVariantType = Literal["default", "destructive", "outline", "secondary", "ghost", "link"]
 
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
     _variant: VariantType = field(init=False)
     _title: str | None = field(default=None, init=False)
     _value: str = field(init=False)
+    _message_icon: str | None = field(default="__DEFAULT__", init=False)
     _button_link: str | None = field(default=None, init=False)
     _button_text: str | None = field(default=None, init=False)
+    _button_icon: str | None = field(default=None, init=False)
+    _button_type: ButtonType | None = field(default=None, init=False)
+    _button_variant: ButtonVariantType = field(default="outline", init=False)
+    _button_align: ButtonAlignType = field(default="full-width", init=False)
     _full_width: bool = field(default=False, init=False)
     _ui_options: dict = field(default_factory=dict, init=False)
 
@@ -522,8 +552,13 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         value: str,
         *,
         title: str | None = None,
+        message_icon: str | None = "__DEFAULT__",
         button_link: str | None = None,
         button_text: str | None = None,
+        button_icon: str | None = None,
+        button_type: ButtonType | None = None,
+        button_variant: ButtonVariantType = "outline",
+        button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
         ui_options: dict | None = None,
         **kwargs,
@@ -532,8 +567,13 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._variant = variant
         self._title = title
         self._value = value
+        self._message_icon = message_icon
         self._button_link = button_link
         self._button_text = button_text
+        self._button_icon = button_icon
+        self._button_type = button_type
+        self._button_variant = button_variant
+        self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
 
@@ -592,6 +632,51 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._full_width = value
 
     @property
+    def message_icon(self) -> str | None:
+        return self._message_icon
+
+    @message_icon.setter
+    @BaseNodeElement.emits_update_on_write
+    def message_icon(self, value: str | None) -> None:
+        self._message_icon = value
+
+    @property
+    def button_icon(self) -> str | None:
+        return self._button_icon
+
+    @button_icon.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_icon(self, value: str | None) -> None:
+        self._button_icon = value
+
+    @property
+    def button_type(self) -> ButtonType | None:
+        return self._button_type
+
+    @button_type.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_type(self, value: ButtonType | None) -> None:
+        self._button_type = value
+
+    @property
+    def button_variant(self) -> ButtonVariantType:
+        return self._button_variant
+
+    @button_variant.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_variant(self, value: ButtonVariantType) -> None:
+        self._button_variant = value
+
+    @property
+    def button_align(self) -> ButtonAlignType:
+        return self._button_align
+
+    @button_align.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_align(self, value: ButtonAlignType) -> None:
+        self._button_align = value
+
+    @property
     def ui_options(self) -> dict:
         return self._ui_options
 
@@ -603,23 +688,48 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
 
-        # Use class-level default titles
+        # Use class-level default titles and icons
         title = self.title or self.DEFAULT_TITLES.get(str(self.variant), "")
 
+        # Handle message_icon logic:
+        # - "__DEFAULT__" means use the default icon for the variant
+        # - None means explicitly no icon (empty string)
+        # - Any other string means use that icon
+        if self.message_icon == "__DEFAULT__":
+            message_icon = self.DEFAULT_ICONS.get(str(self.variant), "")
+        elif self.message_icon is None:
+            message_icon = ""
+        else:
+            message_icon = self.message_icon
+
+        # Handle button_icon logic:
+        # - None means use the default icon for the button_type (or variant if no button_type)
+        # - Empty string means explicitly no icon
+        # - Any other string means use that icon
+        button_type = self.button_type or self.variant
+        if self.button_icon is None:
+            button_icon = self.DEFAULT_ICONS.get(str(button_type), "")
+        else:
+            button_icon = self.button_icon
+
         # Merge the UI options with the message-specific options
+        # Always include these fields, even if they're None or empty
+        message_ui_options = {
+            "title": title,
+            "variant": self.variant,
+            "message_icon": message_icon,
+            "button_link": self.button_link,
+            "button_text": self.button_text,
+            "button_icon": button_icon,
+            "button_type": button_type,
+            "button_variant": self.button_variant,
+            "button_align": self.button_align,
+            "full_width": self.full_width,
+        }
+
         merged_ui_options = {
             **self.ui_options,
-            **{
-                k: v
-                for k, v in {
-                    "title": title,
-                    "variant": self.variant,
-                    "button_link": self.button_link,
-                    "button_text": self.button_text,
-                    "full_width": self.full_width,
-                }.items()
-                if v is not None
-            },
+            **message_ui_options,
         }
 
         data["name"] = self.name
