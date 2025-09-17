@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import subprocess
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+
+logger = logging.getLogger(__name__)
 
 
 async def call_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -87,3 +91,30 @@ async def subprocess_run(
         )
 
     return completed_process
+
+
+async def cancel_subprocess(process: asyncio.subprocess.Process, name: str = "process") -> None:
+    """Cancel a subprocess with graceful termination then force kill.
+
+    Args:
+        process: The subprocess to cancel
+        name: Name/description for logging purposes
+    """
+    if process.returncode is not None:  # Process already terminated
+        return
+
+    try:
+        process.terminate()
+        logger.info("Terminated %s", name)
+
+        # Give process a chance to terminate gracefully
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+        except TimeoutError:
+            # Force kill if it doesn't terminate
+            process.kill()
+            logger.info("Force killed %s", name)
+            await process.wait()
+    except ProcessLookupError:
+        # Process already terminated
+        pass
