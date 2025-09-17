@@ -433,24 +433,8 @@ class ExecuteDagState(State):
                     node = context.task_to_node[task]
                     node.node_state = NodeState.DONE
 
-            # Check if node is already being processed (shouldn't happen)
-            if node_reference.node_reference.state == NodeResolutionState.RESOLVING:
-                logger.error(
-                    "DUPLICATE EXECUTION DETECTED: Node '%s' is already RESOLVING but was queued for execution again. This should not happen!",
-                    node_reference.node_reference.name,
-                )
-                continue
-
-            # Check if node is already resolved (also shouldn't happen for queued nodes)
-            if node_reference.node_reference.state == NodeResolutionState.RESOLVED:
-                logger.error(
-                    "DUPLICATE EXECUTION DETECTED: Node '%s' is already RESOLVED but was queued for execution again. This should not happen!",
-                    node_reference.node_reference.name,
-                )
-                continue
-
             # Execute the node asynchronously
-            logger.info(
+            logger.debug(
                 "CREATING EXECUTION TASK for node '%s' - this should only happen once per node!",
                 node_reference.node_reference.name,
             )
