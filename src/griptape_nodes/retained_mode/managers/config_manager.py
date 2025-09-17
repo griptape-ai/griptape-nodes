@@ -41,9 +41,6 @@ logger = logging.getLogger("griptape_nodes")
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
-# Configuration path constants
-LIBRARIES_TO_REGISTER_PATH = "app_events.on_app_initialization_complete.libraries_to_register"
-
 
 class ConfigManager:
     """A class to manage application configuration and file pathing.
