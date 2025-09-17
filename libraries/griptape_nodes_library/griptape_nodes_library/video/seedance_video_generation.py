@@ -171,7 +171,7 @@ class SeedanceVideoGeneration(DataNode):
                 default_value=None,
                 tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Last Frame"},
+                ui_options={"display_name": "Last Frame", "hide": True},
             )
         )
 
@@ -207,6 +207,18 @@ class SeedanceVideoGeneration(DataNode):
                 ui_options={"is_full_width": True, "pulse_on_run": True},
             )
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to show/hide dependent parameters."""
+        if parameter.name == "model_id":
+            # Show last_frame parameter only for i2v model
+            show_last_frame = value == "seedance-1-0-lite-i2v-250428"
+            if show_last_frame:
+                self.show_parameter_by_name("last_frame")
+            else:
+                self.hide_parameter_by_name("last_frame")
+
+        return super().after_value_set(parameter, value)
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
