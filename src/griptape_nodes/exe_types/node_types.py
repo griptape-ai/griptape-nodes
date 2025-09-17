@@ -1325,18 +1325,12 @@ class SuccessFailureNode(BaseNode):
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         """Clear result details before workflow runs to avoid confusion from previous sessions."""
-        self._set_status_results(
-            was_successful=False,
-            result_details="<Results will appear when the node executes>"
-        )
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
         return super().validate_before_workflow_run()
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Clear result details before node runs to avoid confusion from previous sessions."""
-        self._set_status_results(
-            was_successful=False,
-            result_details="<Results will appear when the node executes>"
-        )
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
         return super().validate_before_node_run()
 
 
