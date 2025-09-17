@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
@@ -85,6 +85,9 @@ class Setting(BaseModel):
     category: str  # Name of the category in the config
     contents: dict[str, Any]  # The actual settings content
     description: str | None = None  # Optional description for the setting
+    json_schema: dict[str, Any] | None = Field(
+        default=None, alias="schema"
+    )  # JSON schema for the setting (including enums)
 
 
 class LibrarySchema(BaseModel):
@@ -229,6 +232,36 @@ class LibraryRegistry(metaclass=SingletonMeta):
 
         # Ask the library to create the node.
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+
+    @classmethod
+    def get_all_library_schemas(cls) -> dict[str, dict]:
+        """Get schemas from all loaded libraries.
+
+        Returns:
+            Dictionary mapping category names to their JSON Schema dicts
+        """
+        instance = cls()
+        schemas = {}
+
+        # Get explicit schemas from loaded libraries
+        for library in instance._libraries.values():
+            library_data = library.get_library_data()
+            if library_data.settings:
+                for setting in library_data.settings:
+                    if setting.json_schema:
+                        schemas[setting.category] = {
+                            "type": "object",
+                            "properties": setting.json_schema,
+                            "title": setting.description or f"{setting.category.title()} Settings",
+                        }
+                    else:
+                        # Create fallback schema for settings without explicit schemas
+                        schemas[setting.category] = {
+                            "type": "object",
+                            "title": setting.description or f"{setting.category.title()} Settings",
+                        }
+
+        return schemas
 
 
 class Library:
