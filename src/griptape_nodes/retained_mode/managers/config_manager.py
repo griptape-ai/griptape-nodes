@@ -440,16 +440,9 @@ class ConfigManager:
             base_schema = Settings.model_json_schema()
             current_values = self.merged_config.copy()
 
-            # Get additional settings and their schemas
+            # Get library schemas for extra settings
             extra_settings = self._get_extra_settings()
-
-            # Build library schemas
-            library_schemas = {}
-            for category in extra_settings:
-                library_schemas[category] = LibraryRegistry.get_schema_from_loaded_libraries(category) or {
-                    "type": "object",
-                    "title": f"{category.replace('_', ' ').title()} Settings",
-                }
+            library_schemas = LibraryRegistry.get_all_library_schemas(extra_settings)
 
             # Return clean structure
             schema_with_defaults = {
