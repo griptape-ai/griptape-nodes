@@ -5,7 +5,6 @@ from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
 
 class OutputSelector(ControlNode):
-
     ignore_dependencies: bool = True
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
