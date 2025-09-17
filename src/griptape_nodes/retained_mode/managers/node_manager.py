@@ -357,9 +357,9 @@ class NodeManager:
         else:
             details = f"Successfully created Node '{final_node_name}' in Flow '{parent_flow_name}'"
 
-        log_level = "DEBUG"
+        log_level = logging.DEBUG
         if remapped_requested_node_name:
-            log_level = "WARNING"
+            log_level = logging.WARNING
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
@@ -1325,7 +1325,7 @@ class NodeManager:
                 # Early return with warning - we're just preserving the original changes
                 details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
 
-                result_details = ResultDetails(message=details, level="WARNING")
+                result_details = ResultDetails(message=details, level=logging.WARNING)
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
@@ -1358,7 +1358,7 @@ class NodeManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
                 details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
                 return AlterParameterDetailsResultSuccess(
-                    result_details=ResultDetails(message=details, level="WARNING")
+                    result_details=ResultDetails(message=details, level=logging.WARNING)
                 )
             self.modify_key_parameter_fields(request, element)
 

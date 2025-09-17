@@ -429,10 +429,10 @@ class FlowManager:
 
         # Success
         details = f"Successfully created Flow '{final_flow_name}'."
-        log_level = "DEBUG"
+        log_level = logging.DEBUG
         if (request.flow_name is not None) and (final_flow_name != request.flow_name):
             details = f"{details} WARNING: Had to rename from original Flow requested '{request.flow_name}' as an object with this name already existed."
-            log_level = "WARNING"
+            log_level = logging.WARNING
 
         result = CreateFlowResultSuccess(
             flow_name=final_flow_name, result_details=ResultDetails(message=details, level=log_level)

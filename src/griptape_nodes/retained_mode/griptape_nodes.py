@@ -568,7 +568,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             GriptapeNodes.EngineIdentityManager().set_engine_name(request.engine_name.strip())
             details = f"Engine name set to: {request.engine_name.strip()}"
             return SetEngineNameResultSuccess(
-                engine_name=request.engine_name.strip(), result_details=ResultDetails(message=details, level="INFO")
+                engine_name=request.engine_name.strip(),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as err:

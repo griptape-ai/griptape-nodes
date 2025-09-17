@@ -1,4 +1,5 @@
 import base64
+import logging
 import mimetypes
 import os
 import shutil
@@ -766,7 +767,7 @@ class OSManager:
             if file_path.exists():
                 msg = f"Path already exists: {file_path}"
                 return CreateFileResultSuccess(
-                    created_path=str(file_path), result_details=ResultDetails(message=msg, level="WARNING")
+                    created_path=str(file_path), result_details=ResultDetails(message=msg, level=logging.WARNING)
                 )
 
             # Create parent directories if needed
@@ -835,7 +836,7 @@ class OSManager:
             return RenameFileResultSuccess(
                 old_path=str(old_path),
                 new_path=str(new_path),
-                result_details=ResultDetails(message=details, level="INFO"),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as e:
