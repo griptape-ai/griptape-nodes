@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, Field
 
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
@@ -82,11 +82,12 @@ class NodeDefinition(BaseModel):
 class Setting(BaseModel):
     """Defines a library-specific setting, which will automatically be injected into the user's Configuration."""
 
-    model_config = ConfigDict(extra="allow")  # Allow extra fields like 'schema' to be preserved
-
     category: str  # Name of the category in the config
     contents: dict[str, Any]  # The actual settings content
     description: str | None = None  # Optional description for the setting
+    json_schema: dict[str, Any] | None = Field(
+        default=None, alias="schema"
+    )  # JSON schema for the setting (including enums)
 
 
 class LibrarySchema(BaseModel):
@@ -231,6 +232,30 @@ class LibraryRegistry(metaclass=SingletonMeta):
 
         # Ask the library to create the node.
         return dest_library.create_node(node_type=node_type, name=name, metadata=metadata)
+
+    @classmethod
+    def get_schema_from_loaded_libraries(cls, category: str) -> dict | None:
+        """Get schema from loaded libraries for a specific category.
+
+        Args:
+            category: The category to search for
+
+        Returns:
+            JSON Schema dict with the schema wrapped in proper structure, or None if not found
+        """
+        instance = cls()
+
+        for library in instance._libraries.values():
+            library_data = library.get_library_data()
+            if library_data.settings:
+                for setting in library_data.settings:
+                    if setting.category == category and setting.json_schema:
+                        return {
+                            "type": "object",
+                            "properties": setting.json_schema,
+                            "title": setting.description or f"{category.title()} Settings",
+                        }
+        return None
 
 
 class Library:
