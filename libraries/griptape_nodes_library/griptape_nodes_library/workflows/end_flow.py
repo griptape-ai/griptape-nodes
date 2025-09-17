@@ -15,4 +15,4 @@ class EndFlow(EndNode):
         super().__init__(name, metadata)
 
     def process(self) -> None:
-        pass
+        super().process()
