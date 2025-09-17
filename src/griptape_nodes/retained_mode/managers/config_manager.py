@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, ValidationError, create_model
+from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -35,11 +35,6 @@ from griptape_nodes.retained_mode.events.config_events import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
-from griptape_nodes.utils.json_schema_utils import (
-    extract_custom_fields_from_schema,
-    extract_enum_from_json,
-    infer_field_type,
-)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -428,43 +423,41 @@ class ConfigManager:
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle request to get the configuration schema with default values and library settings.
+        """Handle request to get the configuration schema with current values and library settings.
 
-        This method generates a unified configuration schema that includes both base settings (defined at
-        compile time in Settings model) and dynamic library settings (loaded at runtime from external
-        library definition files). The frontend needs this schema to render configuration UIs with proper
-        type validation, enum dropdowns, and field organization.
+        This method returns a clean structure with three main components:
+        1. base_schema: Core settings schema from Pydantic Settings model with categories
+        2. library_schemas: Library-specific schemas from definition files (preserves enums)
+        3. current_values: All current configuration values from merged config
 
-        The process involves several steps:
-        1. Create a dynamic Pydantic model that extends base Settings with library-specific fields
-        2. Convert the dynamic model to JSON Schema format (standard for frontend config UIs)
-        3. Override default values with actual configured values (user + workspace + env overrides)
-        4. Organize settings metadata for frontend UI (categories, library groupings, etc.)
-
-        Why this complexity? We need to bridge two worlds: backend type safety (Pydantic models) and
-        frontend standards (JSON Schema). The dynamic model creation allows us to include library settings
-        that aren't known at compile time, while maintaining proper validation and enum handling.
+        The approach separates concerns for frontend flexibility and simplicity.
+        Library settings with explicit schemas (including enums) are preserved, while
+        libraries without schemas get simple object types.
         """
         try:
-            # Create a dynamic Settings model that includes library settings as proper Pydantic fields
-            dynamic_settings_model = self._create_dynamic_settings_model()
+            # Get base settings schema and current values
+            base_schema = Settings.model_json_schema()
+            current_values = self.merged_config.copy()
 
-            # Get the schema from the dynamic model - includes base Settings fields + library settings
-            schema = dynamic_settings_model.model_json_schema()
+            # Get library settings and their schemas
+            library_settings = self._get_library_settings()
+            library_paths = get_dot_value(
+                self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
+            )
 
-            # Get default values from the dynamic model (includes defaults for library settings)
-            default_values = dynamic_settings_model().model_dump(mode="json")
+            # Build library schemas
+            library_schemas = {}
+            for category in library_settings:
+                library_schemas[category] = self._extract_schema_from_library_files(library_paths, category) or {
+                    "type": "object",
+                    "title": f"{category.replace('_', ' ').title()} Settings",
+                }
 
-            # Override defaults with actual configured values from merged config (user + workspace + env)
-            default_values.update(self.merged_config)
-
-            # Add library settings metadata for frontend UI organization
-            schema["library_settings"] = extract_custom_fields_from_schema(schema, set(Settings.model_fields.keys()))
-
-            # Package schema and default values for the API response
+            # Return clean structure
             schema_with_defaults = {
-                "schema": schema,
-                "default_values": default_values,
+                "base_schema": base_schema,
+                "library_schemas": library_schemas,
+                "current_values": current_values,
             }
 
             result_details = "Successfully returned the configuration schema with default values and library settings."
@@ -599,64 +592,37 @@ class ConfigManager:
             logger.error("Invalid log level %s. Defaulting to INFO.", level)
             logger.setLevel(logging.INFO)
 
-    def _create_dynamic_settings_model(self) -> type[Settings]:
-        """Create a dynamic Settings model that includes library settings as proper Pydantic fields."""
-        # Get library settings that are already in merged_config
-        library_settings = {
+    def _get_library_settings(self) -> dict[str, dict]:
+        """Get library settings from merged_config that are not base Settings fields."""
+        return {
             key: value
             for key, value in self.merged_config.items()
             if key not in Settings.model_fields and isinstance(value, dict)
         }
 
-        if not library_settings:
-            return Settings
+    def _extract_schema_from_library_files(self, library_paths: list[str], category: str) -> dict | None:
+        """Extract schema from library definition files for a specific category.
 
-        # Create field definitions for library settings
-        library_fields = {}
-        for category, settings_data in library_settings.items():
-            # Create a simple nested model for this library category
-            library_model = self._create_library_settings_model(category, settings_data)
-            library_fields[category] = (
-                library_model,
-                Field(default_factory=library_model),
-            )
+        Args:
+            library_paths: List of paths to library definition JSON files
+            category: The category to search for
 
-        return create_model("DynamicSettings", **library_fields, __base__=Settings)
+        Returns:
+            JSON Schema dict with the schema wrapped in proper structure, or None if not found
+        """
+        for library_path in library_paths:
+            try:
+                with Path(library_path).open() as f:
+                    library_def = json.load(f)
 
-    def _create_library_settings_model(self, category: str, settings_data: dict) -> type:
-        """Create a Pydantic model for a specific library's settings."""
-        fields = {}
-        # Get enum information from library definitions
-        enum_info = self._get_library_enum_info(category)
-
-        for key, value in settings_data.items():
-            # Use generic functions to infer type and create field definition
-            field_type = infer_field_type(value, enum_info, key)
-            field_kwargs = {"default": value, "title": key.replace("_", " ").title()}
-            fields[key] = (field_type, Field(**field_kwargs))
-
-        return create_model(f"{category.title()}Settings", **fields)
-
-    def _get_library_enum_info(self, category: str) -> dict[str, list]:
-        """Get enum information for a specific library category from library definition files."""
-        try:
-            library_paths = get_dot_value(
-                self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
-            )
-            for library_path in library_paths:
-                enum_info = self._extract_enum_from_library_file(library_path, category)
-                if enum_info:
-                    return enum_info
-        except Exception as e:
-            logger.debug("Error getting enum info for %s: %s", category, e)
-        return {}
-
-    def _extract_enum_from_library_file(self, library_path: str, category: str) -> dict[str, list] | None:
-        """Extract enum information from a specific library definition file."""
-        try:
-            with Path(library_path).open() as f:
-                library_def = json.load(f)
-            return extract_enum_from_json(library_def, "category", category)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+                # Look for settings with matching category
+                for setting in library_def.get("settings", []):
+                    if setting.get("category") == category and "schema" in setting:
+                        return {
+                            "type": "object",
+                            "properties": setting["schema"],
+                            "title": setting.get("description", f"{category.title()} Settings"),
+                        }
+            except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                continue
         return None
