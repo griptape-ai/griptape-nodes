@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
@@ -441,14 +442,11 @@ class ConfigManager:
 
             # Get additional settings and their schemas
             extra_settings = self._get_extra_settings()
-            library_paths = get_dot_value(
-                self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
-            )
 
             # Build library schemas
             library_schemas = {}
             for category in extra_settings:
-                library_schemas[category] = self._extract_schema_from_library_files(library_paths, category) or {
+                library_schemas[category] = LibraryRegistry.get_schema_from_loaded_libraries(category) or {
                     "type": "object",
                     "title": f"{category.replace('_', ' ').title()} Settings",
                 }
@@ -599,30 +597,3 @@ class ConfigManager:
             for key, value in self.merged_config.items()
             if key not in Settings.model_fields and isinstance(value, dict)
         }
-
-    def _extract_schema_from_library_files(self, library_paths: list[str], category: str) -> dict | None:
-        """Extract schema from library definition files for a specific category.
-
-        Args:
-            library_paths: List of paths to library definition JSON files
-            category: The category to search for
-
-        Returns:
-            JSON Schema dict with the schema wrapped in proper structure, or None if not found
-        """
-        for library_path in library_paths:
-            try:
-                with Path(library_path).open() as f:
-                    library_def = json.load(f)
-
-                # Look for settings with matching category
-                for setting in library_def.get("settings", []):
-                    if setting.get("category") == category and "schema" in setting:
-                        return {
-                            "type": "object",
-                            "properties": setting["schema"],
-                            "title": setting.get("description", f"{category.title()} Settings"),
-                        }
-            except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                continue
-        return None
