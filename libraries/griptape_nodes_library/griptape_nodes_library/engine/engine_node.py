@@ -93,6 +93,12 @@ class EngineNode(SuccessFailureNode):
     _SUCCESS_MESSAGE_WITH_DOC_TEMPLATE = "Success Output Parameters: {doc}\n\nThese values will be populated only after the request executes successfully."
     _FAILURE_MESSAGE_WITH_DOC_TEMPLATE = "Failure Output Parameters: {doc}\n\nThese values will be populated only after the request fails or encounters errors."
 
+    # Documentation message constants
+    _SELECT_REQUEST_TYPE_MESSAGE = "Select a request type to see its documentation and parameters."
+
+    # Error message constants
+    _RESULT_CLASSES_NOT_FOUND_ERROR = "corresponding Success and Failure result classes not found"
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -131,7 +137,7 @@ class EngineNode(SuccessFailureNode):
         # Documentation message for the selected request type
         self.documentation_message = ParameterMessage(
             variant="info",
-            value="Select a request type to see its documentation and parameters.",
+            value=self._SELECT_REQUEST_TYPE_MESSAGE,
             name="documentation",
         )
         self.add_node_element(self.documentation_message)
@@ -158,7 +164,7 @@ class EngineNode(SuccessFailureNode):
             result_details_placeholder="Details on the request execution will be presented here.",
         )
         # Override to show Status group expanded by default for EngineNode
-        self.status_group.ui_options = {"collapsed": False}
+        self.status_component.get_parameter_group().ui_options = {"collapsed": False}
 
         # Initial parameter creation will be deferred to validate_before_workflow_run
         # to ensure the node is properly registered first
@@ -190,9 +196,7 @@ class EngineNode(SuccessFailureNode):
                 "Could not find corresponding ResultPayload classes for request type '%s' - execution skipped",
                 clean_type,
             )
-            msg = (
-                f"Cannot execute '{clean_type}': corresponding Success/Failure result classes not found in the system."
-            )
+            msg = f"Cannot execute '{clean_type}': {self._RESULT_CLASSES_NOT_FOUND_ERROR} in the system."
             raise ValueError(msg)
 
         # Step 5: Build the request arguments from input parameters
@@ -411,7 +415,7 @@ class EngineNode(SuccessFailureNode):
         new_order.append(self.request_selector.name)
 
         # 4. Status group (contains was_successful and result_details)
-        new_order.append(self.status_group.name)
+        new_order.append(self.status_component.get_parameter_group().name)
 
         # 5. documentation ParameterMessage
         new_order.append(self.documentation_message.name)
@@ -461,9 +465,7 @@ class EngineNode(SuccessFailureNode):
                     logger.error("Failed to remove parameter %s: %s", param.name, result.result_details)
 
         # Reset static UI elements to explanatory content
-        self.success_info_message.value = (
-            "Success Output Parameters: These values will be populated only after the request executes successfully."
-        )
+        self.success_info_message.value = self._SUCCESS_MESSAGE_DEFAULT
         self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
 
     # Private Methods
@@ -546,7 +548,7 @@ class EngineNode(SuccessFailureNode):
             self._clear_all_dynamic_elements(current_params)
 
             # Reset all messages to default state
-            self.documentation_message.value = "Select a request type to see its documentation and parameters."
+            self.documentation_message.value = self._SELECT_REQUEST_TYPE_MESSAGE
             self.success_info_message.value = self._SUCCESS_MESSAGE_DEFAULT
             self.failure_info_message.value = self._FAILURE_MESSAGE_DEFAULT
             return
@@ -564,18 +566,14 @@ class EngineNode(SuccessFailureNode):
         # Check if request type is usable
         if not new_request_info.has_results:
             # Set result_details to show the error instead of using error_message
-            self.parameter_output_values[self.result_details.name] = (
-                f"ERROR: Cannot use {clean_type}: corresponding Success and Failure result classes not found"
-            )
-            self.publish_update_to_parameter(
-                self.result_details.name,
-                f"ERROR: Cannot use {clean_type}: corresponding Success and Failure result classes not found",
+            self.status_component.set_execution_result(
+                was_successful=False,
+                result_details=f"ERROR: Cannot use {clean_type}: {self._RESULT_CLASSES_NOT_FOUND_ERROR}",
             )
             return
 
         # Clear result_details for usable request types
-        self.parameter_output_values[self.result_details.name] = ""
-        self.publish_update_to_parameter(self.result_details.name, "")
+        self.status_component.set_execution_result(was_successful=False, result_details="")
 
         # Systematic parameter transition approach
         if _old_type:
