@@ -1365,9 +1365,9 @@ class EndNode(BaseNode):
                 was_successful = False
                 status_prefix = "[FAILED]"
             case _:
-                # Shouldn't happen, but handle gracefully
-                was_successful = False
-                status_prefix = "[ERROR] EndNode entered via unexpected control path"
+                # No specific success/failure connection provided, assume success
+                was_successful = True
+                status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")
