@@ -70,18 +70,15 @@ class DagBuilder:
                 return
 
             # Process dependencies first (depth-first)
-            # Skip data dependency processing if node has overridden initialize_spotlight to return None
-            # This is necessary for OutputSelector to still work (it doesn't process data dependencies)
-            should_process_data_dependencies = current_node.initialize_spotlight() is not None
-
+            ignore_data_dependencies = False
+            # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.
+            if hasattr(current_node, "ignore_dependencies"):
+                ignore_data_dependencies = True
             for param in current_node.parameters:
                 if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
                     continue
-
-                # Skip data parameters if node shouldn't process data dependencies (like OutputSelector)
-                if not should_process_data_dependencies:
+                if ignore_data_dependencies:
                     continue
-
                 upstream_connection = connections.get_connected_node(current_node, param)
                 if upstream_connection:
                     upstream_node, _ = upstream_connection
