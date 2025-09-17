@@ -445,19 +445,18 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_names, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
-            if control_node_name is not None:
-                control_node = GriptapeNodes.ObjectManager().get_object_by_name(control_node_name)
-                if control_node in connected_nodes:
-                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                    cancelled = True
-                    if not result.succeeded():
-                        details = (
-                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
-                        )
-                        return DeleteNodeResultFailure(result_details=details)
+            if control_node_names is not None:
+                for control_node_name in control_node_names:
+                    control_node = GriptapeNodes.ObjectManager().get_object_by_name(control_node_name)
+                    if control_node in connected_nodes:
+                        result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                        cancelled = True
+                        if not result.succeeded():
+                            details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                            return DeleteNodeResultFailure(result_details=details)
             if resolving_node_names is not None and not cancelled:
                 for resolving_node_name in resolving_node_names:
                     resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
