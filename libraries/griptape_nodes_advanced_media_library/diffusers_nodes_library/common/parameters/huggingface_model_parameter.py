@@ -91,20 +91,19 @@ class HuggingFaceModelParameter(ABC):
         return base_repo_id, base_revision
 
     def get_help_message(self) -> str:
-        download_commands = "\n".join([f"  - `{cmd}`" for cmd in self.get_download_commands()])
+        download_commands = "\n".join([f"  {cmd}" for cmd in self.get_download_commands()])
         return (
-            "How to download the models:\n"
-            "1. Setup huggingface-cli as per our docs: https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/ \n"
-            "2. Download at least one model:\n"
-            f"{download_commands}\n"
-            "3. Save, close, then open the again workflow. ([red]X[/red] Do not just reload the page)\n"
-            "\n"
-            "[green]OK[/green] If successful, you should see a dropdown with the available models.\n"
-            "[red]X[/red] If not successful because download fails then check huggingface-cli docs.\n"
-            "[red]X[/red] If not successful for some other reason then reach out to us on Discord or GitHub.\n"
-            "\n"
-            "Note: Currently this is the only supported method for downloading models. \n"
-            "Hopefully this gets more intuitive (and customizable) soon!\n"
+            "Model download required to continue.\n\n"
+            "To download models:\n\n"
+            "1. Configure huggingface-cli by following the documentation at:\n"
+            "   https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/\n\n"
+            "2. Download one or more models using the following commands:\n"
+            f"{download_commands}\n\n"
+            "3. Save and reopen the workflow after downloading models.\n\n"
+            "After completing these steps, a dropdown menu with available models will appear. "
+            "If you encounter issues, please refer to the huggingface-cli documentation or "
+            "contact support through Discord or GitHub.\n\n"
+            "Note: CLI download is currently the only supported installation method."
         )
 
     @abstractmethod

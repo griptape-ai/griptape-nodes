@@ -23,7 +23,7 @@ class TestDagBuilder:
         """Test that initialization creates an empty DAG builder."""
         dag_builder = DagBuilder()
 
-        assert dag_builder.graph.nodes() == set()
+        assert len(dag_builder.graphs) == 0
         assert dag_builder.node_to_reference == {}
 
     def test_add_node_creates_dag_node(self) -> None:
@@ -47,7 +47,9 @@ class TestDagBuilder:
 
         dag_builder.add_node(mock_node)
 
-        assert "test_node" in dag_builder.graph.nodes()
+        default_graph = dag_builder.graphs.get("default")
+        assert default_graph is not None
+        assert "test_node" in default_graph.nodes()
         assert "test_node" in dag_builder.node_to_reference
 
     def test_add_node_duplicate_returns_existing(self) -> None:
@@ -60,7 +62,9 @@ class TestDagBuilder:
         dag_node2 = dag_builder.add_node(mock_node)
 
         assert dag_node1 is dag_node2
-        assert len(dag_builder.graph.nodes()) == 1
+        default_graph = dag_builder.graphs.get("default")
+        assert default_graph is not None
+        assert len(default_graph.nodes()) == 1
         assert len(dag_builder.node_to_reference) == 1
 
     def test_add_node_with_dependencies_no_connections(self) -> None:
@@ -80,7 +84,9 @@ class TestDagBuilder:
 
             assert len(added_nodes) == 1
             assert added_nodes[0] is mock_node
-            assert "test_node" in dag_builder.graph.nodes()
+            default_graph = dag_builder.graphs.get("default")
+            assert default_graph is not None
+            assert "test_node" in default_graph.nodes()
 
     def test_add_node_with_dependencies_with_upstream_nodes(self) -> None:
         """Test adding a node with upstream dependencies."""
@@ -90,12 +96,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager connections
@@ -114,12 +125,14 @@ class TestDagBuilder:
             assert len(added_nodes) == 2
             assert upstream_node in added_nodes
             assert downstream_node in added_nodes
-            assert "upstream_node" in dag_builder.graph.nodes()
-            assert "downstream_node" in dag_builder.graph.nodes()
+            default_graph = dag_builder.graphs.get("default")
+            assert default_graph is not None
+            assert "upstream_node" in default_graph.nodes()
+            assert "downstream_node" in default_graph.nodes()
 
             # Check that edge was added
-            assert dag_builder.graph.in_degree("downstream_node") == 1
-            assert dag_builder.graph.in_degree("upstream_node") == 0
+            assert default_graph.in_degree("downstream_node") == 1
+            assert default_graph.in_degree("upstream_node") == 0
 
     def test_add_node_with_dependencies_existing_upstream_node(self) -> None:
         """Test adding a node when upstream dependency already exists in DAG."""
@@ -129,12 +142,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Add upstream node first
@@ -153,9 +171,11 @@ class TestDagBuilder:
             assert added_nodes[0] is downstream_node
 
             # Both nodes should be in the DAG with proper edge
-            assert len(dag_builder.graph.nodes()) == 2
-            assert dag_builder.graph.in_degree("downstream_node") == 1
-            assert dag_builder.graph.in_degree("upstream_node") == 0
+            default_graph = dag_builder.graphs.get("default")
+            assert default_graph is not None
+            assert len(default_graph.nodes()) == 2
+            assert default_graph.in_degree("downstream_node") == 1
+            assert default_graph.in_degree("upstream_node") == 0
 
     def test_add_node_with_dependencies_prevents_cycles(self) -> None:
         """Test that add_node_with_dependencies handles potential cycles using visited set."""
@@ -164,13 +184,19 @@ class TestDagBuilder:
         # Create mock nodes that could create a cycle
         node_a = MagicMock(spec=BaseNode)
         node_a.name = "node_a"
+        node_a.state = MagicMock()
+        node_a.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         node_b = MagicMock(spec=BaseNode)
         node_b.name = "node_b"
+        node_b.state = MagicMock()
+        node_b.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameters
         param_a = MagicMock()
+        param_a.type = "str"  # Not CONTROL_TYPE
         param_b = MagicMock()
+        param_b.type = "str"  # Not CONTROL_TYPE
         node_a.parameters = [param_a]
         node_b.parameters = [param_b]
 
@@ -216,14 +242,16 @@ class TestDagBuilder:
         dag_builder.add_node(mock_node2)
 
         # Verify nodes were added
-        assert len(dag_builder.graph.nodes()) == 2
+        default_graph = dag_builder.graphs.get("default")
+        assert default_graph is not None
+        assert len(default_graph.nodes()) == 2
         assert len(dag_builder.node_to_reference) == 2
 
         # Clear the DAG builder
         dag_builder.clear()
 
         # Verify everything is cleared
-        assert dag_builder.graph.nodes() == set()
+        assert len(dag_builder.graphs) == 0
         assert dag_builder.node_to_reference == {}
 
     def test_clear_on_empty_dag_builder(self) -> None:
@@ -233,7 +261,7 @@ class TestDagBuilder:
         # Clear should not raise any errors
         dag_builder.clear()
 
-        assert dag_builder.graph.nodes() == set()
+        assert len(dag_builder.graphs) == 0
         assert dag_builder.node_to_reference == {}
 
     def test_clear_removes_edges(self) -> None:
@@ -244,12 +272,17 @@ class TestDagBuilder:
         upstream_node = MagicMock(spec=BaseNode)
         upstream_node.name = "upstream_node"
         upstream_node.parameters = []
+        upstream_node.state = MagicMock()
+        upstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         downstream_node = MagicMock(spec=BaseNode)
         downstream_node.name = "downstream_node"
+        downstream_node.state = MagicMock()
+        downstream_node.initialize_spotlight.return_value = MagicMock()  # Non-None return
 
         # Create mock parameter
         mock_param = MagicMock()
+        mock_param.type = "str"  # Not CONTROL_TYPE
         downstream_node.parameters = [mock_param]
 
         # Mock the FlowManager to create an edge
@@ -264,13 +297,15 @@ class TestDagBuilder:
             dag_builder.add_node_with_dependencies(downstream_node)
 
             # Verify edge was created
-            assert dag_builder.graph.in_degree("downstream_node") == 1
+            default_graph = dag_builder.graphs.get("default")
+            assert default_graph is not None
+            assert default_graph.in_degree("downstream_node") == 1
 
             # Clear the DAG
             dag_builder.clear()
 
             # Verify everything is cleared including edges
-            assert dag_builder.graph.nodes() == set()
+            assert len(dag_builder.graphs) == 0
             assert dag_builder.node_to_reference == {}
 
     def test_node_state_preservation(self) -> None:

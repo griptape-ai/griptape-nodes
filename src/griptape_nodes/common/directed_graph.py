@@ -12,6 +12,10 @@ class DirectedGraph:
         self._nodes: set[str] = set()
         self._predecessors: dict[str, set[str]] = {}
 
+    def __len__(self) -> int:
+        """Return the number of nodes in the graph."""
+        return len(self._nodes)
+
     def add_node(self, node_for_adding: str) -> None:
         """Add a node to the graph."""
         self._nodes.add(node_for_adding)
@@ -31,8 +35,20 @@ class DirectedGraph:
     def in_degree(self, node: str) -> int:
         """Return the in-degree of a node (number of incoming edges)."""
         if node not in self._nodes:
-            return 0
+            msg = f"Node {node} not found in graph"
+            raise KeyError(msg)
         return len(self._predecessors.get(node, set()))
+
+    def out_degree(self, node: str) -> int:
+        """Return the out-degree of a node (number of outgoing edges)."""
+        if node not in self._nodes:
+            msg = f"Node {node} not found in graph"
+            raise KeyError(msg)
+        count = 0
+        for predecessors in self._predecessors.values():
+            if node in predecessors:
+                count += 1
+        return count
 
     def remove_node(self, node: str) -> None:
         """Remove a node and all its edges from the graph."""
