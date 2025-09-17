@@ -90,19 +90,8 @@ class ExecutionStatusComponent:
             was_successful: Whether the operation succeeded
             result_details: Details about the operation result
         """
-        # ALWAYS set parameter values
-        self._node.set_parameter_value(self._was_successful.name, was_successful)
-        self._node.set_parameter_value(self._result_details.name, result_details)
-
-        # ONLY set output values if the parameter mode is OUTPUT
-        if ParameterMode.OUTPUT in self._was_successful.get_mode():
-            self._node.parameter_output_values[self._was_successful.name] = was_successful
-        if ParameterMode.OUTPUT in self._result_details.get_mode():
-            self._node.parameter_output_values[self._result_details.name] = result_details
-
-        # ALWAYS publish updates
-        self._node.publish_update_to_parameter(self._was_successful.name, was_successful)
-        self._node.publish_update_to_parameter(self._result_details.name, result_details)
+        self._update_parameter_value(self._was_successful, was_successful)
+        self._update_parameter_value(self._result_details, result_details)
 
     def clear_execution_status(self, initial_message: str | None = None) -> None:
         """Clear execution status and reset parameters.
@@ -113,3 +102,37 @@ class ExecutionStatusComponent:
         if initial_message is None:
             initial_message = ""
         self.set_execution_result(was_successful=False, result_details=initial_message)
+
+    def append_to_result_details(self, additional_text: str, separator: str = "\n") -> None:
+        """Append text to the existing result_details.
+
+        Args:
+            additional_text: Text to append to the current result_details
+            separator: Separator to use between existing and new text (default: newline)
+        """
+        # Get current result_details value
+        current_details = self._node.get_parameter_value(self._result_details.name)
+
+        # Append the new text
+        if current_details:
+            updated_details = f"{current_details}{separator}{additional_text}"
+        else:
+            updated_details = additional_text
+
+        # Use consolidated update method
+        self._update_parameter_value(self._result_details, updated_details)
+
+    def _update_parameter_value(self, parameter: Parameter, value: Any) -> None:
+        """Update a parameter value with all necessary operations.
+
+        Args:
+            parameter: The parameter to update
+            value: The new value to set
+        """
+        # ALWAYS set parameter value and publish update
+        self._node.set_parameter_value(parameter.name, value)
+        self._node.publish_update_to_parameter(parameter.name, value)
+
+        # ONLY set output values if the parameter mode is OUTPUT
+        if ParameterMode.OUTPUT in parameter.get_mode():
+            self._node.parameter_output_values[parameter.name] = value
