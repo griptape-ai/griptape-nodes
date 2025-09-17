@@ -63,7 +63,6 @@ class InitializeSpotlightState(State):
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
-        current_node = context.current_node
         if not context.paused:
             return InitializeSpotlightState
         return None
