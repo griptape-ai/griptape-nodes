@@ -3,8 +3,8 @@
 This module provides the `NimPrompt` class, which allows users
 to configure and utilize the OpenAi prompt service within the Griptape
 Nodes framework. It inherits common prompt parameters from `BasePrompt`, sets
-Nvidia Nim specific model options, requires a Nim API key via
-node configuration, and instantiates the `OpenAiPromptDriver`.
+NVIDIA NIM specific model options, requires a NIM API key via
+node configuration, and instantiates the `OpenAiChatPromptDriver`.
 """
 
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver as GtOpenAiChatPromptDriver
@@ -45,7 +45,7 @@ class NimPrompt(BasePrompt):
     The `process` method gathers the configured parameters and the API key,
     utilizes the `_get_common_driver_args` helper from `BasePrompt`, adds
     NVIDIA specific configurations, then instantiates a
-    `NvidiaPromptDriver` and assigns it to the 'prompt_model_config'
+    `OpenAiChatPromptDriver` with NVIDIA specific configurations and assigns it to the 'prompt_model_config'
     output parameter.
     """
 
@@ -74,11 +74,11 @@ class NimPrompt(BasePrompt):
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
 
     def process(self) -> None:
-        """Processes the node configuration to create a NVIDIA PromptDriver.
+        """Processes the node configuration to create a NIM PromptDriver.
 
         Retrieves parameter values set on the node and the required API key from
         the node's configuration system. It constructs the arguments dictionary
-        for the `NVIDIA PromptDriver`, handles optional parameters and
+        for the `OpenAiChatPromptDriver` with NVIDIA specific configurations, handles optional parameters and
         any necessary conversions (like 'min_p' to 'top_p'), instantiates the
         driver, and assigns it to the 'prompt_model_config' output parameter.
 
