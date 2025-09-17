@@ -64,11 +64,6 @@ class InitializeSpotlightState(State):
     async def on_enter(context: ResolutionContext) -> type[State] | None:
         # If the focus stack is empty
         current_node = context.current_node
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
-            )
-        )
         if not context.paused:
             return InitializeSpotlightState
         return None
@@ -207,6 +202,11 @@ class ExecuteNodeState(State):
 
         # Clear all of the current output values
         # if node is locked, don't clear anything. skip all of this.
+        GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=current_node.name))
+            )
+        )
         if current_node.lock:
             return ExecuteNodeState
         await ExecuteNodeState.collect_values_from_upstream_nodes(context)
