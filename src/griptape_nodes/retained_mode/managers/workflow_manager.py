@@ -3841,6 +3841,9 @@ class WorkflowManager:
 
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
+            if not path.exists():
+                failed.append(str(path))
+                return
             if path.is_dir():
                 # Process all Python files recursively in the directory
                 for workflow_file in path.rglob("*.py"):
