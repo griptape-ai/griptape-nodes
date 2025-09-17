@@ -439,15 +439,15 @@ class ConfigManager:
             base_schema = Settings.model_json_schema()
             current_values = self.merged_config.copy()
 
-            # Get library settings and their schemas
-            library_settings = self._get_library_settings()
+            # Get additional settings and their schemas
+            extra_settings = self._get_extra_settings()
             library_paths = get_dot_value(
                 self.merged_config, "app_events.on_app_initialization_complete.libraries_to_register", []
             )
 
             # Build library schemas
             library_schemas = {}
-            for category in library_settings:
+            for category in extra_settings:
                 library_schemas[category] = self._extract_schema_from_library_files(library_paths, category) or {
                     "type": "object",
                     "title": f"{category.replace('_', ' ').title()} Settings",
@@ -592,8 +592,8 @@ class ConfigManager:
             logger.error("Invalid log level %s. Defaulting to INFO.", level)
             logger.setLevel(logging.INFO)
 
-    def _get_library_settings(self) -> dict[str, dict]:
-        """Get library settings from merged_config that are not base Settings fields."""
+    def _get_extra_settings(self) -> dict[str, dict]:
+        """Get additional settings from merged_config that are not base Settings fields."""
         return {
             key: value
             for key, value in self.merged_config.items()
