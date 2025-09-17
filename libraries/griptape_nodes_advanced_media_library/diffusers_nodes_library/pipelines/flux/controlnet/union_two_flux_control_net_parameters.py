@@ -39,26 +39,6 @@ class UnionTwoFluxControlNetParameters:
                 tooltip="control_image",
             )
         )
-        self._node.add_parameter(
-            Parameter(
-                name="quantization_mode",
-                type="str",
-                default_value="none",
-                allowed_modes={ParameterMode.PROPERTY},
-                tooltip="Quantization strategy: none/fp8/int8/int4",
-                traits={Options(choices=["none", "fp8", "int8", "int4"])},
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="skip_memory_check",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
-                tooltip="Skip memory check before running, which may result in out-of-memory errors if there is insufficient memory.",
-                default_value=False,
-            )
-        )
 
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
