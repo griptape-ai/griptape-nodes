@@ -42,25 +42,15 @@ class FluxModelParameters:
             )
         )
 
-    def add_output_parameters(self) -> None:
-        self._node.add_parameter(
-            Parameter(
-                name="model",
-                output_type="diffusers.DiffusionPipeline",
-                tooltip="The loaded model(s)",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._huggingface_repo_parameter.validate_before_node_run()
         return errors or None
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        self._seed_parameter.after_value_set(parameter, value)
+        return
 
     def preprocess(self) -> None:
-        self._seed_parameter.preprocess()
+        return
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()

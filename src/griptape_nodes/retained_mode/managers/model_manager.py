@@ -209,6 +209,7 @@ class ModelManager:
             event_manager: The EventManager instance to use for event handling.
         """
         self._download_tasks = {}
+        self._pipeline = None
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(DownloadModelRequest, self.on_handle_download_model_request)
@@ -988,3 +989,10 @@ class ModelManager:
 
         status_file.unlink()
         return str(status_file)
+
+
+    def set_pipeline(self, pipeline) -> None:
+        self._pipeline = pipeline
+
+    def get_pipeline(self) -> Any | None:
+        return self._pipeline

@@ -22,15 +22,6 @@ class FluxPipelineParameters:
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
-                name="model",
-                input_types=["diffusers.DiffusionPipeline"],
-                type="diffusers.DiffusionPipeline",
-                tooltip="The diffusion pipeline model to use",
-                # TODO: Make sure is required
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="prompt",
                 default_value="",
                 input_types=["str"],

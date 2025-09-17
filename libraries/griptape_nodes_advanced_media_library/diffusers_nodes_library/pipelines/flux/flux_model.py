@@ -1,4 +1,6 @@
+import gc
 import logging
+import time
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
@@ -24,7 +26,6 @@ class FluxModel(ControlNode):
 
         self.pipe_params = FluxModelParameters(self)
         self.pipe_params.add_input_parameters()
-        self.pipe_params.add_output_parameters()
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
@@ -39,12 +40,22 @@ class FluxModel(ControlNode):
     def preprocess(self) -> None:
         self.pipe_params.preprocess()
 
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        pipe = GriptapeNodes.ModelManager().get_pipeline()
+        self.log_params.append_to_logs("Checking...\n")
+        if pipe is not None:
+            self.log_params.append_to_logs("Clearing existing models from memory...\n")
+            GriptapeNodes.ModelManager().set_pipeline(None)
+            del pipe
+            gc.collect()
+            model_cache.from_pretrained.cache_clear()
+            torch.cuda.empty_cache()
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
     def _process(self) -> AsyncResult | None:
         self.preprocess()
-        self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
 
         with self.log_params.append_profile_to_logs("Loading model metadata"):
@@ -60,8 +71,7 @@ class FluxModel(ControlNode):
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
             optimize_flux_pipeline_memory_footprint(pipe)
 
-        self.publish_update_to_parameter(
-            "model",
-            pipe,
-        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        GriptapeNodes.ModelManager().set_pipeline(pipe)
+
         self.log_params.append_to_logs("Done.\n")

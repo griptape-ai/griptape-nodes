@@ -2,16 +2,11 @@ import logging
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
-import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
-    optimize_flux_pipeline_memory_footprint,
-)  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
@@ -50,7 +45,11 @@ class FluxPipeline(ControlNode):
         self.pipe_params.publish_output_image_preview_placeholder()
         self.log_params.append_to_logs("Preparing models...\n")
 
-        pipe = self.pipe_params.get_pipe()
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        pipe = GriptapeNodes.ModelManager().get_pipeline()
+        if pipe is None:
+            self.log_params.append_to_logs("No pipeline found.\n")
+            raise Exception("No pipeline found.")
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),
