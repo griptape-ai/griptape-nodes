@@ -4,7 +4,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.mixins.serializable_mixin import SerializableMixin
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
 
-    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    level: int
     message: str
 
 
@@ -34,7 +34,7 @@ class ResultDetails:
         self,
         *result_details: ResultDetail,
         message: str | None = None,
-        level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
+        level: int | None = None,
         logger: logging.Logger | str | None = "griptape_nodes",
     ):
         """Initialize with ResultDetail objects or create a single one from message/level.
@@ -67,8 +67,8 @@ class ResultDetails:
                     logger = logging.getLogger(logger)
 
                 for detail in self.result_details:
-                    numeric_level = getattr(logging, detail.level)
-                    logger.log(numeric_level, detail.message)
+                    # Handle both string and int levels
+                    logger.log(detail.level, detail.message)
             except Exception:  # noqa: S110
                 # If logging fails for any reason, don't let it break the ResultDetails creation
                 pass
@@ -140,7 +140,7 @@ class ResultPayloadSuccess(ResultPayload, ABC):
     def __post_init__(self) -> None:
         """Initialize success result with INFO level default for strings."""
         if isinstance(self.result_details, str):
-            self.result_details = ResultDetails(message=self.result_details, level="DEBUG")
+            self.result_details = ResultDetails(message=self.result_details, level=logging.DEBUG)
 
     def succeeded(self) -> bool:
         """Returns True as this is a success result.
@@ -162,7 +162,7 @@ class ResultPayloadFailure(ResultPayload, ABC):
     def __post_init__(self) -> None:
         """Initialize failure result with ERROR level default for strings."""
         if isinstance(self.result_details, str):
-            self.result_details = ResultDetails(message=self.result_details, level="ERROR")
+            self.result_details = ResultDetails(message=self.result_details, level=logging.ERROR)
 
     def succeeded(self) -> bool:
         """Returns False as this is a failure result.
