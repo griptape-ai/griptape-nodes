@@ -8,7 +8,7 @@ from contextlib import suppress
 from typing import Any
 from urllib.parse import urljoin
 
-import requests
+import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
@@ -140,21 +140,45 @@ class ElevenMusicGeneration(DataNode):
             )
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate that required configuration is available before running the node."""
+        errors = []
+
+        # Check if API key is available
+        api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
+        if not api_key:
+            errors.append(
+                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
+            )
+
+        return errors or None
+
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
 
     def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+        yield lambda: self._process_sync()
 
-    def _process(self) -> None:
+    async def aprocess(self) -> None:
+        await self._process_async()
+
+    def _process_sync(self) -> None:
+        """Synchronous implementation for backwards compatibility."""
+        import asyncio
+
+        # Run the async implementation synchronously
+        asyncio.run(self._process_async())
+
+    async def _process_async(self) -> None:
+        """Async implementation of the processing logic."""
         params = self._get_parameters()
-        api_key = self._validate_api_key()
+        api_key = self._get_api_key()
         headers = self._build_headers(api_key)
 
         self._log("Generating music with Eleven Labs Music Generation via Griptape proxy")
 
-        response_bytes = self._submit_request(params, headers)
+        response_bytes = await self._submit_request(params, headers)
         if response_bytes:
             self._handle_response(response_bytes)
         else:
@@ -188,12 +212,13 @@ class ElevenMusicGeneration(DataNode):
             "output_format": output_format,
         }
 
-    def _validate_api_key(self) -> str:
+    def _get_api_key(self) -> str:
+        """Get the API key - validation is done in validate_before_node_run()."""
         api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
         if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
+            # This should not happen if validate_before_node_run() was called
+            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
+            raise RuntimeError(msg)
         return api_key
 
     def _build_headers(self, api_key: str) -> dict[str, str]:
@@ -203,7 +228,7 @@ class ElevenMusicGeneration(DataNode):
             "Accept": "application/json",
         }
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
         model_id = "eleven-music-1-0"
         url = urljoin(self._proxy_base, model_id)
         payload = self._build_payload(params)
@@ -212,9 +237,10 @@ class ElevenMusicGeneration(DataNode):
         self._log_request(payload)
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=300)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
             msg = f"{self.name} API error: {e.response.status_code}"
             raise RuntimeError(msg) from e
@@ -222,9 +248,9 @@ class ElevenMusicGeneration(DataNode):
             self._log(f"Request failed: {e}")
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
-        else:
-            self._log("Request submitted successfully")
-            return response.content
+
+        self._log("Request submitted successfully")
+        return response.content
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
