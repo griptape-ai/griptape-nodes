@@ -25,6 +25,7 @@ FLUX_PIPELINE_COMPONENT_NAMES = [
     "text_encoder",
     "text_encoder_2",
     "transformer",
+    "controlnet",
 ]
 
 
@@ -118,9 +119,15 @@ def _optimize_flux_pipeline(  # noqa: C901
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
+        if hasattr(pipe, "enable_vae_slicing"):
+            logger.info("Enabling vae slicing")
+            pipe.enable_vae_slicing()
+        elif hasattr(pipe, "vae"):
+            logger.info("Enabling vae slicing")
+            pipe.vae.enable_slicing()
+
         if _check_cuda_memory_sufficient(pipe, device):
-            logger.info("Sufficient memory on %s for Pipeline.", device)
-            logger.info("Moving pipeline to %s", device)
+            logger.info("Sufficient memory. Moving pipeline to %s", device)
             pipe.to(device)
             return
 
@@ -143,12 +150,6 @@ def _optimize_flux_pipeline(  # noqa: C901
                 if _check_cuda_memory_sufficient(pipe, device):
                     logger.info("Sufficient memory after model cpu offload")
                     return
-
-        if hasattr(pipe, "enable_vae_slicing"):
-            # Apply VAE slicing as final optimization
-            logger.info("Insufficient memory. Enabling vae slicing")
-            pipe.enable_vae_slicing()
-            _log_memory_info(pipe, device)
 
         # Final check after all optimizations
         if not _check_cuda_memory_sufficient(pipe, device):
