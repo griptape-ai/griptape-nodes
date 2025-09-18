@@ -24,8 +24,7 @@
         "title": "misc",
         "description": "Miscellaneous nodes",
         "color": "border-gray-500",
-        "icon": "Folder",
-        "group": "create"
+        "icon": "Folder"
       }
     },
     {
@@ -41,8 +40,7 @@
         "color": "border-purple-500",
         "title": "Agent",
         "description": "Nodes related to Agents",
-        "icon": "UserCircle",
-        "group": "create"
+        "icon": "UserCircle"
       }
     },
     {
@@ -596,7 +594,7 @@
         "description": "Loads audio files into your workflow",
         "display_name": "Load Audio",
         "icon": "file-up",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -640,7 +638,7 @@
         "description": "Loads video files into your workflow",
         "display_name": "Load Video",
         "icon": "file-video",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -673,7 +671,7 @@
         "description": "Save a video to a file",
         "display_name": "Save Video",
         "icon": "file-down",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1004,7 +1002,7 @@
         "category": "dict",
         "description": "Loads a dictionary from disk",
         "display_name": "Load Dictionary",
-        "group": "io",
+        "group": "Input/Output",
         "icon": "file-up"
       }
     },
@@ -1026,7 +1024,7 @@
         "description": "Save dictionary data to a file",
         "display_name": "Save Dictionary",
         "icon": "file-down",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1313,7 +1311,7 @@
         "description": "Loads an image from disk",
         "display_name": "Load Image",
         "icon": "image-up",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1399,7 +1397,7 @@
         "description": "Save an image to a file",
         "display_name": "Save Image",
         "icon": "image-down",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1581,7 +1579,7 @@
         "description": "LoadText node",
         "display_name": "Load Text",
         "icon": "file-text",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1655,7 +1653,7 @@
         "description": "Save text to a file",
         "display_name": "Save Text",
         "icon": "file-down",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1666,7 +1664,7 @@
         "description": "Scrape the web for information",
         "display_name": "Scrape Web",
         "icon": "globe",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1688,7 +1686,7 @@
         "description": "Search the web for information",
         "display_name": "Search Web",
         "icon": "binoculars",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1898,7 +1896,7 @@
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
         "display_name": "Load GLTF",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
@@ -1908,7 +1906,7 @@
         "category": "3D",
         "description": "Loads a 3D file into your workflow",
         "display_name": "Load 3D",
-        "group": "io"
+        "group": "Input/Output"
       }
     },
     {
