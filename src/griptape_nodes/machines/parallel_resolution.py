@@ -16,6 +16,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    CurrentControlNodeEvent,
     CurrentDataNodeEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
@@ -209,6 +210,8 @@ class ExecuteDagState(State):
         flow_manager: FlowManager,
     ) -> None:
         """Process the next control node in the flow."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
         if node_connection is not None:
             next_node, _ = node_connection
@@ -224,7 +227,11 @@ class ExecuteDagState(State):
                         }
                     )
                 )
-
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=next_node.name))
+                    )
+                )
             ExecuteDagState._add_and_queue_nodes(context, next_node, network_name)
 
     @staticmethod
