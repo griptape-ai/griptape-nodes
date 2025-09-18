@@ -1856,9 +1856,9 @@ class NodeManager:
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
             return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
-        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
-            details = f"Failed to resolve from node '{node_name}'. Flow is already running."
-            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
+        # if GriptapeNodes.FlowManager().check_for_existing_running_flow():
+        #     details = f"Failed to resolve from node '{node_name}'. Flow is already running."
+        #     return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
         try:
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:

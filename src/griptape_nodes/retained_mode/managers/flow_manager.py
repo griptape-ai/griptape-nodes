@@ -1713,28 +1713,41 @@ class FlowManager:
                 await machine.start_flow(start_node, debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
-        # Set that we are only working on one node right now! no other stepping allowed
+        # If the control flow is running, we can't resolve singular nodes.
         if self.check_for_existing_running_flow():
-            # If flow already exists, throw an error
-            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
-            raise RuntimeError(errormsg)
-
-        self._global_single_node_resolution = True
-
-        # Get or create machine
-        self._global_control_flow_machine = ControlFlowMachine(flow.name)
-        self._global_control_flow_machine.context.current_nodes = [node]
-        resolution_machine = self._global_control_flow_machine.resolution_machine
-        resolution_machine.change_debug_mode(debug_mode=debug_mode)
-        node.state = NodeResolutionState.UNRESOLVED
-        # Build the DAG for the node
-        if isinstance(resolution_machine, ParallelResolutionMachine):
-            self._global_dag_builder.add_node_with_dependencies(node)
-            resolution_machine.context.dag_builder = self._global_dag_builder
-        await resolution_machine.resolve_node(node)
-        if resolution_machine.is_complete():
-            self._global_single_node_resolution = False
-            self._global_control_flow_machine.context.current_nodes = []
+            # Behavior should stay the same for sequential flows.
+            if self._global_control_flow_machine and isinstance(self._global_control_flow_machine.resolution_machine, SequentialResolutionMachine):
+                errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
+                raise RuntimeError(errormsg)
+            # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
+            if not self._global_single_node_resolution:
+                errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
+                raise RuntimeError(errormsg)
+         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
+        if node.name in self._global_dag_builder.node_to_reference:
+            logger.error("Node %s is already executing. Cannot start execution.", node.name)
+            return
+        # We are now going to have different behavior depending on how the node is behaving.
+        if self.check_for_existing_running_flow():
+            # Now we know something is running, it's ParallelResolutionMachine, and that we are in sigle_node_resolution.
+            self._global_dag_builder.add_node_with_dependencies(node, node.name)
+        else:
+            # Set that we are only working on one node right now!
+            self._global_single_node_resolution = True
+            # Get or create machine
+            self._global_control_flow_machine = ControlFlowMachine(flow.name)
+            self._global_control_flow_machine.context.current_nodes = [node]
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            resolution_machine.change_debug_mode(debug_mode=debug_mode)
+            node.state = NodeResolutionState.UNRESOLVED
+            # Build the DAG for the node
+            if isinstance(resolution_machine, ParallelResolutionMachine):
+                self._global_dag_builder.add_node_with_dependencies(node)
+                resolution_machine.context.dag_builder = self._global_dag_builder
+            await resolution_machine.resolve_node(node)
+            if resolution_machine.is_complete():
+                self._global_single_node_resolution = False
+                self._global_control_flow_machine.context.current_nodes = []
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
