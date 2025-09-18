@@ -116,6 +116,7 @@ console = Console()
 
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
+    LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
 
     @dataclass
     class LibraryInfo:
@@ -480,24 +481,18 @@ class LibraryManager:
         successful_libraries = []
         failed_libraries = []
 
-        # Load metadata from config libraries
-        config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
+        # Discover library files for metadata loading
+        library_files = self._discover_library_files()
 
-        if libraries_to_register is not None:
-            for library_to_register in libraries_to_register:
-                if library_to_register and library_to_register.endswith(".json"):
-                    # Load metadata for this library file
-                    metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_to_register)
-                    metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+        # Load metadata for all discovered library files
+        for library_file in library_files:
+            metadata_request = LoadLibraryMetadataFromFileRequest(file_path=str(library_file))
+            metadata_result = self.load_library_metadata_from_file_request(metadata_request)
 
-                    if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
-                        successful_libraries.append(metadata_result)
-                    else:
-                        failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
-                # Note: We skip requirement specifier libraries (non-.json) as they don't have
-                # JSON files we can load metadata from without installation
+            if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                successful_libraries.append(metadata_result)
+            else:
+                failed_libraries.append(cast("LoadLibraryMetadataFromFileResultFailure", metadata_result))
 
         # Generate sandbox library metadata
         sandbox_result = self._generate_sandbox_library_metadata()
@@ -1504,8 +1499,6 @@ class LibraryManager:
         return node_class
 
     async def load_all_libraries_from_config(self) -> None:
-        # Comment out lines 1503-1545 and call the _load libraries from provenance system to test the other functionality.
-
         # Load metadata for all libraries to determine which ones can be safely loaded
         metadata_request = LoadMetadataForAllLibrariesRequest()
         metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
@@ -1525,9 +1518,6 @@ class LibraryManager:
             )
 
         # Use metadata results to selectively load libraries
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-
-        # Load libraries that had successful metadata loading
         for library_result in metadata_result.successful_libraries:
             if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
                 # Handle sandbox library - use the schema we already have
@@ -1543,7 +1533,7 @@ class LibraryManager:
                 if isinstance(register_result, RegisterLibraryFromFileResultFailure):
                     # Registration failed - the failure info is already recorded in _library_file_path_to_info
                     # by register_library_from_file_request, so we just log it here for visibility
-                    logger.warning(f"Failed to register library from {library_result.file_path}")  # noqa: G004
+                    logger.warning("Failed to register library from %s", library_result.file_path)
 
         # Print 'em all pretty
         self.print_library_load_status()
@@ -2041,3 +2031,42 @@ class LibraryManager:
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+    def _discover_library_files(self) -> list[Path]:
+        """Discover library JSON files from config and workspace recursively.
+
+        Returns:
+            List of library file paths found
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+
+        libraries_to_process = []
+
+        # Add from config
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+        libraries_to_process.extend(config_libraries)
+
+        # Add from workspace - recursive discovery of library JSON files
+        workspace_path = config_mgr.workspace_path
+        libraries_to_process.append(str(workspace_path))
+
+        library_files = []
+
+        def process_path(path: Path) -> None:
+            """Process a path, handling both files and directories."""
+            if path.is_dir():
+                # Process all library JSON files recursively in the directory
+                library_files.extend(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
+            elif path.suffix == ".json" and path.name == LibraryManager.LIBRARY_CONFIG_FILENAME:
+                library_files.append(path)
+
+        # Process library paths
+        for library_to_process in libraries_to_process:
+            library_path = Path(library_to_process)
+
+            # Handle library config files and directories only (skip requirement specifiers)
+            if library_to_process.endswith(LibraryManager.LIBRARY_CONFIG_FILENAME) or library_path.exists():
+                process_path(library_path)
+
+        return library_files
