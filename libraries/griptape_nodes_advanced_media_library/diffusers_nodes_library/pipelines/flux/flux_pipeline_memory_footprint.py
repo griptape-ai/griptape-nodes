@@ -143,16 +143,6 @@ def _optimize_flux_pipeline(  # noqa: C901
                 if _check_cuda_memory_sufficient(pipe, device):
                     logger.info("Sufficient memory after sequential cpu offload")
                     return
-                logger.info("Disabling model cpu offload, trying sequential cpu offload")
-                pipe.disable_model_cpu_offload()
-
-            if hasattr(pipe, "enable_sequential_cpu_offload"):
-                logger.info("Insufficient memory. Enabling sequential cpu offload")
-                pipe.enable_sequential_cpu_offload()
-                _log_memory_info(pipe, device)
-                if _check_cuda_memory_sufficient(pipe, device):
-                    logger.info("Sufficient memory after sequential cpu offload")
-                    return
 
         if hasattr(pipe, "enable_vae_slicing"):
             # Apply VAE slicing as final optimization
