@@ -157,18 +157,11 @@ class ElevenMusicGeneration(DataNode):
         with suppress(Exception):
             logger.info(message)
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process_sync()
+    def process(self) -> None:
+        pass
 
     async def aprocess(self) -> None:
         await self._process_async()
-
-    def _process_sync(self) -> None:
-        """Synchronous implementation for backwards compatibility."""
-        import asyncio
-
-        # Run the async implementation synchronously
-        asyncio.run(self._process_async())
 
     async def _process_async(self) -> None:
         """Async implementation of the processing logic."""
