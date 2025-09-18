@@ -2058,7 +2058,7 @@ class LibraryManager:
             if path.is_dir():
                 # Process all library JSON files recursively in the directory
                 library_files.extend(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
-            elif path.suffix == ".json" and path.name == LibraryManager.LIBRARY_CONFIG_FILENAME:
+            elif path.suffix == ".json":
                 library_files.append(path)
 
         # Process library paths
@@ -2066,7 +2066,7 @@ class LibraryManager:
             library_path = Path(library_to_process)
 
             # Handle library config files and directories only (skip requirement specifiers)
-            if library_to_process.endswith(LibraryManager.LIBRARY_CONFIG_FILENAME) or library_path.exists():
+            if library_path.exists():
                 process_path(library_path)
 
         return library_files
