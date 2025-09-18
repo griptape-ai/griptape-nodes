@@ -3176,43 +3176,70 @@ class WorkflowManager:
 
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
-                file = Path(result.published_workflow_file_path)
-                self._register_published_workflow_file(file)
+                workflow_file = Path(result.published_workflow_file_path)
+                result = self._register_published_workflow_file(workflow_file, result)
             return result  # noqa: TRY300
         except Exception as e:
             details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
 
-    def _register_published_workflow_file(self, workflow_file: Path) -> None:
+    def _register_published_workflow_file(
+        self, workflow_file: Path, result: PublishWorkflowResultSuccess
+    ) -> ResultPayload:
         """Register a published workflow file in the workflow registry."""
+        result_messages: list[ResultDetail] = []
+
+        final_result: ResultPayload = result
+        if isinstance(result.result_details, ResultDetails):
+            result_messages.extend(result.result_details.result_details)
+        else:
+            result_messages.append(ResultDetail(message=result.result_details, level=logging.INFO))
+
         if workflow_file.exists() and workflow_file.is_file():
             load_workflow_metadata_request = LoadWorkflowMetadata(
                 file_name=workflow_file.name,
             )
             load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                try:
+                    _workflow = WorkflowRegistry.get_workflow_by_name(load_metadata_result.metadata.name)
+                    # This workflow was registered previously, but now it's been updated (potentially including the metadata), so let's re-register
+                    WorkflowRegistry.delete_workflow_by_name(load_metadata_result.metadata.name)
+                except KeyError:
+                    pass
+
                 register_workflow_result = self.on_register_workflow_request(
                     RegisterWorkflowRequest(
                         metadata=load_metadata_result.metadata,
                         file_name=workflow_file.name,
                     )
                 )
-                result_messages = []
                 if isinstance(register_workflow_result, RegisterWorkflowResultSuccess):
                     success_message = f"Successfully registered new workflow with file '{workflow_file.name}'."
                     result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
+                    final_result.result_details = ResultDetails(*result_messages)
                 else:
-                    failure_message = f"Failed to register workflow with file '{workflow_file.name}': {cast('RegisterWorkflowResultFailure', register_workflow_result).exception}"
-                    result_messages.append(ResultDetail(message=failure_message, level=logging.WARNING))
+                    exception = cast("RegisterWorkflowResultFailure", register_workflow_result).exception
+                    failure_message = f"Failed to register workflow with file '{workflow_file.name}': {exception}"
+                    result_messages.append(ResultDetail(message=failure_message, level=logging.ERROR))
+                    final_result = PublishWorkflowResultFailure(
+                        result_details=ResultDetails(*result_messages), exception=exception
+                    )
             else:
                 metadata_failure_message = (
                     f"Failed to load metadata for workflow file '{workflow_file.name}'. Not registering workflow."
                 )
-                result_messages = [ResultDetail(message=metadata_failure_message, level=logging.WARNING)]
+                result_messages = [ResultDetail(message=metadata_failure_message, level=logging.ERROR)]
+                final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
 
-            # Log all messages through consolidated ResultDetails
-            ResultDetails(*result_messages)
+        else:
+            result_messages.append(
+                ResultDetail(message=f"Workflow file '{workflow_file.name}' does not exist.", level=logging.ERROR)
+            )
+            final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
+
+        return final_result
 
     def on_import_workflow_as_referenced_sub_flow_request(
         self, request: ImportWorkflowAsReferencedSubFlowRequest
