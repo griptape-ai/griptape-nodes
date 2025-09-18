@@ -1254,8 +1254,10 @@ class SuccessFailureNode(BaseNode):
 
     def _create_status_parameters(
         self,
+        *,
         result_details_tooltip: str = "Details about the operation result",
         result_details_placeholder: str = "Details on the operation will be presented here.",
+        parameter_group_initially_collapsed: bool = True,
     ) -> None:
         """Create and add standard status output parameters in a collapsible group.
 
@@ -1270,13 +1272,14 @@ class SuccessFailureNode(BaseNode):
         Args:
             result_details_tooltip: Custom tooltip for result_details parameter
             result_details_placeholder: Custom placeholder text for result_details parameter
+            parameter_group_initially_collapsed: Whether the Status group should start collapsed
         """
         # Create status component with OUTPUT modes for SuccessFailureNode
         self.status_component = ExecutionStatusComponent(
             self,
             was_successful_modes={ParameterMode.OUTPUT},
             result_details_modes={ParameterMode.OUTPUT},
-            parameter_group_initially_collapsed=True,
+            parameter_group_initially_collapsed=parameter_group_initially_collapsed,
             result_details_tooltip=result_details_tooltip,
             result_details_placeholder=result_details_placeholder,
         )
