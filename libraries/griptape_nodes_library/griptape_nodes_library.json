@@ -96,7 +96,8 @@
         "color": "border-indigo-500",
         "title": "3D",
         "description": "3D model related nodes",
-        "icon": "Cube"
+        "icon": "Cube",
+        "group": "create"
       }
     },
     {
@@ -104,7 +105,8 @@
         "color": "border-sky-500",
         "title": "Audio",
         "description": "Audio related nodes",
-        "icon": "audio-lines"
+        "icon": "audio-lines",
+        "group": "create"
       }
     },
     {
@@ -112,7 +114,8 @@
         "color": "border-pink-500",
         "title": "Video",
         "description": "Video related nodes",
-        "icon": "Video"
+        "icon": "Video",
+        "group": "create"
       }
     },
     {
@@ -120,7 +123,8 @@
         "color": "border-purple-500",
         "title": "Image",
         "description": "Image related nodes",
-        "icon": "Image"
+        "icon": "Image",
+        "group": "create"
       }
     },
     {
@@ -128,7 +132,8 @@
         "color": "border-indigo-500",
         "title": "Image Models",
         "description": "Image Generation Models for Griptape Agents",
-        "icon": "brain"
+        "icon": "brain",
+        "group": "create"
       }
     },
     {
@@ -184,7 +189,8 @@
         "color": "border-blue-500",
         "title": "Number",
         "description": "Number Nodes",
-        "icon": "Hash"
+        "icon": "Hash",
+        "group": "create"
       }
     },
     {
@@ -192,7 +198,8 @@
         "color": "border-blue-500",
         "title": "Text",
         "description": "Text related nodes",
-        "icon": "DocumentText"
+        "icon": "DocumentText",
+        "group": "create"
       }
     },
     {
@@ -200,7 +207,8 @@
         "color": "border-green-500",
         "title": "Dictionary",
         "description": "Dictionary Nodes",
-        "icon": "Braces"
+        "icon": "Braces",
+        "group": "create"
       }
     },
     {
@@ -208,7 +216,8 @@
         "color": "border-cyan-500",
         "title": "Convert",
         "description": "Convert nodes",
-        "icon": "Shuffle"
+        "icon": "Shuffle",
+        "group": "edit"
       }
     },
     {
@@ -216,7 +225,8 @@
         "color": "border-cyan-500",
         "title": "JSON",
         "description": "JSON data manipulation nodes",
-        "icon": "Braces"
+        "icon": "Braces",
+        "group": "create"
       }
     },
     {
@@ -232,7 +242,8 @@
         "color": "border-slate-500",
         "title": "Lists",
         "description": "Nodes to interact with and work with Lists",
-        "icon": "List"
+        "icon": "List",
+        "group": "create"
       }
     },
     {
@@ -240,7 +251,8 @@
         "color": "border-gray-500",
         "title": "Workflows",
         "description": "Nodes for executing Workflows",
-        "icon": "Workflow"
+        "icon": "Workflow",
+        "group": "create"
       }
     },
     {
@@ -248,7 +260,8 @@
         "color": "border-amber-500",
         "title": "Variables",
         "description": "Flow variable management nodes with hierarchical scoping",
-        "icon": "Variable"
+        "icon": "Variable",
+        "group": "create"
       }
     },
     {
@@ -364,7 +377,8 @@
         "category": "lists",
         "description": "Takes a list input and adds a value to the list at the specified index.",
         "display_name": "Add To List",
-        "icon": "list-plus"
+        "icon": "list-plus",
+        "group": "edit"
       }
     },
     {
@@ -373,7 +387,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes two lists and combines them into a single flattened list.",
-        "display_name": "Combine Lists"
+        "display_name": "Combine Lists",
+        "group": "merge"
       }
     },
     {
@@ -382,7 +397,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and creates a list.",
-        "display_name": "Create List"
+        "display_name": "Create List",
+        "group": "create"
       }
     },
     {
@@ -402,7 +418,8 @@
       "metadata": {
         "category": "lists",
         "description": "Creates a list of boolean values.",
-        "display_name": "Create Bool List"
+        "display_name": "Create Bool List",
+        "group": "create"
       }
     },
     {
@@ -411,7 +428,8 @@
       "metadata": {
         "category": "lists",
         "description": "Creates a list of float values.",
-        "display_name": "Create Float List"
+        "display_name": "Create Float List",
+        "group": "create"
       }
     },
     {
@@ -430,7 +448,8 @@
       "metadata": {
         "category": "lists",
         "description": "Creates a list of integer values.",
-        "display_name": "Create Int List"
+        "display_name": "Create Int List",
+        "group": "create"
       }
     },
     {
@@ -439,7 +458,8 @@
       "metadata": {
         "category": "lists",
         "description": "Creates a list of text items",
-        "display_name": "Create Text List"
+        "display_name": "Create Text List",
+        "group": "create"
       }
     },
     {
@@ -448,7 +468,8 @@
       "metadata": {
         "category": "lists",
         "description": "Creates a list of image items",
-        "display_name": "Create Image List"
+        "display_name": "Create Image List",
+        "group": "create"
       }
     },
     {
@@ -457,7 +478,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and gets an item at a specified index from the list.",
-        "display_name": "Get From List"
+        "display_name": "Get From List",
+        "group": "describe"
       }
     },
     {
@@ -466,7 +488,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and gets the index of an item in the list.",
-        "display_name": "Get Index Of Item"
+        "display_name": "Get Index Of Item",
+        "group": "describe"
       }
     },
     {
@@ -475,7 +498,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and checks if the list contains an item.",
-        "display_name": "Get List Contains Item"
+        "display_name": "Get List Contains Item",
+        "group": "describe"
       }
     },
     {
@@ -484,7 +508,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and checks if the list is empty.",
-        "display_name": "Get List Is Empty"
+        "display_name": "Get List Is Empty",
+        "group": "describe"
       }
     },
     {
@@ -493,7 +518,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list of items and gets the length of the list.",
-        "display_name": "Get List Length"
+        "display_name": "Get List Length",
+        "group": "describe"
       }
     },
     {
@@ -503,7 +529,8 @@
         "category": "lists",
         "description": "Takes a list input and removes an item from the list at the specified index or by value.",
         "display_name": "Remove From List",
-        "icon": "list-minus"
+        "icon": "list-minus",
+        "group": "edit"
       }
     },
     {
@@ -513,7 +540,8 @@
         "category": "lists",
         "description": "Takes a list input and replaces an item either by matching the item or by index.",
         "display_name": "Replace In List",
-        "icon": "list-restart"
+        "icon": "list-restart",
+        "group": "edit"
       }
     },
     {
@@ -523,7 +551,8 @@
         "category": "lists",
         "description": "Takes a list input and splits it either by index or by item value, with options for keeping the split item.",
         "display_name": "Split List",
-        "icon": "square-split-vertical"
+        "icon": "square-split-vertical",
+        "group": "edit"
       }
     },
     {
@@ -533,7 +562,8 @@
         "category": "lists",
         "description": "Takes a text string and splits it into a list based on a specified delimiter.",
         "display_name": "Split Text",
-        "icon": "scissors"
+        "icon": "scissors",
+        "group": "edit"
       }
     },
     {
@@ -542,7 +572,8 @@
       "metadata": {
         "category": "lists",
         "description": "Takes a list input and creates output parameters for each item in the list",
-        "display_name": "Display List"
+        "display_name": "Display List",
+        "group": "display"
       }
     },
     {
@@ -551,7 +582,8 @@
       "metadata": {
         "category": "agents",
         "description": "Creates an AI agent with conversation memory and the ability to use tools",
-        "display_name": "Agent"
+        "display_name": "Agent",
+        "group": "create"
       }
     },
     {
@@ -562,7 +594,7 @@
         "description": "Loads audio files into your workflow",
         "display_name": "Load Audio",
         "icon": "file-up",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -573,7 +605,7 @@
         "description": "Can record audio from your microphone.",
         "display_name": "Microphone",
         "icon": "mic",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -584,7 +616,7 @@
         "description": "Transcribe audio files into text.\nRequires an OpenAI API key.",
         "display_name": "Transcribe Audio",
         "icon": "ear",
-        "group": "tasks"
+        "group": "describe"
       }
     },
     {
@@ -595,7 +627,7 @@
         "description": "Generate music using Eleven Labs Music Generation API",
         "display_name": "Eleven Music Generation",
         "icon": "music",
-        "group": "tasks"
+        "group": "create"
       }
     },
     {
@@ -606,7 +638,7 @@
         "description": "Loads video files into your workflow",
         "display_name": "Load Video",
         "icon": "file-video",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -617,7 +649,7 @@
         "description": "Display a video",
         "display_name": "Display Video",
         "icon": "monitor-play",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -639,7 +671,7 @@
         "description": "Save a video to a file",
         "display_name": "Save Video",
         "icon": "file-down",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -650,7 +682,7 @@
         "description": "Extract metadata from video files including aspect ratio",
         "display_name": "Get Video Metadata",
         "icon": "info",
-        "group": "general"
+        "group": "describe"
       }
     },
     {
@@ -661,7 +693,7 @@
         "description": "Generate a video using the Seedance model via Griptape Cloud Forwarders.",
         "display_name": "Seedance Video Generation",
         "icon": "Sparkles",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -683,7 +715,7 @@
         "description": "Concatenate multiple videos into a single video file with configurable format and codec options",
         "display_name": "Concatenate Videos",
         "icon": "link",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -694,7 +726,7 @@
         "description": "Hold video frames for a specified number of frames, creating a stepped video effect",
         "display_name": "Hold Video Frames",
         "icon": "pause-circle",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -705,7 +737,7 @@
         "description": "Add realistic film grain to video using sophisticated noise generation and luminance masking",
         "display_name": "Add Film Grain",
         "icon": "film",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -716,7 +748,7 @@
         "description": "Add a vignette effect to video with adjustable lens angle, center position, and aspect ratio",
         "display_name": "Add Vignette",
         "icon": "circle-dot",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -727,7 +759,7 @@
         "description": "Reverse video playback with options to reverse, mute, or keep original audio",
         "display_name": "Reverse Video",
         "icon": "rewind",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -760,7 +792,7 @@
         "description": "Add RGB shift (chromatic aberration) effect with individual channel control, static or animated glitches, and VHS-style base effects with configurable noise, chroma shift, blur, and motion trails",
         "display_name": "Add RGB Shift",
         "icon": "palette",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -771,7 +803,7 @@
         "description": "Change the playback speed of a video using FFmpeg's setpts filter with automatic audio speed adjustment",
         "display_name": "Change Speed",
         "icon": "zap",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -782,7 +814,7 @@
         "description": "Add color curves (color grading) effect to video using FFmpeg's curves filter with presets and custom curve options",
         "display_name": "Add Color Curves",
         "icon": "palette",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -793,7 +825,7 @@
         "description": "Add an overlay video on top of a base video using FFmpeg's overlay filter with alpha channel control",
         "display_name": "Add Overlay",
         "icon": "layers",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -804,7 +836,7 @@
         "description": "Extract the last frame from a video and output it as an Image",
         "display_name": "Extract Last Frame",
         "icon": "film",
-        "group": "edit"
+        "group": "describe"
       }
     },
     {
@@ -815,7 +847,7 @@
         "description": "Extract audio from a video and output it as an audio file with configurable format and quality settings",
         "display_name": "Extract Audio",
         "icon": "volume-2",
-        "group": "edit"
+        "group": "describe"
       }
     },
     {
@@ -824,7 +856,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to a boolean",
-        "display_name": "To Bool"
+        "display_name": "To Bool",
+        "group": "edit"
       }
     },
     {
@@ -833,7 +866,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to a dictionary",
-        "display_name": "To Dictionary"
+        "display_name": "To Dictionary",
+        "group": "edit"
       }
     },
     {
@@ -842,7 +876,8 @@
       "metadata": {
         "category": "convert",
         "description": "Extract lists of keys and values from a dictionary",
-        "display_name": "Dict to List"
+        "display_name": "Dict to List",
+        "group": "edit"
       }
     },
     {
@@ -853,7 +888,7 @@
         "description": "Extract a value from JSON using dot notation path",
         "display_name": "JSON Extract Value",
         "icon": "search",
-        "group": "edit"
+        "group": "describe"
       }
     },
     {
@@ -863,7 +898,8 @@
         "category": "json",
         "description": "Create a JSON node from input data",
         "display_name": "JSON Input",
-        "icon": "file-json"
+        "icon": "file-json",
+        "group": "create"
       }
     },
     {
@@ -894,7 +930,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to a float",
-        "display_name": "To Float"
+        "display_name": "To Float",
+        "group": "edit"
       }
     },
     {
@@ -904,7 +941,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to an integer",
-        "display_name": "To Integer"
+        "display_name": "To Integer",
+        "group": "edit"
       }
     },
     {
@@ -913,7 +951,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to text",
-        "display_name": "To Text"
+        "display_name": "To Text",
+        "group": "edit"
       }
     },
     {
@@ -922,7 +961,8 @@
       "metadata": {
         "category": "convert",
         "description": "Converts incoming value to JSON data",
-        "display_name": "To JSON"
+        "display_name": "To JSON",
+        "group": "edit"
       }
     },
     {
@@ -932,7 +972,7 @@
         "category": "dict",
         "description": "Creates a dictionary from key-value pairs",
         "display_name": "Create Dictionary",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -942,7 +982,7 @@
         "category": "dict",
         "description": "Displays dictionary data",
         "display_name": "Display Dictionary",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -952,7 +992,7 @@
         "category": "dict",
         "description": "Create a Key Value Pair",
         "display_name": "Key Value Pair",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -962,7 +1002,7 @@
         "category": "dict",
         "description": "Loads a dictionary from disk",
         "display_name": "Load Dictionary",
-        "group": "general",
+        "group": "Input/Output",
         "icon": "file-up"
       }
     },
@@ -973,7 +1013,7 @@
         "category": "dict",
         "description": "Merges multiple Key/Value Pairs into a single dictionary",
         "display_name": "Merge Key Value Pairs",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -984,7 +1024,7 @@
         "description": "Save dictionary data to a file",
         "display_name": "Save Dictionary",
         "icon": "file-down",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -995,7 +1035,7 @@
         "description": "Get a value from a dictionary by key with optional default handling",
         "display_name": "Get Dictionary Value by Key",
         "icon": "key",
-        "group": "general"
+        "group": "describe"
       }
     },
     {
@@ -1006,7 +1046,7 @@
         "description": "Check if a dictionary has a value for a specific key",
         "display_name": "Has Dictionary Value for Key",
         "icon": "search-check",
-        "group": "general"
+        "group": "describe"
       }
     },
     {
@@ -1019,7 +1059,8 @@
         "icon": {
           "dark": "logos/griptape_cloud.svg",
           "light": "logos/griptape_cloud_dark.svg"
-        }
+        },
+        "group": "create"
       }
     },
     {
@@ -1032,7 +1073,8 @@
         "icon": {
           "dark": "logos/grok.svg",
           "light": "logos/grok_dark.svg"
-        }
+        },
+        "group": "create"
       }
     },
     {
@@ -1045,7 +1087,8 @@
         "icon": {
           "dark": "logos/openai.svg",
           "light": "logos/openai_dark.svg"
-        }
+        },
+        "group": "create"
       }
     },
     {
@@ -1185,7 +1228,7 @@
         "category": "image",
         "description": "Can be used to describe an image",
         "display_name": "Describe Image",
-        "group": "tasks"
+        "group": "describe"
       }
     },
     {
@@ -1215,7 +1258,7 @@
         "category": "image",
         "description": "Generates an image using Griptape Cloud, or other provided image generation models",
         "display_name": "Generate Image",
-        "group": "tasks"
+        "group": "create"
       }
     },
     {
@@ -1225,7 +1268,7 @@
         "category": "image",
         "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
         "display_name": "Seedream Image Generation",
-        "group": "tasks",
+        "group": "create",
         "icon": "Sparkles"
       }
     },
@@ -1236,7 +1279,7 @@
         "category": "image",
         "description": "Generate images using Flux models via Griptape model proxy",
         "display_name": "Flux Image Generation",
-        "group": "tasks",
+        "group": "create",
         "icon": "Zap"
       }
     },
@@ -1268,7 +1311,7 @@
         "description": "Loads an image from disk",
         "display_name": "Load Image",
         "icon": "image-up",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -1290,7 +1333,7 @@
         "description": "Bash an image together with lots of other images",
         "display_name": "Image Bash",
         "icon": "images",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -1300,7 +1343,7 @@
         "category": "image",
         "description": "Merge images together in different layouts with grid options and dynamic image input list",
         "display_name": "Merge Images",
-        "group": "edit",
+        "group": "merge",
         "icon": "squares-unite"
       }
     },
@@ -1354,7 +1397,7 @@
         "description": "Save an image to a file",
         "display_name": "Save Image",
         "icon": "image-down",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -1365,7 +1408,7 @@
         "description": "Capture an image using the device's camera",
         "display_name": "Webcam",
         "icon": "webcam",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -1409,7 +1452,7 @@
         "description": "Apply a beautiful bloom/glow effect to images with configurable intensity and radius for dreamy, ethereal results",
         "display_name": "Bloom Effect",
         "icon": "sparkles",
-        "group": "edit"
+        "group": "effects"
       }
     },
     {
@@ -1420,7 +1463,7 @@
         "description": "Compose two images using various blend modes with positioning and advanced compositing options for creative image manipulation",
         "display_name": "Image Blend Compositor",
         "icon": "layers",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -1430,7 +1473,8 @@
         "category": "misc",
         "description": "Create a note node to provide helpful context in your workflow",
         "display_name": "Note",
-        "icon": "notepad-text"
+        "icon": "notepad-text",
+        "group": "create"
       }
     },
     {
@@ -1440,7 +1484,8 @@
         "category": "misc",
         "description": "Create a color picker node to select a color in various formats",
         "display_name": "ColorPicker",
-        "icon": "pipette"
+        "icon": "pipette",
+        "group": "create"
       }
     },
     {
@@ -1462,7 +1507,7 @@
         "description": "Create a float value",
         "display_name": "Float Input",
         "icon": "decimals-arrow-right",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -1472,7 +1517,7 @@
         "category": "number",
         "description": "Create an integer value",
         "display_name": "Integer Input",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -1482,7 +1527,7 @@
         "category": "number",
         "description": "Display a float value",
         "display_name": "Display Float",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -1491,7 +1536,8 @@
       "metadata": {
         "category": "number",
         "description": "Display an integer value",
-        "display_name": "Display Integer"
+        "display_name": "Display Integer",
+        "group": "display"
       }
     },
     {
@@ -1511,7 +1557,8 @@
       "metadata": {
         "category": "agents/rules",
         "description": "Give an agent a set of rules and behaviors to follow",
-        "display_name": "Ruleset"
+        "display_name": "Ruleset",
+        "group": "create"
       }
     },
     {
@@ -1520,7 +1567,8 @@
       "metadata": {
         "category": "agents/rules",
         "description": "Combine rulesets to give an agent a more complex set of behaviors",
-        "display_name": "Ruleset List"
+        "display_name": "Ruleset List",
+        "group": "create"
       }
     },
     {
@@ -1531,7 +1579,7 @@
         "description": "LoadText node",
         "display_name": "Load Text",
         "icon": "file-text",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -1542,7 +1590,7 @@
         "description": "MergeTexts node",
         "display_name": "Merge Texts",
         "icon": "merge",
-        "group": "edit"
+        "group": "merge"
       }
     },
     {
@@ -1574,7 +1622,7 @@
         "category": "text",
         "description": "DisplayText node",
         "display_name": "Display Text",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -1584,7 +1632,7 @@
         "category": "text",
         "description": "Displays text as markdown",
         "display_name": "Display Text As Markdown",
-        "group": "general"
+        "group": "display"
       }
     },
     {
@@ -1594,7 +1642,7 @@
         "category": "text",
         "description": "Evaluate the results of some text against some criteria",
         "display_name": "Evaluate Text Result",
-        "group": "tasks"
+        "group": "describe"
       }
     },
     {
@@ -1605,7 +1653,7 @@
         "description": "Save text to a file",
         "display_name": "Save Text",
         "icon": "file-down",
-        "group": "general"
+        "group": "Input/Output"
       }
     },
     {
@@ -1616,7 +1664,7 @@
         "description": "Scrape the web for information",
         "display_name": "Scrape Web",
         "icon": "globe",
-        "group": "tasks"
+        "group": "Input/Output"
       }
     },
     {
@@ -1638,7 +1686,7 @@
         "description": "Search the web for information",
         "display_name": "Search Web",
         "icon": "binoculars",
-        "group": "tasks"
+        "group": "Input/Output"
       }
     },
     {
@@ -1649,7 +1697,7 @@
         "description": "Summarize text",
         "display_name": "Summarize Text",
         "icon": "message-square-text",
-        "group": "tasks"
+        "group": "describe"
       }
     },
     {
@@ -1660,7 +1708,7 @@
         "description": "TextInput node",
         "display_name": "Text Input",
         "icon": "text-cursor",
-        "group": "general"
+        "group": "create"
       }
     },
     {
@@ -1670,8 +1718,7 @@
         "category": "text",
         "description": "Validates that file paths exist and are readable Python files",
         "display_name": "File Path Validator",
-        "icon": "file-check",
-        "group": "validation"
+        "icon": "file-check"
       }
     },
     {
@@ -1681,7 +1728,8 @@
         "category": "agents/tools",
         "description": "Give an agent the ability to use a calculator",
         "display_name": "Calculator",
-        "icon": "calculator"
+        "icon": "calculator",
+        "group": "create"
       }
     },
     {
@@ -1691,7 +1739,8 @@
         "category": "agents/tools",
         "description": "Give an agent the ability to know what day and time it is",
         "display_name": "Date Time",
-        "icon": "calendar"
+        "icon": "calendar",
+        "group": "create"
       }
     },
     {
@@ -1701,7 +1750,8 @@
         "category": "agents/tools",
         "description": "Give an agent the ability to load files from disk",
         "display_name": "File Manager",
-        "icon": "folder"
+        "icon": "folder",
+        "group": "create"
       }
     },
     {
@@ -1711,7 +1761,8 @@
         "category": "agents/tools",
         "description": "Combine tools to give an agent a more complex set of tools",
         "display_name": "Tool List",
-        "icon": "list-check"
+        "icon": "list-check",
+        "group": "create"
       }
     },
     {
@@ -1721,7 +1772,8 @@
         "category": "agents/tools",
         "description": "Give an agent the ability to search the web",
         "display_name": "Web Search",
-        "icon": "binoculars"
+        "icon": "binoculars",
+        "group": "create"
       }
     },
     {
@@ -1731,7 +1783,8 @@
         "category": "agents/tools",
         "description": "Give an agent the ability to scrape the web for information",
         "display_name": "Web Scraper",
-        "icon": "globe"
+        "icon": "globe",
+        "group": "create"
       }
     },
     {
@@ -1740,7 +1793,8 @@
       "metadata": {
         "category": "workflows",
         "description": "Define the start of a workflow and pass parameters into the flow",
-        "display_name": "Start Flow"
+        "display_name": "Start Flow",
+        "group": "create"
       }
     },
     {
@@ -1749,7 +1803,8 @@
       "metadata": {
         "category": "workflows",
         "description": "Define the end of a workflow and return parameters from the flow",
-        "display_name": "End Flow"
+        "display_name": "End Flow",
+        "group": "create"
       }
     },
     {
@@ -1830,7 +1885,8 @@
       "metadata": {
         "category": "convert",
         "description": "Convert an agent into a tool that another agent can use",
-        "display_name": "Agent To Tool"
+        "display_name": "Agent To Tool",
+        "group": "edit"
       }
     },
     {
@@ -1839,7 +1895,8 @@
       "metadata": {
         "category": "3D",
         "description": "Loads a GLTF file into your workflow",
-        "display_name": "Load GLTF"
+        "display_name": "Load GLTF",
+        "group": "Input/Output"
       }
     },
     {
@@ -1848,7 +1905,8 @@
       "metadata": {
         "category": "3D",
         "description": "Loads a 3D file into your workflow",
-        "display_name": "Load 3D"
+        "display_name": "Load 3D",
+        "group": "Input/Output"
       }
     },
     {
@@ -1891,7 +1949,8 @@
         "category": "variables",
         "description": "Create or update a variable with a specified name, type, and value. Creates new variables or updates existing ones intelligently.",
         "display_name": "Create Variable",
-        "icon": "PlusCircle"
+        "icon": "PlusCircle",
+        "group": "create"
       }
     },
     {
@@ -1901,7 +1960,8 @@
         "category": "variables",
         "description": "Retrieve the value of an existing variable",
         "display_name": "Get Variable",
-        "icon": "ArrowDown"
+        "icon": "ArrowDown",
+        "group": "describe"
       }
     },
     {
@@ -1911,7 +1971,8 @@
         "category": "variables",
         "description": "Set the value of an existing variable",
         "display_name": "Set Variable",
-        "icon": "ArrowUp"
+        "icon": "ArrowUp",
+        "group": "edit"
       }
     },
     {
@@ -1921,7 +1982,8 @@
         "category": "variables",
         "description": "Check whether a variable exists",
         "display_name": "Has Variable",
-        "icon": "QuestionMarkCircle"
+        "icon": "QuestionMarkCircle",
+        "group": "describe"
       }
     }
   ],
