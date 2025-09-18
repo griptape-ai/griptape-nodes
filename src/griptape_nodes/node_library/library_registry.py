@@ -179,10 +179,6 @@ class LibraryRegistry(metaclass=SingletonMeta):
                 logger.error(details)
                 return details
 
-            details = f"When registering Node class '{node_class_name}', Nodes with the same class name were already registered from the following Libraries: '{library_collisions}'. This is a collision. If you want to use this Node, you will need to specify the Library name in addition to the Node class name so that it can be disambiguated."
-            logger.warning(details)
-            return details
-
         return None
 
     @classmethod
