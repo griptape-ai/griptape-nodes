@@ -519,17 +519,12 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "docs": "book-open",
         "help": "help-circle",
         "note": "sticky-note",
-        "primary": "checkmark",
-        "secondary": "chevron-right",
         "none": "",
     }
 
     # Create a type alias using the keys from DEFAULT_TITLES
     type VariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
     type ButtonAlignType = Literal["full-width", "left", "center", "right"]
-    type ButtonType = Literal[
-        "info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none", "primary", "secondary"
-    ]
     type ButtonVariantType = Literal["default", "destructive", "outline", "secondary", "ghost", "link"]
 
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
@@ -540,7 +535,6 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     _button_link: str | None = field(default=None, init=False)
     _button_text: str | None = field(default=None, init=False)
     _button_icon: str | None = field(default=None, init=False)
-    _button_type: ButtonType | None = field(default=None, init=False)
     _button_variant: ButtonVariantType = field(default="outline", init=False)
     _button_align: ButtonAlignType = field(default="full-width", init=False)
     _full_width: bool = field(default=False, init=False)
@@ -556,7 +550,6 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         button_link: str | None = None,
         button_text: str | None = None,
         button_icon: str | None = None,
-        button_type: ButtonType | None = None,
         button_variant: ButtonVariantType = "outline",
         button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
@@ -571,7 +564,6 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_link = button_link
         self._button_text = button_text
         self._button_icon = button_icon
-        self._button_type = button_type
         self._button_variant = button_variant
         self._button_align = button_align
         self._full_width = full_width
@@ -650,15 +642,6 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_icon = value
 
     @property
-    def button_type(self) -> ButtonType | None:
-        return self._button_type
-
-    @button_type.setter
-    @BaseNodeElement.emits_update_on_write
-    def button_type(self, value: ButtonType | None) -> None:
-        self._button_type = value
-
-    @property
     def button_variant(self) -> ButtonVariantType:
         return self._button_variant
 
@@ -703,12 +686,11 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
             message_icon = self.message_icon
 
         # Handle button_icon logic:
-        # - None means use the default icon for the button_type (or variant if no button_type)
-        # - Empty string means explicitly no icon
+        # - None means no icon
+        # - Empty string means no icon
         # - Any other string means use that icon
-        button_type = self.button_type or self.variant
-        if self.button_icon is None:
-            button_icon = self.DEFAULT_ICONS.get(str(button_type), "")
+        if self.button_icon is None or self.button_icon == "":
+            button_icon = ""
         else:
             button_icon = self.button_icon
 
@@ -721,7 +703,6 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
             "button_link": self.button_link,
             "button_text": self.button_text,
             "button_icon": button_icon,
-            "button_type": button_type,
             "button_variant": self.button_variant,
             "button_align": self.button_align,
             "full_width": self.full_width,
