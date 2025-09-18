@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
