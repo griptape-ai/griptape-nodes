@@ -25,6 +25,7 @@ FLUX_PIPELINE_COMPONENT_NAMES = [
     "text_encoder",
     "text_encoder_2",
     "transformer",
+    "controlnet",
 ]
 
 
