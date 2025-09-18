@@ -445,7 +445,7 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_names, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_names, resolving_node_names, _ = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_names is not None:
