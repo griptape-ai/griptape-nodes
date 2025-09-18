@@ -1718,7 +1718,7 @@ class FlowManager:
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.
         if self.check_for_existing_running_flow():
-            # Now we know something is running, it's ParallelResolutionMachine, and that we are in sigle_node_resolution.
+            # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.
             self._global_dag_builder.add_node_with_dependencies(node, node.name)
         else:
             # Set that we are only working on one node right now!
