@@ -162,9 +162,8 @@ class EngineNode(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the execution result",
             result_details_placeholder="Details on the request execution will be presented here.",
+            parameter_group_initially_collapsed=False,  # Show Status group expanded by default for EngineNode
         )
-        # Override to show Status group expanded by default for EngineNode
-        self.status_component.get_parameter_group().ui_options = {"collapsed": False}
 
         # Initial parameter creation will be deferred to validate_before_workflow_run
         # to ensure the node is properly registered first
@@ -566,14 +565,14 @@ class EngineNode(SuccessFailureNode):
         # Check if request type is usable
         if not new_request_info.has_results:
             # Set result_details to show the error instead of using error_message
-            self.status_component.set_execution_result(
+            self._set_status_results(
                 was_successful=False,
                 result_details=f"ERROR: Cannot use {clean_type}: {self._RESULT_CLASSES_NOT_FOUND_ERROR}",
             )
             return
 
         # Clear result_details for usable request types
-        self.status_component.set_execution_result(was_successful=False, result_details="")
+        self._set_status_results(was_successful=False, result_details="")
 
         # Systematic parameter transition approach
         if _old_type:
