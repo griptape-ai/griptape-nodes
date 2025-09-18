@@ -335,7 +335,7 @@ class BaseNode(ABC):
             msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
             raise ValueError(msg)
         if self.does_name_exist(param.name):
-            msg = "Cannot have duplicate names on parameters."
+            msg = f"Cannot have duplicate names on parameters. Encountered two instances of '{param.name}'."
             raise ValueError(msg)
         self.add_node_element(param)
         self._emit_parameter_lifecycle_event(param)
