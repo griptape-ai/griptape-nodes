@@ -104,7 +104,7 @@ class ExecuteDagState(State):
         current_node = done_node.node_reference
 
         # Check if node was already resolved (shouldn't happen)
-        if current_node.state == NodeResolutionState.RESOLVED:
+        if current_node.state == NodeResolutionState.RESOLVED and not current_node.lock:
             logger.error(
                 "DUPLICATE COMPLETION DETECTED: Node '%s' was already RESOLVED but handle_done_nodes was called again from network '%s'. This should not happen!",
                 current_node.name,
@@ -459,11 +459,13 @@ class ExecuteDagState(State):
             await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
             )
-            # Wait for a task to finish
-        done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
-        # Prevent task being removed before return
-        for task in done:
-            context.task_to_node.pop(task)
+
+        # Wait for a task to finish - only if there are tasks running
+        if context.task_to_node:
+            done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+            # Prevent task being removed before return
+            for task in done:
+                context.task_to_node.pop(task)
         # Once a task has finished, loop back to the top.
         await ExecuteDagState.pop_done_states(context)
         # Remove all nodes that are done
