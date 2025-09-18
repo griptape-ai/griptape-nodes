@@ -109,7 +109,7 @@ def _quantize_flux_pipeline(
     logger.info("Quantization complete.")
 
 
-def _optimize_flux_pipeline(
+def _optimize_flux_pipeline(  # noqa: C901
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
     quantization_mode: str,
     device: torch.device,
