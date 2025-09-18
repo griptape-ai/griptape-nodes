@@ -133,7 +133,9 @@ class SyncManager:
                 return StartSyncAllCloudWorkflowsResultSuccess(
                     sync_directory=str(sync_dir),
                     total_workflows=0,
-                    result_details=ResultDetails(message="No workflow files found in cloud storage.", level="INFO"),
+                    result_details=ResultDetails(
+                        message="No workflow files found in cloud storage.", level=logging.INFO
+                    ),
                 )
 
             # Start background sync with unique ID

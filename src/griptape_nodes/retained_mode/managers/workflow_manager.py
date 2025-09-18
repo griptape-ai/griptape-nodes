@@ -606,8 +606,8 @@ class WorkflowManager:
             if not execution_result.execution_successful:
                 result_messages = []
                 if context_warning:
-                    result_messages.append(ResultDetail(message=context_warning, level="WARNING"))
-                result_messages.append(ResultDetail(message=execution_result.execution_details, level="ERROR"))
+                    result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
+                result_messages.append(ResultDetail(message=execution_result.execution_details, level=logging.ERROR))
 
                 # Attempt to clear everything out, as we modified the engine state getting here.
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
@@ -619,8 +619,8 @@ class WorkflowManager:
         # Success!
         result_messages = []
         if context_warning:
-            result_messages.append(ResultDetail(message=context_warning, level="WARNING"))
-        result_messages.append(ResultDetail(message=execution_result.execution_details, level="DEBUG"))
+            result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
+        result_messages.append(ResultDetail(message=execution_result.execution_details, level=logging.DEBUG))
         return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(*result_messages))
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
@@ -636,7 +636,7 @@ class WorkflowManager:
             workflow_name=workflow.metadata.name,
             result_details=ResultDetails(
                 message=f"Successfully registered workflow: {workflow.metadata.name}",
-                level="DEBUG",
+                level=logging.DEBUG,
             ),
         )
 
@@ -676,7 +676,7 @@ class WorkflowManager:
         return ImportWorkflowResultSuccess(
             workflow_name=register_result.workflow_name,
             result_details=ResultDetails(
-                message=f"Successfully imported workflow: {register_result.workflow_name}", level="INFO"
+                message=f"Successfully imported workflow: {register_result.workflow_name}", level=logging.INFO
             ),
         )
 
@@ -710,7 +710,7 @@ class WorkflowManager:
             details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess(
-            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level="INFO")
+            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
         )
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
@@ -727,7 +727,7 @@ class WorkflowManager:
 
         return RenameWorkflowResultSuccess(
             result_details=ResultDetails(
-                message=f"Successfully renamed workflow to: {request.requested_name}", level="INFO"
+                message=f"Successfully renamed workflow to: {request.requested_name}", level=logging.INFO
             )
         )
 
@@ -789,17 +789,17 @@ class WorkflowManager:
         except OSError as e:
             error_messages = []
             main_error = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {e!s}"
-            error_messages.append(ResultDetail(message=main_error, level="ERROR"))
+            error_messages.append(ResultDetail(message=main_error, level=logging.ERROR))
 
             # Attempt to rollback if file was moved but registry update failed
             if new_absolute_path.exists() and not Path(current_file_path).exists():
                 try:
                     new_absolute_path.rename(current_file_path)
                     rollback_message = f"Rolled back file move for workflow '{request.workflow_name}'"
-                    error_messages.append(ResultDetail(message=rollback_message, level="INFO"))
+                    error_messages.append(ResultDetail(message=rollback_message, level=logging.INFO))
                 except OSError:
                     rollback_failure = f"Failed to rollback file move for workflow '{request.workflow_name}'"
-                    error_messages.append(ResultDetail(message=rollback_failure, level="ERROR"))
+                    error_messages.append(ResultDetail(message=rollback_failure, level=logging.ERROR))
 
             return MoveWorkflowResultFailure(result_details=ResultDetails(*error_messages))
         except Exception as e:
@@ -808,7 +808,7 @@ class WorkflowManager:
         else:
             details = f"Successfully moved workflow '{request.workflow_name}' to '{new_relative_path}'"
             return MoveWorkflowResultSuccess(
-                moved_file_path=new_relative_path, result_details=ResultDetails(message=details, level="INFO")
+                moved_file_path=new_relative_path, result_details=ResultDetails(message=details, level=logging.INFO)
             )
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
@@ -1458,7 +1458,7 @@ class WorkflowManager:
         existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {file_path}"
         return SaveWorkflowResultSuccess(
-            file_path=str(file_path), result_details=ResultDetails(message=details, level="INFO")
+            file_path=str(file_path), result_details=ResultDetails(message=details, level=logging.INFO)
         )
 
     def _generate_workflow_metadata(  # noqa: PLR0913
@@ -3201,15 +3201,15 @@ class WorkflowManager:
                 result_messages = []
                 if isinstance(register_workflow_result, RegisterWorkflowResultSuccess):
                     success_message = f"Successfully registered new workflow with file '{workflow_file.name}'."
-                    result_messages.append(ResultDetail(message=success_message, level="INFO"))
+                    result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
                 else:
                     failure_message = f"Failed to register workflow with file '{workflow_file.name}': {cast('RegisterWorkflowResultFailure', register_workflow_result).exception}"
-                    result_messages.append(ResultDetail(message=failure_message, level="WARNING"))
+                    result_messages.append(ResultDetail(message=failure_message, level=logging.WARNING))
             else:
                 metadata_failure_message = (
                     f"Failed to load metadata for workflow file '{workflow_file.name}'. Not registering workflow."
                 )
-                result_messages = [ResultDetail(message=metadata_failure_message, level="WARNING")]
+                result_messages = [ResultDetail(message=metadata_failure_message, level=logging.WARNING)]
 
             # Log all messages through consolidated ResultDetails
             ResultDetails(*result_messages)
@@ -3407,7 +3407,7 @@ class WorkflowManager:
             return BranchWorkflowResultSuccess(
                 branched_workflow_name=branch_name,
                 original_workflow_name=request.workflow_name,
-                result_details=ResultDetails(message=details, level="INFO"),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as e:
@@ -3481,16 +3481,16 @@ class WorkflowManager:
                 WorkflowRegistry.delete_workflow_by_name(request.workflow_name)
                 Path(branch_content_file_path).unlink()
                 cleanup_message = f"Deleted branch workflow file and registry entry for '{request.workflow_name}'"
-                result_messages.append(ResultDetail(message=cleanup_message, level="INFO"))
+                result_messages.append(ResultDetail(message=cleanup_message, level=logging.INFO))
             except Exception as delete_error:
                 warning_message = (
                     f"Failed to fully clean up branch workflow '{request.workflow_name}': {delete_error!s}"
                 )
-                result_messages.append(ResultDetail(message=warning_message, level="WARNING"))
+                result_messages.append(ResultDetail(message=warning_message, level=logging.WARNING))
                 # Continue anyway - the merge was successful even if cleanup failed
 
             success_message = f"Successfully merged branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}'"
-            result_messages.append(ResultDetail(message=success_message, level="INFO"))
+            result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
 
             return MergeWorkflowBranchResultSuccess(
                 merged_workflow_name=source_workflow_name, result_details=ResultDetails(*result_messages)
@@ -3564,7 +3564,8 @@ class WorkflowManager:
         else:
             details = f"Successfully reset branch workflow '{request.workflow_name}' to match source workflow '{source_workflow_name}'"
             return ResetWorkflowBranchResultSuccess(
-                reset_workflow_name=request.workflow_name, result_details=ResultDetails(message=details, level="INFO")
+                reset_workflow_name=request.workflow_name,
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
     def on_compare_workflows_request(self, request: CompareWorkflowsRequest) -> ResultPayload:
@@ -3812,7 +3813,7 @@ class WorkflowManager:
                 failed_workflows=failed,
                 result_details=ResultDetails(
                     message=f"Successfully processed workflows: {len(succeeded)} succeeded, {len(failed)} failed.",
-                    level="INFO",
+                    level=logging.INFO,
                 ),
             )
 
@@ -3840,6 +3841,9 @@ class WorkflowManager:
 
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
+            if not path.exists():
+                failed.append(str(path))
+                return
             if path.is_dir():
                 # Process all Python files recursively in the directory
                 for workflow_file in path.rglob("*.py"):

@@ -914,12 +914,12 @@ class LibraryManager:
             case LibraryStatus.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
                 return RegisterLibraryFromFileResultSuccess(
-                    library_name=library_data.name, result_details=ResultDetails(message=details, level="INFO")
+                    library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.INFO)
                 )
             case LibraryStatus.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
                 return RegisterLibraryFromFileResultSuccess(
-                    library_name=library_data.name, result_details=ResultDetails(message=details, level="WARNING")
+                    library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.WARNING)
                 )
             case LibraryStatus.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
@@ -2040,4 +2040,4 @@ class LibraryManager:
         details = (
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
-        return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level="INFO"))
+        return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))

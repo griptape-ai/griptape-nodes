@@ -10,6 +10,7 @@ from rich.console import Console
 sys.path.append(str(Path.cwd()))
 
 from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
+from griptape_nodes.utils.version_utils import get_complete_version_string
 
 console = Console()
 
@@ -33,11 +34,19 @@ app.command("engine")(engine.engine_command)
 @app.callback()
 def main(
     ctx: typer.Context,
+    version: bool = typer.Option(  # noqa: FBT001
+        False, "--version", help="Show version and exit."
+    ),
     no_update: bool = typer.Option(  # noqa: FBT001
         False, "--no-update", help="Skip the auto-update check."
     ),
 ) -> None:
     """Griptape Nodes Engine CLI."""
+    if version:
+        version_string = get_complete_version_string()
+        console.print(f"[bold green]{version_string}[/bold green]")
+        raise typer.Exit
+
     if ctx.invoked_subcommand is None:
         # Default to engine command when no subcommand is specified
         engine.engine_command(no_update=no_update)

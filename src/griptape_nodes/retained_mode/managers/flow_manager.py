@@ -194,6 +194,10 @@ class FlowManager:
         self._global_dag_builder = DagBuilder()
 
     @property
+    def global_single_node_resolution(self) -> bool:
+        return self._global_single_node_resolution
+
+    @property
     def global_flow_queue(self) -> Queue[QueueItem]:
         return self._global_flow_queue
 
@@ -425,10 +429,10 @@ class FlowManager:
 
         # Success
         details = f"Successfully created Flow '{final_flow_name}'."
-        log_level = "DEBUG"
+        log_level = logging.DEBUG
         if (request.flow_name is not None) and (final_flow_name != request.flow_name):
             details = f"{details} WARNING: Had to rename from original Flow requested '{request.flow_name}' as an object with this name already existed."
-            log_level = "WARNING"
+            log_level = logging.WARNING
 
         result = CreateFlowResultSuccess(
             flow_name=final_flow_name, result_details=ResultDetails(message=details, level=log_level)
@@ -1086,14 +1090,14 @@ class FlowManager:
             details = f"Could not get flow state. Error: {err}"
             return GetFlowStateResultFailure(result_details=details)
         try:
-            control_node, resolving_nodes = self.flow_state(flow)
+            control_nodes, resolving_nodes = self.flow_state(flow)
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
             return GetFlowStateResultFailure(result_details=details)
         details = f"Successfully got flow state for flow with name {flow_name}."
         return GetFlowStateResultSuccess(
-            control_node=control_node, resolving_node=resolving_nodes, result_details=details
+            control_nodes=control_nodes, resolving_node=resolving_nodes, result_details=details
         )
 
     def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
@@ -1719,7 +1723,7 @@ class FlowManager:
 
         # Get or create machine
         self._global_control_flow_machine = ControlFlowMachine(flow.name)
-        self._global_control_flow_machine.context.current_node = node
+        self._global_control_flow_machine.context.current_nodes = [node]
         resolution_machine = self._global_control_flow_machine.resolution_machine
         resolution_machine.change_debug_mode(debug_mode=debug_mode)
         node.state = NodeResolutionState.UNRESOLVED
@@ -1730,7 +1734,7 @@ class FlowManager:
         await resolution_machine.resolve_node(node)
         if resolution_machine.is_complete():
             self._global_single_node_resolution = False
-            self._global_control_flow_machine.context.current_node = None
+            self._global_control_flow_machine.context.current_nodes = []
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1788,15 +1792,17 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[str | None, list[str] | None]:  # noqa: ARG002
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:  # noqa: ARG002
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise RuntimeError(msg)
         if self._global_control_flow_machine is None:
             return None, None
         control_flow_context = self._global_control_flow_machine.context
-        current_control_node = (
-            control_flow_context.current_node.name if control_flow_context.current_node is not None else None
+        current_control_nodes = (
+            [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
+            if control_flow_context.current_nodes is not None
+            else None
         )
         # focus_stack is no longer available in the new architecture
         if isinstance(control_flow_context.resolution_machine, ParallelResolutionMachine):
@@ -1804,12 +1810,12 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            return current_control_node, current_resolving_nodes
+            return current_control_nodes, current_resolving_nodes
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_node, [current_resolving_node] if current_resolving_node else None
-        return current_control_node, None
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else None
+        return current_control_nodes, None
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.

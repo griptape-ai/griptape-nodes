@@ -22,6 +22,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -1270,34 +1271,15 @@ class SuccessFailureNode(BaseNode):
             result_details_tooltip: Custom tooltip for result_details parameter
             result_details_placeholder: Custom placeholder text for result_details parameter
         """
-        with ParameterGroup(name="Status") as self.status_group:
-            self.status_group.ui_options = {"collapsed": True}
-
-            # Boolean parameter to indicate success/failure
-            self.was_successful = Parameter(
-                name="was_successful",
-                tooltip="Indicates whether it completed without errors.",
-                type="bool",
-                default_value=False,
-                settable=False,
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-
-            # Result details parameter with multiline option
-            self.result_details = Parameter(
-                name="result_details",
-                tooltip=result_details_tooltip,
-                type="str",
-                default_value=None,
-                allowed_modes={ParameterMode.OUTPUT},
-                settable=False,
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": result_details_placeholder,
-                },
-            )
-
-        self.add_node_element(self.status_group)
+        # Create status component with OUTPUT modes for SuccessFailureNode
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.OUTPUT},
+            result_details_modes={ParameterMode.OUTPUT},
+            parameter_group_initially_collapsed=True,
+            result_details_tooltip=result_details_tooltip,
+            result_details_placeholder=result_details_placeholder,
+        )
 
     def _clear_execution_status(self) -> None:
         """Clear execution status and reset status parameters.
@@ -1305,7 +1287,7 @@ class SuccessFailureNode(BaseNode):
         This method should be called at the start of process() to reset the node state.
         """
         self._execution_succeeded = None
-        self._set_status_results(was_successful=False, result_details="Beginning execution...")
+        self.status_component.clear_execution_status("Beginning execution...")
 
     def _set_status_results(self, *, was_successful: bool, result_details: str) -> None:
         """Set status results and update execution state.
@@ -1318,9 +1300,7 @@ class SuccessFailureNode(BaseNode):
             result_details: Details about the operation result
         """
         self._execution_succeeded = was_successful
-        self.parameter_output_values[self.was_successful.name] = was_successful
-        self.parameter_output_values[self.result_details.name] = result_details
-        self.publish_update_to_parameter(self.result_details.name, result_details)
+        self.status_component.set_execution_result(was_successful=was_successful, result_details=result_details)
 
     def _handle_failure_exception(self, exception: Exception) -> None:
         """Handle failure exceptions based on whether failure output is connected.
@@ -1343,6 +1323,16 @@ class SuccessFailureNode(BaseNode):
             # No graceful handling, raise the exception to crash the flow
             raise exception
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Clear result details before workflow runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_workflow_run()
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Clear result details before node runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_node_run()
+
 
 class StartNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -1354,7 +1344,51 @@ class EndNode(BaseNode):
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/854
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(ControlParameterInput())
+
+        # Add dual control inputs
+        self.succeeded_control = ControlParameterInput(
+            display_name="Succeeded", tooltip="Control path when the flow completed successfully"
+        )
+        self.failed_control = ControlParameterInput(
+            name="failed", display_name="Failed", tooltip="Control path when the flow failed"
+        )
+
+        self.add_parameter(self.succeeded_control)
+        self.add_parameter(self.failed_control)
+
+        # Create status component with INPUT and PROPERTY modes
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.PROPERTY},
+            result_details_modes={ParameterMode.INPUT},
+            parameter_group_initially_collapsed=False,
+            result_details_placeholder="Details about the completion or failure will be shown here.",
+        )
+
+    def process(self) -> None:
+        # Detect which control input was used to enter this node and determine success status
+        match self._entry_control_parameter:
+            case self.succeeded_control:
+                was_successful = True
+                status_prefix = "[SUCCEEDED]"
+            case self.failed_control:
+                was_successful = False
+                status_prefix = "[FAILED]"
+            case _:
+                # No specific success/failure connection provided, assume success
+                was_successful = True
+                status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+
+        # Get result details and format the final message
+        result_details_value = self.get_parameter_value("result_details")
+        if result_details_value and self._entry_control_parameter in (self.succeeded_control, self.failed_control):
+            details = f"{status_prefix}\n{result_details_value}"
+        elif self._entry_control_parameter in (self.succeeded_control, self.failed_control):
+            details = f"{status_prefix}\nNo details supplied by flow"
+        else:
+            details = status_prefix
+
+        self.status_component.set_execution_result(was_successful=was_successful, result_details=details)
 
 
 class StartLoopNode(BaseNode):

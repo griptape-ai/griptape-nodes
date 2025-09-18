@@ -8,10 +8,9 @@ from typing import Any, Literal
 from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.base_events import (
-    ResultPayload,
-)
+from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultFailure,
@@ -422,11 +421,34 @@ class ConfigManager:
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
 
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle request to get the configuration schema."""
+        """Handle request to get the configuration schema with current values and library settings.
+
+        This method returns a clean structure with three main components:
+        1. base_schema: Core settings schema from Pydantic Settings model with categories
+        2. library_schemas: Library-specific schemas from definition files (preserves enums)
+        3. current_values: All current configuration values from merged config
+
+        The approach separates concerns for frontend flexibility and simplicity.
+        Library settings with explicit schemas (including enums) are preserved, while
+        libraries without schemas get simple object types.
+        """
         try:
-            schema = Settings.model_json_schema()
-            result_details = "Successfully returned the configuration schema."
-            return GetConfigSchemaResultSuccess(schema=schema, result_details=result_details)
+            # Get base settings schema and current values
+            base_schema = Settings.model_json_schema()
+            current_values = self.merged_config.copy()
+
+            # Get library schemas
+            library_schemas = LibraryRegistry.get_all_library_schemas()
+
+            # Return clean structure
+            schema_with_defaults = {
+                "base_schema": base_schema,
+                "library_schemas": library_schemas,
+                "current_values": current_values,
+            }
+
+            result_details = "Successfully returned the configuration schema with default values and library settings."
+            return GetConfigSchemaResultSuccess(schema=schema_with_defaults, result_details=result_details)
         except Exception as e:
             result_details = f"Failed to generate configuration schema: {e}"
             return GetConfigSchemaResultFailure(result_details=result_details)
