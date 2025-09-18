@@ -588,6 +588,17 @@
       }
     },
     {
+      "class_name": "ElevenMusicGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_music_generation.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate music using Eleven Labs Music Generation API",
+        "display_name": "Eleven Music Generation",
+        "icon": "music",
+        "group": "tasks"
+      }
+    },
+    {
       "class_name": "LoadVideo",
       "file_path": "griptape_nodes_library/video/load_video.py",
       "metadata": {
