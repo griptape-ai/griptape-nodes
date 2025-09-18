@@ -1716,22 +1716,6 @@ class FlowManager:
                 await machine.start_flow(start_node, debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
-        # If the control flow is running, we can't resolve singular nodes.
-        if self.check_for_existing_running_flow():
-            # Behavior should stay the same for sequential flows.
-            if self._global_control_flow_machine and isinstance(
-                self._global_control_flow_machine.resolution_machine, SequentialResolutionMachine
-            ):
-                errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
-                raise RuntimeError(errormsg)
-            # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
-            if not self._global_single_node_resolution:
-                errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
-                raise RuntimeError(errormsg)
-        # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
-        if node.name in self._global_dag_builder.node_to_reference:
-            logger.error("Node %s is already executing. Cannot start execution.", node.name)
-            return
         # We are now going to have different behavior depending on how the node is behaving.
         if self.check_for_existing_running_flow():
             # Now we know something is running, it's ParallelResolutionMachine, and that we are in sigle_node_resolution.
