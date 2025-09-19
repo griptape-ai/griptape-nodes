@@ -63,12 +63,19 @@ def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_name
     return total_bytes
 
 
+def get_max_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> int:
+    """Get max memory footprint of a DiffusionPipeline."""
+    bytes_by_component = get_bytes_by_component(pipe, component_names)
+    max_bytes = max((bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None), default=0)
+    return max_bytes
+
+
 def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
     """Print pipeline memory footprint by measuring actual tensor sizes."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     component_bytes = [bytes_by_component[name] for name in component_names if bytes_by_component[name] is not None]
-    total_bytes = sum(component_bytes) if component_bytes else 0
-    max_bytes = max(component_bytes) if component_bytes else 0
+    total_bytes = sum(component_bytes)
+    max_bytes = max(component_bytes, default=0)
 
     for name, bytes_ in bytes_by_component.items():
         if bytes_ is None:
@@ -78,19 +85,6 @@ def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component
     logger.info("Total: %s", to_human_readable_size(total_bytes))
     logger.info("Max: %s", to_human_readable_size(max_bytes))
     logger.info("")
-
-
-def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
-    """Print pipeline memory footprint."""
-    print_pipeline_memory_footprint(
-        pipe,
-        [
-            "transformer",
-            "text_encoder",
-            "text_encoder_2",
-            "vae",
-        ],
-    )
 
 
 def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR0911 PLR0912

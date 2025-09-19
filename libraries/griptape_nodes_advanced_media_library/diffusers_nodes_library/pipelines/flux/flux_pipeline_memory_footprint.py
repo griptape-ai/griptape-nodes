@@ -6,9 +6,11 @@ import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
-    get_total_memory_footprint,  # type: ignore[reportMissingImports]
+    get_total_memory_footprint,
+    get_max_memory_footprint,
     print_pipeline_memory_footprint,
-    to_human_readable_size,  # type: ignore[reportMissingImports]
+    should_enable_attention_slicing,
+    to_human_readable_size,
 )
 from diffusers_nodes_library.pipelines.flux.diptych_flux_fill_pipeline_parameters import (
     DiptychFluxFillPipelineParameters,
@@ -37,14 +39,23 @@ def print_flux_pipeline_memory_footprint(
     print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
 
+def _get_free_cuda_memory() -> int:
+    """Get free memory on the current CUDA device."""
+    if not torch.cuda.is_available():
+        return 0
+
+    device = torch.device("cuda")
+    total_memory = torch.cuda.get_device_properties(device).total_memory
+    free_memory = total_memory - torch.cuda.memory_allocated(device)
+    return free_memory
+
+
 def _check_cuda_memory_sufficient(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
-    total_memory = torch.cuda.get_device_properties(device).total_memory
-    free_memory = total_memory - torch.cuda.memory_allocated(device)
-    return model_memory <= free_memory
+    return model_memory <= _get_free_cuda_memory()
 
 
 def _check_mps_memory_sufficient(
@@ -120,6 +131,10 @@ def _optimize_flux_pipeline(  # noqa: C901
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
+        if hasattr(pipe, "enable_attention_slicing") and should_enable_attention_slicing():
+            logger.info("Enabling attention slicing")
+            pipe.enable_attention_slicing()
+
         if hasattr(pipe, "enable_vae_slicing"):
             logger.info("Enabling vae slicing")
             pipe.enable_vae_slicing()
@@ -144,12 +159,25 @@ def _optimize_flux_pipeline(  # noqa: C901
                 pipe.to(device)
                 return
 
-            if hasattr(pipe, "enable_model_cpu_offload"):
-                logger.info("Insufficient memory. Enabling model cpu offload")
+            
+            logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
+            free_cuda_memory = _get_free_cuda_memory()
+            max_memory_footprint = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
+            logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
+            logger.info("Pipeline max memory footprint: %s", to_human_readable_size(max_memory_footprint))
+            if max_memory_footprint < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
+                logger.info("Enabling model cpu offload")
                 pipe.enable_model_cpu_offload()
                 _log_memory_info(pipe, device)
                 if _check_cuda_memory_sufficient(pipe, device):
                     logger.info("Sufficient memory after model cpu offload")
+                    return
+            elif hasattr(pipe, "enable_sequential_cpu_offload"):
+                logger.info("Enabling sequential cpu offload")
+                pipe.enable_sequential_cpu_offload()
+                _log_memory_info(pipe, device)
+                if _check_cuda_memory_sufficient(pipe, device):
+                    logger.info("Sufficient memory after sequential cpu offload")
                     return
 
         # Final check after all optimizations
