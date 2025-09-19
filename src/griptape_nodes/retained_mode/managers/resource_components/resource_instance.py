@@ -18,7 +18,7 @@ class ResourceInstance(ABC):
     def __init__(self, resource_type: "ResourceType", instance_id_prefix: str, capabilities: dict[str, Any]):
         self._resource_type = resource_type
         self._capabilities = deepcopy(capabilities)
-        self._instance_id = f"{instance_id_prefix}_{uuid4().hex}"
+        self._instance_id = f"{instance_id_prefix}_{uuid4()}"
         self._locked_by = None
 
     def get_resource_type(self) -> "ResourceType":
@@ -41,21 +41,43 @@ class ResourceInstance(ABC):
         """Unique handle/ID for this instance."""
         return self._instance_id
 
-    def acquire_lock(self, owner_id: str) -> bool:
-        """Try to acquire exclusive lock."""
-        if self._locked_by is None:
-            self._locked_by = owner_id
-            logger.debug("Resource %s locked by %s", self._instance_id, owner_id)
-            return True
-        return False
+    def acquire_lock(self, owner_id: str) -> None:
+        """Acquire exclusive lock.
 
-    def release_lock(self, owner_id: str) -> bool:
-        """Release lock if owned by owner_id."""
-        if self._locked_by == owner_id:
-            self._locked_by = None
-            logger.debug("Resource %s unlocked by %s", self._instance_id, owner_id)
-            return True
-        return False
+        Args:
+            owner_id: The ID of the entity requesting the lock
+
+        Raises:
+            ValueError: If the resource is already locked by another owner
+        """
+        if self._locked_by is not None:
+            if self._locked_by == owner_id:
+                # Already locked by the same owner - this is fine
+                return
+            msg = f"Resource {self._instance_id} is already locked by {self._locked_by}, cannot lock for {owner_id}"
+            raise ValueError(msg)
+
+        self._locked_by = owner_id
+        logger.debug("Resource %s locked by %s", self._instance_id, owner_id)
+
+    def release_lock(self, owner_id: str) -> None:
+        """Release lock.
+
+        Args:
+            owner_id: The ID of the entity releasing the lock
+
+        Raises:
+            ValueError: If the resource is not locked by the specified owner
+        """
+        if self._locked_by != owner_id:
+            if self._locked_by is None:
+                msg = f"Resource {self._instance_id} is not locked, cannot release for {owner_id}"
+            else:
+                msg = f"Resource {self._instance_id} is locked by {self._locked_by}, cannot release for {owner_id}"
+            raise ValueError(msg)
+
+        self._locked_by = None
+        logger.debug("Resource %s unlocked by %s", self._instance_id, owner_id)
 
     def is_locked(self) -> bool:
         """Check if resource is currently locked."""

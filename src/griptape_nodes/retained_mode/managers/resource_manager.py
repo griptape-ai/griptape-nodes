@@ -133,11 +133,17 @@ class ResourceManager:
         # Let ResourceType select the best instance from compatible ones
         best_instance = resource_type.select_best_compatible_instance(compatible_instances, requirements)
 
-        if best_instance and best_instance.acquire_lock(owner_id):
-            logger.debug(
-                "Acquired existing resource instance %s for owner %s", best_instance.get_instance_id(), owner_id
-            )
-            return best_instance.get_instance_id()
+        if best_instance:
+            try:
+                best_instance.acquire_lock(owner_id)
+                logger.debug(
+                    "Acquired existing resource instance %s for owner %s", best_instance.get_instance_id(), owner_id
+                )
+                return best_instance.get_instance_id()
+            except ValueError as e:
+                # Bail
+                logger.error("Failed to acquire lock on selected instance: %s", e)
+                return None
 
         req_name = str(requirements) if requirements else "any"
         logger.warning(
@@ -145,24 +151,23 @@ class ResourceManager:
         )
         return None
 
-    def release_resource_instance_lock(self, instance_id: str, owner_id: str) -> bool:
-        """Release resource instance using instance_id."""
+    def release_resource_instance_lock(self, instance_id: str, owner_id: str) -> None:
+        """Release resource instance lock.
+
+        Args:
+            instance_id: The ID of the resource instance to release
+            owner_id: The ID of the entity releasing the lock
+
+        Raises:
+            ValueError: If the instance does not exist or is not locked by the specified owner
+        """
         instance = self._instances.get(instance_id)
         if instance is None:
-            logger.warning("Attempted to release non-existent resource instance %s", instance_id)
-            return False
+            msg = f"Resource instance {instance_id} does not exist"
+            raise ValueError(msg)
 
-        if instance.release_lock(owner_id):
-            logger.debug("Released resource instance %s from owner %s", instance_id, owner_id)
-            return True
-
-        logger.warning(
-            "Failed to release resource instance %s - not owned by %s (owned by %s)",
-            instance_id,
-            owner_id,
-            instance.get_lock_owner(),
-        )
-        return False
+        instance.release_lock(owner_id)  # Will throw if this fails.
+        logger.debug("Released resource instance %s from owner %s", instance_id, owner_id)
 
     def get_resource_instance_by_id(self, instance_id: str) -> ResourceInstance | None:
         """Get resource instance by its instance_id."""
