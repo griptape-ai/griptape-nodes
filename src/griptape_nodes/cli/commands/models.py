@@ -1,6 +1,7 @@
 """Models command for managing AI models."""
 
 import asyncio
+import sys
 from typing import TYPE_CHECKING
 
 import typer
@@ -130,6 +131,7 @@ async def _download_model(
     except Exception as e:
         console.print("[bold red]Model download failed:[/bold red]")
         console.print(f"[red]{e}[/red]")
+        sys.exit(1)
 
 
 async def _list_models() -> None:
