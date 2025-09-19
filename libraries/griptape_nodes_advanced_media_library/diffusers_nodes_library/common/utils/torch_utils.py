@@ -194,9 +194,9 @@ def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0
     if device.type == "cuda":
         total_mem = get_free_cuda_memory()
         if total_mem < 8 * 1024**3:  # 8 GB
-            logger.info("CUDA device has %.1f GB memory, enabling attention slicing.", total_mem / 1e9)
+            logger.info("CUDA device has %s memory, enabling attention slicing.", to_human_readable_size(total_mem))
             return True
-        logger.info("CUDA device has %.1f GB memory, attention slicing not needed.", total_mem / 1e9)
+        logger.info("CUDA device has %s memory, attention slicing not needed.", to_human_readable_size(total_mem))
         return False
 
     # Unknown device
