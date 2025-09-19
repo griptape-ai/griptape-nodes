@@ -1,4 +1,5 @@
 import logging
+from functools import cache
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
@@ -11,12 +12,6 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     print_pipeline_memory_footprint,
     should_enable_attention_slicing,
     to_human_readable_size,
-)
-from diffusers_nodes_library.pipelines.flux.diptych_flux_fill_pipeline_parameters import (
-    DiptychFluxFillPipelineParameters,
-)
-from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import (
-    FluxFillPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import FluxPipelineParameters
 
@@ -33,14 +28,14 @@ FLUX_PIPELINE_COMPONENT_NAMES = [
 
 
 def print_flux_pipeline_memory_footprint(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
 ) -> None:
     """Print memory footprint for the main sub-modules of Flux pipelines."""
     print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
 
 def _check_cuda_memory_sufficient(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
@@ -48,7 +43,7 @@ def _check_cuda_memory_sufficient(
 
 
 def _check_mps_memory_sufficient(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
 ) -> bool:
     """Check if MPS device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
@@ -58,7 +53,7 @@ def _check_mps_memory_sufficient(
 
 
 def _log_memory_info(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline, device: torch.device
 ) -> None:
     """Log memory information for the device."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
@@ -78,7 +73,7 @@ def _log_memory_info(
 
 
 def _quantize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
     quantization_mode: str,
     device: torch.device,
 ) -> None:
@@ -112,7 +107,7 @@ def _quantize_flux_pipeline(
 
 
 def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
     device: torch.device,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
@@ -198,53 +193,66 @@ def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
     return
 
 def _manual_optimize_flux_pipeline(
-        pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-        hf_pipeline_params: dict[str, str | bool],
+        pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
         device: torch.device,
+        attention_slicing: bool,
+        vae_slicing: bool,
+        transformer_layerwise_casting: bool,
+        cpu_offload_strategy: str,
+        quantization_mode: str,
 ) -> None:
-    if hf_pipeline_params.get("quantization_mode", "None") != "None":
-        _quantize_flux_pipeline(pipe, hf_pipeline_params.get("quantization_mode"), device)
-    if hf_pipeline_params.get("attention_slicing", False) and hasattr(pipe, "enable_attention_slicing"):
+    if quantization_mode != "None":
+        _quantize_flux_pipeline(pipe, quantization_mode, device)
+    if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
         logger.info("Enabling attention slicing")
         pipe.enable_attention_slicing()
-    if hf_pipeline_params.get("vae_slicing", False):
+    if vae_slicing:
         if hasattr(pipe, "enable_vae_slicing"):
             logger.info("Enabling vae slicing")
             pipe.enable_vae_slicing()
         elif hasattr(pipe, "vae"):
             logger.info("Enabling vae slicing")
             pipe.vae.enable_slicing()
-    if hf_pipeline_params.get("transformer_layerwise_casting", False) and hasattr(pipe, "transformer"):
+    if transformer_layerwise_casting and hasattr(pipe, "transformer"):
         logger.info("Enabling fp8 layerwise casting for transformer")
         pipe.transformer.enable_layerwise_casting(
             storage_dtype=torch.float8_e4m3fn,
             compute_dtype=torch.bfloat16,
         )
-    if hf_pipeline_params.get("cpu_offload_strategy", False):
-        if hf_pipeline_params.get("cpu_offload_strategy") == "sequential" and hasattr(pipe, "enable_sequential_cpu_offload"):
+    if cpu_offload_strategy == "Sequential":
+        if hasattr(pipe, "enable_sequential_cpu_offload"):
             logger.info("Enabling sequential cpu offload")
             pipe.enable_sequential_cpu_offload()
-        elif hf_pipeline_params.get("cpu_offload_strategy") == "model" and hasattr(pipe, "enable_model_cpu_offload"):
+        else:
+            logger.warning("Pipeline does not support sequential cpu offload")
+    elif cpu_offload_strategy == "Model":
+        if hasattr(pipe, "enable_model_cpu_offload"):
             logger.info("Enabling model cpu offload")
             pipe.enable_model_cpu_offload()
-    else:
-        logger.info("Moving pipeline to %s", device)
+        else:
+            logger.warning("Pipeline does not support model cpu offload")
+    elif cpu_offload_strategy == "None":
         pipe.to(device)
 
-
+@cache
 def optimize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-    hf_pipeline_params: dict[str, str | bool],
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
+    memory_optimization_strategy: str = "Automatic",
+    attention_slicing: bool = False,
+    vae_slicing: bool = False,
+    transformer_layerwise_casting: bool = False,
+    cpu_offload_strategy: str = "None",
+    quantization_mode: str = "None",
 ) -> None:
     """Optimize pipeline performance and memory."""
     device = get_best_device()
 
-    if hf_pipeline_params.get("memory_optimization_strategy", "Automatic") == "Automatic":
+    if memory_optimization_strategy == "Automatic":
         # Best guess for memory optimization with 20% headroom
         # https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator#caveats-with-this-calculator
         _automatic_optimize_flux_pipeline(pipe, device)
     else:
-        _manual_optimize_flux_pipeline(pipe, hf_pipeline_params, device)
+        _manual_optimize_flux_pipeline(pipe, device, attention_slicing, vae_slicing, transformer_layerwise_casting, cpu_offload_strategy, quantization_mode)
 
     try:
         torch.backends.cuda.matmul.allow_tf32 = True

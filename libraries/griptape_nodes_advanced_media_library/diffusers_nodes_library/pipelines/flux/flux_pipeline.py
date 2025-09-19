@@ -1,3 +1,4 @@
+import gc
 import logging
 from typing import Any
 
@@ -18,7 +19,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
-logger = logging.getLogger("diffusers_nodes_library")
+logger = logging.getLogger("griptape_nodes")
 
 
 class FluxPipeline(ControlNode):
@@ -61,7 +62,7 @@ class FluxPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(pipe=pipe, hf_pipeline_params=self.pipe_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters())
+            optimize_flux_pipeline(pipe=pipe, **self.pipe_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters())
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),
@@ -89,4 +90,9 @@ class FluxPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
+        self.log_params.append_to_logs("Complete, clearing memory.\n")
+        del pipe
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
         self.log_params.append_to_logs("Done.\n")
