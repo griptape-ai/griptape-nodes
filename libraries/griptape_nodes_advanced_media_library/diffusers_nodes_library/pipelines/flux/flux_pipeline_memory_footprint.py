@@ -209,12 +209,9 @@ def new_optimize_flux_pipeline(
 @cache
 def optimize_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-    pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
 ) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
-
-    logger.debug("Using legacy memory footprint optimization, ignoring pipe_params: %s", pipe_params)
 
     if device == torch.device("cuda"):
         # We specifically do not call pipe.to(device) for gpus
