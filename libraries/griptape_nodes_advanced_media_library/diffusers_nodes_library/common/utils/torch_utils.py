@@ -4,7 +4,6 @@ import platform
 import sys
 
 import diffusers  # type: ignore[reportMissingImports]
-import psutil  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import torch.nn.functional  # type: ignore[reportMissingImports]
 
@@ -25,7 +24,7 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())  # type: ignore[reportAttributeAccessIssue]
 
 
-def get_model_memory(model) -> int:
+def get_model_memory(model: torch.nn.Module | None) -> int:
     """Calculate accurate memory footprint by examining all parameters and buffers."""
     if model is None:
         return 0
