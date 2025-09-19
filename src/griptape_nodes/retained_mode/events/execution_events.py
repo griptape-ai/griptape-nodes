@@ -225,6 +225,7 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     Args:
         control_node: Name of the current control node (if any)
         resolving_node: Name of the node currently being resolved (if any)
+        involved_nodes: Names of nodes that are queued to be executed or have been executed in the current run.
     """
 
     control_nodes: list[str] | None
