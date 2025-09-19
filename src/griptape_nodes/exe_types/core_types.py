@@ -1077,11 +1077,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         for trait in traits:
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
-        if self._parent is not None and isinstance(self._parent, ParameterGroup):
-            # Access the field value directly for ParameterGroup
-            parent_ui_options = getattr(self._parent, "ui_options", {})
-            if isinstance(parent_ui_options, dict):
-                ui_options = ui_options | parent_ui_options
         return ui_options
 
     @ui_options.setter
