@@ -6,6 +6,7 @@ import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
+    get_free_cuda_memory,
     get_total_memory_footprint,
     get_max_memory_footprint,
     print_pipeline_memory_footprint,
@@ -39,23 +40,12 @@ def print_flux_pipeline_memory_footprint(
     print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
 
-def _get_free_cuda_memory() -> int:
-    """Get free memory on the current CUDA device."""
-    if not torch.cuda.is_available():
-        return 0
-
-    device = torch.device("cuda")
-    total_memory = torch.cuda.get_device_properties(device).total_memory
-    free_memory = total_memory - torch.cuda.memory_allocated(device)
-    return free_memory
-
-
 def _check_cuda_memory_sufficient(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline, device: torch.device
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
-    return model_memory <= _get_free_cuda_memory()
+    return model_memory <= get_free_cuda_memory()
 
 
 def _check_mps_memory_sufficient(
@@ -131,7 +121,7 @@ def _optimize_flux_pipeline(  # noqa: C901
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
-        if hasattr(pipe, "enable_attention_slicing") and should_enable_attention_slicing():
+        if hasattr(pipe, "enable_attention_slicing") and should_enable_attention_slicing(device):
             logger.info("Enabling attention slicing")
             pipe.enable_attention_slicing()
 
@@ -161,11 +151,11 @@ def _optimize_flux_pipeline(  # noqa: C901
 
             
             logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
-            free_cuda_memory = _get_free_cuda_memory()
-            max_memory_footprint = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
+            free_cuda_memory = get_free_cuda_memory()
+            max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES) * 1.2
             logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
-            logger.info("Pipeline max memory footprint: %s", to_human_readable_size(max_memory_footprint))
-            if max_memory_footprint < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
+            logger.info("Pipeline estimated max memory footprint: %s", to_human_readable_size(max_memory_footprint_with_headroom))
+            if max_memory_footprint_with_headroom < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
                 logger.info("Enabling model cpu offload")
                 pipe.enable_model_cpu_offload()
                 _log_memory_info(pipe, device)
@@ -209,7 +199,7 @@ def _optimize_flux_pipeline(  # noqa: C901
     return
 
 
-def new_optimize_flux_pipeline(
+def optimize_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
     pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
 ) -> None:
@@ -234,68 +224,68 @@ def new_optimize_flux_pipeline(
         logger.debug("sdp_kernel not supported, continuing without")
 
 
-@cache
-def optimize_flux_pipeline(
-    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-    pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
-) -> None:
-    """Optimize pipeline memory footprint."""
-    device = get_best_device()
+# @cache
+# def optimize_flux_pipeline(
+#     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+#     pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
+# ) -> None:
+#     """Optimize pipeline memory footprint."""
+#     device = get_best_device()
 
-    logger.debug("Using legacy memory footprint optimization, ignoring pipe_params: %s", pipe_params)
+#     logger.debug("Using legacy memory footprint optimization, ignoring pipe_params: %s", pipe_params)
 
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
+#     if device == torch.device("cuda"):
+#         # We specifically do not call pipe.to(device) for gpus
+#         # because it would move ALL the models in the pipe to the
+#         # gpus, potentially causing us to exhaust available VRAM,
+#         # and essentially undo all of the following VRAM pressure
+#         # reducing optimizations in vain.
+#         #
+#         # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
+#         # (unless you checked pipe is small enough!)
 
-        if hasattr(pipe, "transformer"):
-            # This fp8 layerwise caching is important for lower VRAM
-            # gpus (say 25GB or lower). Not important if not on a gpu.
-            # We only do this for the transformer, because its the biggest.
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-            logger.info("Enabling fp8 layerwise caching for transformer")
-            pipe.transformer.enable_layerwise_casting(
-                storage_dtype=torch.float8_e4m3fn,
-                compute_dtype=torch.bfloat16,
-            )
-        # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-        logger.info("Enabling sequential cpu offload")
-        pipe.enable_sequential_cpu_offload()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    logger.info("Enabling attention slicing")
-    pipe.enable_attention_slicing()
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
-    if hasattr(pipe, "enable_vae_slicing"):
-        logger.info("Enabling vae slicing")
-        pipe.enable_vae_slicing()
-    elif hasattr(pipe, "vae"):
-        logger.info("Enabling vae slicing")
-        pipe.vae.enable_slicing()
+#         if hasattr(pipe, "transformer"):
+#             # This fp8 layerwise caching is important for lower VRAM
+#             # gpus (say 25GB or lower). Not important if not on a gpu.
+#             # We only do this for the transformer, because its the biggest.
+#             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+#             logger.info("Enabling fp8 layerwise caching for transformer")
+#             pipe.transformer.enable_layerwise_casting(
+#                 storage_dtype=torch.float8_e4m3fn,
+#                 compute_dtype=torch.bfloat16,
+#             )
+#         # Sequential cpu offload only makes sense for gpus (VRAM <-> RAM).
+#         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+#         logger.info("Enabling sequential cpu offload")
+#         pipe.enable_sequential_cpu_offload()
+#     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+#     logger.info("Enabling attention slicing")
+#     pipe.enable_attention_slicing()
+#     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/846
+#     if hasattr(pipe, "enable_vae_slicing"):
+#         logger.info("Enabling vae slicing")
+#         pipe.enable_vae_slicing()
+#     elif hasattr(pipe, "vae"):
+#         logger.info("Enabling vae slicing")
+#         pipe.vae.enable_slicing()
 
-    logger.info("Final memory footprint:")
-    print_flux_pipeline_memory_footprint(pipe)
+#     logger.info("Final memory footprint:")
+#     print_flux_pipeline_memory_footprint(pipe)
 
-    if device == torch.device("mps"):
-        # You must move the pipeline models to MPS if available to
-        # use it (otherwise you'll get the CPU).
-        logger.info("Transferring model to MPS/GPU - may take minutes")
-        pipe.to(device)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
+#     if device == torch.device("mps"):
+#         # You must move the pipeline models to MPS if available to
+#         # use it (otherwise you'll get the CPU).
+#         logger.info("Transferring model to MPS/GPU - may take minutes")
+#         pipe.to(device)
+#         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/847
 
-    if device == torch.device("cuda"):
-        # We specifically do not call pipe.to(device) for gpus
-        # because it would move ALL the models in the pipe to the
-        # gpus, potentially causing us to exhaust available VRAM,
-        # and essentially undo all of the following VRAM pressure
-        # reducing optimizations in vain.
-        #
-        # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
-        # (unless you checked pipe is small enough!)
-        pass
+#     if device == torch.device("cuda"):
+#         # We specifically do not call pipe.to(device) for gpus
+#         # because it would move ALL the models in the pipe to the
+#         # gpus, potentially causing us to exhaust available VRAM,
+#         # and essentially undo all of the following VRAM pressure
+#         # reducing optimizations in vain.
+#         #
+#         # TL;DR - DONT CALL `pipe.to(device)` FOR GPUS!
+#         # (unless you checked pipe is small enough!)
+#         pass

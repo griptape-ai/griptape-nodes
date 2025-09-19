@@ -159,6 +159,17 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
     return torch.device("cpu")
 
 
+def get_free_cuda_memory() -> int:
+    """Get free memory on the current CUDA device."""
+    if not torch.cuda.is_available():
+        return 0
+
+    device = torch.device("cuda")
+    total_memory = torch.cuda.get_device_properties(device).total_memory
+    free_memory = total_memory - torch.cuda.memory_allocated(device)
+    return free_memory
+
+
 def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0911
     """Decide whether to enable attention slicing based on the device and platform."""
     system = platform.system()
@@ -169,7 +180,7 @@ def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0
             logger.info("macOS detected with device %s, not MPS — enabling attention slicing.", device.type)
             return True
         # Check system RAM
-        total_ram_gb = psutil.virtual_memory().total / 1e9
+        total_ram_gb = torch.mps.recommended_max_memory() - torch.mps.current_allocated_memory()
         if total_ram_gb < 64:  # noqa: PLR2004
             logger.info("macOS detected with MPS device and %.1f GB RAM — enabling attention slicing.", total_ram_gb)
             return True
@@ -182,7 +193,7 @@ def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0
         return True
 
     if device.type == "cuda":
-        total_mem = torch.cuda.get_device_properties(device).total_memory
+        total_mem = get_free_cuda_memory()
         if total_mem < 8 * 1024**3:  # 8 GB
             logger.info("CUDA device has %.1f GB memory, enabling attention slicing.", total_mem / 1e9)
             return True
