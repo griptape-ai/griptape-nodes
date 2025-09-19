@@ -159,8 +159,8 @@ class FluxPipelineParameters:
         return self._huggingface_repo_parameter.get_repo_revision()
 
     def publish_output_image_preview_placeholder(self) -> None:
-        width = int(self._node.parameter_values["width"])
-        height = int(self._node.parameter_values["height"])
+        width = int(self.get_width())
+        height = int(self.get_height())
         # Immediately set a preview placeholder image to make it react quickly and adjust
         # the size of the image preview on the node.
 
