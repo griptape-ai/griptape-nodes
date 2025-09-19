@@ -25,17 +25,31 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())  # type: ignore[reportAttributeAccessIssue]
 
 
+def get_model_memory(model) -> int:
+    """Calculate accurate memory footprint by examining all parameters and buffers."""
+    if model is None:
+        return 0
+
+    total_bytes = 0
+
+    # Calculate parameter memory
+    for param in model.parameters():
+        total_bytes += param.numel() * param.element_size()
+
+    # Calculate buffer memory (batch norm stats, etc.)
+    for buffer in model.buffers():
+        total_bytes += buffer.numel() * buffer.element_size()
+
+    return total_bytes
+
+
 def get_bytes_by_component(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
     """Get bytes by component for a DiffusionPipeline."""
     bytes_by_component = {}
     for name in component_names:
         if hasattr(pipe, name):
             component = getattr(pipe, name)
-            if hasattr(component, "get_memory_footprint"):
-                bytes_by_component[name] = component.get_memory_footprint()
-            else:
-                logger.warning("Component %s does not have get_memory_footprint method", name)
-                bytes_by_component[name] = None
+            bytes_by_component[name] = get_model_memory(component)
         else:
             logger.warning("Pipeline does not have component %s", name)
             bytes_by_component[name] = None
@@ -50,7 +64,7 @@ def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_name
 
 
 def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
-    """Print pipeline memory footprint."""
+    """Print pipeline memory footprint by measuring actual tensor sizes."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     component_bytes = [bytes_by_component[name] for name in component_names if bytes_by_component[name] is not None]
     total_bytes = sum(component_bytes) if component_bytes else 0
