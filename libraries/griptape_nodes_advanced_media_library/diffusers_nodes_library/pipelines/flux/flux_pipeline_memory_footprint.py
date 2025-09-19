@@ -42,7 +42,7 @@ def _check_cuda_memory_sufficient(
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
-    total_memory = torch.cuda.get_device_properties(device).total_memory * 0.8  # Use 80% of total memory, leave 20% for overhead: https://blog.eleuther.ai/transformer-math/
+    total_memory = torch.cuda.get_device_properties(device).total_memory * 0.8  # Use 80% of total memory, leave 20% for overhead: https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator
     free_memory = total_memory - torch.cuda.memory_allocated(device)
     return model_memory <= free_memory
 
