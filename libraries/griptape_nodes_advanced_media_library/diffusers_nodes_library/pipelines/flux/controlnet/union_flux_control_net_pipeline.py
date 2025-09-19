@@ -82,7 +82,7 @@ class UnionFluxControlNetPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(pipe=pipe, pipe_params=self.flux_params)
+            optimize_flux_pipeline(pipe=pipe, hf_pipeline_params=self.pipe_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters())
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),

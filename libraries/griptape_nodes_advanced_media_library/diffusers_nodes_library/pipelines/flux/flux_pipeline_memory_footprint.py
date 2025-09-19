@@ -44,7 +44,7 @@ def _check_cuda_memory_sufficient(
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
     model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
-    return model_memory <= get_free_cuda_memory()
+    return model_memory * 1.2 <= get_free_cuda_memory()
 
 
 def _check_mps_memory_sufficient(
@@ -111,9 +111,8 @@ def _quantize_flux_pipeline(
     logger.info("Quantization complete.")
 
 
-def _optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
+def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-    quantization_mode: str,
     device: torch.device,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
@@ -136,40 +135,39 @@ def _optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
             pipe.to(device)
             return
 
-        if quantization_mode == "none":
-            logger.warning("Insufficient memory. Enabling fp8 layerwise caching for transformer")
-            pipe.transformer.enable_layerwise_casting(
-                storage_dtype=torch.float8_e4m3fn,
-                compute_dtype=torch.bfloat16,
-            )
+        logger.warning("Insufficient memory. Enabling fp8 layerwise caching for transformer")
+        pipe.transformer.enable_layerwise_casting(
+            storage_dtype=torch.float8_e4m3fn,
+            compute_dtype=torch.bfloat16,
+        )
+        _log_memory_info(pipe, device)
+        if _check_cuda_memory_sufficient(pipe):
+            logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
+            pipe.to(device)
+            return
+
+        logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
+        free_cuda_memory = get_free_cuda_memory()
+        max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES) * 1.2
+        logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
+        logger.info(
+            "Pipeline estimated max memory footprint: %s",
+            to_human_readable_size(max_memory_footprint_with_headroom),
+        )
+        if max_memory_footprint_with_headroom < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
+            logger.info("Enabling model cpu offload")
+            pipe.enable_model_cpu_offload()
             _log_memory_info(pipe, device)
             if _check_cuda_memory_sufficient(pipe):
-                logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
-                pipe.to(device)
+                logger.info("Sufficient memory after model cpu offload")
                 return
-
-            logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
-            free_cuda_memory = get_free_cuda_memory()
-            max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES) * 1.2
-            logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
-            logger.info(
-                "Pipeline estimated max memory footprint: %s",
-                to_human_readable_size(max_memory_footprint_with_headroom),
-            )
-            if max_memory_footprint_with_headroom < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
-                logger.info("Enabling model cpu offload")
-                pipe.enable_model_cpu_offload()
-                _log_memory_info(pipe, device)
-                if _check_cuda_memory_sufficient(pipe):
-                    logger.info("Sufficient memory after model cpu offload")
-                    return
-            elif hasattr(pipe, "enable_sequential_cpu_offload"):
-                logger.info("Enabling sequential cpu offload")
-                pipe.enable_sequential_cpu_offload()
-                _log_memory_info(pipe, device)
-                if _check_cuda_memory_sufficient(pipe):
-                    logger.info("Sufficient memory after sequential cpu offload")
-                    return
+        elif hasattr(pipe, "enable_sequential_cpu_offload"):
+            logger.info("Enabling sequential cpu offload")
+            pipe.enable_sequential_cpu_offload()
+            _log_memory_info(pipe, device)
+            if _check_cuda_memory_sufficient(pipe):
+                logger.info("Sufficient memory after sequential cpu offload")
+                return
 
         # Final check after all optimizations
         if not _check_cuda_memory_sufficient(pipe):
@@ -199,23 +197,54 @@ def _optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
         # to avoid potential OOM errors
     return
 
+def _manual_optimize_flux_pipeline(
+        pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+        hf_pipeline_params: dict[str, str | bool],
+        device: torch.device,
+) -> None:
+    if hf_pipeline_params.get("quantization_mode", "None") != "None":
+        _quantize_flux_pipeline(pipe, hf_pipeline_params.get("quantization_mode"), device)
+    if hf_pipeline_params.get("attention_slicing", False) and hasattr(pipe, "enable_attention_slicing"):
+        logger.info("Enabling attention slicing")
+        pipe.enable_attention_slicing()
+    if hf_pipeline_params.get("vae_slicing", False):
+        if hasattr(pipe, "enable_vae_slicing"):
+            logger.info("Enabling vae slicing")
+            pipe.enable_vae_slicing()
+        elif hasattr(pipe, "vae"):
+            logger.info("Enabling vae slicing")
+            pipe.vae.enable_slicing()
+    if hf_pipeline_params.get("transformer_layerwise_casting", False) and hasattr(pipe, "transformer"):
+        logger.info("Enabling fp8 layerwise casting for transformer")
+        pipe.transformer.enable_layerwise_casting(
+            storage_dtype=torch.float8_e4m3fn,
+            compute_dtype=torch.bfloat16,
+        )
+    if hf_pipeline_params.get("cpu_offload_strategy", False):
+        if hf_pipeline_params.get("cpu_offload_strategy") == "sequential" and hasattr(pipe, "enable_sequential_cpu_offload"):
+            logger.info("Enabling sequential cpu offload")
+            pipe.enable_sequential_cpu_offload()
+        elif hf_pipeline_params.get("cpu_offload_strategy") == "model" and hasattr(pipe, "enable_model_cpu_offload"):
+            logger.info("Enabling model cpu offload")
+            pipe.enable_model_cpu_offload()
+    else:
+        logger.info("Moving pipeline to %s", device)
+        pipe.to(device)
+
 
 def optimize_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
-    pipe_params: FluxPipelineParameters | FluxFillPipelineParameters | DiptychFluxFillPipelineParameters,
+    hf_pipeline_params: dict[str, str | bool],
 ) -> None:
     """Optimize pipeline performance and memory."""
     device = get_best_device()
 
-    quantization_mode = pipe_params.get_quantization_mode()
-    if quantization_mode != "none":
-        _quantize_flux_pipeline(pipe, quantization_mode, device)
-
-    if pipe_params.get_skip_memory_check():
-        logger.info("Skipping memory checks. Moving pipeline to %s", device)
-        pipe.to(device)
+    if hf_pipeline_params.get("memory_optimization_strategy", "Automatic") == "Automatic":
+        # Best guess for memory optimization with 20% headroom
+        # https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator#caveats-with-this-calculator
+        _automatic_optimize_flux_pipeline(pipe, device)
     else:
-        _optimize_flux_pipeline(pipe, quantization_mode, device)
+        _manual_optimize_flux_pipeline(pipe, hf_pipeline_params, device)
 
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
