@@ -52,9 +52,9 @@ def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_name
 def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
     """Print pipeline memory footprint."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
-    component_bytes = [bytes_by_component[name] for name in component_names]
-    total_bytes = sum(component_bytes)
-    max_bytes = max(component_bytes)
+    component_bytes = [bytes_by_component[name] for name in component_names if bytes_by_component[name] is not None]
+    total_bytes = sum(component_bytes) if component_bytes else 0
+    max_bytes = max(component_bytes) if component_bytes else 0
 
     for name, bytes_ in bytes_by_component.items():
         if bytes_ is None:
