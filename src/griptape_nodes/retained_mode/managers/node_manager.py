@@ -22,6 +22,7 @@ from griptape_nodes.exe_types.node_types import (
     StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
@@ -445,7 +446,7 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_names, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_names, resolving_node_names, _ = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_names is not None:
@@ -1856,9 +1857,28 @@ class NodeManager:
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
             return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
-        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
-            details = f"Failed to resolve from node '{node_name}'. Flow is already running."
-            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
+
+        # Check for existing running flow
+        flow_mgr = GriptapeNodes.FlowManager()
+        if flow_mgr.check_for_existing_running_flow():
+            # Behavior should stay the same for sequential flows.
+            if flow_mgr._global_control_flow_machine and isinstance(
+                flow_mgr._global_control_flow_machine.resolution_machine, SequentialResolutionMachine
+            ):
+                errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
+                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+            # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
+            if not flow_mgr._global_single_node_resolution:
+                errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
+                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+
+        # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
+        if node.name in flow_mgr._global_dag_builder.node_to_reference:
+            logger.error("Node %s is already executing. Cannot start execution.", node.name)
+            return ResolveNodeResultFailure(
+                validation_exceptions=[],
+                result_details=f"Node {node.name} is already executing. Cannot start execution.",
+            )
         try:
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:

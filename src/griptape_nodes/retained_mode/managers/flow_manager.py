@@ -1090,14 +1090,17 @@ class FlowManager:
             details = f"Could not get flow state. Error: {err}"
             return GetFlowStateResultFailure(result_details=details)
         try:
-            control_nodes, resolving_nodes = self.flow_state(flow)
+            control_nodes, resolving_nodes, involved_nodes = self.flow_state(flow)
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
             return GetFlowStateResultFailure(result_details=details)
         details = f"Successfully got flow state for flow with name {flow_name}."
         return GetFlowStateResultSuccess(
-            control_nodes=control_nodes, resolving_node=resolving_nodes, result_details=details
+            control_nodes=control_nodes,
+            resolving_node=resolving_nodes,
+            result_details=details,
+            involved_nodes=involved_nodes,
         )
 
     def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
@@ -1713,28 +1716,27 @@ class FlowManager:
                 await machine.start_flow(start_node, debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
-        # Set that we are only working on one node right now! no other stepping allowed
+        # We are now going to have different behavior depending on how the node is behaving.
         if self.check_for_existing_running_flow():
-            # If flow already exists, throw an error
-            errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
-            raise RuntimeError(errormsg)
-
-        self._global_single_node_resolution = True
-
-        # Get or create machine
-        self._global_control_flow_machine = ControlFlowMachine(flow.name)
-        self._global_control_flow_machine.context.current_nodes = [node]
-        resolution_machine = self._global_control_flow_machine.resolution_machine
-        resolution_machine.change_debug_mode(debug_mode=debug_mode)
-        node.state = NodeResolutionState.UNRESOLVED
-        # Build the DAG for the node
-        if isinstance(resolution_machine, ParallelResolutionMachine):
-            self._global_dag_builder.add_node_with_dependencies(node)
-            resolution_machine.context.dag_builder = self._global_dag_builder
-        await resolution_machine.resolve_node(node)
-        if resolution_machine.is_complete():
-            self._global_single_node_resolution = False
-            self._global_control_flow_machine.context.current_nodes = []
+            # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.
+            self._global_dag_builder.add_node_with_dependencies(node, node.name)
+        else:
+            # Set that we are only working on one node right now!
+            self._global_single_node_resolution = True
+            # Get or create machine
+            self._global_control_flow_machine = ControlFlowMachine(flow.name)
+            self._global_control_flow_machine.context.current_nodes = [node]
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            resolution_machine.change_debug_mode(debug_mode=debug_mode)
+            node.state = NodeResolutionState.UNRESOLVED
+            # Build the DAG for the node
+            if isinstance(resolution_machine, ParallelResolutionMachine):
+                self._global_dag_builder.add_node_with_dependencies(node)
+                resolution_machine.context.dag_builder = self._global_dag_builder
+            await resolution_machine.resolve_node(node)
+            if resolution_machine.is_complete():
+                self._global_single_node_resolution = False
+                self._global_control_flow_machine.context.current_nodes = []
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1792,12 +1794,12 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:  # noqa: ARG002
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:  # noqa: ARG002
         if not self.check_for_existing_running_flow():
             msg = "Flow hasn't started."
             raise RuntimeError(msg)
         if self._global_control_flow_machine is None:
-            return None, None
+            return None, None, None
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
             [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
@@ -1810,12 +1812,13 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            return current_control_nodes, current_resolving_nodes
+            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            return current_control_nodes, current_resolving_nodes, involved_nodes if len(involved_nodes) != 0 else None
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else None
-        return current_control_nodes, None
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else None, None
+        return current_control_nodes, None, None
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.

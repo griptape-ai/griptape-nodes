@@ -16,11 +16,13 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionGriptapeNodeEvent,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    CurrentControlNodeEvent,
     CurrentDataNodeEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.common.directed_graph import DirectedGraph
@@ -103,7 +105,7 @@ class ExecuteDagState(State):
         current_node = done_node.node_reference
 
         # Check if node was already resolved (shouldn't happen)
-        if current_node.state == NodeResolutionState.RESOLVED:
+        if current_node.state == NodeResolutionState.RESOLVED and not current_node.lock:
             logger.error(
                 "DUPLICATE COMPLETION DETECTED: Node '%s' was already RESOLVED but handle_done_nodes was called again from network '%s'. This should not happen!",
                 current_node.name,
@@ -129,7 +131,6 @@ class ExecuteDagState(State):
             data_type = parameter.type
             if data_type is None:
                 data_type = ParameterTypeBuiltin.NONE.value
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(
@@ -149,7 +150,6 @@ class ExecuteDagState(State):
             library_name = library[0]
         else:
             library_name = None
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         await GriptapeNodes.EventManager().aput_event(
             ExecutionGriptapeNodeEvent(
@@ -169,8 +169,6 @@ class ExecuteDagState(State):
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         flow_manager = GriptapeNodes.FlowManager()
 
         # Early returns for various conditions
@@ -224,7 +222,11 @@ class ExecuteDagState(State):
                         }
                     )
                 )
-
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=CurrentControlNodeEvent(node_name=next_node.name))
+                    )
+                )
             ExecuteDagState._add_and_queue_nodes(context, next_node, network_name)
 
     @staticmethod
@@ -270,8 +272,6 @@ class ExecuteDagState(State):
         Args:
             node_reference (DagOrchestrator.DagNode): The node to collect values for.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         current_node = node_reference.node_reference
         connections = GriptapeNodes.FlowManager().get_connections()
 
@@ -447,16 +447,22 @@ class ExecuteDagState(State):
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
 
             # Send an event that this is a current data node:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             await GriptapeNodes.EventManager().aput_event(
                 ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=CurrentDataNodeEvent(node_name=node)))
             )
-            # Wait for a task to finish
-        done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
-        # Prevent task being removed before return
-        for task in done:
-            context.task_to_node.pop(task)
+
+        # Wait for a task to finish - only if there are tasks running
+        if context.task_to_node:
+            done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+            # Check for task exceptions and handle them properly
+            for task in done:
+                if task.exception():
+                    # Get the actual exception and re-raise it
+                    exc = task.exception()
+                    context.task_to_node.pop(task)
+                    raise RuntimeError(exc)
+                context.task_to_node.pop(task)
         # Once a task has finished, loop back to the top.
         await ExecuteDagState.pop_done_states(context)
         # Remove all nodes that are done
@@ -538,8 +544,6 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
 
     async def resolve_node(self, node: BaseNode | None = None) -> None:  # noqa: ARG002
         """Execute the DAG structure using the existing DagBuilder."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         if self.context.dag_builder is None:
             self.context.dag_builder = GriptapeNodes.FlowManager().global_dag_builder
         await self.start(ExecuteDagState)
