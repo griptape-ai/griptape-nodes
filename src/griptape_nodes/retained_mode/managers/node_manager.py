@@ -959,7 +959,7 @@ class NodeManager:
         )
         return result
 
-    def on_add_batch_child_parameters_request(self, request: AddBatchChildParametersRequest) -> ResultPayload:
+    def on_add_batch_child_parameters_request(self, request: AddBatchChildParametersRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle batch child parameter creation for ParameterList."""
         node_name = request.node_name
         node = None
