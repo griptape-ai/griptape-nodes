@@ -1606,6 +1606,69 @@ class ParameterList(ParameterContainer):
 
         return param
 
+    def add_batch_child_parameters(self, count: int = 1, display_name_prefix: str | None = None) -> list[Parameter]:
+        """Add multiple child parameters at once for better performance.
+
+        This method creates multiple child parameters in a single operation,
+        reducing event overhead when growing ParameterList dynamically.
+
+        Args:
+            count: Number of child parameters to create
+            display_name_prefix: Optional prefix for display names ("Item 1", "Item 2", etc.)
+
+        Returns:
+            List of created Parameter objects
+
+        Raises:
+            ValueError: If count is not a positive integer
+        """
+        if not isinstance(count, int) or count <= 0:
+            error_msg = f"Count must be a positive integer, got {count}"
+            raise ValueError(error_msg)
+
+        created_params = []
+        current_children = self.get_child_parameters()
+        start_index = len(current_children)
+
+        # Create all parameters first (without adding to parent yet)
+        for i in range(count):
+            name = f"{self.name}_ParameterListUniqueParamID_{uuid.uuid4().hex!s}"
+
+            param = Parameter(
+                name=name,
+                tooltip=self.tooltip,
+                type=self._type,
+                input_types=self._input_types,
+                output_type=self._output_type,
+                default_value=self.default_value,
+                tooltip_as_input=self.tooltip_as_input,
+                tooltip_as_output=self.tooltip_as_output,
+                tooltip_as_property=self.tooltip_as_property,
+                allowed_modes=self.allowed_modes,
+                ui_options=self.ui_options,
+                traits=self._original_traits,
+                converters=self.converters,
+                validators=self.validators,
+                settable=self.settable,
+                user_defined=True,
+                parent_container_name=self.name,
+            )
+
+            # Set display name if prefix provided
+            if display_name_prefix:
+                ui_opts = param.ui_options or {}
+                ui_opts["display_name"] = f"{display_name_prefix} {start_index + i + 1}"
+                param.ui_options = ui_opts
+
+            created_params.append(param)
+
+        # Add all parameters to parent at once
+        # This will trigger node resolution only once instead of count times
+        for param in created_params:
+            self.add_child(param)
+
+        return created_params
+
     def clear_list(self) -> None:
         """Remove all children that have been added to the list."""
         children = self.find_elements_by_type(element_type=Parameter)
@@ -1662,8 +1725,14 @@ class ParameterList(ParameterContainer):
 
         # Grow
         if current_len < desired_count:
-            for index in range(current_len, desired_count):
-                name = f"{display_name_prefix} {index + 1}" if display_name_prefix else None
+            # Use batch creation for better performance when adding multiple parameters
+            count_to_add = desired_count - current_len
+            if count_to_add > 1:
+                # Use batch creation for multiple parameters
+                self.add_batch_child_parameters(count_to_add, display_name_prefix)
+            else:
+                # Use single parameter creation for just one parameter
+                name = f"{display_name_prefix} {current_len + 1}" if display_name_prefix else None
                 self.append_child_parameter(display_name=name)
 
         # Shrink

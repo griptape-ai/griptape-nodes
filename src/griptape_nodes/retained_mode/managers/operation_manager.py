@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         SetNodeMetadataRequest,
     )
     from griptape_nodes.retained_mode.events.parameter_events import (
+        AddBatchChildParametersRequest,
         AddParameterToNodeRequest,
         AlterParameterDetailsRequest,
         GetParameterDetailsRequest,
@@ -296,6 +297,26 @@ class PayloadConverter:
             truncated_value = value_str
 
         return f"""cmd.set_value("{payload.node_name}.{payload.parameter_name}",value="{truncated_value}")"""
+
+    @staticmethod
+    def _handle_AddBatchChildParametersRequest(payload: AddBatchChildParametersRequest) -> str:
+        """Handle AddBatchChildParametersRequest payloads."""
+        # Build the command for batch parameter creation
+        params = [
+            f'node_name="{payload.node_name}"',
+            f'parameter_list_name="{payload.parameter_list_name}"',
+            f"count={payload.count}",
+        ]
+
+        # Add optional parameters
+        if payload.display_name_prefix is not None:
+            params.append(f'display_name_prefix="{payload.display_name_prefix}"')
+
+        if payload.initial_setup:
+            params.append("initial_setup=True")
+
+        command_params = ",".join(params)
+        return f"""cmd.add_batch_child_parameters({command_params})"""
 
     # CONNECTION OPERATION HANDLERS
 

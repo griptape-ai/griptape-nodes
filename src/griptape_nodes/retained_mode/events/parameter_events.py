@@ -544,5 +544,54 @@ class RenameParameterResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class AddBatchChildParametersRequest(RequestPayload):
+    """Add multiple child parameters to a ParameterList at once.
+
+    Use when: Growing ParameterList dynamically, creating multiple similar parameters,
+    optimizing bulk parameter creation during runtime operations.
+
+    Args:
+        parameter_list_name: Name of the ParameterList to add children to
+        node_name: Name of the node containing the ParameterList (None for current context)
+        count: Number of child parameters to create
+        display_name_prefix: Optional prefix for display names ("Item 1", "Item 2", etc.)
+        initial_setup: Skip setup work when loading from file
+
+    Results: AddBatchChildParametersResultSuccess | AddBatchChildParametersResultFailure
+    """
+
+    parameter_list_name: str
+    node_name: str | None = None
+    count: int = 1
+    display_name_prefix: str | None = None
+    initial_setup: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AddBatchChildParametersResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Batch child parameters added successfully to ParameterList.
+
+    Args:
+        parameter_list_name: Name of the ParameterList that received children
+        node_name: Name of the node containing the ParameterList
+        count: Number of child parameters created
+        child_parameter_names: List of names of the created child parameters
+    """
+
+    parameter_list_name: str
+    node_name: str
+    count: int
+    child_parameter_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class AddBatchChildParametersResultFailure(ResultPayloadFailure):
+    """Batch child parameter addition failed. Common causes: node not found, parameter list not found, invalid count."""
+
+
+@dataclass
+@PayloadRegistry.register
 class RemoveElementEvent(ExecutionPayload):
     element_id: str

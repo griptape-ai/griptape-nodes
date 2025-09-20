@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterGroup,
+    ParameterList,
     ParameterMode,
     ParameterType,
     ParameterTypeBuiltin,
@@ -107,6 +108,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddBatchChildParametersRequest,
+    AddBatchChildParametersResultFailure,
+    AddBatchChildParametersResultSuccess,
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
     AddParameterToNodeResultSuccess,
@@ -170,6 +174,9 @@ class NodeManager:
             ListParametersOnNodeRequest, self.on_list_parameters_on_node_request
         )
         event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, self.on_add_parameter_to_node_request)
+        event_manager.assign_manager_to_request_type(
+            AddBatchChildParametersRequest, self.on_add_batch_child_parameters_request
+        )
         event_manager.assign_manager_to_request_type(
             RemoveParameterFromNodeRequest, self.on_remove_parameter_from_node_request
         )
@@ -951,6 +958,65 @@ class NodeManager:
             parameter_name=new_param.name, type=new_param.type, node_name=node_name, result_details=details
         )
         return result
+
+    def on_add_batch_child_parameters_request(self, request: AddBatchChildParametersRequest) -> ResultPayload:
+        """Handle batch child parameter creation for ParameterList."""
+        node_name = request.node_name
+        node = None
+
+        # Get node from context or by name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                return AddBatchChildParametersResultFailure(
+                    result_details="Attempted to add batch child parameters to a ParameterList from the Current Context. Failed because the Current Context is empty."
+                )
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                return AddBatchChildParametersResultFailure(
+                    result_details=f"Attempted to add batch child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}', but no such Node was found."
+                )
+
+        # Validate node state and parameter list
+        if node.lock:
+            return AddBatchChildParametersResultFailure(
+                result_details=f"Attempted to add batch child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}'. Failed because the Node was locked."
+            )
+
+        parameter_list = node.get_element_by_name_and_type(request.parameter_list_name)
+        if parameter_list is None:
+            return AddBatchChildParametersResultFailure(
+                result_details=f"Attempted to add batch child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}', but no such ParameterList was found."
+            )
+
+        if not isinstance(parameter_list, ParameterList) or request.count <= 0:
+            error_msg = (
+                f"Attempted to add batch child parameters to '{request.parameter_list_name}' on Node '{node_name}', but it is not a ParameterList."
+                if not isinstance(parameter_list, ParameterList)
+                else f"Attempted to add {request.count} child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}', but count must be positive."
+            )
+            return AddBatchChildParametersResultFailure(result_details=error_msg)
+
+        # Create batch parameters
+        try:
+            created_params = parameter_list.add_batch_child_parameters(
+                count=request.count, display_name_prefix=request.display_name_prefix
+            )
+            return AddBatchChildParametersResultSuccess(
+                parameter_list_name=request.parameter_list_name,
+                node_name=node_name,
+                count=request.count,
+                child_parameter_names=[param.name for param in created_params],
+                result_details=f"Successfully added {request.count} child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}'.",
+            )
+        except Exception as e:
+            return AddBatchChildParametersResultFailure(
+                result_details=f"Failed to add batch child parameters to ParameterList '{request.parameter_list_name}' on Node '{node_name}': {e!s}"
+            )
 
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name

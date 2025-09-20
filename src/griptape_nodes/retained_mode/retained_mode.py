@@ -56,6 +56,7 @@ from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddBatchChildParametersRequest,
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
     GetParameterDetailsRequest,
@@ -509,6 +510,50 @@ class RetainedMode:
                 mode_allowed_output=mode_allowed_output,
                 ui_options=ui_options,
             )
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def add_batch_child_parameters(
+        cls,
+        node_name: str,
+        parameter_list_name: str,
+        count: int = 1,
+        display_name_prefix: str | None = None,
+        *,
+        initial_setup: bool = False,
+    ) -> ResultPayload:
+        """Add multiple child parameters to a ParameterList at once for better performance.
+
+        This method creates multiple child parameters in a single operation,
+        reducing event overhead when growing ParameterList dynamically.
+
+        Args:
+            node_name (str): Name of the node containing the ParameterList.
+            parameter_list_name (str): Name of the ParameterList to add children to.
+            count (int): Number of child parameters to create.
+            display_name_prefix (str, optional): Optional prefix for display names ("Item 1", "Item 2", etc.).
+            initial_setup (bool, optional): Skip setup work when loading from file.
+
+        Returns:
+            ResultPayload: Contains the result of the batch parameter operation.
+
+        Example:
+            # Add 5 child parameters to a ParameterList
+            result = cmd.add_batch_child_parameters(
+                node_name="my_node",
+                parameter_list_name="my_list",
+                count=5,
+                display_name_prefix="Item"
+            )
+        """
+        request = AddBatchChildParametersRequest(
+            node_name=node_name,
+            parameter_list_name=parameter_list_name,
+            count=count,
+            display_name_prefix=display_name_prefix,
+            initial_setup=initial_setup,
+        )
         result = GriptapeNodes().handle_request(request)
         return result
 
