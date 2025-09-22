@@ -86,11 +86,8 @@ class FluxLorasParameter:
             for module in lora_modules:
                 module.to(dtype=torch.bfloat16)
 
-        # Set loras to same device as pipeline
-        adapter_names = [v["name"] for v in lora_by_name.values()]
-        pipe.set_loras_to_device(adapter_names=adapter_names, device=pipe.device)
-
         # Use them with given weights.
+        adapter_names = [v["name"] for v in lora_by_name.values()]
         adapter_weights = [v["weight"] for v in lora_by_name.values()]
         msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
         logger.info(msg)
