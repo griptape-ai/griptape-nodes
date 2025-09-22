@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
+from griptape_nodes.retained_mode.griptape_nodes import logger
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -11,19 +12,12 @@ if TYPE_CHECKING:
 class AdvancedMediaLibrary(AdvancedNodeLibrary):
     """Advanced library for media processing with executor methods."""
 
-    def execute(self, node: BaseNode) -> None:
+    async def execute(self, node: BaseNode) -> None:
         """Execute a media processing node with enhanced functionality.
 
         Args:
             node: The BaseNode to execute with media library enhancements
         """
-        # Add any media-specific pre-processing here
+        await node.aprocess()
+        logger.info("Media processing node executed with media library enhancements")
 
-        # You can add media-specific logic here, such as:
-        # - Setting up temporary directories
-        # - Configuring media processing parameters
-        # - Validating media inputs
-        # - Setting up GPU contexts, etc.
-
-        # For now, this is a simple wrapper
-        # The actual node execution will still be handled by the NodeExecutor

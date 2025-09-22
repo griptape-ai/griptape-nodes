@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +30,7 @@ class NodeExecutor:
         if library_name in self._advanced_libraries:
             del self._advanced_libraries[library_name]
 
-    def execute_method(self, method_name: str, library_name: str | None = None, *args: Any, **kwargs: Any) -> Any:
+    async def execute_method(self, method_name: str, library_name: str | None = None, *args: Any, **kwargs: Any) -> Any:
         """Execute a method by name with given arguments."""
         if library_name and library_name in self._advanced_libraries:
             advanced_library = self._advanced_libraries[library_name]
@@ -37,6 +38,8 @@ class NodeExecutor:
                 method = getattr(advanced_library, method_name)
                 if callable(method):
                     logger.debug("Executing method '%s' from library '%s'", method_name, library_name)
+                    if asyncio.iscoroutinefunction(method):
+                        return await method(*args, **kwargs)
                     return method(*args, **kwargs)
             msg = f"Method '{method_name}' not found in library '{library_name}'"
             raise KeyError(msg)
@@ -60,7 +63,7 @@ class NodeExecutor:
                 library = LibraryRegistry.get_library_for_node_type(node_type=node_type)
             library_name = library.get_library_data().name
             # Execute using the node's specific library
-            self.execute_method("execute", library_name, node)
+            await self.execute_method("execute", library_name, node)
         except KeyError:
             # Fallback to default node processing
             await node.aprocess()
