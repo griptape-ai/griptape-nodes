@@ -729,9 +729,9 @@ class BaseNode(ABC):
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
-    @abstractmethod
     def process[T](self) -> AsyncResult | None:
-        pass
+        msg = f"Node {self.name} has not implemented the process() method."
+        raise NotImplementedError(msg)
 
     async def aprocess(self) -> None:
         """Async version of process().
