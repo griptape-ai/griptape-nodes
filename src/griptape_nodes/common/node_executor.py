@@ -4,7 +4,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
-from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -13,7 +12,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class NodeExecutor(metaclass=SingletonMeta):
+class NodeExecutor:
     """Simple singleton executor that draws methods from libraries and executes them dynamically."""
     advanced_libraries: dict[str, AdvancedNodeLibrary]
 
