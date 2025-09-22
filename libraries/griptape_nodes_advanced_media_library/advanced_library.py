@@ -6,7 +6,6 @@ from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrar
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
-    from griptape_nodes.node_library.library_registry import Library, LibrarySchema
 
 
 class AdvancedMediaLibrary(AdvancedNodeLibrary):
@@ -19,7 +18,6 @@ class AdvancedMediaLibrary(AdvancedNodeLibrary):
             node: The BaseNode to execute with media library enhancements
         """
         # Add any media-specific pre-processing here
-        print(f"Advanced Media Library: Executing node {node.name}")
 
         # You can add media-specific logic here, such as:
         # - Setting up temporary directories
@@ -29,4 +27,3 @@ class AdvancedMediaLibrary(AdvancedNodeLibrary):
 
         # For now, this is a simple wrapper
         # The actual node execution will still be handled by the NodeExecutor
-        pass

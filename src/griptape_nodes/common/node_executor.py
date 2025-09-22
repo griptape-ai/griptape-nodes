@@ -7,8 +7,6 @@ from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -19,54 +17,57 @@ class NodeExecutor(metaclass=SingletonMeta):
 
     def __init__(self) -> None:
         self._registry = LibraryRegistry()
-        self._methods: dict[str, Callable] = {}
+        self._advanced_libraries: dict[str, Any] = {}
         self._loaded = False
 
     def _load_methods(self) -> None:
-        """Load methods from registered libraries."""
+        """Load advanced library instances from registered libraries."""
         if self._loaded:
             return
 
-        self._methods.clear()
+        self._advanced_libraries.clear()
 
         # Get all registered libraries
-        for library_name in self._registry.list_libraries():
+        try:
+            library_names = self._registry.list_libraries()
+            logger.debug("Found %d registered libraries: %s", len(library_names), library_names)
+        except Exception as e:
+            logger.error("Error listing libraries: %s", e)
+            library_names = []
+
+        for library_name in library_names:
             try:
                 library = self._registry.get_library(library_name)
-
-                # Load methods from advanced library if available
                 advanced_library = library.get_advanced_library()
-                if advanced_library:
-                    for attr_name in dir(advanced_library):
-                        if not attr_name.startswith("_"):
-                            attr = getattr(advanced_library, attr_name)
-                            if callable(attr):
-                                self._methods[attr_name] = attr
 
-                logger.debug("Loaded methods from library: %s", library_name)
+                if advanced_library:
+                    self._advanced_libraries[library_name] = advanced_library
+                    logger.debug("Loaded advanced library for '%s': %s", library_name, type(advanced_library))
+                else:
+                    logger.debug("No advanced library found for '%s'", library_name)
 
             except Exception as e:
-                logger.error("Error loading methods from library %s: %s", library_name, e)
+                logger.error("Error loading advanced library %s: %s", library_name, e)
 
+        logger.info("NodeExecutor loaded %d advanced libraries", len(self._advanced_libraries))
         self._loaded = True
 
-    def execute_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+    def execute_method(self, method_name: str, *args: Any, library_name: str | None = None, **kwargs: Any) -> Any:
         """Execute a method by name with given arguments."""
         self._load_methods()
 
-        if method_name not in self._methods:
-            available = list(self._methods.keys())
-            msg = f"Method '{method_name}' not found. Available: {available}"
+        if library_name and library_name in self._advanced_libraries:
+            advanced_library = self._advanced_libraries[library_name]
+            if hasattr(advanced_library, method_name):
+                method = getattr(advanced_library, method_name)
+                if callable(method):
+                    logger.debug("Executing method '%s' from library '%s'", method_name, library_name)
+                    return method(*args, **kwargs)
+            msg = f"Method '{method_name}' not found in library '{library_name}'"
             raise KeyError(msg)
 
-        method = self._methods[method_name]
-        logger.debug("Executing method: %s", method_name)
-
-        try:
-            return method(*args, **kwargs)
-        except Exception as e:
-            logger.error("Error executing method %s: %s", method_name, e)
-            raise
+        msg = f"No library specified or library '{library_name}' not found"
+        raise KeyError(msg)
 
     async def execute(self, node: BaseNode) -> None:
         """Execute the given node.
@@ -74,14 +75,19 @@ class NodeExecutor(metaclass=SingletonMeta):
         Args:
             node: The BaseNode to execute
         """
-        await node.aprocess()
+        try:
+            # Get the node's library name
+            node_type = node.__class__.__name__
+            library = self._registry.get_library_for_node_type(node_type)
+            library_name = library.get_library_data().name
+
+            # Execute using the node's specific library
+            self.execute_method("execute", node, library_name=library_name)
+        except KeyError:
+            # Fallback to default node processing
+            await node.aprocess()
 
     def refresh(self) -> None:
         """Refresh methods from libraries."""
         self._loaded = False
         self._load_methods()
-
-    def list_methods(self) -> list[str]:
-        """List all available methods."""
-        self._load_methods()
-        return list(self._methods.keys())

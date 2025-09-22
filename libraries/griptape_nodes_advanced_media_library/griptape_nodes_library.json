@@ -1,7 +1,7 @@
 {
   "name": "Griptape Nodes Advanced Media Library",
   "library_schema_version": "0.1.0",
-  "advanced_library_path": "advanced_library_path",
+  "advanced_library_path": "advanced_library.py",
   "settings": [
     {
       "description": "Configuration settings for the Advanced Media Library temporary file storage",

@@ -23,6 +23,7 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
@@ -1548,6 +1549,14 @@ class LibraryManager:
 
         # App just got init'd. See if there are library JSONs to load!
         await self.load_all_libraries_from_config()
+
+        # Refresh NodeExecutor methods after all libraries have been loaded
+        try:
+            node_executor = NodeExecutor()
+            node_executor.refresh()
+            logger.info("Refreshed NodeExecutor methods after all libraries loaded")
+        except Exception as e:
+            logger.warning("Failed to refresh NodeExecutor after all libraries loaded: %s", e)
 
         # We have to load all libraries before we attempt to load workflows.
 
