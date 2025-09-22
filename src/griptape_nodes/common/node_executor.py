@@ -3,59 +3,31 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 
 logger = logging.getLogger("griptape_nodes")
 
 
 class NodeExecutor(metaclass=SingletonMeta):
     """Simple singleton executor that draws methods from libraries and executes them dynamically."""
+    advanced_libraries: dict[str, AdvancedNodeLibrary]
 
     def __init__(self) -> None:
-        self._registry = LibraryRegistry()
-        self._advanced_libraries: dict[str, Any] = {}
-        self._loaded = False
+        self._advanced_libraries = {}
 
-    def _load_methods(self) -> None:
-        """Load advanced library instances from registered libraries."""
-        if self._loaded:
-            return
+    def load_library(self, library: Library) -> None:
+        advanced_library = library.get_advanced_library()
+        library_name = library.get_library_data().name
+        if advanced_library is not None:
+            self._advanced_libraries[library_name] = advanced_library
 
-        self._advanced_libraries.clear()
-
-        # Get all registered libraries
-        try:
-            library_names = self._registry.list_libraries()
-            logger.debug("Found %d registered libraries: %s", len(library_names), library_names)
-        except Exception as e:
-            logger.error("Error listing libraries: %s", e)
-            library_names = []
-
-        for library_name in library_names:
-            try:
-                library = self._registry.get_library(library_name)
-                advanced_library = library.get_advanced_library()
-
-                if advanced_library:
-                    self._advanced_libraries[library_name] = advanced_library
-                    logger.debug("Loaded advanced library for '%s': %s", library_name, type(advanced_library))
-                else:
-                    logger.debug("No advanced library found for '%s'", library_name)
-
-            except Exception as e:
-                logger.error("Error loading advanced library %s: %s", library_name, e)
-
-        logger.info("NodeExecutor loaded %d advanced libraries", len(self._advanced_libraries))
-        self._loaded = True
-
-    def execute_method(self, method_name: str, *args: Any, library_name: str | None = None, **kwargs: Any) -> Any:
+    def execute_method(self, method_name: str, library_name: str | None = None, *args: Any, **kwargs: Any) -> Any:
         """Execute a method by name with given arguments."""
-        self._load_methods()
-
         if library_name and library_name in self._advanced_libraries:
             advanced_library = self._advanced_libraries[library_name]
             if hasattr(advanced_library, method_name):
@@ -69,25 +41,26 @@ class NodeExecutor(metaclass=SingletonMeta):
         msg = f"No library specified or library '{library_name}' not found"
         raise KeyError(msg)
 
-    async def execute(self, node: BaseNode) -> None:
+    async def execute(self, node: BaseNode, library_name: str | None = None) -> None:
         """Execute the given node.
 
         Args:
             node: The BaseNode to execute
+            library_name: The library that the execute method should come from.
         """
         try:
             # Get the node's library name
-            node_type = node.__class__.__name__
-            library = self._registry.get_library_for_node_type(node_type)
+            if library_name is not None:
+                library = LibraryRegistry.get_library(name=library_name)
+            else:
+                node_type = node.__class__.__name__
+                library = LibraryRegistry.get_library_for_node_type(node_type=node_type)
             library_name = library.get_library_data().name
-
             # Execute using the node's specific library
-            self.execute_method("execute", node, library_name=library_name)
+            self.execute_method("execute", library_name, node)
         except KeyError:
             # Fallback to default node processing
             await node.aprocess()
 
     def refresh(self) -> None:
-        """Refresh methods from libraries."""
-        self._loaded = False
-        self._load_methods()
+        self._advanced_libraries = {}
