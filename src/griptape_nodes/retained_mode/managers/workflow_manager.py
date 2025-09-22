@@ -1528,25 +1528,14 @@ class WorkflowManager:
 
         return updated_content
 
-    def _remove_none_recursively(self, obj: Any) -> Any:
-        """Recursively remove None values from nested dictionaries and lists."""
-        if isinstance(obj, dict):
-            return {k: self._remove_none_recursively(v) for k, v in obj.items() if v is not None}
-        if isinstance(obj, list):
-            return [self._remove_none_recursively(item) for item in obj if item is not None]
-        return obj
-
     def _generate_workflow_metadata_header(self, workflow_metadata: WorkflowMetadata) -> str | None:
         try:
             toml_doc = tomlkit.document()
             toml_doc.add("dependencies", tomlkit.item([]))
             griptape_tool_table = tomlkit.table()
-            # Strip out the Nones since TOML doesn't like those, including nested Nones in WorkflowShape
+            # Strip out the Nones since TOML doesn't like those
+            # WorkflowShape is now serialized as JSON string by Pydantic field_serializer
             metadata_dict = workflow_metadata.model_dump(exclude_none=True)
-            # Recursively remove any remaining None values from nested structures.
-            # This clears up Nones that may be present from, say, the WorkflowShape object
-            # that defines the inputs and outputs.
-            metadata_dict = self._remove_none_recursively(metadata_dict)
             for key, value in metadata_dict.items():
                 griptape_tool_table.add(key=key, value=value)
             toml_doc["tool"] = tomlkit.table()

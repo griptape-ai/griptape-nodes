@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
+
+logger = logging.getLogger("griptape_nodes")
 
 # Type aliases for clarity
 type NodeName = str
@@ -29,6 +33,7 @@ class WorkflowShape(BaseModel):
     - inputs: {start_node_name: {param_name: param_minimal_dict}}
     - outputs: {end_node_name: {param_name: param_minimal_dict}}
     """
+
     inputs: NodeParametersMapping = Field(default_factory=dict)
     outputs: NodeParametersMapping = Field(default_factory=dict)
 
@@ -49,6 +54,48 @@ class WorkflowMetadata(BaseModel):
     last_modified_date: datetime | None = Field(default=None)
     branched_from: str | None = Field(default=None)
     workflow_shape: WorkflowShape | None = Field(default=None)
+
+    @field_serializer("workflow_shape")
+    def serialize_workflow_shape(self, workflow_shape: WorkflowShape | None) -> str | None:
+        """Serialize WorkflowShape as JSON string to avoid TOML serialization issues.
+
+        The WorkflowShape contains deeply nested dictionaries with None values that are
+        meaningful data (e.g., default_value: None). TOML's nested table format creates
+        unreadable output and tomlkit fails on None values in nested structures.
+        JSON preserves None as null and keeps the data compact and readable.
+        """
+        if workflow_shape is None:
+            return None
+        # Use json.dumps to preserve None values as null, which TOML can handle
+        return json.dumps(workflow_shape.model_dump(), separators=(",", ":"))
+
+    @field_validator("workflow_shape", mode="before")
+    def validate_workflow_shape(self, value: Any) -> WorkflowShape | None:
+        """Deserialize WorkflowShape from JSON string during TOML loading.
+
+        When loading workflow metadata from TOML files, the workflow_shape field
+        is stored as a JSON string that needs to be converted back to a WorkflowShape
+        object. This validator handles the expected input formats:
+        - JSON strings (from TOML deserialization)
+        - WorkflowShape objects (from direct Python construction)
+        - None values (workflows without Start/End nodes)
+
+        If JSON deserialization fails, logs a warning and returns None for graceful
+        degradation, consistent with other metadata parsing failures in this codebase.
+        """
+        if value is None:
+            return None
+        if isinstance(value, WorkflowShape):
+            return value
+        if isinstance(value, str):
+            try:
+                data = json.loads(value)
+                return WorkflowShape(**data)
+            except (json.JSONDecodeError, TypeError, ValueError) as e:
+                logger.error("Failed to deserialize workflow_shape from JSON: %s", e)
+                return None
+        # Unexpected type - let Pydantic's normal validation handle it
+        return value
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):
