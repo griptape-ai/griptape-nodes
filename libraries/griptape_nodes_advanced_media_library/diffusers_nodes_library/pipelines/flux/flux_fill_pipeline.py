@@ -17,6 +17,7 @@ from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
     optimize_flux_pipeline,
+    clear_flux_pipeline,
 )  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -100,4 +101,6 @@ class FluxFillPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
+        self.log_params.append_to_logs("Complete, clearing memory.\n")
+        clear_flux_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")

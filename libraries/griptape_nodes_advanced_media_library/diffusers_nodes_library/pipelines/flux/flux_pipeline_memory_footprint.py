@@ -1,5 +1,6 @@
 import logging
 from functools import cache
+import gc
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
@@ -260,3 +261,12 @@ def optimize_flux_pipeline(
             torch.backends.cuda.sdp_kernel()
     except Exception:
         logger.debug("sdp_kernel not supported, continuing without")
+
+def clear_flux_pipeline(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
+) -> None:
+    """Clear pipeline from memory."""
+    del pipe
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()

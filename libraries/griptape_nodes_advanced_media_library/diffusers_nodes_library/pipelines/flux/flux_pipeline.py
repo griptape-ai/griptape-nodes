@@ -12,6 +12,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
     optimize_flux_pipeline,
+    clear_flux_pipeline,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
@@ -91,8 +92,5 @@ class FluxPipeline(ControlNode):
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
         self.log_params.append_to_logs("Complete, clearing memory.\n")
-        del pipe
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+        clear_flux_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")

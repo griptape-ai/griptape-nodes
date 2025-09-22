@@ -10,6 +10,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
     optimize_flux_pipeline,
+    clear_flux_pipeline,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_kontext_pipeline_parameters import (
     FluxKontextPipelineParameters,  # type: ignore[reportMissingImports]
@@ -92,4 +93,6 @@ class FluxKontextPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
+        self.log_params.append_to_logs("Complete, clearing memory.\n")
+        clear_flux_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")
