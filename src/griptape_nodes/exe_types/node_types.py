@@ -408,7 +408,7 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                ui_options = message.ui_options
+                ui_options = message.ui_options.copy()
                 ui_options["hide"] = not visible
                 message.ui_options = ui_options
 
