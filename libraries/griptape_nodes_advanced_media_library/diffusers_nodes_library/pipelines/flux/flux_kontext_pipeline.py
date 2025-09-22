@@ -45,6 +45,7 @@ class FluxKontextPipeline(ControlNode):
 
     def preprocess(self) -> None:
         self.pipe_params.preprocess()
+        self.log_params.clear_logs()
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
