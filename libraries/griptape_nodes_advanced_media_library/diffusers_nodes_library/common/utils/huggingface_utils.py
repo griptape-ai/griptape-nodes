@@ -6,6 +6,8 @@ from typing import Any
 from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
 from huggingface_hub.constants import HF_HUB_CACHE
 
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
+
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -75,6 +77,8 @@ class ModelCache:
     def clear_pipeline_cache(self) -> None:
         """Clear all cached pipelines."""
         logger.info("Clearing pipeline cache")
+        for pipe in self._pipeline_cache.values():
+            clear_diffusion_pipeline(pipe)
         self._pipeline_cache.clear()
 
     def get_cache_stats(self) -> dict[str, Any]:
