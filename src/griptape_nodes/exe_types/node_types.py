@@ -1109,7 +1109,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
             keys_to_clear = list(self.keys())
             super().clear()
             for key in keys_to_clear:
-                self._emit_parameter_change_event(key, None, deleted=True)
+                # Some nodes still have values set, even if their output values are cleared
+                # Here, we are emitting an event with those set values, to not misrepresent the values of the parameters in the UI.
+                value = self._node.get_parameter_value(key)
+                self._emit_parameter_change_event(key, value, deleted=True)
 
     def silent_clear(self) -> None:
         """Clear all values without emitting parameter change events."""
