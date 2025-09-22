@@ -2,12 +2,15 @@ import logging
 from functools import cache
 from pathlib import Path
 from typing import Any
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
 from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
 from huggingface_hub.constants import HF_HUB_CACHE  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger("griptape_nodes")
 
+
+_PIPELINE: DiffusionPipeline | None = None
 
 def list_repo_revisions_in_cache(repo_id: str) -> list[tuple[str, str]]:
     """Returns a list of (repo_id, revision) tuples matching repo_id in the huggingface cache."""
@@ -59,8 +62,15 @@ def list_repo_revisions_with_file_in_cache(repo_id: str, file: str) -> list[tupl
 class ModelCache:
     @cache  # noqa: B019
     def from_pretrained(self, cls: Any, *args, **kwargs) -> Any:
-        return cls.from_pretrained(*args, **kwargs)
-
+        pipe = cls.from_pretrained(*args, **kwargs)
+        _PIPELINE = pipe
+        return pipe
+    
+    @property
+    def pipeline(self) -> DiffusionPipeline:
+        if _PIPELINE is None:
+            raise ValueError("No pipeline has been loaded into the model cache.")
+        return _PIPELINE
 
 model_cache = ModelCache()
 
