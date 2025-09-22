@@ -7,7 +7,7 @@ import diffusers  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
 from diffusers_nodes_library.common.parameters.pipeline_runner_parameters import PipelineRunnerParameters
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import clear_flux_pipeline
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_flux_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import ControlNode
 

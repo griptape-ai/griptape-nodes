@@ -777,6 +777,7 @@ class LibraryManager:
                 pip_install_flags = library_data.metadata.dependencies.pip_install_flags
                 if pip_install_flags is None:
                     pip_install_flags = []
+                pip_dependencies = library_data.metadata.dependencies.pip_dependencies
 
                 # Determine venv path for dependency installation
                 venv_path = self._get_library_venv_path(library_data.name, file_path)
@@ -818,22 +819,22 @@ class LibraryManager:
                     logger.info(
                         "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
                     )
-                    # await subprocess_run(
-                    #     [
-                    #         sys.executable,
-                    #         "-m",
-                    #         "uv",
-                    #         "pip",
-                    #         "install",
-                    #         *pip_dependencies,
-                    #         *pip_install_flags,
-                    #         "--python",
-                    #         str(library_venv_python_path),
-                    #     ],
-                    #     check=True,
-                    #     capture_output=True,
-                    #     text=True,
-                    # )
+                    await subprocess_run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "uv",
+                            "pip",
+                            "install",
+                            *pip_dependencies,
+                            *pip_install_flags,
+                            "--python",
+                            str(library_venv_python_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
                 else:
                     logger.debug(
                         "Skipping dependency installation for library '%s' - venv location at %s is not writable",

@@ -7,7 +7,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_parameters import DiffusionPipelineParameters  # type: ignore[reportMissingImports]
-# from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import DiffusionPipelineRuntimeParameters  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -20,7 +20,6 @@ class DiffusionPipelineNode(ControlNode):
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
-        self.pipe_params.test()
         
         self.loras_params = FluxLorasParameter(self)
         self.loras_params.add_input_parameters()
@@ -36,10 +35,7 @@ class DiffusionPipelineNode(ControlNode):
         self.pipe_params.runtime_parameters.preprocess()
         self.log_params.clear_logs()
 
-    def process(self) -> AsyncResult | None:
-        yield lambda: self._process()
-
-    def _process(self) -> AsyncResult | None:
+    async def aprocess(self) -> None:
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
 
