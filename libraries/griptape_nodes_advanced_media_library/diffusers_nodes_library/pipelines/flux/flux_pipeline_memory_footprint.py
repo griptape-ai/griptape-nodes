@@ -266,7 +266,16 @@ def clear_flux_pipeline(
     pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline | diffusers.FluxKontextPipeline,
 ) -> None:
     """Clear pipeline from memory."""
+    for component_name in FLUX_PIPELINE_COMPONENT_NAMES:
+        if hasattr(pipe, component_name):
+            component = getattr(pipe, component_name)
+            if component is not None:
+                component.to("cpu")
+                del component
+                setattr(pipe, component_name, None)
+
     del pipe
+
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    gc.collect()
