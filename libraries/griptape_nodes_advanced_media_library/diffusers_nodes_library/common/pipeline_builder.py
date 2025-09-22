@@ -9,7 +9,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
 from diffusers_nodes_library.common.pipeline_builder_parameters import PipelineBuilderParameters
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.common.utils.pipeline_utils import optimize_flux_pipeline
+from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import ControlNode
 
@@ -99,7 +99,7 @@ class PipelineBuilder(ControlNode):
         # Apply optimizations
         with self.log_params.append_profile_to_logs("Applying optimizations"):
             optimization_kwargs = self.params.optimization_kwargs
-            optimize_flux_pipeline(pipe=pipe, **optimization_kwargs)
+            optimize_diffusion_pipeline(pipe=pipe, **optimization_kwargs)
 
         # Configure LoRAs
         with self.log_params.append_profile_to_logs("Configuring LoRAs"):

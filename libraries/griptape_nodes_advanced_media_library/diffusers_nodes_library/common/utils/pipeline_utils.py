@@ -6,7 +6,6 @@ from functools import cache
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
     get_free_cuda_memory,
@@ -116,7 +115,7 @@ def _quantize_flux_pipeline(
     logger.info("Quantization complete.")
 
 
-def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
+def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
     pipe: DiffusionPipeline,
     device: torch.device,
 ) -> None:
@@ -203,7 +202,7 @@ def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
     return
 
 
-def _manual_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0913
+def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     pipe: DiffusionPipeline,
     device: torch.device,
     *,
@@ -247,8 +246,7 @@ def _manual_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0913
         pipe.to(device)
 
 
-@cache
-def optimize_flux_pipeline(  # noqa: PLR0913
+def optimize_diffusion_pipeline(  # noqa: PLR0913
     pipe: DiffusionPipeline,
     *,
     memory_optimization_strategy: str = "Automatic",
@@ -264,9 +262,9 @@ def optimize_flux_pipeline(  # noqa: PLR0913
     if memory_optimization_strategy == "Automatic":
         # Best guess for memory optimization with 20% headroom
         # https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator#caveats-with-this-calculator
-        _automatic_optimize_flux_pipeline(pipe, device)
+        _automatic_optimize_diffusion_pipeline(pipe, device)
     else:
-        _manual_optimize_flux_pipeline(
+        _manual_optimize_diffusion_pipeline(
             pipe=pipe,
             device=device,
             attention_slicing=attention_slicing,
@@ -284,7 +282,7 @@ def optimize_flux_pipeline(  # noqa: PLR0913
         logger.debug("sdp_kernel not supported, continuing without")
 
 
-def clear_flux_pipeline(
+def clear_diffusion_pipeline(
     pipe: DiffusionPipeline,
 ) -> None:
     """Clear pipeline from memory."""
@@ -298,9 +296,6 @@ def clear_flux_pipeline(
                 setattr(pipe, component_name, None)
 
     del pipe
-
-    optimize_flux_pipeline.cache_clear()
-    model_cache.from_pretrained.cache_clear()
 
     gc.collect()
     if torch.cuda.is_available():

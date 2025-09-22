@@ -60,7 +60,6 @@ class ModelCache:
     def __init__(self) -> None:
         self._pipeline_cache: dict[str, Any] = {}
 
-    @cache  # noqa: B019
     def from_pretrained(self, cls: Any, *args, **kwargs) -> Any:
         return cls.from_pretrained(*args, **kwargs)
 

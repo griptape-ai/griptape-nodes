@@ -16,8 +16,8 @@ from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import
 )
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import (
-    clear_flux_pipeline,
-    optimize_flux_pipeline,
+    clear_diffusion_pipeline,
+    optimize_diffusion_pipeline,
 )  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -74,7 +74,7 @@ class FluxFillPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(
+            optimize_diffusion_pipeline(
                 pipe=pipe, **self.pipe_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters()
             )
 
@@ -105,5 +105,5 @@ class FluxFillPipeline(ControlNode):
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
         self.log_params.append_to_logs("Complete, clearing memory.\n")
-        clear_flux_pipeline(pipe)
+        clear_diffusion_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")
