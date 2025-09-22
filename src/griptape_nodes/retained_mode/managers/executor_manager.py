@@ -86,8 +86,6 @@ class GetMethodInfoResultFailure(ResultPayloadFailure):
 class RefreshMethodsRequest:
     """Request to refresh all executor methods from libraries."""
 
-    pass
-
 
 class RefreshMethodsResultSuccess(ResultPayloadSuccess):
     """Successful method refresh result."""
@@ -129,25 +127,23 @@ class ExecutorManager(BaseManager):
                 return ExecuteMethodResultFailure(
                     method_name=method_name,
                     error=error,
-                    result_details=f"Failed to execute method '{method_name}': {error}"
+                    result_details=f"Failed to execute method '{method_name}': {error}",
                 )
 
             # Execute the method
             result = self._executor.execute(method_name, *request.args, **request.kwargs)
 
             return ExecuteMethodResultSuccess(
-                result=result,
-                method_name=method_name,
-                result_details=f"Successfully executed method '{method_name}'"
+                result=result, method_name=method_name, result_details=f"Successfully executed method '{method_name}'"
             )
 
         except Exception as e:
             error = str(e)
-            logger.error(f"Error executing method '{method_name}': {e}")
+            logger.error("Error executing method '%s': %s", method_name, e)
             return ExecuteMethodResultFailure(
                 method_name=method_name,
                 error=error,
-                result_details=f"Failed to execute method '{method_name}': {error}"
+                result_details=f"Failed to execute method '{method_name}': {error}",
             )
 
     def on_list_methods_request(self, request: ListMethodsRequest) -> ResultPayload:
@@ -156,27 +152,25 @@ class ExecutorManager(BaseManager):
             methods = self._executor.list_methods(request.library_name)
 
             # Convert ExecutorMethod objects to dictionaries for serialization
-            method_data = []
-            for method in methods:
-                method_data.append({
+            method_data = [
+                {
                     "name": method.name,
                     "library_name": method.library_name,
                     "source_type": method.source_type,
                     "description": method.description,
-                    "signature": str(method.signature)
-                })
+                    "signature": str(method.signature),
+                }
+                for method in methods
+            ]
 
             filter_text = f" from library '{request.library_name}'" if request.library_name else ""
             details = f"Found {len(method_data)} methods{filter_text}"
 
-            return ListMethodsResultSuccess(
-                methods=method_data,
-                result_details=details
-            )
+            return ListMethodsResultSuccess(methods=method_data, result_details=details)
 
         except Exception as e:
             error = str(e)
-            logger.error(f"Error listing methods: {e}")
+            logger.error("Error listing methods: %s", e)
             return ResultPayloadFailure(result_details=f"Failed to list methods: {error}")
 
     def on_get_method_info_request(self, request: GetMethodInfoRequest) -> ResultPayload:
@@ -192,7 +186,7 @@ class ExecutorManager(BaseManager):
                 return GetMethodInfoResultFailure(
                     method_name=method_name,
                     error=error,
-                    result_details=f"Failed to get info for method '{method_name}': {error}"
+                    result_details=f"Failed to get info for method '{method_name}': {error}",
                 )
 
             method_data = {
@@ -200,21 +194,20 @@ class ExecutorManager(BaseManager):
                 "library_name": method_info.library_name,
                 "source_type": method_info.source_type,
                 "description": method_info.description,
-                "signature": str(method_info.signature)
+                "signature": str(method_info.signature),
             }
 
             return GetMethodInfoResultSuccess(
-                method_info=method_data,
-                result_details=f"Retrieved info for method '{method_name}'"
+                method_info=method_data, result_details=f"Retrieved info for method '{method_name}'"
             )
 
         except Exception as e:
             error = str(e)
-            logger.error(f"Error getting method info for '{method_name}': {e}")
+            logger.error("Error getting method info for '%s': %s", method_name, e)
             return GetMethodInfoResultFailure(
                 method_name=method_name,
                 error=error,
-                result_details=f"Failed to get info for method '{method_name}': {error}"
+                result_details=f"Failed to get info for method '{method_name}': {error}",
             )
 
     def on_refresh_methods_request(self, request: RefreshMethodsRequest) -> ResultPayload:  # noqa: ARG002
@@ -225,12 +218,12 @@ class ExecutorManager(BaseManager):
 
             return RefreshMethodsResultSuccess(
                 methods_count=methods_count,
-                result_details=f"Refreshed {methods_count} methods from registered libraries"
+                result_details=f"Refreshed {methods_count} methods from registered libraries",
             )
 
         except Exception as e:
             error = str(e)
-            logger.error(f"Error refreshing methods: {e}")
+            logger.error("Error refreshing methods: %s", e)
             return ResultPayloadFailure(result_details=f"Failed to refresh methods: {error}")
 
     def get_executor(self) -> Executor:

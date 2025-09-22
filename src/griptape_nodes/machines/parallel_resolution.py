@@ -5,7 +5,6 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.core_types import Parameter, ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -368,7 +367,9 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
-            executor = NodeExecutor()
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            executor = GriptapeNodes.FlowManager().node_executor
             await executor.execute(current_node.node_reference)
 
     @staticmethod

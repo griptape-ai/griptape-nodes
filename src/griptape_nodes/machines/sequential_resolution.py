@@ -270,7 +270,10 @@ class ExecuteNodeState(State):
             current_node = current_focus.node
 
             try:
-                await current_node.aprocess()
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                executor = GriptapeNodes.FlowManager().node_executor
+                await executor.execute(current_node)
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"

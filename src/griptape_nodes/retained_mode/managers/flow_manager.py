@@ -5,6 +5,7 @@ from enum import StrEnum
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
 
+from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -148,6 +149,7 @@ class FlowManager:
     _global_control_flow_machine: ControlFlowMachine | None
     _global_single_node_resolution: bool
     _global_dag_builder: DagBuilder
+    _node_executor: NodeExecutor
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -192,6 +194,7 @@ class FlowManager:
         self._global_control_flow_machine = None  # Track the current control flow machine
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder()
+        self._node_executor = NodeExecutor()
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -204,6 +207,10 @@ class FlowManager:
     @property
     def global_dag_builder(self) -> DagBuilder:
         return self._global_dag_builder
+
+    @property
+    def node_executor(self) -> NodeExecutor:
+        return self._node_executor
 
     def get_connections(self) -> Connections:
         """Get the connections instance."""
