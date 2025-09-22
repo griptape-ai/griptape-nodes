@@ -256,6 +256,8 @@ class RenameWorkflowRequest(RequestPayload):
 class RenameWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Workflow renamed successfully."""
 
+    workflow_name: str
+
 
 @dataclass
 @PayloadRegistry.register
@@ -563,20 +565,23 @@ class CompareWorkflowsResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class MoveWorkflowRequest(RequestPayload):
-    """Move a workflow to a different directory in the workspace.
+    """Move a workflow to a different directory in the workspace, optionally renaming it.
 
     Use when: Organizing workflows into directories, restructuring workflow hierarchies,
-    moving workflows to categorized folders, cleaning up workspace organization.
+    moving workflows to categorized folders, cleaning up workspace organization,
+    renaming workflows while moving them.
 
     Args:
         workflow_name: Name of the workflow to move
         target_directory: Target directory path relative to workspace root
+        target_workflow_name: New name for the workflow (None to keep existing name)
 
     Results: MoveWorkflowResultSuccess (with new path) | MoveWorkflowResultFailure (move error)
     """
 
     workflow_name: str
     target_directory: str
+    target_workflow_name: str | None = None
 
 
 @dataclass
