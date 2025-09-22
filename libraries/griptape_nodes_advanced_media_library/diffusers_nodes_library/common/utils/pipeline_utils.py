@@ -2,7 +2,7 @@ import gc
 import logging
 from functools import cache
 
-import diffusers  # type: ignore[reportMissingImports]
+from diffusers import DiffusionPipeline # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
@@ -10,67 +10,62 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     get_free_cuda_memory,
     get_max_memory_footprint,
     get_total_memory_footprint,
-    print_pipeline_memory_footprint,
     should_enable_attention_slicing,
     to_human_readable_size,
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 
-logger = logging.getLogger("diffusers_nodes_library")
+logger = logging.getLogger("griptape_nodes")
+
+# TODO: Env var/setting?
+MEMORY_HEADROOM_FACTOR = 1.2
 
 
-FLUX_PIPELINE_COMPONENT_NAMES = [
-    "vae",
-    "text_encoder",
-    "text_encoder_2",
-    "transformer",
-    "controlnet",
-]
+def get_pipeline_component_names(pipe: DiffusionPipeline) -> list[str]:
+    """Get component names dynamically from pipeline."""
+    component_names = []
 
+    for attr_name in dir(pipe):
+        if not attr_name.startswith('_'):
+            try:
+                attr = getattr(pipe, attr_name)
+                if hasattr(attr, 'to') and callable(getattr(attr, 'to')) and hasattr(attr, 'parameters'):
+                    component_names.append(attr_name)
+            except Exception:
+                continue
 
-def print_flux_pipeline_memory_footprint(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
-) -> None:
-    """Print memory footprint for the main sub-modules of Flux pipelines."""
-    print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
+    if not component_names:
+        logger.warning("Could not determine pipeline component names dynamically, using defaults.")
+        component_names = ["vae", "text_encoder", "text_encoder_2", "transformer", "controlnet"]
+
+    logger.debug("Detected pipeline components: %s", component_names)
+    return component_names
 
 
 def _check_cuda_memory_sufficient(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
-    model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
-    return model_memory * 1.2 <= get_free_cuda_memory()
+    model_memory = get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
+    return model_memory * MEMORY_HEADROOM_FACTOR <= get_free_cuda_memory()
 
 
 def _check_mps_memory_sufficient(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
 ) -> bool:
     """Check if MPS device has sufficient memory for the pipeline."""
-    model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
+    model_memory = get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
     recommended_max_memory = torch.mps.recommended_max_memory()
     free_memory = recommended_max_memory - torch.mps.current_allocated_memory()
     return model_memory <= free_memory
 
 
 def _log_memory_info(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
     device: torch.device,
 ) -> None:
     """Log memory information for the device."""
-    model_memory = get_total_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
+    model_memory = get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
 
     if device.type == "cuda":
         total_memory = torch.cuda.get_device_properties(device).total_memory
@@ -87,10 +82,7 @@ def _log_memory_info(
 
 
 def _quantize_flux_pipeline(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
     quantization_mode: str,
     device: torch.device,
 ) -> None:
@@ -124,10 +116,7 @@ def _quantize_flux_pipeline(
 
 
 def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
     device: torch.device,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
@@ -163,7 +152,7 @@ def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
 
         logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
         free_cuda_memory = get_free_cuda_memory()
-        max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES) * 1.2
+        max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, get_pipeline_component_names(pipe)) * MEMORY_HEADROOM_FACTOR
         logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
         logger.info(
             "Pipeline estimated max memory footprint: %s",
@@ -214,10 +203,7 @@ def _automatic_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0915
 
 
 def _manual_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0913
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
     device: torch.device,
     *,
     attention_slicing: bool,
@@ -262,10 +248,7 @@ def _manual_optimize_flux_pipeline(  # noqa: C901 PLR0912 PLR0913
 
 @cache
 def optimize_flux_pipeline(  # noqa: PLR0913
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
     *,
     memory_optimization_strategy: str = "Automatic",
     attention_slicing: bool = False,
@@ -301,13 +284,10 @@ def optimize_flux_pipeline(  # noqa: PLR0913
 
 
 def clear_flux_pipeline(
-    pipe: diffusers.FluxPipeline
-    | diffusers.FluxImg2ImgPipeline
-    | diffusers.AmusedPipeline
-    | diffusers.FluxKontextPipeline,
+    pipe: DiffusionPipeline,
 ) -> None:
     """Clear pipeline from memory."""
-    for component_name in FLUX_PIPELINE_COMPONENT_NAMES:
+    for component_name in get_pipeline_component_names(pipe):
         if hasattr(pipe, component_name):
             component = getattr(pipe, component_name)
             if component is not None:

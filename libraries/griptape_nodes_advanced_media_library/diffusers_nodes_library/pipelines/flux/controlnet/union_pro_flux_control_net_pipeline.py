@@ -13,7 +13,7 @@ from diffusers_nodes_library.pipelines.flux.controlnet.union_one_flux_control_ne
     UnionOneFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
+from diffusers_nodes_library.common.utils.pipeline_utils import (
     optimize_flux_pipeline,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (

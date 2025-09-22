@@ -12,7 +12,7 @@ from diffusers_nodes_library.pipelines.flux.flux_kontext_pipeline_parameters imp
     FluxKontextPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
+from diffusers_nodes_library.common.utils.pipeline_utils import (
     clear_flux_pipeline,
     optimize_flux_pipeline,
 )  # type: ignore[reportMissingImports]

@@ -9,7 +9,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
+from diffusers_nodes_library.common.utils.pipeline_utils import (
     clear_flux_pipeline,
     optimize_flux_pipeline,
 )  # type: ignore[reportMissingImports]

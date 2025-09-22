@@ -15,7 +15,7 @@ from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import
     FluxFillPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
+from diffusers_nodes_library.common.utils.pipeline_utils import (
     clear_flux_pipeline,
     optimize_flux_pipeline,
 )  # type: ignore[reportMissingImports]
