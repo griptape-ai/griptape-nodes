@@ -164,8 +164,15 @@ class SyncManager:
         try:
             # Check if cloud storage is configured before attempting sync
             self._get_cloud_storage_driver()
-            # Start file watching after successful sync
-            self._start_file_watching()
+
+            # Check if file watching is enabled before starting it
+            enable_file_watching = self._config_manager.get_config_value("enable_workspace_file_watching", default=True)
+            if enable_file_watching:
+                # Start file watching after successful sync
+                self._start_file_watching()
+                logger.debug("File watching enabled - started watching synced workflows directory")
+            else:
+                logger.debug("File watching disabled - skipping file watching startup")
 
             logger.info("App initialization complete - starting automatic cloud workflow sync")
 
