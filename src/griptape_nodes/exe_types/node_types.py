@@ -727,11 +727,9 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
-    @abstractmethod
-    def process[T](self) -> AsyncResult | None:
-        pass
+    def process(self) -> AsyncResult | None:
+        raise NotImplementedError
 
     async def aprocess(self) -> None:
         """Async version of process().
