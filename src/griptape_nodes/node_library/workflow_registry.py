@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -11,9 +11,30 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
+# Type aliases for clarity
+type NodeName = str
+type ParameterName = str
+type ParameterAttribute = str
+type ParameterMinimalDict = dict[ParameterAttribute, Any]
+type NodeParametersMapping = dict[NodeName, dict[ParameterName, ParameterMinimalDict]]
+
+
+class WorkflowShape(BaseModel):
+    """This structure reflects the input and output shapes extracted from StartNodes and EndNodes inside of the workflow.
+
+    A workflow may have multiple StartNodes and multiple EndNodes, each contributing their parameters
+    to the overall workflow shape.
+
+    Structure is:
+    - inputs: {start_node_name: {param_name: param_minimal_dict}}
+    - outputs: {end_node_name: {param_name: param_minimal_dict}}
+    """
+    inputs: NodeParametersMapping = Field(default_factory=dict)
+    outputs: NodeParametersMapping = Field(default_factory=dict)
+
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.7.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
 
     name: str
     schema_version: str
@@ -27,6 +48,7 @@ class WorkflowMetadata(BaseModel):
     creation_date: datetime | None = Field(default=None)
     last_modified_date: datetime | None = Field(default=None)
     branched_from: str | None = Field(default=None)
+    workflow_shape: WorkflowShape | None = Field(default=None)
 
 
 class WorkflowRegistry(metaclass=SingletonMeta):
