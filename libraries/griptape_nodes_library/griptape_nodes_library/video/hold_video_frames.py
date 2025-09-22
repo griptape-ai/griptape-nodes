@@ -35,7 +35,7 @@ class HoldVideoFrames(BaseVideoProcessor):
 
         # Get the original frame rate from the input video
         ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
-        frame_rate, resolution, duration = self._detect_video_properties(input_url, ffprobe_path)
+        frame_rate, _resolution, _duration = self._detect_video_properties(input_url, ffprobe_path)
         original_fps = frame_rate
 
         # Create frame holding effect by reducing frame rate and then duplicating frames

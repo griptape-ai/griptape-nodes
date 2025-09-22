@@ -65,6 +65,17 @@ class SearchResultsData:
     query_info: QueryInfo
 
 
+@dataclass
+class DownloadParams:
+    """Data class for model download parameters."""
+
+    model_id: str
+    local_dir: str | None = None
+    revision: str | None = None
+    allow_patterns: list[str] | None = None
+    ignore_patterns: list[str] | None = None
+
+
 class ModelDownloadTracker(tqdm):
     """Custom tqdm progress bar that tracks aggregate model download progress."""
 
@@ -129,7 +140,7 @@ class ModelDownloadTracker(tqdm):
                 status_file = self._get_status_file_path()
                 current_time = datetime.now(UTC).isoformat()
 
-                logger.info(
+                logger.debug(
                     "ModelDownloadTracker initializing status file: %s (total_files=%s)", status_file, self.total
                 )
 
@@ -146,7 +157,7 @@ class ModelDownloadTracker(tqdm):
                 with status_file.open("w") as f:
                     json.dump(data, f, indent=2)
 
-                logger.info("ModelDownloadTracker status file initialized successfully")
+                logger.debug("ModelDownloadTracker status file initialized successfully")
 
         except Exception:
             logger.exception("ModelDownloadTracker._init_status_file failed")
@@ -295,7 +306,7 @@ class ModelManager:
     async def on_handle_download_model_request(self, request: DownloadModelRequest) -> ResultPayload:
         """Handle model download requests asynchronously.
 
-        This method starts a background task to download models from Hugging Face Hub using the provided parameters.
+        This method downloads models from Hugging Face Hub using the provided parameters.
         It supports both model IDs and full URLs, and can download entire repositories
         or specific files based on the patterns provided.
 
@@ -303,89 +314,127 @@ class ModelManager:
             request: The download request containing model ID and options
 
         Returns:
-            ResultPayload: Success result indicating download started or failure with error details
+            ResultPayload: Success result with download completion or failure with error details
         """
         parsed_model_id = self._parse_model_id(request.model_id)
         if parsed_model_id != request.model_id:
             logger.debug("Parsed model ID '%s' from URL '%s'", parsed_model_id, request.model_id)
 
         try:
-            download_params = {
-                "model_id": parsed_model_id,
-                "local_dir": request.local_dir,
-                "revision": request.revision,
-                "allow_patterns": request.allow_patterns,
-                "ignore_patterns": request.ignore_patterns,
-            }
+            download_params = DownloadParams(
+                model_id=parsed_model_id,
+                local_dir=request.local_dir,
+                revision=request.revision,
+                allow_patterns=request.allow_patterns,
+                ignore_patterns=request.ignore_patterns,
+            )
 
             task = asyncio.create_task(self._download_model_task(download_params))
             self._download_tasks[parsed_model_id] = task
 
-            result_details = f"Started background download for model '{parsed_model_id}'"
+            await task
+            self._update_download_status_success(parsed_model_id)
+        except asyncio.CancelledError:
+            # Handle task cancellation gracefully
+            logger.info("Download request cancelled for model '%s'", parsed_model_id)
 
             return DownloadModelResultSuccess(
                 model_id=parsed_model_id,
-                result_details=result_details,
+                result_details=f"Successfully downloaded model '{parsed_model_id}'",
             )
 
         except Exception as e:
-            error_msg = f"Failed to start download for model '{request.model_id}': {e}"
+            error_msg = f"Failed to download model '{request.model_id}': {e}"
+            # Update status file to mark download as failed due to cancellation
+            self._update_download_status_failure(parsed_model_id, error_msg)
+
             return DownloadModelResultFailure(
                 result_details=error_msg,
                 exception=e,
             )
+        else:
+            return DownloadModelResultSuccess(
+                model_id=parsed_model_id,
+                result_details=f"Successfully downloaded model '{parsed_model_id}'",
+            )
+        finally:
+            # Clean up the task reference
+            if parsed_model_id in self._download_tasks:
+                del self._download_tasks[parsed_model_id]
 
-    async def _download_model_task(self, download_params: dict[str, str | list[str] | None]) -> None:
+    def _get_download_local_path(self, params: DownloadParams) -> str:
+        """Get the local path where the model was downloaded.
+
+        Args:
+            params: Download parameters
+
+        Returns:
+            Local path where the model is stored
+        """
+        if params.local_dir:
+            return params.local_dir
+
+        # Otherwise, use the HuggingFace cache directory
+        from huggingface_hub import snapshot_download
+
+        try:
+            # Get the path without actually downloading (since it's already downloaded)
+            return snapshot_download(
+                repo_id=params.model_id,
+                repo_type="model",
+                revision=params.revision,
+                local_files_only=True,  # Only check local cache
+            )
+        except Exception:
+            # Fallback: construct the expected cache path
+            from huggingface_hub.constants import HF_HUB_CACHE
+
+            cache_path = Path(HF_HUB_CACHE)
+            return str(cache_path / f"models--{params.model_id.replace('/', '--')}")
+
+    async def _download_model_task(self, download_params: DownloadParams) -> None:
         """Background task for downloading a model using CLI command.
 
         Args:
-            download_params: Dictionary containing download parameters
+            download_params: Download parameters
+
+        Returns:
+            str: Local path where the model was downloaded
+
+        Raises:
+            Exception: If download fails
         """
-        model_id = download_params["model_id"]
-        logger.info("Starting background download for model: %s", model_id)
+        model_id = download_params.model_id
+        logger.info("Starting download for model: %s", model_id)
 
-        # Build CLI command arguments
-        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", str(model_id)]
+        # Build CLI command
+        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
 
-        # Add optional parameters
-        if download_params.get("local_dir"):
-            cmd.extend(["--local-dir", str(download_params["local_dir"])])
-        if download_params.get("revision") and download_params["revision"] != "main":
-            cmd.extend(["--revision", str(download_params["revision"])])
+        if download_params.local_dir:
+            cmd.extend(["--local-dir", download_params.local_dir])
+        if download_params.revision and download_params.revision != "main":
+            cmd.extend(["--revision", download_params.revision])
+
+        # Start subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
         try:
-            # Start subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
             # Store process for cancellation
-            if isinstance(model_id, str):
-                self._download_processes[model_id] = process
+            self._download_processes[model_id] = process
 
-            # Wait for completion (this can be cancelled)
-            stdout, stderr = await process.communicate()
+            stdout, _ = await process.communicate()
 
             if process.returncode == 0:
                 logger.info("Successfully downloaded model '%s'", model_id)
             else:
-                logger.error("Download failed for model '%s': %s", model_id, stderr.decode())
-
-        except asyncio.CancelledError:
-            logger.info("Download cancelled for model '%s'", model_id)
-            raise
-
-        except Exception:
-            logger.exception("Error downloading model '%s'", model_id)
-
+                raise ValueError(stdout.decode().strip())
         finally:
-            if isinstance(model_id, str):
-                if model_id in self._download_tasks:
-                    del self._download_tasks[model_id]
-                if model_id in self._download_processes:
-                    del self._download_processes[model_id]
+            if model_id in self._download_processes:
+                del self._download_processes[model_id]
 
     async def on_handle_list_models_request(self, request: ListModelsRequest) -> ResultPayload:  # noqa: ARG002
         """Handle model listing requests asynchronously.
@@ -612,47 +661,27 @@ class ModelManager:
         # Create download tasks for concurrent execution
         download_tasks = []
         for model_id in all_models:
-            task = asyncio.create_task(self._download_model_with_logging(model_id))
+            task = asyncio.create_task(
+                self.on_handle_download_model_request(
+                    DownloadModelRequest(
+                        model_id=model_id,
+                        local_dir=None,
+                        revision="main",
+                        allow_patterns=None,
+                        ignore_patterns=None,
+                    )
+                )
+            )
             download_tasks.append(task)
 
         # Wait for all downloads to complete
         results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
         # Log summary of results
-        successful = sum(1 for result in results if not isinstance(result, Exception))
+        successful = sum(1 for result in results if not isinstance(result, DownloadModelResultFailure))
         failed = len(results) - successful
 
         logger.info("Completed automatic model downloads: %d successful, %d failed", successful, failed)
-
-    async def _download_model_with_logging(self, model_id: str) -> None:
-        """Download a single model with proper logging.
-
-        Args:
-            model_id: The model ID to download
-        """
-        logger.info("Auto-downloading model: %s", model_id)
-
-        # Create download request with default parameters
-        request = DownloadModelRequest(
-            model_id=model_id,
-            local_dir=None,  # Use default cache directory
-            revision="main",
-            allow_patterns=None,
-            ignore_patterns=None,
-        )
-
-        try:
-            # Run the download asynchronously
-            result = await self.on_handle_download_model_request(request)
-
-            if isinstance(result, DownloadModelResultFailure):
-                logger.warning("Failed to auto-download model '%s': %s", model_id, result.result_details)
-            elif not isinstance(result, DownloadModelResultSuccess):
-                logger.warning("Unknown result type for model '%s' download: %s", model_id, type(result))
-
-        except Exception as e:
-            logger.error("Unexpected error auto-downloading model '%s': %s", model_id, e)
-            raise
 
     def _get_status_file_path(self, model_id: str) -> Path:
         """Get the path to the status file for a model.
@@ -1050,7 +1079,7 @@ class ModelManager:
                 task = self._download_tasks[model_id]
                 if not task.done():
                     task.cancel()
-                    logger.info("Cancelled active download task for model '%s'", model_id)
+                    logger.debug("Cancelled active download task for model '%s'", model_id)
                 del self._download_tasks[model_id]
 
             # Delete status file
@@ -1105,3 +1134,75 @@ class ModelManager:
 
         status_file.unlink()
         return str(status_file)
+
+    def _update_download_status_failure(self, model_id: str, error_message: str) -> None:
+        """Update the status file to mark download as failed.
+
+        Args:
+            model_id: The model ID that failed to download
+            error_message: The error message describing the failure
+        """
+        try:
+            status_file = self._get_status_file_path(model_id)
+
+            if not status_file.exists():
+                logger.warning("Status file does not exist for failed model '%s'", model_id)
+                return
+
+            with status_file.open() as f:
+                data = json.load(f)
+
+            current_time = datetime.now(UTC).isoformat()
+
+            data.update(
+                {
+                    "status": "failed",
+                    "updated_at": current_time,
+                    "failed_at": current_time,
+                    "error_message": error_message,
+                }
+            )
+
+            with status_file.open("w") as f:
+                json.dump(data, f, indent=2)
+
+            logger.debug("Updated status file to 'failed' for model '%s'", model_id)
+
+        except Exception:
+            logger.exception("Failed to update status file for failed model '%s'", model_id)
+
+    def _update_download_status_success(self, model_id: str) -> None:
+        """Update the status file to mark download as completed.
+
+        Args:
+            model_id: The model ID that was successfully downloaded
+            local_path: The local path where the model was downloaded
+        """
+        try:
+            status_file = self._get_status_file_path(model_id)
+
+            if not status_file.exists():
+                logger.warning("Status file does not exist for completed model '%s'", model_id)
+                return
+
+            with status_file.open() as f:
+                data = json.load(f)
+
+            current_time = datetime.now(UTC).isoformat()
+
+            data.update(
+                {
+                    "status": "completed",
+                    "updated_at": current_time,
+                    "completed_at": current_time,
+                    "progress_percent": 100.0,
+                }
+            )
+
+            with status_file.open("w") as f:
+                json.dump(data, f, indent=2)
+
+            logger.debug("Updated status file to 'completed' for model '%s'", model_id)
+
+        except Exception:
+            logger.exception("Failed to update status file for completed model '%s'", model_id)
