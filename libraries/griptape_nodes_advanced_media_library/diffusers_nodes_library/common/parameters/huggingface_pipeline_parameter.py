@@ -1,7 +1,5 @@
 import logging
-from abc import ABC, abstractmethod
 
-from diffusers_nodes_library.common.utils.option_utils import update_option_choices
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
@@ -9,7 +7,7 @@ from griptape_nodes.traits.options import Options
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class HuggingFacePipelineParameter(ABC):
+class HuggingFacePipelineParameter:
     def __init__(self, node: BaseNode):
         self._node = node
 
