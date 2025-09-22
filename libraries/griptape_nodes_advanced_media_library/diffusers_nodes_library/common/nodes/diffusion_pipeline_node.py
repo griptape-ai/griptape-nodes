@@ -9,8 +9,8 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_parameters import DiffusionPipelineParameters  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -28,7 +28,22 @@ class DiffusionPipelineNode(ControlNode):
         self.log_params.add_output_parameters()
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        reset_runtime_parameters = parameter.name == "diffusion_pipeline"
+        if reset_runtime_parameters:
+            if hasattr(self.pipe_params, 'runtime_parameters'):
+                self.pipe_params.runtime_parameters.remove_input_parameters()
+
+        params_before = len(self.parameters)
         self.pipe_params.after_value_set(parameter, value)
+
+        if reset_runtime_parameters:
+            if hasattr(self.pipe_params, 'runtime_parameters'):
+                insert_position = 1
+                new_params = [p for p in self.parameters[params_before:]]
+                for param in new_params:
+                    self.move_element_to_position(param.name, insert_position)
+                    insert_position += 1
+
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
 
     def preprocess(self) -> None:

@@ -53,6 +53,13 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             )
         )
 
+    def _remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("prompt")
+        self._node.remove_parameter_element_by_name("prompt_2") 
+        self._node.remove_parameter_element_by_name("negative_prompt")
+        self._node.remove_parameter_element_by_name("negative_prompt_2")
+        self._node.remove_parameter_element_by_name("true_cfg_scale")
+
     def _get_pipe_kwargs(self) -> dict:
         return {
             "prompt": self._node.get_parameter_value("prompt"),

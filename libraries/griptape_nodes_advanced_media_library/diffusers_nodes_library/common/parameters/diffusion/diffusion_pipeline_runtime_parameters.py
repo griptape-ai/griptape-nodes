@@ -62,6 +62,17 @@ class DiffusionPipelineRuntimeParameters(ABC):
             )
         )
 
+    @abstractmethod
+    def _remove_input_parameters(self) -> None:
+        raise NotImplementedError()
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("width")
+        self._node.remove_parameter_element_by_name("height")
+        self._node.remove_parameter_element_by_name("num_inference_steps")
+        self._seed_parameter.remove_input_parameters()
+        self._remove_input_parameters()
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self._seed_parameter.after_value_set(parameter, value)
 
