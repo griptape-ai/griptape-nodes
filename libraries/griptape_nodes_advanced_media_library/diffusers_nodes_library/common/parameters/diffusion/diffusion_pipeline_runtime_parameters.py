@@ -22,7 +22,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     @abstractmethod
     def _add_input_parameters(self) -> None:
-        pass
+        raise NotImplementedError()
 
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
@@ -95,7 +95,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     @abstractmethod
     def _get_pipe_kwargs(self) -> dict:
-        pass
+        raise NotImplementedError()
 
     def get_pipe_kwargs(self) -> dict:
         return {
