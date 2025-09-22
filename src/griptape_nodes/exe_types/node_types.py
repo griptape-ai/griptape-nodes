@@ -384,9 +384,7 @@ class BaseNode(ABC):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                ui_options = parameter.ui_options
-                ui_options["hide"] = not visible
-                parameter.ui_options = ui_options
+                parameter.ui_options = {**parameter.ui_options, "hide": not visible}
 
     def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
         element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
@@ -408,9 +406,7 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                ui_options = message.ui_options
-                ui_options["hide"] = not visible
-                message.ui_options = ui_options
+                message.ui_options = {**message.ui_options, "hide": not visible}
 
     def hide_message_by_name(self, names: str | list[str]) -> None:
         self._set_message_visibility(names, visible=False)
