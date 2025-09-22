@@ -11,7 +11,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
-        self._node: BaseNode = node
+        super().__init__(node)
 
     def _add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -58,7 +58,6 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
-            "negative_prompt_2": self._node.get_parameter_value("get_negative_prompt_2()"),
-            "true_cfg_scale": self._node.get_parameter_value("get_true_cfg_scale()"),
-            "guidance_scale": self._node.get_parameter_value("get_guidance_scale()"),
+            "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
+            "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
         }
