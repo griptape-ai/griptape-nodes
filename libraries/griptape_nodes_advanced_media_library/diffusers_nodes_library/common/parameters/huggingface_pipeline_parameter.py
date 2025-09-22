@@ -27,7 +27,6 @@ class HuggingFacePipelineParameter:
             Parameter(
                 name="memory_optimization_strategy",
                 default_value=memory_optimization_strategy_choices[0],
-                input_types=["str"],
                 type="str",
                 traits={
                     Options(
@@ -40,7 +39,6 @@ class HuggingFacePipelineParameter:
         self._node.add_parameter(
             Parameter(
                 name="attention_slicing",
-                input_types=["bool"],
                 type="bool",
                 output_type="bool",
                 tooltip="Enable attention slicing to reduce memory usage.",
@@ -50,7 +48,6 @@ class HuggingFacePipelineParameter:
         self._node.add_parameter(
             Parameter(
                 name="vae_slicing",
-                input_types=["bool"],
                 type="bool",
                 output_type="bool",
                 tooltip="Enable VAE slicing to reduce memory usage.",
@@ -60,7 +57,6 @@ class HuggingFacePipelineParameter:
         self._node.add_parameter(
             Parameter(
                 name="transformer_layerwise_casting",
-                input_types=["bool"],
                 type="bool",
                 output_type="bool",
                 tooltip="Enable transformer layerwise casting to reduce memory usage.",
@@ -72,7 +68,6 @@ class HuggingFacePipelineParameter:
             Parameter(
                 name="cpu_offload_strategy",
                 default_value=cpu_offload_strategy_choices[0],
-                input_types=["str"],
                 type="str",
                 traits={
                     Options(
