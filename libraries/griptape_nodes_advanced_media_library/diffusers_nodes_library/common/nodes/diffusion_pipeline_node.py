@@ -20,6 +20,7 @@ class DiffusionPipelineNode(ControlNode):
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
+        self.pipe_params.test()
         
         self.loras_params = FluxLorasParameter(self)
         self.loras_params.add_input_parameters()

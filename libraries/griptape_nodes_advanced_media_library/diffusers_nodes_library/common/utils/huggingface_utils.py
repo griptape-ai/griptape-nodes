@@ -1,11 +1,13 @@
 import logging
+import diffusers
 from functools import cache
 from pathlib import Path
 from typing import Any
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
 from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
-from huggingface_hub.constants import HF_HUB_CACHE  # pyright: ignore[reportMissingImports]
+from huggingface_hub.constants import HF_HUB_CACHE
+import torch  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -68,6 +70,16 @@ class ModelCache:
     
     @property
     def pipeline(self) -> DiffusionPipeline:
+        global _PIPELINE
+        if _PIPELINE is None:
+            pipe = model_cache.from_pretrained(
+                diffusers.FluxPipeline,
+                pretrained_model_name_or_path="black-forest-labs/FLUX.1-schnell",
+                revision="741f7c3ce8b383c54771c7003378a50191e9efe9",
+                torch_dtype=torch.bfloat16,
+                local_files_only=True,
+            )
+            _PIPELINE = pipe
         if _PIPELINE is None:
             raise ValueError("No pipeline has been loaded into the model cache.")
         return _PIPELINE

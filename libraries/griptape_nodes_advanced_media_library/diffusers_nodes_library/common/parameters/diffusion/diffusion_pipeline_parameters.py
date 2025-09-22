@@ -26,6 +26,17 @@ class DiffusionPipelineParameters:
         # TODO: Implement with Resource Manager integration - https://github.com/griptape-ai/griptape-nodes/issues/2237
         pass
 
+    def test(self) -> None:
+        if isinstance(self.pipeline, FluxPipeline):
+            self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
+        # elif isinstance(self.pipeline, FluxFillPipeline):
+        #     self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
+        else:
+            raise ValueError(f"Unsupported pipeline type: {type(self.pipeline)}")
+
+        self._runtime_parameters.add_input_parameters()
+        self._runtime_parameters.add_output_parameters()
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "diffusion_pipeline":
             return
@@ -35,7 +46,7 @@ class DiffusionPipelineParameters:
         # elif isinstance(self.pipeline, FluxFillPipeline):
         #     self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
         else:
-                raise ValueError(f"Unsupported pipeline type: {type(self.pipeline)}")
+            raise ValueError(f"Unsupported pipeline type: {type(self.pipeline)}")
 
         self._runtime_parameters.add_input_parameters()
         self._runtime_parameters.add_output_parameters()
