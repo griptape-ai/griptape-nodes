@@ -2,7 +2,7 @@ import gc
 import logging
 from functools import cache
 
-from diffusers import DiffusionPipeline # type: ignore[reportMissingImports]
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (

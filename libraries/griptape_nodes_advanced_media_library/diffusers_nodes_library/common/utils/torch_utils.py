@@ -3,9 +3,8 @@ import os
 import platform
 import sys
 
-import diffusers  # type: ignore[reportMissingImports]
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -42,7 +41,7 @@ def get_model_memory(model: torch.nn.Module | None) -> int:
     return total_bytes
 
 
-def get_bytes_by_component(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
+def get_bytes_by_component(pipe: DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
     """Get bytes by component for a DiffusionPipeline."""
     bytes_by_component = {}
     for name in component_names:
@@ -55,21 +54,21 @@ def get_bytes_by_component(pipe: diffusers.DiffusionPipeline, component_names: l
     return bytes_by_component
 
 
-def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> int:
+def get_total_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> int:
     """Get total memory footprint of a DiffusionPipeline."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     total_bytes = sum(bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None)
     return total_bytes
 
 
-def get_max_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> int:
+def get_max_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> int:
     """Get max memory footprint of a DiffusionPipeline."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     max_bytes = max((bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None), default=0)
     return max_bytes
 
 
-def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
+def print_pipeline_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> None:
     """Print pipeline memory footprint by measuring actual tensor sizes."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     component_bytes = [bytes_by_component[name] for name in component_names if bytes_by_component[name] is not None]
