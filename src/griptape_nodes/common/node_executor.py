@@ -26,6 +26,10 @@ class NodeExecutor(metaclass=SingletonMeta):
         if advanced_library is not None:
             self._advanced_libraries[library_name] = advanced_library
 
+    def unload_library(self, library_name:str) -> None:
+        if library_name in self._advanced_libraries:
+            del self._advanced_libraries[library_name]
+
     def execute_method(self, method_name: str, library_name: str | None = None, *args: Any, **kwargs: Any) -> Any:
         """Execute a method by name with given arguments."""
         if library_name and library_name in self._advanced_libraries:
@@ -62,5 +66,5 @@ class NodeExecutor(metaclass=SingletonMeta):
             # Fallback to default node processing
             await node.aprocess()
 
-    def refresh(self) -> None:
+    def clear(self) -> None:
         self._advanced_libraries = {}
