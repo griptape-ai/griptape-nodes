@@ -714,24 +714,63 @@ class WorkflowManager:
         )
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
-        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
-
-        if isinstance(save_workflow_request, SaveWorkflowResultFailure):
-            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
+        # Get the current workflow to extract its directory
+        try:
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+        except KeyError:
+            details = f"Failed to rename workflow '{request.workflow_name}' because it does not exist."
             return RenameWorkflowResultFailure(result_details=details)
 
-        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
-        if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
-            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
-            return RenameWorkflowResultFailure(result_details=details)
+        # Clean the requested name to be a valid Python module name
+        cleaned_name = WorkflowRegistry.clean_workflow_name(request.requested_name)
 
-        return RenameWorkflowResultSuccess(
-            result_details=ResultDetails(
-                message=f"Successfully renamed workflow to: {request.requested_name}", level=logging.INFO
-            )
+        # Extract current directory from the workflow's file path
+        current_directory = str(Path(workflow.file_path).parent)
+
+        # Use MoveWorkflowRequest with target_workflow_name to handle the rename
+        move_request = MoveWorkflowRequest(
+            workflow_name=request.workflow_name,
+            target_directory=current_directory,
+            target_workflow_name=cleaned_name,
         )
 
-    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
+        move_result = self.on_move_workflow_request(move_request)
+
+        # Convert MoveWorkflow result to RenameWorkflow result
+        if isinstance(move_result, MoveWorkflowResultSuccess):
+            # Update the workflow file's metadata header to use the originally requested name
+            try:
+                # Get the workflow that was just moved/renamed
+                renamed_workflow = WorkflowRegistry.get_workflow_by_name(
+                    WorkflowRegistry.get_workflow_identifier(move_result.moved_file_path)
+                )
+                # Update metadata to use the originally requested name (not the cleaned name)
+                renamed_workflow.metadata.name = request.requested_name
+
+                # Update the file content with the original requested name in metadata
+                new_file_path = WorkflowRegistry.get_complete_file_path(move_result.moved_file_path)
+                workflow_content = Path(new_file_path).read_text(encoding="utf-8")
+                updated_content = self._replace_workflow_metadata_header(workflow_content, renamed_workflow.metadata)
+
+                if updated_content is None:
+                    details = f"Failed to update metadata header for renamed workflow '{request.requested_name}'"
+                    return RenameWorkflowResultFailure(result_details=details)
+
+                Path(new_file_path).write_text(updated_content, encoding="utf-8")
+
+            except Exception as e:
+                details = f"Failed to update workflow file metadata for '{request.requested_name}': {e!s}"
+                return RenameWorkflowResultFailure(result_details=details)
+
+            return RenameWorkflowResultSuccess(
+                workflow_name=WorkflowRegistry.get_workflow_identifier(move_result.moved_file_path),
+                result_details=ResultDetails(
+                    message=f"Successfully renamed workflow to: {request.requested_name}", level=logging.INFO
+                ),
+            )
+        return RenameWorkflowResultFailure(result_details=move_result.result_details)
+
+    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: PLR0911, C901
         try:
             # Validate source workflow exists
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -764,7 +803,10 @@ class WorkflowManager:
             return MoveWorkflowResultFailure(result_details=details)
 
         # Create new file path
-        workflow_filename = Path(workflow.file_path).name
+        if request.target_workflow_name:
+            workflow_filename = f"{request.target_workflow_name}.py"
+        else:
+            workflow_filename = Path(workflow.file_path).name
         new_relative_path = str(Path(target_directory) / workflow_filename)
         new_absolute_path = config_manager.workspace_path / new_relative_path
 
@@ -779,8 +821,14 @@ class WorkflowManager:
             # Move the file
             Path(current_file_path).rename(new_absolute_path)
 
-            # Update workflow registry with new file path
-            workflow.file_path = new_relative_path
+            # Update workflow registry identifier
+            old_identifier = WorkflowRegistry.get_workflow_identifier(workflow.file_path)
+            WorkflowRegistry.update_workflow_identifier(old_identifier, new_relative_path)
+
+            # Update workflow metadata if renaming
+            if request.target_workflow_name:
+                workflow.metadata.name = request.target_workflow_name
+                workflow.metadata.last_modified_date = datetime.now(tz=UTC)
 
             # Update configuration - remove old path and add new path
             config_manager.delete_user_workflow(workflow.file_path)
@@ -1476,7 +1524,7 @@ class WorkflowManager:
             branched_from = prior_workflow.metadata.branched_from
 
         workflow_metadata = WorkflowMetadata(
-            name=str(file_name),
+            name=Path(file_name).name,
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=node_libraries_referenced,
@@ -3900,11 +3948,6 @@ class WorkflowManager:
             return None
 
         workflow_metadata = load_metadata_result.metadata
-
-        # Check if workflow is already registered using the parsed metadata
-        if WorkflowRegistry.has_workflow_with_name(workflow_metadata.name):
-            logger.debug("Skipping already registered workflow: %s", workflow_file)
-            return None
 
         # Convert to relative path if the workflow is under workspace_path
         config_mgr = GriptapeNodes.ConfigManager()
