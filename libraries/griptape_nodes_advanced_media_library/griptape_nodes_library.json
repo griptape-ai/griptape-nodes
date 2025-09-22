@@ -169,6 +169,16 @@
       }
     },
     {
+      "class_name": "PipelineRunner",
+      "file_path": "diffusers_nodes_library/common/pipeline_runner.py",
+      "metadata": {
+        "category": "common/pipelines",
+        "description": "Execute image generation using pre-built pipeline configurations from PipelineBuilder. Supports all pipeline types with dynamic parameter adaptation.",
+        "display_name": "Pipeline Runner",
+        "group": "runners"
+      }
+    },
+    {
       "class_name": "FluxPipeline",
       "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",
       "metadata": {
