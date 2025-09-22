@@ -282,13 +282,13 @@ def optimize_flux_pipeline(  # noqa: PLR0913
         _automatic_optimize_flux_pipeline(pipe, device)
     else:
         _manual_optimize_flux_pipeline(
-            pipe,
-            device,
-            attention_slicing,
-            vae_slicing,
-            transformer_layerwise_casting,
-            cpu_offload_strategy,
-            quantization_mode,
+            pipe=pipe,
+            device=device,
+            attention_slicing=attention_slicing,
+            vae_slicing=vae_slicing,
+            transformer_layerwise_casting=transformer_layerwise_casting,
+            cpu_offload_strategy=cpu_offload_strategy,
+            quantization_mode=quantization_mode,
         )
 
     try:
