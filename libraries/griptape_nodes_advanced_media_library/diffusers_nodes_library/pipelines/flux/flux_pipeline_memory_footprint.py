@@ -14,6 +14,7 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     should_enable_attention_slicing,
     to_human_readable_size,
 )
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -310,11 +311,17 @@ def clear_flux_pipeline(
         if hasattr(pipe, component_name):
             component = getattr(pipe, component_name)
             if component is not None:
-                component.to("cpu")
+                try:
+                    component.to("cpu")
+                except NotImplementedError:
+                    pass
                 del component
                 setattr(pipe, component_name, None)
 
     del pipe
+
+    optimize_flux_pipeline.cache_clear()
+    model_cache.from_pretrained.cache_clear()
 
     gc.collect()
     if torch.cuda.is_available():
