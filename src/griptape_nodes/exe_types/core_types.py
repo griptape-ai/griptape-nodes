@@ -1523,15 +1523,6 @@ class ParameterList(ParameterContainer):
         )
 
     @property
-    def ui_options(self) -> dict:
-        return super().ui_options
-
-    @ui_options.setter
-    @BaseNodeElement.emits_update_on_write
-    def ui_options(self, value: dict) -> None:
-        self._ui_options = value
-
-    @property
     def collapsed(self) -> bool | None:
         return self._collapsed
 
