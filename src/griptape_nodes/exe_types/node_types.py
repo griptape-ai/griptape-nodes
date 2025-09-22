@@ -408,7 +408,7 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                ui_options = message.ui_options
+                ui_options = message.ui_options.copy()
                 ui_options["hide"] = not visible
                 message.ui_options = ui_options
 
@@ -729,9 +729,9 @@ class BaseNode(ABC):
 
     # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
-    @abstractmethod
     def process[T](self) -> AsyncResult | None:
-        pass
+        msg = f"Node {self.name} has not implemented the process() method."
+        raise NotImplementedError(msg)
 
     async def aprocess(self) -> None:
         """Async version of process().
@@ -1109,7 +1109,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
             keys_to_clear = list(self.keys())
             super().clear()
             for key in keys_to_clear:
-                self._emit_parameter_change_event(key, None, deleted=True)
+                # Some nodes still have values set, even if their output values are cleared
+                # Here, we are emitting an event with those set values, to not misrepresent the values of the parameters in the UI.
+                value = self._node.get_parameter_value(key)
+                self._emit_parameter_change_event(key, value, deleted=True)
 
     def silent_clear(self) -> None:
         """Clear all values without emitting parameter change events."""

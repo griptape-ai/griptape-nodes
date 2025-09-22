@@ -1733,7 +1733,12 @@ class FlowManager:
             if isinstance(resolution_machine, ParallelResolutionMachine):
                 self._global_dag_builder.add_node_with_dependencies(node)
                 resolution_machine.context.dag_builder = self._global_dag_builder
-            await resolution_machine.resolve_node(node)
+            try:
+                await resolution_machine.resolve_node(node)
+            except Exception as e:
+                if self.check_for_existing_running_flow():
+                    self.cancel_flow_run()
+                    raise RuntimeError(e) from e
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []

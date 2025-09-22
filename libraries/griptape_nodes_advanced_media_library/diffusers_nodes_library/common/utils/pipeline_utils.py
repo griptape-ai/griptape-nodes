@@ -1,3 +1,4 @@
+import contextlib
 import gc
 import logging
 from functools import cache
@@ -5,6 +6,7 @@ from functools import cache
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 import torch  # type: ignore[reportMissingImports]
 
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
     get_free_cuda_memory,
@@ -13,7 +15,6 @@ from diffusers_nodes_library.common.utils.torch_utils import (
     should_enable_attention_slicing,
     to_human_readable_size,
 )
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -291,10 +292,8 @@ def clear_flux_pipeline(
         if hasattr(pipe, component_name):
             component = getattr(pipe, component_name)
             if component is not None:
-                try:
+                with contextlib.suppress(NotImplementedError):
                     component.to("cpu")
-                except NotImplementedError:
-                    pass
                 del component
                 setattr(pipe, component_name, None)
 
