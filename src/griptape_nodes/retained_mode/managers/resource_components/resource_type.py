@@ -2,11 +2,16 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.resource_components.capability_field import CapabilityField
     from griptape_nodes.retained_mode.managers.resource_components.resource_instance import ResourceInstance
 
 
 class ResourceType(ABC):
     """Base class for resource type handlers."""
+
+    @abstractmethod
+    def get_capability_schema(self) -> list["CapabilityField"]:
+        """Get the capability schema for this resource type."""
 
     @abstractmethod
     def create_instance(self, capabilities: dict[str, Any]) -> "ResourceInstance":

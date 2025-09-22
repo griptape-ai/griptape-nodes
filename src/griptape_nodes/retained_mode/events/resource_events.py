@@ -8,10 +8,10 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.managers.resource_manager import ResourceStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
+    from griptape_nodes.retained_mode.managers.resource_manager import ResourceStatus
 
 
 # List Registered Resource Types Events
@@ -77,11 +77,11 @@ class CreateResourceInstanceRequest(RequestPayload):
     and managed by the ResourceManager.
 
     Args:
-        resource_type: The ResourceType to create an instance of
+        resource_type_name: The name of the resource type to create an instance of
         capabilities: Dict of capabilities for the new instance
     """
 
-    resource_type: "ResourceType"
+    resource_type_name: str
     capabilities: dict[str, Any]
 
 
@@ -140,12 +140,12 @@ class AcquireResourceInstanceLockRequest(RequestPayload):
 
     Args:
         owner_id: The ID of the entity requesting the lock
-        resource_type: The type of resource to acquire
+        resource_type_name: The name of the resource type to acquire
         requirements: Optional requirements the resource must satisfy
     """
 
     owner_id: str
-    resource_type: "ResourceType"
+    resource_type_name: str
     requirements: dict[str, Any] | None = None
 
 
@@ -203,12 +203,12 @@ class ListCompatibleResourceInstancesRequest(RequestPayload):
     specific criteria, without acquiring locks.
 
     Args:
-        resource_type: The type of resource to filter by
+        resource_type_name: The name of the resource type to filter by
         requirements: Optional requirements to match. If None, returns all instances of the type.
         include_locked: If True, also include locked instances
     """
 
-    resource_type: "ResourceType"
+    resource_type_name: str
     requirements: dict[str, Any] | None = None
     include_locked: bool = False
 
@@ -248,7 +248,7 @@ class GetResourceInstanceStatusRequest(RequestPayload):
 class GetResourceInstanceStatusResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Resource instance status retrieved successfully."""
 
-    status: ResourceStatus
+    status: "ResourceStatus"
 
 
 @dataclass
@@ -267,11 +267,11 @@ class ListResourceInstancesByTypeRequest(RequestPayload):
     management or monitoring purposes.
 
     Args:
-        resource_type: The type of resource to list instances for
+        resource_type_name: The name of the resource type to list instances for
         include_locked: If True, also include locked instances
     """
 
-    resource_type: "ResourceType"
+    resource_type_name: str
     include_locked: bool = True
 
 
