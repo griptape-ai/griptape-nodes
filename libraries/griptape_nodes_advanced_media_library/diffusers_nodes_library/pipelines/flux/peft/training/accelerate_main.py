@@ -1036,7 +1036,7 @@ class FluxLoraTrainingScript:
         # pre-calculate  prompt embeds, pooled prompt embeds, text ids because t5 does not support autocast
         logger.info("Encoding prompt...")
         with torch.no_grad():
-            prompt_embeds, pooled_prompt_embeds, text_ids = pipeline.encode_prompt(
+            prompt_embeds, pooled_prompt_embeds, _text_ids = pipeline.encode_prompt(
                 pipeline_args["prompt"], prompt_2=pipeline_args["prompt"]
             )
 

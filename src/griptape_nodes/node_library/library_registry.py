@@ -69,6 +69,7 @@ class CategoryDefinition(BaseModel):
     description: str
     color: str
     icon: str
+    group: str | None = None
 
 
 class NodeDefinition(BaseModel):
