@@ -871,7 +871,7 @@ class OSManager:
         # Register OS resource type
         os_resource_type = OSResourceType()
         register_request = RegisterResourceTypeRequest(resource_type=os_resource_type)
-        result = GriptapeNodes.EventManager().handle_request(register_request)
+        result = GriptapeNodes.handle_request(register_request)
 
         if not isinstance(result, RegisterResourceTypeResultSuccess):
             logger.error("Attempted to register OS resource type. Failed due to resource type registration failure")
@@ -886,7 +886,7 @@ class OSManager:
         # Register CPU resource type
         cpu_resource_type = CPUResourceType()
         register_request = RegisterResourceTypeRequest(resource_type=cpu_resource_type)
-        result = GriptapeNodes.EventManager().handle_request(register_request)
+        result = GriptapeNodes.handle_request(register_request)
 
         if not isinstance(result, RegisterResourceTypeResultSuccess):
             logger.error("Attempted to register CPU resource type. Failed due to resource type registration failure")
@@ -906,7 +906,7 @@ class OSManager:
         create_request = CreateResourceInstanceRequest(
             resource_type_name="OSResourceType", capabilities=os_capabilities
         )
-        result = GriptapeNodes.EventManager().handle_request(create_request)
+        result = GriptapeNodes.handle_request(create_request)
 
         if not isinstance(result, CreateResourceInstanceResultSuccess):
             logger.error(
@@ -925,7 +925,7 @@ class OSManager:
         create_request = CreateResourceInstanceRequest(
             resource_type_name="CPUResourceType", capabilities=cpu_capabilities
         )
-        result = GriptapeNodes.EventManager().handle_request(create_request)
+        result = GriptapeNodes.handle_request(create_request)
 
         if not isinstance(result, CreateResourceInstanceResultSuccess):
             logger.error(
