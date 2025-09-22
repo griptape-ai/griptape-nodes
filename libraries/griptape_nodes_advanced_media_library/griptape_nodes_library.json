@@ -159,6 +159,16 @@
       }
     },
     {
+      "class_name": "PipelineBuilder",
+      "file_path": "diffusers_nodes_library/common/pipeline_builder.py",
+      "metadata": {
+        "category": "common/pipelines",
+        "description": "Build and cache pipeline configurations for reuse across multiple execution nodes. Consolidates 8+ separate pipeline nodes into a single configurable builder.",
+        "display_name": "Pipeline Builder",
+        "group": "builders"
+      }
+    },
+    {
       "class_name": "FluxPipeline",
       "file_path": "diffusers_nodes_library/pipelines/flux/flux_pipeline.py",
       "metadata": {
