@@ -70,7 +70,8 @@ class WorkflowMetadata(BaseModel):
         return json.dumps(workflow_shape.model_dump(), separators=(",", ":"))
 
     @field_validator("workflow_shape", mode="before")
-    def validate_workflow_shape(self, value: Any) -> WorkflowShape | None:
+    @classmethod
+    def validate_workflow_shape(cls, value: Any) -> WorkflowShape | None:
         """Deserialize WorkflowShape from JSON string during TOML loading.
 
         When loading workflow metadata from TOML files, the workflow_shape field
