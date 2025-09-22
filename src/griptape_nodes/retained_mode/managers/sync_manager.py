@@ -456,7 +456,7 @@ class SyncManager:
 
             # Collect results as they complete
             for future in future_to_filename:
-                filename, success, error = future.result()
+                filename, success, _error = future.result()
                 if success:
                     synced_workflows.append(filename)
                 else:

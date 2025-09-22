@@ -213,7 +213,7 @@ class ExtractAudio(BaseVideoProcessor):
             self._validate_url_safety(input_url)
 
             # Get FFmpeg paths
-            ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+            _ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
 
             # Detect input video properties (required by base class interface)
             input_frame_rate, _, _ = self._detect_video_properties(input_url, ffprobe_path)
