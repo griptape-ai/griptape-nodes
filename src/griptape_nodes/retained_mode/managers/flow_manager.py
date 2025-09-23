@@ -1182,6 +1182,8 @@ class FlowManager:
                 # Use the source parameter's output_type as the type for our start node parameter
                 # since we want to match what the original connection was providing
                 type=source_param.output_type,
+                default_value=None,
+                tooltip=f"Parameter {param_name} from packaged flow",
                 initial_setup=True,
             )
             start_node_parameter_commands.append(add_param_request)
@@ -1243,6 +1245,8 @@ class FlowManager:
                 # Use the target parameter's output_type as the type for our end node parameter
                 # since we want to match what the original connection was expecting to receive
                 type=target_param.output_type,
+                default_value=None,
+                tooltip=f"Parameter {param_name} from packaged flow",
                 initial_setup=True,
             )
             end_node_parameter_commands.append(add_param_request)
