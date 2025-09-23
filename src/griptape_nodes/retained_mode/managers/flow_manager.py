@@ -1803,9 +1803,6 @@ class FlowManager:
             node.set_entry_control_parameter(None)
 
     def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:  # noqa: ARG002
-        if not self.check_for_existing_running_flow():
-            msg = "Flow hasn't started."
-            raise RuntimeError(msg)
         if self._global_control_flow_machine is None:
             return None, None, None
         control_flow_context = self._global_control_flow_machine.context
