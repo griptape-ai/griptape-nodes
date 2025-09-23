@@ -278,7 +278,11 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
         if hasattr(torch.backends.cuda, "sdp_kernel"):
-            torch.backends.cuda.sdp_kernel()
+            torch.backends.cuda.sdp_kernel(
+                enable_flash=True,
+                enable_math=False,
+                enable_mem_efficient=False,
+            )
     except Exception:
         logger.debug("sdp_kernel not supported, continuing without")
 
