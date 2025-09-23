@@ -117,6 +117,7 @@ from griptape_nodes.retained_mode.events.node_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
+    AlterParameterDetailsRequest,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -1085,6 +1086,7 @@ class FlowManager:
         unique_parameter_uuid_to_values = {}
         serialized_package_result = self._serialize_package_node(
             node_name=package_node_info.package_node.name,
+            package_node=package_node_info.package_node,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
         )
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
@@ -1104,7 +1106,6 @@ class FlowManager:
         # Step 6: Create end node commands and data connections
         end_node_result = self._create_end_node_commands(
             request=request,
-            outgoing_data_connections=connection_analysis.outgoing_data_connections,
             package_node=package_node_info.package_node,
             package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             library_version=library_version,
@@ -1124,16 +1125,8 @@ class FlowManager:
 
         start_control_connections = [start_control_connection_result]
 
-        # Step 7b: Create end node control flow connections (placeholder for now)
-        end_control_connections = self._create_end_node_control_connections(
-            _outgoing_control_connections=connection_analysis.outgoing_control_connections,
-            _package_node=package_node_info.package_node,
-            _package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
-            _end_node_uuid=end_node_result.end_node_commands.node_uuid,
-        )
-
-        # Combine all control flow connections
-        control_flow_connections = start_control_connections + end_control_connections
+        # Use only start control connections for now (end node control connections not implemented yet)
+        control_flow_connections = start_control_connections
 
         # Step 8: Assemble the complete serialized flow
         packaged_flow = self._assemble_serialized_flow(
@@ -1274,9 +1267,10 @@ class FlowManager:
     def _serialize_package_node(
         self,
         node_name: str,
+        package_node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
     ) -> SerializeNodeToCommandsResultSuccess | PackageNodeAsSerializedFlowResultFailure:
-        """Serialize the package node to commands."""
+        """Serialize the package node to commands, adding OUTPUT mode to PROPERTY-only parameters."""
         # Initialize parameter tracking structures
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
 
@@ -1292,6 +1286,36 @@ class FlowManager:
         if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
             details = f"Attempted to serialize package node '{node_name}'. Failed because node serialization failed."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # Add ALTER parameter commands for PROPERTY-only parameters to enable OUTPUT mode
+        package_alter_parameter_commands = []
+        for package_param in package_node.parameters:
+            has_output_mode = ParameterMode.OUTPUT in package_param.allowed_modes
+            has_property_mode = ParameterMode.PROPERTY in package_param.allowed_modes
+
+            # If has PROPERTY but not OUTPUT, add ALTER command to enable OUTPUT
+            if has_property_mode and not has_output_mode:
+                alter_param_request = AlterParameterDetailsRequest(
+                    parameter_name=package_param.name,
+                    node_name=package_node.name,
+                    mode_allowed_output=True,
+                )
+                package_alter_parameter_commands.append(alter_param_request)
+
+        # If we have alter parameter commands, inject them into the serialized result
+        if package_alter_parameter_commands:
+            updated_element_modification_commands = list(
+                serialize_node_result.serialized_node_commands.element_modification_commands
+            )
+            updated_element_modification_commands.extend(package_alter_parameter_commands)
+
+            # Create new SerializedNodeCommands with the additional alter commands
+            serialize_node_result.serialized_node_commands = SerializedNodeCommands(
+                create_node_command=serialize_node_result.serialized_node_commands.create_node_command,
+                element_modification_commands=updated_element_modification_commands,
+                node_library_details=serialize_node_result.serialized_node_commands.node_library_details,
+                node_uuid=serialize_node_result.serialized_node_commands.node_uuid,
+            )
 
         return serialize_node_result
 
@@ -1383,12 +1407,11 @@ class FlowManager:
     def _create_end_node_commands(
         self,
         request: PackageNodeAsSerializedFlowRequest,
-        outgoing_data_connections: list[OutgoingConnection],
         package_node: BaseNode,
         package_node_uuid: SerializedNodeCommands.NodeUUID,
         library_version: str,
     ) -> PackagingEndNodeResult | PackageNodeAsSerializedFlowResultFailure:
-        """Create end node commands and connections for outgoing data connections."""
+        """Create end node commands and connections for ALL package parameters that meet criteria."""
         # Generate UUID and name for end node
         end_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
         end_node_name = f"End_Package_{package_node.name}"
@@ -1409,29 +1432,31 @@ class FlowManager:
             library_version=library_version,
         )
 
-        # Create parameter modification commands and connection mappings for the end node based on outgoing DATA connections
+        # Process ALL package node parameters to create end node parameters and connections
+        # Note: PROPERTY-only parameters are guaranteed to have OUTPUT mode after serialization
         end_node_parameter_commands = []
         package_to_end_data_connections = []
 
-        for outgoing_conn in outgoing_data_connections:
-            # Parameter name: use the package node's parameter name
-            param_name = outgoing_conn.source_parameter_name
+        for package_param in package_node.parameters:
+            # Only ignore parameters that have ONLY INPUT mode (no OUTPUT or PROPERTY)
+            has_output_mode = ParameterMode.OUTPUT in package_param.allowed_modes
+            has_property_mode = ParameterMode.PROPERTY in package_param.allowed_modes
 
-            # Get the package node's output parameter to determine the correct type
-            package_param = package_node.get_parameter_by_name(outgoing_conn.source_parameter_name)
-            if not package_param:
-                details = f"Attempted to package node '{package_node.name}'. Failed because source parameter '{outgoing_conn.source_parameter_name}' on package node could not be found."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+            # Skip parameters that only have INPUT mode
+            if not has_output_mode and not has_property_mode:
+                continue
+
+            # Create prefixed parameter name for end node to avoid collisions
+            end_param_name = f"{request.output_parameter_prefix}{package_param.name}"
 
             # Create parameter command for end node
             add_param_request = AddParameterToNodeRequest(
                 node_name=end_node_name,
-                parameter_name=param_name,
+                parameter_name=end_param_name,
                 # Use the package node's output_type as the type for our end node parameter
-                # since we want to match what the package node is outputting
                 type=package_param.output_type,
                 default_value=None,
-                tooltip=f"Parameter {param_name} from packaged flow",
+                tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
                 initial_setup=True,
             )
             end_node_parameter_commands.append(add_param_request)
@@ -1439,9 +1464,9 @@ class FlowManager:
             # Create connection from package node to end node
             package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
                 source_node_uuid=package_node_uuid,
-                source_parameter_name=param_name,
+                source_parameter_name=package_param.name,
                 target_node_uuid=end_node_uuid,
-                target_parameter_name=param_name,
+                target_parameter_name=end_param_name,
             )
             package_to_end_data_connections.append(package_to_end_connection)
 
@@ -1501,23 +1526,6 @@ class FlowManager:
             target_parameter_name=package_control_input_name,
         )
         return control_connection
-
-    def _create_end_node_control_connections(
-        self,
-        _outgoing_control_connections: list[OutgoingConnection],
-        _package_node: BaseNode,
-        _package_node_uuid: SerializedNodeCommands.NodeUUID,
-        _end_node_uuid: SerializedNodeCommands.NodeUUID,
-    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
-        """Create control flow connections from package node to end node.
-
-        This would handle Package node control output -> End node -> external control outputs.
-        Note: Current implementation returns empty list as control flow logic is not yet implemented.
-        """
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/control-flow Implement end node control connections
-        # This would handle Package node.control -> End node -> external control outputs
-        # For now, return empty list to match current behavior
-        return []
 
     def _assemble_serialized_flow(  # noqa: PLR0913
         self,
