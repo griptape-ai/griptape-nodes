@@ -8,11 +8,8 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.pipeline_utils import (
-    clear_diffusion_pipeline,
-    optimize_diffusion_pipeline,
-)  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
@@ -63,9 +60,7 @@ class FluxPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_diffusion_pipeline(
-                pipe=pipe, **self.pipe_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters()
-            )
+            safe_optimize_flux_pipeline(pipe)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),
@@ -93,6 +88,4 @@ class FluxPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
-        self.log_params.append_to_logs("Complete, clearing memory.\n")
-        clear_diffusion_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")

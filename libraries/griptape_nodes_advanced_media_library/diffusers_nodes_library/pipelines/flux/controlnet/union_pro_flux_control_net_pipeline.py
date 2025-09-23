@@ -9,13 +9,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.pipeline_utils import (
-    optimize_diffusion_pipeline,
-)  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.controlnet.union_one_flux_control_net_model import (
     UnionOneFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
@@ -78,9 +76,7 @@ class UnionProFluxControlNetPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_diffusion_pipeline(
-                pipe=pipe, **self.flux_params._huggingface_pipeline_parameter.get_hf_pipeline_parameters()
-            )
+            safe_optimize_flux_pipeline(pipe)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),
