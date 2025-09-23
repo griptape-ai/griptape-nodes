@@ -1129,8 +1129,8 @@ class FlowManager:
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Generate UUIDs for our artificial nodes
-        start_node_uuid = str(uuid4())
-        end_node_uuid = str(uuid4())
+        start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
+        end_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
         start_node_name = f"Start_Package_{node_name}"
         end_node_name = f"End_Package_{node_name}"
 
@@ -1149,8 +1149,9 @@ class FlowManager:
             library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         )
 
-        # Create parameter modification commands for the start node based on incoming connections
+        # Create parameter modification commands and connection mappings for the start node based on incoming connections
         start_node_parameter_commands = []
+        start_to_package_connections = []
         for incoming_conn in list_connections_result.incoming_connections:
             # Parameter name: use the package node's parameter name
             param_name = incoming_conn.target_parameter_name
@@ -1178,11 +1179,20 @@ class FlowManager:
             )
             start_node_parameter_commands.append(add_param_request)
 
+            # Create connection from start node to package node
+            start_to_package_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=start_node_uuid,
+                source_parameter_name=param_name,
+                target_node_uuid=serialize_node_result.serialized_node_commands.node_uuid,
+                target_parameter_name=param_name,
+            )
+            start_to_package_connections.append(start_to_package_connection)
+
         start_node_commands = SerializedNodeCommands(
             create_node_command=start_create_node_command,
             element_modification_commands=start_node_parameter_commands,
             node_library_details=start_node_library_details,
-            node_uuid=SerializedNodeCommands.NodeUUID(start_node_uuid),
+            node_uuid=start_node_uuid,
         )
 
         # Build end node SerializedNodeCommands directly
@@ -1200,8 +1210,9 @@ class FlowManager:
             library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         )
 
-        # Create parameter modification commands for the end node based on outgoing connections
+        # Create parameter modification commands and connection mappings for the end node based on outgoing connections
         end_node_parameter_commands = []
+        package_to_end_connections = []
         for outgoing_conn in list_connections_result.outgoing_connections:
             # Parameter name: use the package node's parameter name
             param_name = outgoing_conn.source_parameter_name
@@ -1229,15 +1240,24 @@ class FlowManager:
             )
             end_node_parameter_commands.append(add_param_request)
 
+            # Create connection from package node to end node
+            package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=serialize_node_result.serialized_node_commands.node_uuid,
+                source_parameter_name=param_name,
+                target_node_uuid=end_node_uuid,
+                target_parameter_name=param_name,
+            )
+            package_to_end_connections.append(package_to_end_connection)
+
         end_node_commands = SerializedNodeCommands(
             create_node_command=end_create_node_command,
             element_modification_commands=end_node_parameter_commands,
             node_library_details=end_node_library_details,
-            node_uuid=SerializedNodeCommands.NodeUUID(end_node_uuid),
+            node_uuid=end_node_uuid,
         )
 
-        # TODO(packaging): Create dynamic parameters based on connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
-        # TODO(packaging): Create connection mappings - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+        # Combine all connections: Start->Package + Package->End
+        all_connections = start_to_package_connections + package_to_end_connections
 
         # Build the complete SerializedFlowCommands with start, package, and end nodes
         set_lock_commands_per_node = {}
@@ -1264,7 +1284,7 @@ class FlowManager:
             node_libraries_used=node_libraries_used,
             flow_initialization_command=None,
             serialized_node_commands=all_serialized_nodes,
-            serialized_connections=[],  # TODO: Add connection mappings - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            serialized_connections=all_connections,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands={
                 serialize_node_result.serialized_node_commands.node_uuid: serialize_node_result.set_parameter_value_commands
