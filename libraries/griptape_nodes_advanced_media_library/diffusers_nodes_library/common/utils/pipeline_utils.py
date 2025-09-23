@@ -46,8 +46,8 @@ def _check_cuda_memory_sufficient(
     pipe: DiffusionPipeline,
 ) -> bool:
     """Check if CUDA device has sufficient memory for the pipeline."""
-    model_memory = get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
-    return model_memory * MEMORY_HEADROOM_FACTOR <= get_free_cuda_memory()
+    model_memory = MEMORY_HEADROOM_FACTOR * get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
+    return model_memory <= get_free_cuda_memory()
 
 
 def _check_mps_memory_sufficient(
@@ -65,7 +65,7 @@ def _log_memory_info(
     device: torch.device,
 ) -> None:
     """Log memory information for the device."""
-    model_memory = get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
+    model_memory = MEMORY_HEADROOM_FACTOR * get_total_memory_footprint(pipe, get_pipeline_component_names(pipe))
 
     if device.type == "cuda":
         total_memory = torch.cuda.get_device_properties(device).total_memory
@@ -152,7 +152,7 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
 
         logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
         free_cuda_memory = get_free_cuda_memory()
-        max_memory_footprint_with_headroom = get_max_memory_footprint(pipe, get_pipeline_component_names(pipe)) * MEMORY_HEADROOM_FACTOR
+        max_memory_footprint_with_headroom = MEMORY_HEADROOM_FACTOR * get_max_memory_footprint(pipe, get_pipeline_component_names(pipe))
         logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
         logger.info(
             "Pipeline estimated max memory footprint: %s",
