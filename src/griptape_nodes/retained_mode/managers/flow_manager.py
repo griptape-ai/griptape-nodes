@@ -114,6 +114,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.validation_events import (
@@ -1148,9 +1149,38 @@ class FlowManager:
             library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         )
 
+        # Create parameter modification commands for the start node based on incoming connections
+        start_node_parameter_commands = []
+        for incoming_conn in list_connections_result.incoming_connections:
+            # Parameter name: use the package node's parameter name
+            param_name = incoming_conn.target_parameter_name
+
+            # Get the source node
+            try:
+                source_node = GriptapeNodes.NodeManager().get_node_by_name(incoming_conn.source_node_name)
+            except ValueError as err:
+                details = f"Attempted to package node '{node_name}'. Failed because source node '{incoming_conn.source_node_name}' from incoming connection could not be found. Error: {err}."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            # Get the source parameter
+            source_param = source_node.get_parameter_by_name(incoming_conn.source_parameter_name)
+            if not source_param:
+                details = f"Attempted to package node '{node_name}'. Failed because source parameter '{incoming_conn.source_parameter_name}' on node '{incoming_conn.source_node_name}' from incoming connection could not be found."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            add_param_request = AddParameterToNodeRequest(
+                node_name=start_node_name,
+                parameter_name=param_name,
+                # Use the source parameter's output_type as the type for our start node parameter
+                # since we want to match what the original connection was providing
+                type=source_param.output_type,
+                initial_setup=True,
+            )
+            start_node_parameter_commands.append(add_param_request)
+
         start_node_commands = SerializedNodeCommands(
             create_node_command=start_create_node_command,
-            element_modification_commands=[],  # TODO: Add dynamic parameters based on incoming_connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            element_modification_commands=start_node_parameter_commands,
             node_library_details=start_node_library_details,
             node_uuid=SerializedNodeCommands.NodeUUID(start_node_uuid),
         )
@@ -1170,9 +1200,38 @@ class FlowManager:
             library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         )
 
+        # Create parameter modification commands for the end node based on outgoing connections
+        end_node_parameter_commands = []
+        for outgoing_conn in list_connections_result.outgoing_connections:
+            # Parameter name: use the package node's parameter name
+            param_name = outgoing_conn.source_parameter_name
+
+            # Get the target node
+            try:
+                target_node = GriptapeNodes.NodeManager().get_node_by_name(outgoing_conn.target_node_name)
+            except ValueError as err:
+                details = f"Attempted to package node '{node_name}'. Failed because target node '{outgoing_conn.target_node_name}' from outgoing connection could not be found. Error: {err}."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            # Get the target parameter
+            target_param = target_node.get_parameter_by_name(outgoing_conn.target_parameter_name)
+            if not target_param:
+                details = f"Attempted to package node '{node_name}'. Failed because target parameter '{outgoing_conn.target_parameter_name}' on node '{outgoing_conn.target_node_name}' from outgoing connection could not be found."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            add_param_request = AddParameterToNodeRequest(
+                node_name=end_node_name,
+                parameter_name=param_name,
+                # Use the target parameter's output_type as the type for our end node parameter
+                # since we want to match what the original connection was expecting to receive
+                type=target_param.output_type,
+                initial_setup=True,
+            )
+            end_node_parameter_commands.append(add_param_request)
+
         end_node_commands = SerializedNodeCommands(
             create_node_command=end_create_node_command,
-            element_modification_commands=[],  # TODO: Add dynamic parameters based on outgoing_connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            element_modification_commands=end_node_parameter_commands,
             node_library_details=end_node_library_details,
             node_uuid=SerializedNodeCommands.NodeUUID(end_node_uuid),
         )
@@ -1180,7 +1239,7 @@ class FlowManager:
         # TODO(packaging): Create dynamic parameters based on connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         # TODO(packaging): Create connection mappings - https://github.com/griptape-ai/griptape-nodes/issues/TBD
 
-        # Build the complete SerializedFlowCommands with start, target, and end nodes
+        # Build the complete SerializedFlowCommands with start, package, and end nodes
         set_lock_commands_per_node = {}
         if serialize_node_result.serialized_node_commands.lock_node_command:
             set_lock_commands_per_node[serialize_node_result.serialized_node_commands.node_uuid] = (
@@ -1201,7 +1260,7 @@ class FlowManager:
             end_node_commands,
         ]
 
-        placeholder_flow = SerializedFlowCommands(
+        packaged_flow = SerializedFlowCommands(
             node_libraries_used=node_libraries_used,
             flow_initialization_command=None,
             serialized_node_commands=all_serialized_nodes,
@@ -1217,7 +1276,7 @@ class FlowManager:
 
         return PackageNodeAsSerializedFlowResultSuccess(
             result_details=f'Successfully packaged node "{node_name}" from flow "{package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
-            serialized_flow_commands=placeholder_flow,
+            serialized_flow_commands=packaged_flow,
         )
 
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
