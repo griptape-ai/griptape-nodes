@@ -402,6 +402,7 @@ class PackageNodeAsSerializedFlowRequest(RequestPayload):
         start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
         end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
         start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
+        entry_control_parameter_name: Name of the control parameter that the package node should be entered from. The generated start node will create a connection to this control parameter. NOTE: if no entry_control_parameter_name is specified, the package will be entered from the first available control input parameter.
 
     Results: PackageNodeAsSerializedFlowResultSuccess (with serialized flow) | PackageNodeAsSerializedFlowResultFailure (node not found, packaging error)
     """
@@ -411,6 +412,7 @@ class PackageNodeAsSerializedFlowRequest(RequestPayload):
     start_node_type: str = "StartFlow"
     end_node_type: str = "EndFlow"
     start_end_specific_library_name: str = "Griptape Nodes Library"
+    entry_control_parameter_name: str | None = None
 
 
 @dataclass

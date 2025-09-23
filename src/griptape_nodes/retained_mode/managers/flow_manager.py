@@ -1112,16 +1112,22 @@ class FlowManager:
         if isinstance(end_node_result, PackageNodeAsSerializedFlowResultFailure):
             return end_node_result
 
-        # Step 7a: Create start node control flow connections (placeholder for now)
-        start_control_connections = self._create_start_node_control_connections(
-            _incoming_control_connections=connection_analysis.incoming_control_connections,
-            _start_node_uuid=start_node_result.start_node_commands.node_uuid,
-            _package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
+        # Step 7a: Create start node control flow connection
+        start_control_connection_result = self._create_start_node_control_connection(
+            entry_control_parameter_name=request.entry_control_parameter_name,
+            start_node_uuid=start_node_result.start_node_commands.node_uuid,
+            package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
+            package_node=package_node_info.package_node,
         )
+        if isinstance(start_control_connection_result, PackageNodeAsSerializedFlowResultFailure):
+            return start_control_connection_result
+
+        start_control_connections = [start_control_connection_result]
 
         # Step 7b: Create end node control flow connections (placeholder for now)
         end_control_connections = self._create_end_node_control_connections(
             _outgoing_control_connections=connection_analysis.outgoing_control_connections,
+            _package_node=package_node_info.package_node,
             _package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             _end_node_uuid=end_node_result.end_node_commands.node_uuid,
         )
@@ -1146,7 +1152,7 @@ class FlowManager:
             serialized_flow_commands=packaged_flow,
         )
 
-    def _validate_package_node_and_flow(
+    def _validate_package_node_and_flow(  # noqa: PLR0911
         self, request: PackageNodeAsSerializedFlowRequest
     ) -> PackageNodeInfo | PackageNodeAsSerializedFlowResultFailure:
         """Validate and retrieve the package node and its parent flow."""
@@ -1183,6 +1189,18 @@ class FlowManager:
         except KeyError as err:
             details = f"Attempted to package node '{node_name}' from flow '{package_flow_name}'. Failed because flow does not exist. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # Validate entry control parameter if specified
+        if request.entry_control_parameter_name is not None:
+            entry_param = package_node.get_parameter_by_name(request.entry_control_parameter_name)
+            if entry_param is None:
+                details = f"Attempted to package node '{node_name}' with entry control parameter '{request.entry_control_parameter_name}'. Failed because the parameter does not exist on the node."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            # Verify it's actually a control parameter
+            if ParameterTypeBuiltin.CONTROL_TYPE.value not in entry_param.input_types:
+                details = f"Attempted to package node '{node_name}' with entry control parameter '{request.entry_control_parameter_name}'. Failed because the parameter is not a control type parameter."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         return PackageNodeInfo(package_node=package_node, package_flow_name=package_flow_name)
 
@@ -1440,25 +1458,54 @@ class FlowManager:
             package_to_end_data_connections=package_to_end_data_connections,
         )
 
-    def _create_start_node_control_connections(
+    def _create_start_node_control_connection(
         self,
-        _incoming_control_connections: list[IncomingConnection],
-        _start_node_uuid: SerializedNodeCommands.NodeUUID,
-        _package_node_uuid: SerializedNodeCommands.NodeUUID,
-    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
-        """Create control flow connections from start node to package node.
+        entry_control_parameter_name: str | None,
+        start_node_uuid: SerializedNodeCommands.NodeUUID,
+        package_node_uuid: SerializedNodeCommands.NodeUUID,
+        package_node: BaseNode,
+    ) -> SerializedFlowCommands.IndirectConnectionSerialization | PackageNodeAsSerializedFlowResultFailure:
+        """Create control flow connection from start node to package node.
 
-        This would handle external control inputs -> Start node -> Package node control flow.
-        Note: Current implementation returns empty list as control flow logic is not yet implemented.
+        Connects the start node's first control output to the specified or first available package node control input.
         """
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/control-flow Implement start node control connections
-        # This would handle external control -> Start node -> Package node.control
-        # For now, return empty list to match current behavior
-        return []
+        if entry_control_parameter_name is not None:
+            # Case 1: Specific entry parameter name provided
+            package_control_input_name = entry_control_parameter_name
+        else:
+            # Case 2: Find the first available control input parameter
+            package_control_input_name = None
+            for param in package_node.parameters:
+                if ParameterTypeBuiltin.CONTROL_TYPE.value in param.input_types:
+                    package_control_input_name = param.name
+                    logger.warning(
+                        "No entry_control_parameter_name specified for packaging node '%s'. "
+                        "Using first available control input parameter: '%s'",
+                        package_node.name,
+                        package_control_input_name,
+                    )
+                    break
+
+            if package_control_input_name is None:
+                details = f"Attempted to package node '{package_node.name}'. Failed because no control input parameters found on the node, so cannot create control flow connection."
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # StartNode always has a control output parameter with name "exec_out"
+        source_control_parameter_name = "exec_out"
+
+        # Create the connection
+        control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+            source_node_uuid=start_node_uuid,
+            source_parameter_name=source_control_parameter_name,
+            target_node_uuid=package_node_uuid,
+            target_parameter_name=package_control_input_name,
+        )
+        return control_connection
 
     def _create_end_node_control_connections(
         self,
         _outgoing_control_connections: list[OutgoingConnection],
+        _package_node: BaseNode,
         _package_node_uuid: SerializedNodeCommands.NodeUUID,
         _end_node_uuid: SerializedNodeCommands.NodeUUID,
     ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
