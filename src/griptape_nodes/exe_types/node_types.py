@@ -930,11 +930,6 @@ class BaseNode(ABC):
                 msg = "Element order must contain strings (names) or integers (indices)"
                 raise TypeError(msg)
 
-        # Verify we have all elements
-        if len(ordered_elements) != len(current_elements):
-            msg = "Element order must include all elements exactly once"
-            raise ValueError(msg)
-
         # Remove all elements from root_ui_element
         for element in current_elements:
             self.root_ui_element.remove_child(element)
