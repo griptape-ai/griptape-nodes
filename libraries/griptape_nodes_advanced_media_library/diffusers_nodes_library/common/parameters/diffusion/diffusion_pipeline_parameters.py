@@ -22,12 +22,11 @@ class DiffusionPipelineParameters:
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
         self._runtime_parameters: DiffusionPipelineRuntimeParameters | None = None
-        self._pipeline: DiffusionPipeline | None = None
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
-                name="diffusion_pipeline",
+                name="pipeline",
                 type="Pipeline Config",
                 tooltip="🤗 Diffusion Pipeline",
                 allowed_modes={ParameterMode.INPUT},
@@ -35,33 +34,23 @@ class DiffusionPipelineParameters:
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name != "diffusion_pipeline":
+        if parameter.name != "pipeline":
             return
         
-        self._pipeline = model_cache._pipeline_cache.get(value)
-        if self._pipeline is None:
-            error_msg = f"Pipeline with config hash '{value}' not found in cache"
-            raise RuntimeError(error_msg)
-
-        
-        if isinstance(self._pipeline, FluxPipeline):
-            self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
-        # elif isinstance(self.pipeline, FluxFillPipeline):
-        #     self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
-        else:
-            raise ValueError(f"Unsupported pipeline type: {type(self.pipeline)}")
+        pipeline_class = value.split('-', 1)[0]
+        match pipeline_class:
+            case "FluxPipeline":
+                self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
+            # case "FluxFillPipeline":
+            #     self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
+            case _:
+                raise ValueError(f"Unsupported pipeline type: {pipeline_class}")
 
         self._runtime_parameters.add_input_parameters()
         self._runtime_parameters.add_output_parameters()
-
-    @property
-    def pipeline(self) -> DiffusionPipeline:
-        if self._pipeline is None:
-            raise ValueError("Diffusion pipeline not initialized. Ensure diffusion_pipeline parameter is set.")
-        return self._pipeline
     
     @property
     def runtime_parameters(self) -> DiffusionPipelineRuntimeParameters:
         if self._runtime_parameters is None:
-            raise ValueError("Runtime parameters not initialized. Ensure diffusion_pipeline parameter is set.")
+            raise ValueError("Runtime parameters not initialized. Ensure pipeline parameter is set.")
         return self._runtime_parameters

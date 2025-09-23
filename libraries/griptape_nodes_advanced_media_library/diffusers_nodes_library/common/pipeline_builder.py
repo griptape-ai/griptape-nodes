@@ -27,8 +27,18 @@ class PipelineBuilder(ControlNode):
         self.loras_params.add_input_parameters()
         self.params.add_output_parameters()
         self.log_params.add_output_parameters()
+        self.set_config_hash()
+
+    def set_config_hash(self) -> None:
+        config_hash = self.params.config_hash
+        self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")
+        self.set_parameter_value("pipeline", config_hash)
+        self.parameter_output_values["pipeline"] = config_hash
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name != "pipeline":
+            self.set_config_hash()
+            
         self.params.after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 
@@ -43,20 +53,12 @@ class PipelineBuilder(ControlNode):
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
-        # Generate cache key
-        config_hash = self.params.config_hash
-        self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")
-
         # Build pipeline with caching (offload to thread)
         def builder() -> Any:
             return self._build_pipeline()
 
         with self.log_params.append_profile_to_logs("Pipeline building/caching"):
-            await asyncio.to_thread(model_cache.get_or_build_pipeline, config_hash, builder)
-
-        # Output the pipeline configuration
-        self.set_parameter_value("pipeline", config_hash)
-        self.parameter_output_values["pipeline"] = config_hash
+            await asyncio.to_thread(model_cache.get_or_build_pipeline, self.get_parameter_value("pipeline"), builder)
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 
