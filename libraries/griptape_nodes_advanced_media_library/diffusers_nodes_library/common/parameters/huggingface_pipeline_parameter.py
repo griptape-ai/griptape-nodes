@@ -23,7 +23,7 @@ class HuggingFacePipelineParameter:
         }
 
     def add_input_parameters(self) -> None:
-        memory_optimization_strategy_choices = ["Automatic", "Manual"]
+        memory_optimization_strategy_choices = ["Manual", "Automatic"]
         self._node.add_parameter(
             Parameter(
                 name="memory_optimization_strategy",
@@ -89,3 +89,11 @@ class HuggingFacePipelineParameter:
                 traits={Options(choices=quantization_mode_choices)},
             )
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "memory_optimization_strategy" and value == "Automatic":
+            self._node.hide_parameter_by_name("attention_slicing")
+            self._node.hide_parameter_by_name("vae_slicing")
+            self._node.hide_parameter_by_name("transformer_layerwise_casting")
+            self._node.hide_parameter_by_name("cpu_offload_strategy")
+            self._node.hide_parameter_by_name("quantization_mode")
