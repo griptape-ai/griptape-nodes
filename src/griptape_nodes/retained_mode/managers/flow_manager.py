@@ -151,7 +151,7 @@ class QueueItem(NamedTuple):
 
 
 class ConnectionAnalysis(NamedTuple):
-    """Analysis of connections separated by type (data vs control)."""
+    """Analysis of connections separated by type (data vs control) when packaging nodes."""
 
     incoming_data_connections: list[IncomingConnection]
     incoming_control_connections: list[IncomingConnection]
@@ -166,18 +166,18 @@ class PackageNodeInfo(NamedTuple):
     package_flow_name: str
 
 
-class StartNodeResult(NamedTuple):
-    """Result of creating start node commands."""
+class PackagingStartNodeResult(NamedTuple):
+    """Result of creating start node commands and data connections for flow packaging."""
 
     start_node_commands: SerializedNodeCommands
-    start_to_package_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
+    start_to_package_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
 
 
-class EndNodeResult(NamedTuple):
-    """Result of creating end node commands."""
+class PackagingEndNodeResult(NamedTuple):
+    """Result of creating end node commands and data connections for flow packaging."""
 
     end_node_commands: SerializedNodeCommands
-    package_to_end_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
+    package_to_end_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
 
 
 class FlowManager:
@@ -1090,10 +1090,10 @@ class FlowManager:
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
             return serialized_package_result
 
-        # Step 5: Create start node commands and connections
+        # Step 5: Create start node commands and data connections
         start_node_result = self._create_start_node_commands(
             request=request,
-            connection_analysis=connection_analysis,
+            incoming_data_connections=connection_analysis.incoming_data_connections,
             package_node=package_node_info.package_node,
             package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             library_version=library_version,
@@ -1101,10 +1101,10 @@ class FlowManager:
         if isinstance(start_node_result, PackageNodeAsSerializedFlowResultFailure):
             return start_node_result
 
-        # Step 6: Create end node commands and connections
+        # Step 6: Create end node commands and data connections
         end_node_result = self._create_end_node_commands(
             request=request,
-            connection_analysis=connection_analysis,
+            outgoing_data_connections=connection_analysis.outgoing_data_connections,
             package_node=package_node_info.package_node,
             package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             library_version=library_version,
@@ -1271,11 +1271,11 @@ class FlowManager:
     def _create_start_node_commands(
         self,
         request: PackageNodeAsSerializedFlowRequest,
-        connection_analysis: ConnectionAnalysis,
+        incoming_data_connections: list[IncomingConnection],
         package_node: BaseNode,
         package_node_uuid: SerializedNodeCommands.NodeUUID,
         library_version: str,
-    ) -> StartNodeResult | PackageNodeAsSerializedFlowResultFailure:
+    ) -> PackagingStartNodeResult | PackageNodeAsSerializedFlowResultFailure:
         """Create start node commands and connections for incoming data connections."""
         # Generate UUID and name for start node
         start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
@@ -1299,9 +1299,9 @@ class FlowManager:
 
         # Create parameter modification commands and connection mappings for the start node based on incoming DATA connections
         start_node_parameter_commands = []
-        start_to_package_connections = []
+        start_to_package_data_connections = []
 
-        for incoming_conn in connection_analysis.incoming_data_connections:
+        for incoming_conn in incoming_data_connections:
             # Parameter name: use the package node's parameter name
             param_name = incoming_conn.target_parameter_name
 
@@ -1338,7 +1338,7 @@ class FlowManager:
                 target_node_uuid=package_node_uuid,
                 target_parameter_name=param_name,
             )
-            start_to_package_connections.append(start_to_package_connection)
+            start_to_package_data_connections.append(start_to_package_connection)
 
         # Build complete SerializedNodeCommands for start node
         start_node_commands = SerializedNodeCommands(
@@ -1348,19 +1348,19 @@ class FlowManager:
             node_uuid=start_node_uuid,
         )
 
-        return StartNodeResult(
+        return PackagingStartNodeResult(
             start_node_commands=start_node_commands,
-            start_to_package_connections=start_to_package_connections,
+            start_to_package_data_connections=start_to_package_data_connections,
         )
 
     def _create_end_node_commands(
         self,
         request: PackageNodeAsSerializedFlowRequest,
-        connection_analysis: ConnectionAnalysis,
+        outgoing_data_connections: list[OutgoingConnection],
         package_node: BaseNode,
         package_node_uuid: SerializedNodeCommands.NodeUUID,
         library_version: str,
-    ) -> EndNodeResult | PackageNodeAsSerializedFlowResultFailure:
+    ) -> PackagingEndNodeResult | PackageNodeAsSerializedFlowResultFailure:
         """Create end node commands and connections for outgoing data connections."""
         # Generate UUID and name for end node
         end_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
@@ -1384,9 +1384,9 @@ class FlowManager:
 
         # Create parameter modification commands and connection mappings for the end node based on outgoing DATA connections
         end_node_parameter_commands = []
-        package_to_end_connections = []
+        package_to_end_data_connections = []
 
-        for outgoing_conn in connection_analysis.outgoing_data_connections:
+        for outgoing_conn in outgoing_data_connections:
             # Parameter name: use the package node's parameter name
             param_name = outgoing_conn.source_parameter_name
 
@@ -1416,7 +1416,7 @@ class FlowManager:
                 target_node_uuid=end_node_uuid,
                 target_parameter_name=param_name,
             )
-            package_to_end_connections.append(package_to_end_connection)
+            package_to_end_data_connections.append(package_to_end_connection)
 
         # Build complete SerializedNodeCommands for end node
         end_node_commands = SerializedNodeCommands(
@@ -1426,9 +1426,9 @@ class FlowManager:
             node_uuid=end_node_uuid,
         )
 
-        return EndNodeResult(
+        return PackagingEndNodeResult(
             end_node_commands=end_node_commands,
-            package_to_end_connections=package_to_end_connections,
+            package_to_end_data_connections=package_to_end_data_connections,
         )
 
     def _create_control_flow_connections(
@@ -1451,8 +1451,8 @@ class FlowManager:
     def _assemble_serialized_flow(  # noqa: PLR0913
         self,
         serialized_package_result: SerializeNodeToCommandsResultSuccess,
-        start_node_result: StartNodeResult,
-        end_node_result: EndNodeResult,
+        start_node_result: PackagingStartNodeResult,
+        end_node_result: PackagingEndNodeResult,
         control_flow_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         library_version: str,
@@ -1461,8 +1461,8 @@ class FlowManager:
         """Assemble the complete SerializedFlowCommands from all components."""
         # Combine all connections: Start->Package + Package->End + Control Flow
         all_connections = (
-            start_node_result.start_to_package_connections
-            + end_node_result.package_to_end_connections
+            start_node_result.start_to_package_data_connections
+            + end_node_result.package_to_end_data_connections
             + control_flow_connections
         )
 
