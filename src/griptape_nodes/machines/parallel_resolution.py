@@ -189,7 +189,7 @@ class ExecuteDagState(State):
         network_value = False
         if context.dag_builder is not None:
             network = context.dag_builder.graphs.get(network_name, None)
-            network_value = network is not None and len(network) == 0
+            network_value = network is not None and len(network) > 0
 
         if flow_manager.global_single_node_resolution:
             # Clean up nodes from emptied graphs in single node resolution mode
