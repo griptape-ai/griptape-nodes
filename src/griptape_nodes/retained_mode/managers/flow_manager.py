@@ -1720,6 +1720,7 @@ class FlowManager:
         if self.check_for_existing_running_flow():
             # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.
             self._global_dag_builder.add_node_with_dependencies(node, node.name)
+            GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow.name))
         else:
             # Set that we are only working on one node right now!
             self._global_single_node_resolution = True
