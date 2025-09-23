@@ -1112,13 +1112,22 @@ class FlowManager:
         if isinstance(end_node_result, PackageNodeAsSerializedFlowResultFailure):
             return end_node_result
 
-        # Step 7: Create control flow connections (placeholder for now)
-        control_flow_connections = self._create_control_flow_connections(
-            _connection_analysis=connection_analysis,
+        # Step 7a: Create start node control flow connections (placeholder for now)
+        start_control_connections = self._create_start_node_control_connections(
+            _incoming_control_connections=connection_analysis.incoming_control_connections,
             _start_node_uuid=start_node_result.start_node_commands.node_uuid,
+            _package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
+        )
+
+        # Step 7b: Create end node control flow connections (placeholder for now)
+        end_control_connections = self._create_end_node_control_connections(
+            _outgoing_control_connections=connection_analysis.outgoing_control_connections,
             _package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             _end_node_uuid=end_node_result.end_node_commands.node_uuid,
         )
+
+        # Combine all control flow connections
+        control_flow_connections = start_control_connections + end_control_connections
 
         # Step 8: Assemble the complete serialized flow
         packaged_flow = self._assemble_serialized_flow(
@@ -1431,20 +1440,35 @@ class FlowManager:
             package_to_end_data_connections=package_to_end_data_connections,
         )
 
-    def _create_control_flow_connections(
+    def _create_start_node_control_connections(
         self,
-        _connection_analysis: ConnectionAnalysis,
+        _incoming_control_connections: list[IncomingConnection],
         _start_node_uuid: SerializedNodeCommands.NodeUUID,
+        _package_node_uuid: SerializedNodeCommands.NodeUUID,
+    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
+        """Create control flow connections from start node to package node.
+
+        This would handle external control inputs -> Start node -> Package node control flow.
+        Note: Current implementation returns empty list as control flow logic is not yet implemented.
+        """
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/control-flow Implement start node control connections
+        # This would handle external control -> Start node -> Package node.control
+        # For now, return empty list to match current behavior
+        return []
+
+    def _create_end_node_control_connections(
+        self,
+        _outgoing_control_connections: list[OutgoingConnection],
         _package_node_uuid: SerializedNodeCommands.NodeUUID,
         _end_node_uuid: SerializedNodeCommands.NodeUUID,
     ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
-        """Create control flow connections between start, package, and end nodes.
+        """Create control flow connections from package node to end node.
 
-        Note: Current implementation returns empty list as control flow logic
-        is not yet implemented in the original method.
+        This would handle Package node control output -> End node -> external control outputs.
+        Note: Current implementation returns empty list as control flow logic is not yet implemented.
         """
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/control-flow Implement control flow connections logic
-        # This would handle Start node.succeeded -> Package node.control -> End node.control
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/control-flow Implement end node control connections
+        # This would handle Package node.control -> End node -> external control outputs
         # For now, return empty list to match current behavior
         return []
 
