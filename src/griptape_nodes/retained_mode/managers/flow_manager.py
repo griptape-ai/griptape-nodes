@@ -1156,10 +1156,31 @@ class FlowManager:
             library_version=start_end_library_version,
         )
 
-        # Create parameter modification commands and connection mappings for the start node based on incoming connections
+        # Separate control connections from data connections based on package node's parameter types
+        incoming_data_connections = []
+        incoming_control_connections = []
+        for incoming_conn in list_connections_result.incoming_connections:
+            # Get the package node's parameter to check if it's a control type
+            package_param = package_node.get_parameter_by_name(incoming_conn.target_parameter_name)
+            if package_param and ParameterTypeBuiltin.CONTROL_TYPE.value in package_param.input_types:
+                incoming_control_connections.append(incoming_conn)
+            else:
+                incoming_data_connections.append(incoming_conn)
+
+        outgoing_data_connections = []
+        outgoing_control_connections = []
+        for outgoing_conn in list_connections_result.outgoing_connections:
+            # Get the package node's parameter to check if it's a control type
+            package_param = package_node.get_parameter_by_name(outgoing_conn.source_parameter_name)
+            if package_param and ParameterTypeBuiltin.CONTROL_TYPE.value == package_param.output_type:
+                outgoing_control_connections.append(outgoing_conn)
+            else:
+                outgoing_data_connections.append(outgoing_conn)
+
+        # Create parameter modification commands and connection mappings for the start node based on incoming DATA connections
         start_node_parameter_commands = []
         start_to_package_connections = []
-        for incoming_conn in list_connections_result.incoming_connections:
+        for incoming_conn in incoming_data_connections:
             # Parameter name: use the package node's parameter name
             param_name = incoming_conn.target_parameter_name
 
@@ -1219,10 +1240,10 @@ class FlowManager:
             library_version=start_end_library_version,
         )
 
-        # Create parameter modification commands and connection mappings for the end node based on outgoing connections
+        # Create parameter modification commands and connection mappings for the end node based on outgoing DATA connections
         end_node_parameter_commands = []
         package_to_end_connections = []
-        for outgoing_conn in list_connections_result.outgoing_connections:
+        for outgoing_conn in outgoing_data_connections:
             # Parameter name: use the package node's parameter name
             param_name = outgoing_conn.source_parameter_name
 
