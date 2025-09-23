@@ -1022,7 +1022,7 @@ class FlowManager:
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
 
-    def on_package_node_as_serialized_flow_request(self, request: PackageNodeAsSerializedFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_package_node_as_serialized_flow_request(self, request: PackageNodeAsSerializedFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Handle request to package a node as a serialized flow."""
         # Get the package node following the same pattern as other handlers
         node_name = request.node_name
@@ -1061,7 +1061,7 @@ class FlowManager:
 
         # Early validation - ensure both start and end node types exist in the specified library
         try:
-            LibraryRegistry.get_library_for_node_type(
+            start_end_library = LibraryRegistry.get_library_for_node_type(
                 node_type=request.start_node_type, specific_library_name=request.start_end_specific_library_name
             )
         except KeyError as err:
@@ -1075,6 +1075,10 @@ class FlowManager:
         except KeyError as err:
             details = f"Attempted to package node '{node_name}' with end node type '{request.end_node_type}' from library '{request.start_end_specific_library_name}'. Failed because end node type was not found in library. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # Get the actual library version
+        start_end_library_metadata = start_end_library.get_metadata()
+        start_end_library_version = start_end_library_metadata.library_version
 
         # FLOW PACKAGING STRATEGY:
         # We're creating a self-contained flow with 3 nodes: Start node -> Package node -> End node
@@ -1146,7 +1150,7 @@ class FlowManager:
 
         start_node_library_details = LibraryNameAndVersion(
             library_name=request.start_end_specific_library_name,
-            library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            library_version=start_end_library_version,
         )
 
         # Create parameter modification commands and connection mappings for the start node based on incoming connections
@@ -1207,7 +1211,7 @@ class FlowManager:
 
         end_node_library_details = LibraryNameAndVersion(
             library_name=request.start_end_specific_library_name,
-            library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            library_version=start_end_library_version,
         )
 
         # Create parameter modification commands and connection mappings for the end node based on outgoing connections
