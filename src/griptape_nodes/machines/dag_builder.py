@@ -61,16 +61,15 @@ class DagBuilder:
         if graph is None:
             graph = DirectedGraph()
             self.graphs[graph_name] = graph
+            self.graph_to_nodes[graph_name] = set()
 
         def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
             if current_node.name in visited:
                 return
             visited.add(current_node.name)
-
             # Skip if already in DAG (use DAG membership, not resolved state)
             if current_node.name in self.node_to_reference:
                 return
-
             # Process dependencies first (depth-first)
             ignore_data_dependencies = False
             # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.
@@ -102,8 +101,6 @@ class DagBuilder:
             graph.add_node(node_for_adding=current_node.name)
 
             # Track which nodes belong to this graph
-            if graph_name not in self.graph_to_nodes:
-                self.graph_to_nodes[graph_name] = set()
             self.graph_to_nodes[graph_name].add(current_node.name)
 
             # DON'T mark as resolved - that happens during actual execution
