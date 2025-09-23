@@ -4,6 +4,7 @@ import logging
 from enum import StrEnum
 from queue import Queue
 from typing import TYPE_CHECKING, NamedTuple, cast
+from uuid import uuid4
 
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
@@ -19,7 +20,7 @@ from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachi
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
-from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -101,9 +102,11 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    CreateNodeRequest,
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeserializeNodeFromCommandsRequest,
+    SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
@@ -1038,19 +1041,19 @@ class FlowManager:
             try:
                 target_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
             except ValueError as err:
-                details = f'Attempted to package node "{node_name}". Failed because node does not exist. Error: {err}.'
+                details = f"Attempted to package node '{node_name}'. Failed because node does not exist. Error: {err}."
                 return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Get the flow containing this node using the same pattern
         target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
         if target_flow_name is None:
-            details = f'Attempted to package node "{node_name}". Failed because node is not assigned to any flow.'
+            details = f"Attempted to package node '{node_name}'. Failed because node is not assigned to any flow."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         try:
             self.get_flow_by_name(flow_name=target_flow_name)
         except KeyError as err:
-            details = f'Attempted to package node "{node_name}" from flow "{target_flow_name}". Failed because flow does not exist. Error: {err}.'
+            details = f"Attempted to package node '{node_name}' from flow '{target_flow_name}'. Failed because flow does not exist. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Early validation - ensure both start and end node types exist in the specified library
@@ -1059,7 +1062,7 @@ class FlowManager:
                 node_type=request.start_node_type, specific_library_name=request.start_end_specific_library_name
             )
         except KeyError as err:
-            details = f'Attempted to package node "{node_name}" with start node type "{request.start_node_type}" from library "{request.start_end_specific_library_name}". Failed because start node type was not found in library. Error: {err}.'
+            details = f"Attempted to package node '{node_name}' with start node type '{request.start_node_type}' from library '{request.start_end_specific_library_name}'. Failed because start node type was not found in library. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         try:
@@ -1067,8 +1070,35 @@ class FlowManager:
                 node_type=request.end_node_type, specific_library_name=request.start_end_specific_library_name
             )
         except KeyError as err:
-            details = f'Attempted to package node "{node_name}" with end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}". Failed because end node type was not found in library. Error: {err}.'
+            details = f"Attempted to package node '{node_name}' with end node type '{request.end_node_type}' from library '{request.start_end_specific_library_name}'. Failed because end node type was not found in library. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # FLOW PACKAGING STRATEGY:
+        # We're creating a self-contained flow with 3 nodes: Start node -> Target node -> End node
+        #
+        # ARTIFICIAL NODE CREATION:
+        # Rather than instantiating actual node objects (which would require the object manager and have side effects),
+        # we build SerializedNodeCommands directly by constructing the CreateNodeRequest and metadata that would
+        # normally be generated during node serialization. This gives us the same serialized representation
+        # without the overhead of creating ephemeral objects.
+        #
+        # 1. The Start node will have OUTPUT parameters that match the Target node's incoming connections
+        #    - For each parameter that feeds INTO the target node from external sources,
+        #      we create a matching output parameter on the Start node with the same output_type
+        #    - Parameter naming: use the target node's parameter name (e.g., if target has "path" input, Start node gets "path" output)
+        #
+        # 2. Target node is serialized as-is with all its current parameter values and state
+        #    - This preserves the original node's configuration and behavior
+        #
+        # 3. The End node will have INPUT parameters that match the Target node's outgoing connections
+        #    - For each parameter that flows OUT of the target node to external destinations,
+        #      we create a matching input parameter on the End node with the same output_type
+        #    - Parameter naming: use the target node's parameter name (e.g., if target has "image" output, End node gets "image" input)
+        #
+        # 4. Connections will be: Start node outputs -> Target node inputs, Target node outputs -> End node inputs
+        #    - Plus control flow: Start node.succeeded -> Target node.control, Target node.control -> End node.control
+        #
+        # This creates a complete, executable flow that can be deserialized and run standalone.
 
         # Serialize the target node
         unique_parameter_uuid_to_values = {}
@@ -1082,25 +1112,93 @@ class FlowManager:
 
         serialize_node_result = GriptapeNodes.handle_request(serialize_node_request)
         if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
-            details = f'Attempted to serialize target node "{node_name}". Failed because node serialization failed.'
+            details = f"Attempted to serialize target node '{node_name}'. Failed because node serialization failed."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
-        # TODO(packaging): Build start and end SerializedNodeCommands directly without instantiation - https://github.com/griptape-ai/griptape-nodes/issues/TBD
-        # TODO(packaging): Analyze connections and create dynamic parameters - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+        # Analyze connections to the target node
+        # TODO: Use these connections for dynamic parameter creation
+        # incoming_connections = self.get_connected_input_from_node(flow, target_node)
+        # outgoing_connections = self.get_connected_output_from_node(flow, target_node)
+
+        # Generate UUIDs for our artificial nodes
+        start_node_uuid = str(uuid4())
+        end_node_uuid = str(uuid4())
+        start_node_name = f"Start_Package_{node_name}"
+        end_node_name = f"End_Package_{node_name}"
+
+        # Build start node SerializedNodeCommands directly
+        start_create_node_command = CreateNodeRequest(
+            node_type=request.start_node_type,
+            specific_library_name=request.start_end_specific_library_name,
+            node_name=start_node_name,
+            metadata={},
+            initial_setup=True,
+            create_error_proxy_on_failure=False,
+        )
+
+        start_node_library_details = LibraryNameAndVersion(
+            library_name=request.start_end_specific_library_name,
+            library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+        )
+
+        start_node_commands = SerializedNodeCommands(
+            create_node_command=start_create_node_command,
+            element_modification_commands=[],  # TODO: Add dynamic parameters based on incoming_connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            node_library_details=start_node_library_details,
+            node_uuid=SerializedNodeCommands.NodeUUID(start_node_uuid),
+        )
+
+        # Build end node SerializedNodeCommands directly
+        end_create_node_command = CreateNodeRequest(
+            node_type=request.end_node_type,
+            specific_library_name=request.start_end_specific_library_name,
+            node_name=end_node_name,
+            metadata={},
+            initial_setup=True,
+            create_error_proxy_on_failure=False,
+        )
+
+        end_node_library_details = LibraryNameAndVersion(
+            library_name=request.start_end_specific_library_name,
+            library_version="1.0.0",  # TODO: Get actual version - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+        )
+
+        end_node_commands = SerializedNodeCommands(
+            create_node_command=end_create_node_command,
+            element_modification_commands=[],  # TODO: Add dynamic parameters based on outgoing_connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+            node_library_details=end_node_library_details,
+            node_uuid=SerializedNodeCommands.NodeUUID(end_node_uuid),
+        )
+
+        # TODO(packaging): Create dynamic parameters based on connections - https://github.com/griptape-ai/griptape-nodes/issues/TBD
         # TODO(packaging): Create connection mappings - https://github.com/griptape-ai/griptape-nodes/issues/TBD
 
-        # For now, create a minimal placeholder SerializedFlowCommands with just the target node
+        # Build the complete SerializedFlowCommands with start, target, and end nodes
         set_lock_commands_per_node = {}
         if serialize_node_result.serialized_node_commands.lock_node_command:
             set_lock_commands_per_node[serialize_node_result.serialized_node_commands.node_uuid] = (
                 serialize_node_result.serialized_node_commands.lock_node_command
             )
 
+        # Collect all libraries used
+        node_libraries_used = {
+            serialize_node_result.serialized_node_commands.node_library_details,
+            start_node_library_details,
+            end_node_library_details,
+        }
+
+        # Include all three nodes in the flow
+        all_serialized_nodes = [
+            start_node_commands,
+            serialize_node_result.serialized_node_commands,
+            end_node_commands,
+        ]
+
         placeholder_flow = SerializedFlowCommands(
-            node_libraries_used={serialize_node_result.serialized_node_commands.node_library_details},
+            node_libraries_used=node_libraries_used,
             flow_initialization_command=None,
-            serialized_node_commands=[serialize_node_result.serialized_node_commands],
-            serialized_connections=[],
+            serialized_node_commands=all_serialized_nodes,
+            serialized_connections=[],  # TODO: Add connection mappings - https://github.com/griptape-ai/griptape-nodes/issues/TBD
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands={
                 serialize_node_result.serialized_node_commands.node_uuid: serialize_node_result.set_parameter_value_commands
