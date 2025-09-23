@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -11,7 +12,7 @@ class HuggingFacePipelineParameter:
     def __init__(self, node: BaseNode):
         self._node = node
 
-    def get_hf_pipeline_parameters(self) -> dict[str, str | bool]:
+    def get_hf_pipeline_parameters(self) -> dict[str, Any]:
         return {
             "memory_optimization_strategy": self._node.get_parameter_value("memory_optimization_strategy"),
             "attention_slicing": self._node.get_parameter_value("attention_slicing"),

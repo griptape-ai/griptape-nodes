@@ -1,10 +1,9 @@
 import contextlib
 import gc
 import logging
-from functools import cache
 
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 import torch  # type: ignore[reportMissingImports]
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
@@ -17,7 +16,6 @@ from diffusers_nodes_library.common.utils.torch_utils import (
 
 logger = logging.getLogger("griptape_nodes")
 
-# TODO: Env var/setting?
 MEMORY_HEADROOM_FACTOR = 1.2
 
 
@@ -26,12 +24,13 @@ def get_pipeline_component_names(pipe: DiffusionPipeline) -> list[str]:
     component_names = []
 
     for attr_name in dir(pipe):
-        if not attr_name.startswith('_'):
+        if not attr_name.startswith("_"):
             try:
                 attr = getattr(pipe, attr_name)
-                if hasattr(attr, 'to') and callable(getattr(attr, 'to')) and hasattr(attr, 'parameters'):
+                if hasattr(attr, "to") and callable(attr.to) and hasattr(attr, "parameters"):
                     component_names.append(attr_name)
             except Exception:
+                logger.debug("Error accessing attribute %s of pipeline: %s", attr_name, exc_info=True)
                 continue
 
     if not component_names:
@@ -152,7 +151,9 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
 
         logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
         free_cuda_memory = get_free_cuda_memory()
-        max_memory_footprint_with_headroom = MEMORY_HEADROOM_FACTOR * get_max_memory_footprint(pipe, get_pipeline_component_names(pipe))
+        max_memory_footprint_with_headroom = MEMORY_HEADROOM_FACTOR * get_max_memory_footprint(
+            pipe, get_pipeline_component_names(pipe)
+        )
         logger.info("Free CUDA memory: %s", to_human_readable_size(free_cuda_memory))
         logger.info(
             "Pipeline estimated max memory footprint: %s",

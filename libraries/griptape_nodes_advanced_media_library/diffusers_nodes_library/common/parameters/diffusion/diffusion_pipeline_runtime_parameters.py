@@ -2,8 +2,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 import PIL.Image
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
@@ -22,7 +22,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     @abstractmethod
     def _add_input_parameters(self) -> None:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
@@ -64,7 +64,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     @abstractmethod
     def _remove_input_parameters(self) -> None:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("width")
@@ -109,7 +109,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     @abstractmethod
     def _get_pipe_kwargs(self) -> dict:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def get_pipe_kwargs(self) -> dict:
         return {
@@ -120,9 +120,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
             "generator": self._seed_parameter.get_generator(),
         }
 
-    def latents_to_image_pil(
-        self, pipe: DiffusionPipeline, latents: Any
-    ) -> Image:
+    def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
         width = int(self._node.parameter_values["width"])
         height = int(self._node.parameter_values["height"])
         latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
@@ -132,9 +130,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(
-        self, pipe: DiffusionPipeline, latents: Any
-    ) -> None:
+    def publish_output_image_preview_latents(self, pipe: DiffusionPipeline, latents: Any) -> None:
         # Check to ensure there's enough space in the intermediates directory
         # if that setting is enabled.
         check_cleanup_intermediates_directory()

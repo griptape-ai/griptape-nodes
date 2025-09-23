@@ -207,7 +207,11 @@ class PipelineBuilderParameters:
         for key, value in opt_kwargs.items():
             config_data[f"opt_{key}"] = value
 
-        return self.pipeline_class.__name__ + '-' + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
+        return (
+            self.pipeline_class.__name__
+            + "-"
+            + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
+        )
 
     def validate_configuration(self) -> list[Exception] | None:
         """Validate the current configuration."""

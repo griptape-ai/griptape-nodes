@@ -1,10 +1,10 @@
 import logging
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import DiffusionPipelineRuntimeParameters
-
-from griptape_nodes.exe_types.node_types import BaseNode
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
+    DiffusionPipelineRuntimeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter
-
+from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -55,7 +55,7 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prompt")
-        self._node.remove_parameter_element_by_name("prompt_2") 
+        self._node.remove_parameter_element_by_name("prompt_2")
         self._node.remove_parameter_element_by_name("negative_prompt")
         self._node.remove_parameter_element_by_name("negative_prompt_2")
         self._node.remove_parameter_element_by_name("true_cfg_scale")
