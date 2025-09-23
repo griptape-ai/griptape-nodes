@@ -16,6 +16,8 @@ from diffusers_nodes_library.common.utils.torch_utils import (
 
 logger = logging.getLogger("griptape_nodes")
 
+# Best guess for memory optimization with 20% headroom
+# https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator#caveats-with-this-calculator
 MEMORY_HEADROOM_FACTOR = 1.2
 
 
@@ -246,7 +248,6 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     elif cpu_offload_strategy == "None":
         pipe.to(device)
 
-
 def optimize_diffusion_pipeline(  # noqa: PLR0913
     pipe: DiffusionPipeline,
     *,
@@ -261,8 +262,6 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
     device = get_best_device()
 
     if memory_optimization_strategy == "Automatic":
-        # Best guess for memory optimization with 20% headroom
-        # https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator#caveats-with-this-calculator
         _automatic_optimize_diffusion_pipeline(pipe, device)
     else:
         _manual_optimize_diffusion_pipeline(

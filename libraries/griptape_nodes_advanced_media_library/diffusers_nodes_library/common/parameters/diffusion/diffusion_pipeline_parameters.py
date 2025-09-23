@@ -16,7 +16,8 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineParameters:
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
-        self._runtime_parameters: DiffusionPipelineRuntimeParameters | None = None
+        self._runtime_parameters: DiffusionPipelineRuntimeParameters
+        self.set_runtime_parameters("FluxPipeline")
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -28,18 +29,21 @@ class DiffusionPipelineParameters:
             )
         )
 
+    def set_runtime_parameters(self, pipeline_class: str) -> None:
+        match pipeline_class:
+            case "FluxPipeline":
+                self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
+            case _:
+                msg = f"Unsupported pipeline class: {pipeline_class}"
+                logger.error(msg)
+                raise ValueError(msg)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "pipeline":
             return
 
         pipeline_class = value.split("-", 1)[0]
-        match pipeline_class:
-            case "FluxPipeline":
-                self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
-            case _:
-                msg = f"Unsupported pipeline type: {pipeline_class}"
-                logger.error(msg)
-                raise ValueError(msg)
+        self.set_runtime_parameters(pipeline_class)
 
         self._runtime_parameters.add_input_parameters()
         self._runtime_parameters.add_output_parameters()

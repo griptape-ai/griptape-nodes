@@ -12,6 +12,17 @@ class HuggingFacePipelineParameter:
     def __init__(self, node: BaseNode):
         self._node = node
 
+    @classmethod
+    def get_hf_pipeline_parameter_names(cls) -> list[str]:
+        return [
+            "memory_optimization_strategy",
+            "attention_slicing",
+            "vae_slicing",
+            "transformer_layerwise_casting",
+            "cpu_offload_strategy",
+            "quantization_mode",
+        ]
+
     def get_hf_pipeline_parameters(self) -> dict[str, Any]:
         return {
             "memory_optimization_strategy": self._node.get_parameter_value("memory_optimization_strategy"),
@@ -91,9 +102,16 @@ class HuggingFacePipelineParameter:
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name == "memory_optimization_strategy" and value == "Automatic":
-            self._node.hide_parameter_by_name("attention_slicing")
-            self._node.hide_parameter_by_name("vae_slicing")
-            self._node.hide_parameter_by_name("transformer_layerwise_casting")
-            self._node.hide_parameter_by_name("cpu_offload_strategy")
-            self._node.hide_parameter_by_name("quantization_mode")
+        if parameter.name == "memory_optimization_strategy":
+            if value == "Automatic":
+                self._node.hide_parameter_by_name("attention_slicing")
+                self._node.hide_parameter_by_name("vae_slicing")
+                self._node.hide_parameter_by_name("transformer_layerwise_casting")
+                self._node.hide_parameter_by_name("cpu_offload_strategy")
+                self._node.hide_parameter_by_name("quantization_mode")
+            else:
+                self._node.show_parameter_by_name("attention_slicing")
+                self._node.show_parameter_by_name("vae_slicing")
+                self._node.show_parameter_by_name("transformer_layerwise_casting")
+                self._node.show_parameter_by_name("cpu_offload_strategy")
+                self._node.show_parameter_by_name("quantization_mode")

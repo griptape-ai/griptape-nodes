@@ -31,11 +31,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         reset_runtime_parameters = parameter.name == "pipeline"
-        if (
-            reset_runtime_parameters
-            and hasattr(self.pipe_params, "_runtime_parameters")
-            and self.pipe_params._runtime_parameters is not None
-        ):
+        if reset_runtime_parameters:
             self.pipe_params.runtime_parameters.remove_input_parameters()
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
@@ -49,8 +45,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             sorted_parameters.extend(["loras", "logs"])
             self.reorder_elements(sorted_parameters)
 
-        if hasattr(self.pipe_params, "_runtime_parameters") and self.pipe_params._runtime_parameters is not None:
-            self.pipe_params.runtime_parameters.after_value_set(parameter, value)
+        self.pipe_params.runtime_parameters.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()
