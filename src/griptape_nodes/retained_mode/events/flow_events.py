@@ -382,3 +382,48 @@ class SetFlowMetadataResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Flow metadata update failed. Common causes: flow not found, no current context, invalid metadata."""
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodeAsSerializedFlowRequest(RequestPayload):
+    """Package a single node as a complete flow with artificial StartFlow and EndFlow nodes.
+
+    Creates a serialized flow where:
+    - StartFlow has output parameters matching the packaged node's incoming connections
+    - EndFlow has input parameters matching the packaged node's outgoing connections
+    - All connections are properly mapped through StartFlow -> Node -> EndFlow
+
+    Use when: Creating reusable components, exporting nodes for templates,
+    building sub-workflows from existing nodes, creating packaged functionality.
+
+    Args:
+        node_name: Name of the node to package as a flow (None for current context node)
+
+    Results: PackageNodeAsSerializedFlowResultSuccess (with serialized flow) | PackageNodeAsSerializedFlowResultFailure (node not found, packaging error)
+    """
+
+    # If None is passed, assumes we're packaging the node in the Current Context
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodeAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node successfully packaged as serialized flow.
+
+    Args:
+        serialized_flow_commands: The complete serialized flow with StartFlow, target node, and EndFlow
+    """
+
+    serialized_flow_commands: SerializedFlowCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodeAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node packaging failed.
+
+    Common causes: node not found, no current context, serialization error,
+    connection analysis failed, node has no valid flow context.
+    """

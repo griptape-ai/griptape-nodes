@@ -88,6 +88,9 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowRequest,
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
+    PackageNodeAsSerializedFlowRequest,
+    PackageNodeAsSerializedFlowResultFailure,
+    PackageNodeAsSerializedFlowResultSuccess,
     SerializedFlowCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultFailure,
@@ -1011,6 +1014,62 @@ class FlowManager:
 
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
+
+    def on_package_node_as_serialized_flow_request(self, request: PackageNodeAsSerializedFlowRequest) -> ResultPayload:
+        """Handle request to package a node as a serialized flow."""
+        # Get the target node following the same pattern as other handlers
+        node_name = request.node_name
+        target_node = None
+
+        if node_name is None:
+            # First check if we have a current node
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to package node from Current Context. Failed because the Current Context was empty."
+                )
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            # Get the current node from context
+            target_node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = target_node.name
+
+        if target_node is None:
+            try:
+                target_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+            except ValueError as err:
+                details = f'Attempted to package node "{node_name}". Failed because node does not exist. Error: {err}.'
+                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # Get the flow containing this node using the same pattern
+        target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+        if target_flow_name is None:
+            details = f'Attempted to package node "{node_name}". Failed because node is not assigned to any flow.'
+            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        try:
+            self.get_flow_by_name(flow_name=target_flow_name)
+        except KeyError as err:
+            details = f'Attempted to package node "{node_name}" from flow "{target_flow_name}". Failed because flow does not exist. Error: {err}.'
+            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+        # TODO(packaging): Implement the actual packaging logic - https://github.com/griptape-ai/griptape-nodes/issues/TBD
+        # For now, create a minimal placeholder SerializedFlowCommands
+        placeholder_flow = SerializedFlowCommands(
+            node_libraries_used=set(),
+            flow_initialization_command=None,
+            serialized_node_commands=[],
+            serialized_connections=[],
+            unique_parameter_uuid_to_values={},
+            set_parameter_value_commands={},
+            set_lock_commands_per_node={},
+            sub_flows_commands=[],
+            referenced_workflows=set(),
+        )
+
+        return PackageNodeAsSerializedFlowResultSuccess(
+            result_details=f'Successfully packaged node "{node_name}" from flow "{target_flow_name}" as serialized flow.',
+            serialized_flow_commands=placeholder_flow,
+        )
 
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
