@@ -28,8 +28,6 @@ class FluxPipelineTypeParameters(DiffusionPipelineTypeParameters):
         match pipeline_type:
             case "Basic":
                 self._pipeline_type_pipeline_params = FluxPipelineTypeFluxPipelineParameters(self._node)
-            case "Fill":
-                self._pipeline_type_pipeline_params = FluxPipelineTypeFluxPipelineParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline type: {pipeline_type}"
                 logger.error(msg)
