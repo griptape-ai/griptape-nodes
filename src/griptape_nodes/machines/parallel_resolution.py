@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    GetFlowStateRequest,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
@@ -184,19 +185,20 @@ class ExecuteDagState(State):
         context: ParallelResolutionContext, node: BaseNode, network_name: str, flow_manager: FlowManager
     ) -> bool:
         """Check if control flow processing should be skipped."""
-        if flow_manager.global_single_node_resolution:
-            return True
-
+        # Get network once to avoid duplicate lookups
+        network_value = False
         if context.dag_builder is not None:
             network = context.dag_builder.graphs.get(network_name, None)
-            if network is not None and len(network) > 0:
-                return True
+            network_value = network is not None and len(network) == 0
 
-        if node.stop_flow:
-            node.stop_flow = False
+        if flow_manager.global_single_node_resolution:
+            # Clean up nodes from emptied graphs in single node resolution mode
+            if network_value and context.dag_builder is not None:
+                context.dag_builder.cleanup_empty_graph_nodes(network_name)
+                GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=context.flow_name))
             return True
 
-        return False
+        return bool(network_value or node.stop_flow)
 
     @staticmethod
     def _process_next_control_node(

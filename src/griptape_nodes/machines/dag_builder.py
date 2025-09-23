@@ -43,10 +43,12 @@ class DagBuilder:
 
     graphs: dict[str, DirectedGraph]  # Str is the name of the start node associated here.
     node_to_reference: dict[str, DagNode]
+    graph_to_nodes: dict[str, set[str]]  # Track which nodes belong to which graph
 
     def __init__(self) -> None:
         self.graphs = {}
         self.node_to_reference: dict[str, DagNode] = {}
+        self.graph_to_nodes = {}
 
     # Complex with the inner recursive method, but it needs connections and added_nodes.
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
@@ -98,6 +100,12 @@ class DagBuilder:
             dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
             self.node_to_reference[current_node.name] = dag_node
             graph.add_node(node_for_adding=current_node.name)
+
+            # Track which nodes belong to this graph
+            if graph_name not in self.graph_to_nodes:
+                self.graph_to_nodes[graph_name] = set()
+            self.graph_to_nodes[graph_name].add(current_node.name)
+
             # DON'T mark as resolved - that happens during actual execution
             added_nodes.append(current_node)
 
@@ -117,12 +125,19 @@ class DagBuilder:
             graph = DirectedGraph()
             self.graphs[graph_name] = graph
         graph.add_node(node_for_adding=node.name)
+
+        # Track which nodes belong to this graph
+        if graph_name not in self.graph_to_nodes:
+            self.graph_to_nodes[graph_name] = set()
+        self.graph_to_nodes[graph_name].add(node.name)
+
         return dag_node
 
     def clear(self) -> None:
         """Clear all nodes and references from the DAG builder."""
         self.graphs.clear()
         self.node_to_reference.clear()
+        self.graph_to_nodes.clear()
 
     def can_queue_control_node(self, node: DagNode) -> bool:
         if len(self.graphs) == 1:
@@ -205,3 +220,10 @@ class DagBuilder:
                                 return True
 
         return False
+
+    def cleanup_empty_graph_nodes(self, graph_name: str) -> None:
+        """Remove nodes from node_to_reference when their graph becomes empty (only in single node resolution)."""
+        if graph_name in self.graph_to_nodes:
+            for node_name in self.graph_to_nodes[graph_name]:
+                self.node_to_reference.pop(node_name, None)
+            self.graph_to_nodes.pop(graph_name, None)
