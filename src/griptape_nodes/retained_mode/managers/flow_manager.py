@@ -35,6 +35,8 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     DeleteConnectionResultSuccess,
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -1021,9 +1023,9 @@ class FlowManager:
 
     def on_package_node_as_serialized_flow_request(self, request: PackageNodeAsSerializedFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Handle request to package a node as a serialized flow."""
-        # Get the target node following the same pattern as other handlers
+        # Get the package node following the same pattern as other handlers
         node_name = request.node_name
-        target_node = None
+        package_node = None
 
         if node_name is None:
             # First check if we have a current node
@@ -1034,26 +1036,26 @@ class FlowManager:
                 return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
             # Get the current node from context
-            target_node = GriptapeNodes.ContextManager().get_current_node()
-            node_name = target_node.name
+            package_node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = package_node.name
 
-        if target_node is None:
+        if package_node is None:
             try:
-                target_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                package_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
             except ValueError as err:
                 details = f"Attempted to package node '{node_name}'. Failed because node does not exist. Error: {err}."
                 return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Get the flow containing this node using the same pattern
-        target_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        if target_flow_name is None:
+        package_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
+        if package_flow_name is None:
             details = f"Attempted to package node '{node_name}'. Failed because node is not assigned to any flow."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         try:
-            self.get_flow_by_name(flow_name=target_flow_name)
+            self.get_flow_by_name(flow_name=package_flow_name)
         except KeyError as err:
-            details = f"Attempted to package node '{node_name}' from flow '{target_flow_name}'. Failed because flow does not exist. Error: {err}."
+            details = f"Attempted to package node '{node_name}' from flow '{package_flow_name}'. Failed because flow does not exist. Error: {err}."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Early validation - ensure both start and end node types exist in the specified library
@@ -1074,7 +1076,7 @@ class FlowManager:
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # FLOW PACKAGING STRATEGY:
-        # We're creating a self-contained flow with 3 nodes: Start node -> Target node -> End node
+        # We're creating a self-contained flow with 3 nodes: Start node -> Package node -> End node
         #
         # ARTIFICIAL NODE CREATION:
         # Rather than instantiating actual node objects (which would require the object manager and have side effects),
@@ -1082,25 +1084,25 @@ class FlowManager:
         # normally be generated during node serialization. This gives us the same serialized representation
         # without the overhead of creating ephemeral objects.
         #
-        # 1. The Start node will have OUTPUT parameters that match the Target node's incoming connections
-        #    - For each parameter that feeds INTO the target node from external sources,
+        # 1. The Start node will have OUTPUT parameters that match the Package node's incoming connections
+        #    - For each parameter that feeds INTO the package node from external sources,
         #      we create a matching output parameter on the Start node with the same output_type
-        #    - Parameter naming: use the target node's parameter name (e.g., if target has "path" input, Start node gets "path" output)
+        #    - Parameter naming: use the package node's parameter name (e.g., if package node has "path" input, Start node gets "path" output)
         #
-        # 2. Target node is serialized as-is with all its current parameter values and state
+        # 2. Package node is serialized as-is with all its current parameter values and state
         #    - This preserves the original node's configuration and behavior
         #
-        # 3. The End node will have INPUT parameters that match the Target node's outgoing connections
-        #    - For each parameter that flows OUT of the target node to external destinations,
+        # 3. The End node will have INPUT parameters that match the Package node's outgoing connections
+        #    - For each parameter that flows OUT of the package node to external destinations,
         #      we create a matching input parameter on the End node with the same output_type
-        #    - Parameter naming: use the target node's parameter name (e.g., if target has "image" output, End node gets "image" input)
+        #    - Parameter naming: use the package node's parameter name (e.g., if package node has "image" output, End node gets "image" input)
         #
-        # 4. Connections will be: Start node outputs -> Target node inputs, Target node outputs -> End node inputs
-        #    - Plus control flow: Start node.succeeded -> Target node.control, Target node.control -> End node.control
+        # 4. Connections will be: Start node outputs -> Package node inputs, Package node outputs -> End node inputs
+        #    - Plus control flow: Start node.succeeded -> Package node.control, Package node.control -> End node.control
         #
         # This creates a complete, executable flow that can be deserialized and run standalone.
 
-        # Serialize the target node
+        # Serialize the package node
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
 
@@ -1115,10 +1117,15 @@ class FlowManager:
             details = f"Attempted to serialize target node '{node_name}'. Failed because node serialization failed."
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
-        # Analyze connections to the target node
-        # TODO: Use these connections for dynamic parameter creation
-        # incoming_connections = self.get_connected_input_from_node(flow, target_node)
-        # outgoing_connections = self.get_connected_output_from_node(flow, target_node)
+        # Get connection details for the target node using the efficient approach
+        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+        list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
+            list_connections_request
+        )
+
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            details = f"Attempted to analyze connections for target node '{node_name}'. Failed because connection listing failed."
+            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Generate UUIDs for our artificial nodes
         start_node_uuid = str(uuid4())
@@ -1209,7 +1216,7 @@ class FlowManager:
         )
 
         return PackageNodeAsSerializedFlowResultSuccess(
-            result_details=f'Successfully packaged node "{node_name}" from flow "{target_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
+            result_details=f'Successfully packaged node "{node_name}" from flow "{package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
             serialized_flow_commands=placeholder_flow,
         )
 
