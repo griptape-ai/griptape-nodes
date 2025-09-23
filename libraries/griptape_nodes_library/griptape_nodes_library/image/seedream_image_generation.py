@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import requests
 from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
 from griptape_nodes.traits.options import Options
 
@@ -65,14 +65,15 @@ class SeedreamImageGeneration(DataNode):
     """Generate images using Seedream models via Griptape model proxy.
 
     Supports three models:
-    - seedream-4.0: Advanced model with optional image input and shorthand size options (1K, 2K, 4K)
+    - seedream-4.0: Advanced model with optional multiple image inputs (up to 10) and shorthand size options (1K, 2K, 4K)
     - seedream-3.0-t2i: Text-to-image only model with explicit size dimensions (WIDTHxHEIGHT format)
-    - seededit-3.0-i2i: Image-to-image editing model requiring input image (WIDTHxHEIGHT format)
+    - seededit-3.0-i2i: Image-to-image editing model requiring single input image (WIDTHxHEIGHT format)
 
     Inputs:
         - model (str): Model selection (seedream-4.0, seedream-3.0-t2i, seededit-3.0-i2i)
         - prompt (str): Text prompt for image generation
-        - image (ImageArtifact): Input image (optional for v4, required for seededit i2i, hidden for t2i)
+        - image (ImageArtifact): Single input image (required for seededit-3.0-i2i, hidden for other models)
+        - images (list): Multiple input images (seedream-4.0 only, up to 10 images total)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
@@ -126,16 +127,28 @@ class SeedreamImageGeneration(DataNode):
             )
         )
 
-        # Optional image input for seedream-4.0 and seededit-3.0-i2i
+        # Optional single image input for seededit-3.0-i2i (backwards compatibility)
         self.add_parameter(
             Parameter(
                 name="image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
                 default_value=None,
-                tooltip="Input image (required for seededit-3.0-i2i, optional for seedream-4.0)",
+                tooltip="Input image (required for seededit-3.0-i2i)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
+            )
+        )
+
+        # Multiple image inputs for seedream-4.0 (up to 10 images)
+        self.add_parameter(
+            ParameterList(
+                name="images",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str", "list", "list[ImageArtifact]", "list[ImageUrlArtifact]"],
+                default_value=[],
+                tooltip="Input images for seedream-4.0 (up to 10 images total)",
+                allowed_modes={ParameterMode.INPUT},
+                ui_options={"expander": True, "display_name": "Input Images"},
             )
         )
 
@@ -211,6 +224,28 @@ class SeedreamImageGeneration(DataNode):
             )
         )
 
+        # Initialize parameter visibility based on default model (seedream-4.0)
+        self._initialize_parameter_visibility()
+
+    def _initialize_parameter_visibility(self) -> None:
+        """Initialize parameter visibility based on default model selection."""
+        default_model = self.get_parameter_value("model") or "seedream-4.0"
+        if default_model == "seedream-4.0":
+            # Hide single image input, show images list, hide guidance scale
+            self.hide_parameter_by_name("image")
+            self.show_parameter_by_name("images")
+            self.hide_parameter_by_name("guidance_scale")
+        elif default_model == "seedream-3.0-t2i":
+            # Hide image inputs (not supported), show guidance scale
+            self.hide_parameter_by_name("image")
+            self.hide_parameter_by_name("images")
+            self.show_parameter_by_name("guidance_scale")
+        elif default_model == "seededit-3.0-i2i":
+            # Show single image input (required), hide images list, show guidance scale
+            self.show_parameter_by_name("image")
+            self.hide_parameter_by_name("images")
+            self.show_parameter_by_name("guidance_scale")
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update size options and parameter visibility based on model selection."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
@@ -218,16 +253,18 @@ class SeedreamImageGeneration(DataNode):
 
             # Set appropriate parameters for each model
             if value == "seedream-4.0":
-                # Show image input (optional), hide guidance scale
-                self.show_parameter_by_name("image")
+                # Hide single image input, show images list, hide guidance scale
+                self.hide_parameter_by_name("image")
+                self.show_parameter_by_name("images")
                 self.hide_parameter_by_name("guidance_scale")
                 # Update size choices and set default to 2K for v4
                 default_size = "2K" if "2K" in new_choices else new_choices[0]
                 self._update_option_choices("size", new_choices, default_size)
 
             elif value == "seedream-3.0-t2i":
-                # Hide image input (not supported), show guidance scale
+                # Hide image inputs (not supported), show guidance scale
                 self.hide_parameter_by_name("image")
+                self.hide_parameter_by_name("images")
                 self.show_parameter_by_name("guidance_scale")
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
@@ -235,9 +272,15 @@ class SeedreamImageGeneration(DataNode):
                 self._update_option_choices("size", new_choices, "2048x2048")
 
             elif value == "seededit-3.0-i2i":
-                # Show image input (required), show guidance scale
+                # Show single image input (required), hide images list, show guidance scale
                 self.show_parameter_by_name("image")
+                self.hide_parameter_by_name("images")
                 self.show_parameter_by_name("guidance_scale")
+                # Update tooltip for primary image parameter
+                image_param = self.get_parameter_by_name("image")
+                if image_param:
+                    image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
+                    image_param.ui_options["display_name"] = "Input Image"
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
                 # Update size choices and set default to adaptive for seededit
@@ -248,6 +291,19 @@ class SeedreamImageGeneration(DataNode):
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate parameters before running the node."""
+        exceptions = []
+        model = self.get_parameter_value("model")
+
+        # Validate image count for seedream-4.0
+        if model == "seedream-4.0":
+            images = self.get_parameter_list_value("images") or []
+            if len(images) > 10:
+                exceptions.append(ValueError(f"{self.name}: seedream-4.0 supports maximum 10 images, got {len(images)}"))
+
+        return exceptions if exceptions else None
 
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
@@ -267,7 +323,7 @@ class SeedreamImageGeneration(DataNode):
             self._set_safe_defaults()
 
     def _get_parameters(self) -> dict[str, Any]:
-        return {
+        params = {
             "model": self.get_parameter_value("model") or "seedream-4.0",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": self.get_parameter_value("image"),
@@ -276,6 +332,12 @@ class SeedreamImageGeneration(DataNode):
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
         }
+
+        # Get image list for seedream-4.0
+        if params["model"] == "seedream-4.0":
+            params["images"] = self.get_parameter_list_value("images") or []
+
+        return params
 
     def _validate_api_key(self) -> str:
         api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
@@ -328,10 +390,16 @@ class SeedreamImageGeneration(DataNode):
 
         # Model-specific parameters
         if model == "seedream-4.0":
-            # Add input image if provided for v4
-            image_data = self._process_input_image(params["image"])
-            if image_data:
-                payload["image"] = image_data
+            # Add multiple images if provided for v4
+            images = params.get("images", [])
+            if images:
+                image_array = []
+                for img in images:
+                    image_data = self._process_input_image(img)
+                    if image_data:
+                        image_array.append(image_data)
+                if image_array:
+                    payload["image"] = image_array
 
         elif model == "seedream-3.0-t2i":
             # Add guidance scale for v3 t2i
@@ -416,7 +484,20 @@ class SeedreamImageGeneration(DataNode):
             # Redact base64 image data
             if "image" in sanitized_payload:
                 image_data = sanitized_payload["image"]
-                if isinstance(image_data, str) and image_data.startswith("data:image/"):
+                if isinstance(image_data, list):
+                    # Handle array of images
+                    redacted_images = []
+                    for img in image_data:
+                        if isinstance(img, str) and img.startswith("data:image/"):
+                            parts = img.split(",", 1)
+                            header = parts[0] if parts else "data:image/"
+                            b64_len = len(parts[1]) if len(parts) > 1 else 0
+                            redacted_images.append(f"{header},<base64 data length={b64_len}>")
+                        else:
+                            redacted_images.append(img)
+                    sanitized_payload["image"] = redacted_images
+                elif isinstance(image_data, str) and image_data.startswith("data:image/"):
+                    # Handle single image
                     parts = image_data.split(",", 1)
                     header = parts[0] if parts else "data:image/"
                     b64_len = len(parts[1]) if len(parts) > 1 else 0
