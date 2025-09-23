@@ -1,7 +1,8 @@
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 
-import diffusers
+import diffusers  # type: ignore[reportMissingImports]
+
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -22,7 +23,7 @@ class DiffusionPipelineTypePipelineParameters(ABC):
     @abstractmethod
     def get_config_kwargs(self) -> dict:
         raise NotImplementedError
-    
+
     @property
     @abstractmethod
     def pipeline_class(self) -> type[diffusers.DiffusionPipeline]:

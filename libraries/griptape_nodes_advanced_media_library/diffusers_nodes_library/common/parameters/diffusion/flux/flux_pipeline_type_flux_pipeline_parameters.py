@@ -1,12 +1,13 @@
 import logging
 
-import diffusers
-import torch
+import diffusers  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
 
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+    DiffusionPipelineTypePipelineParameters,
+)
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from griptape_nodes.exe_types.node_types import BaseNode
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import DiffusionPipelineTypePipelineParameters
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -55,11 +56,11 @@ class FluxPipelineTypeFluxPipelineParameters(DiffusionPipelineTypePipelineParame
             "text_encoder": self._node.get_parameter_value("text_encoder"),
             "text_encoder_2": self._node.get_parameter_value("text_encoder_2"),
         }
-    
+
     @property
     def pipeline_class(self) -> type:
         return diffusers.FluxPipeline
-    
+
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
         model_errors = self._model_repo_parameter.validate_before_node_run()
@@ -78,7 +79,7 @@ class FluxPipelineTypeFluxPipelineParameters(DiffusionPipelineTypePipelineParame
 
     def build_pipeline(self) -> diffusers.FluxPipeline:
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
-        # TODO: I don't know if this is usings the text encoders correctly?
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/2322
         return diffusers.FluxPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,

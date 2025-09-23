@@ -1,13 +1,16 @@
 import logging
 from typing import Any
 
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
+    DiffusionPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_parameters import (
+    FluxPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
-
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import DiffusionPipelineTypeParameters
-from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_parameters import FluxPipelineTypeParameters
-from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -47,12 +50,12 @@ class DiffusionPipelineBuilderParameters:
 
     def set_pipeline_type_parameters(self, provider: str) -> None:
         match provider:
-                case "Flux":
-                    self._pipeline_type_parameters = FluxPipelineTypeParameters(self._node)
-                case _:
-                    msg = f"Unsupported pipeline provider: {provider}"
-                    logger.error(msg)
-                    raise ValueError(msg)
+            case "Flux":
+                self._pipeline_type_parameters = FluxPipelineTypeParameters(self._node)
+            case _:
+                msg = f"Unsupported pipeline provider: {provider}"
+                logger.error(msg)
+                raise ValueError(msg)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         reset_provider = parameter.name == "provider"
@@ -63,9 +66,21 @@ class DiffusionPipelineBuilderParameters:
 
             sorted_parameters = ["provider"]
             sorted_parameters.extend(
-                [param.name for param in self._node.parameters if param.name not in ["provider", *HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]]
+                [
+                    param.name
+                    for param in self._node.parameters
+                    if param.name
+                    not in [
+                        "provider",
+                        *HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(),
+                        "pipeline",
+                        "logs",
+                    ]
+                ]
             )
-            sorted_parameters.extend([*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"])
+            sorted_parameters.extend(
+                [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
+            )
             self._node.reorder_elements(sorted_parameters)
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
@@ -77,10 +92,9 @@ class DiffusionPipelineBuilderParameters:
             raise ValueError(msg)
         return self._pipeline_type_parameters
 
-    
     def get_provider(self) -> str:
         return self._node.get_parameter_value("provider")
-    
+
     def get_config_kwargs(self) -> dict:
         return {
             **self.pipeline_type_parameters.get_config_kwargs(),
