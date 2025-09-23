@@ -17,7 +17,7 @@ from griptape_nodes.exe_types.node_types import ControlNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class DiffusionPipelineNode(ControlNode):
+class DiffusionPipelineRuntimeNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)

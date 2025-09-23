@@ -14,7 +14,7 @@ from griptape_nodes.traits.options import Options
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class PipelineBuilderParameters:
+class DiffusionPipelineBuilderParameters:
     def __init__(self, node: BaseNode):
         self._node = node
         self._huggingface_pipeline_parameter = HuggingFacePipelineParameter(node)

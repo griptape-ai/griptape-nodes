@@ -6,7 +6,7 @@ import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
-from diffusers_nodes_library.common.pipeline_builder_parameters import PipelineBuilderParameters
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_builder_parameters import DiffusionPipelineBuilderParameters
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
@@ -16,10 +16,10 @@ from griptape_nodes.exe_types.node_types import ControlNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class PipelineBuilder(ControlNode):
+class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.params = PipelineBuilderParameters(self)
+        self.params = DiffusionPipelineBuilderParameters(self)
         self.loras_params = FluxLorasParameter(self)
         self.log_params = LogParameter(self)
 
