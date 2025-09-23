@@ -1067,7 +1067,7 @@ class FlowManager:
         )
 
         return PackageNodeAsSerializedFlowResultSuccess(
-            result_details=f'Successfully packaged node "{node_name}" from flow "{target_flow_name}" as serialized flow.',
+            result_details=f'Successfully packaged node "{node_name}" from flow "{target_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
             serialized_flow_commands=placeholder_flow,
         )
 

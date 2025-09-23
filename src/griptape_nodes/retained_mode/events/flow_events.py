@@ -387,24 +387,30 @@ class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 @dataclass
 @PayloadRegistry.register
 class PackageNodeAsSerializedFlowRequest(RequestPayload):
-    """Package a single node as a complete flow with artificial StartFlow and EndFlow nodes.
+    """Package a single node as a complete flow with artificial start and end nodes.
 
     Creates a serialized flow where:
-    - StartFlow has output parameters matching the packaged node's incoming connections
-    - EndFlow has input parameters matching the packaged node's outgoing connections
-    - All connections are properly mapped through StartFlow -> Node -> EndFlow
+    - Start node has output parameters matching the packaged node's incoming connections
+    - End node has input parameters matching the packaged node's outgoing connections
+    - All connections are properly mapped through Start -> Node -> End
 
     Use when: Creating reusable components, exporting nodes for templates,
     building sub-workflows from existing nodes, creating packaged functionality.
 
     Args:
         node_name: Name of the node to package as a flow (None for current context node)
+        start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
+        end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
+        start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
 
     Results: PackageNodeAsSerializedFlowResultSuccess (with serialized flow) | PackageNodeAsSerializedFlowResultFailure (node not found, packaging error)
     """
 
     # If None is passed, assumes we're packaging the node in the Current Context
     node_name: str | None = None
+    start_node_type: str = "StartFlow"
+    end_node_type: str = "EndFlow"
+    start_end_specific_library_name: str = "Griptape Nodes Library"
 
 
 @dataclass
