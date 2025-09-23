@@ -1733,12 +1733,15 @@ class FlowManager:
             if isinstance(resolution_machine, ParallelResolutionMachine):
                 self._global_dag_builder.add_node_with_dependencies(node)
                 resolution_machine.context.dag_builder = self._global_dag_builder
+            # Send a GetFlowStateRequest
+            GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow.name))
             try:
                 await resolution_machine.resolve_node(node)
             except Exception as e:
                 if self.check_for_existing_running_flow():
                     self.cancel_flow_run()
                     raise RuntimeError(e) from e
+            GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow.name))
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
@@ -1817,7 +1820,10 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            involved_nodes = set()
+            for graph in self._global_dag_builder.graphs.values():
+                involved_nodes.update(graph.nodes())
+            involved_nodes = list(involved_nodes)
             return current_control_nodes, current_resolving_nodes, involved_nodes if len(involved_nodes) != 0 else None
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
