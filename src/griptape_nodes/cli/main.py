@@ -10,6 +10,7 @@ from rich.console import Console
 sys.path.append(str(Path.cwd()))
 
 from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
+from griptape_nodes.cli.commands.engine import _auto_update_self
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 console = Console()
@@ -47,9 +48,13 @@ def main(
         console.print(f"[bold green]{version_string}[/bold green]")
         raise typer.Exit
 
+    # Run auto-update check for any command (unless disabled)
+    if not no_update:
+        _auto_update_self()
+
     if ctx.invoked_subcommand is None:
         # Default to engine command when no subcommand is specified
-        engine.engine_command(no_update=no_update)
+        engine.engine_command()
 
 
 if __name__ == "__main__":

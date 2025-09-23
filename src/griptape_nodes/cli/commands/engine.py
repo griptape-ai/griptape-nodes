@@ -1,6 +1,5 @@
 """Engine command for Griptape Nodes CLI."""
 
-import typer
 from rich.prompt import Confirm
 
 from griptape_nodes.app import start_app
@@ -21,19 +20,13 @@ from griptape_nodes.cli.shared import (
 from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
 
-def engine_command(
-    no_update: bool = typer.Option(False, "--no-update", help="Skip the auto-update check."),  # noqa: FBT001
-) -> None:
+def engine_command() -> None:
     """Run the Griptape Nodes engine."""
-    _start_engine(no_update=no_update)
+    _start_engine()
 
 
-def _start_engine(*, no_update: bool = False) -> None:
-    """Starts the Griptape Nodes engine.
-
-    Args:
-        no_update (bool): If True, skips the auto-update check.
-    """
+def _start_engine() -> None:
+    """Starts the Griptape Nodes engine."""
     if not CONFIG_DIR.exists():
         # Default init flow if there is no config directory
         console.print("[bold green]Config directory not found. Initializing...[/bold green]")
@@ -50,10 +43,6 @@ def _start_engine(*, no_update: bool = False) -> None:
                 bucket_name=ENV_GTN_BUCKET_NAME,
             )
         )
-
-    # Confusing double negation -- If `no_update` is set, we want to skip the update
-    if not no_update:
-        _auto_update_self()
 
     console.print("[bold green]Starting Griptape Nodes engine...[/bold green]")
     start_app()
