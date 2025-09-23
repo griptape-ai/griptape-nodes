@@ -191,6 +191,9 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
         )
+        event_manager.assign_manager_to_request_type(
+            PackageNodeAsSerializedFlowRequest, self.on_package_node_as_serialized_flow_request
+        )
         event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
 
         self._name_to_parent_name = {}
