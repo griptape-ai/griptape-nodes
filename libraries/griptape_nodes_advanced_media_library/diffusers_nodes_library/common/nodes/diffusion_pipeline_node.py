@@ -30,21 +30,22 @@ class DiffusionPipelineNode(ControlNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         reset_runtime_parameters = parameter.name == "diffusion_pipeline"
         if reset_runtime_parameters:
-            if hasattr(self.pipe_params, 'runtime_parameters'):
+            if hasattr(self.pipe_params, '_runtime_parameters') and self.pipe_params._runtime_parameters is not None:
                 self.pipe_params.runtime_parameters.remove_input_parameters()
+                self.pipe_params.runtime_parameters.remove_output_parameters()
 
-        params_before = len(self.parameters)
         self.pipe_params.after_value_set(parameter, value)
 
         if reset_runtime_parameters:
-            if hasattr(self.pipe_params, 'runtime_parameters'):
-                insert_position = 1
-                new_params = [p for p in self.parameters[params_before:]]
-                for param in new_params:
-                    self.move_element_to_position(param.name, insert_position)
-                    insert_position += 1
+            sorted_parameters = ["diffusion_pipeline"]
+            for parameter in self.parameters:
+                if parameter.name not in {"diffusion_pipeline", "loras", "logs"}:
+                    sorted_parameters.append(parameter.name)
+            sorted_parameters.extend(["loras", "logs"])
+            self.reorder_elements(sorted_parameters)
 
-        self.pipe_params.runtime_parameters.after_value_set(parameter, value)
+        if hasattr(self.pipe_params, '_runtime_parameters') and self.pipe_params._runtime_parameters is not None:
+            self.pipe_params.runtime_parameters.after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()

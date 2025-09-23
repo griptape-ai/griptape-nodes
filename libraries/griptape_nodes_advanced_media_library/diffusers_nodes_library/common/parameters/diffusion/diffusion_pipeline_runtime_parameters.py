@@ -73,6 +73,9 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._seed_parameter.remove_input_parameters()
         self._remove_input_parameters()
 
+    def remove_output_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("output_image")
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self._seed_parameter.after_value_set(parameter, value)
 
