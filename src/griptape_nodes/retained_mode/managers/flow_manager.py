@@ -1744,8 +1744,11 @@ class FlowManager:
             if isinstance(resolution_machine, ParallelResolutionMachine):
                 self._global_dag_builder.add_node_with_dependencies(node)
                 resolution_machine.context.dag_builder = self._global_dag_builder
-            # Send a GetFlowStateRequest
-            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+                involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            else:
+                involved_nodes = list(flow.nodes.keys())
+            # Send a InvolvedNodesRequest
+
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
