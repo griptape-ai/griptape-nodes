@@ -92,6 +92,7 @@ class DiffusionPipelineBuilderParameters:
         if parameter.name == "provider":
             current_provider = self._node.get_parameter_value("provider")
             self.did_provider_change = current_provider != value
+        self.pipeline_type_parameters.before_value_set(parameter, value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "provider" and self.did_provider_change:
