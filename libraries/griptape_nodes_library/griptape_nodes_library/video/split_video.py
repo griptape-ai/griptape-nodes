@@ -621,14 +621,15 @@ If no title is provided, just use "Segment X:" format.
 
     def process(self) -> AsyncResult[None]:
         """Executes the main logic of the node asynchronously."""
+        # Clear the parameter list
+        self._clear_list()
+
+        # Get the video and timecodes
         video = self.parameter_values.get("video")
         timecodes = self.parameter_values.get("timecodes", "")
 
         # Initialize logs
         self.append_value_to_parameter("logs", "[Processing video split..]\n")
-
-        # Clear the parameter list
-        self._clear_list()
 
         try:
             # Convert to video artifact
