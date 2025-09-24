@@ -78,6 +78,3 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
         }
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        return None

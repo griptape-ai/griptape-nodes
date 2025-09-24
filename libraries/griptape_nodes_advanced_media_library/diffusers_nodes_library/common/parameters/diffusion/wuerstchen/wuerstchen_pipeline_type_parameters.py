@@ -18,7 +18,6 @@ class WuerstchenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
         self._pipeline_type_pipeline_params: DiffusionPipelineTypePipelineParameters
-        self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
 
     @property
     def pipeline_types(self) -> list[str]:

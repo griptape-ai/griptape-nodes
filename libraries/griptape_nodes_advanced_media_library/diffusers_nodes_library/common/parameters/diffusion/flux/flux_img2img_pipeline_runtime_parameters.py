@@ -98,6 +98,6 @@ class FluxImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
             "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
-            "image": self.get_input_image_pil(),
+            "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
