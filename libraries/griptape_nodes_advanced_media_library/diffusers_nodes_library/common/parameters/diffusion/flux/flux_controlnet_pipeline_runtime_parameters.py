@@ -120,9 +120,7 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
         super().after_value_set(parameter, value)
         if parameter.name == "pipeline":
             pipe = model_cache.get_pipeline(value)
-            # TODO: CJ, is this actual real code?
-            logger.info(f"Pipeline controlnet: {pipe.__dict__}")
-            if pipe is not None and hasattr(pipe, "controlnet") and pipe.controlnet == "Union Pro 2":
+            if pipe is not None and hasattr(pipe, "controlnet") and pipe.controlnet.config._name_or_path == "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0":
                 self._node.hide_parameter_by_name("control_mode")
 
     def _get_pipe_kwargs(self) -> dict:
