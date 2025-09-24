@@ -13,9 +13,7 @@ from diffusers_nodes_library.pipelines.flux.controlnet.union_one_flux_control_ne
     UnionOneFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
-    optimize_flux_pipeline,
-)  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
@@ -78,7 +76,7 @@ class UnionProFluxControlNetPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(pipe=pipe)
+            safe_optimize_flux_pipeline(pipe)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),

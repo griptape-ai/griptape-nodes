@@ -55,6 +55,10 @@ def init_command(  # noqa: PLR0913
         bool,
         typer.Option(help="Run init in non-interactive mode (no prompts)."),
     ] = False,
+    hf_token: Annotated[
+        str | None,
+        typer.Option(help="Set the Hugging Face token for downloading gated models."),
+    ] = None,
     config: Annotated[
         list[str] | None,
         typer.Option(
@@ -83,6 +87,7 @@ def init_command(  # noqa: PLR0913
             secret_values=secret_values,
             libraries_sync=libraries_sync,
             bucket_name=bucket_name,
+            hf_token=hf_token,
         )
     )
 
@@ -128,6 +133,7 @@ def _run_init_configuration(config: InitConfig) -> None:
     _handle_workspace_config(config)
     _handle_storage_backend_config(config)
     _handle_bucket_config(config)
+    _handle_hf_token_config(config)
     _handle_advanced_library_config(config)
     _handle_arbitrary_configs(config)
 
@@ -191,6 +197,25 @@ def _handle_bucket_config(config: InitConfig) -> str | None:
         console.print(f"[bold green]Bucket ID set to: {bucket_id}[/bold green]")
 
     return bucket_id
+
+
+def _handle_hf_token_config(config: InitConfig) -> str | None:
+    """Handle Hugging Face token configuration step."""
+    hf_token = None
+
+    if config.interactive:
+        # First ask if they want to configure an HF token
+        configure_hf_token = _prompt_for_hf_token_configuration()
+        if configure_hf_token:
+            hf_token = _prompt_for_hf_token(default_hf_token=config.hf_token)
+    elif config.hf_token is not None:
+        hf_token = config.hf_token
+
+    if hf_token is not None:
+        secrets_manager.set_secret("HF_TOKEN", hf_token)
+        console.print("[bold green]Hugging Face token set[/bold green]")
+
+    return hf_token
 
 
 def _handle_advanced_library_config(config: InitConfig) -> bool | None:
@@ -511,6 +536,69 @@ def _create_new_bucket(bucket_name: str) -> str:
     else:
         console.print(f"[bold green]Successfully created bucket '{bucket_name}' with ID: {bucket_id}[/bold green]")
         return bucket_id
+
+
+def _prompt_for_hf_token_configuration() -> bool:
+    """Prompts the user whether to configure a Hugging Face token."""
+    # Check if there's already an HF token configured
+    current_hf_token = secrets_manager.get_secret("HF_TOKEN", should_error_on_not_found=False)
+
+    if current_hf_token:
+        explainer = """[bold cyan]Hugging Face Token Configuration[/bold cyan]
+    You currently have a Hugging Face token configured.
+
+    Hugging Face tokens are used to access gated models from the Hugging Face Hub, such as:
+    - Meta's Llama models
+    - black-forest-labs/FLUX.1-dev
+    - Other restricted or premium models
+
+    Would you like to update your Hugging Face token or keep the current one?"""
+        prompt_text = "Update Hugging Face token?"
+        default_value = False
+    else:
+        explainer = """[bold cyan]Hugging Face Token Configuration[/bold cyan]
+    Would you like to configure a Hugging Face token?
+
+    Hugging Face tokens are used by the model manager to download gated models from the Hugging Face Hub, such as:
+    - Meta's Llama models
+    - black-forest-labs/FLUX.1-dev
+    - Other restricted or premium models
+
+    If you don't plan to use gated models, you can skip this step.
+    You can get a token from https://huggingface.co/settings/tokens
+
+    You can always configure a token later by running the initialization process again."""
+        prompt_text = "Configure Hugging Face token?"
+        default_value = False
+
+    console.print(Panel(explainer, expand=False))
+    return Confirm.ask(prompt_text, default=default_value)
+
+
+def _prompt_for_hf_token(default_hf_token: str | None = None) -> str | None:
+    """Prompts the user for their Hugging Face token."""
+    if default_hf_token is None:
+        default_hf_token = secrets_manager.get_secret("HF_TOKEN", should_error_on_not_found=False)
+
+    explainer = """[bold cyan]Hugging Face Token[/bold cyan]
+    Please enter your Hugging Face token to enable downloading of gated models.
+
+    To get a token:
+    1. Go to https://huggingface.co/settings/tokens
+    2. Create a new token with 'Read' permissions
+    3. Copy and paste the token here
+
+    You can leave this blank to skip token configuration."""
+    console.print(Panel(explainer, expand=False))
+
+    hf_token = Prompt.ask(
+        "Hugging Face Token (optional)",
+        default=default_hf_token or "",
+        show_default=False,
+    )
+
+    # Return None if empty string
+    return hf_token if hf_token.strip() else None
 
 
 def _parse_key_value_pairs(pairs: list[str] | None) -> dict[str, Any] | None:

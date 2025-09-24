@@ -22,6 +22,7 @@ class InitConfig:
     secret_values: dict[str, str] | None = None
     libraries_sync: bool | None = None
     bucket_name: str | None = None
+    hf_token: str | None = None
 
 
 # Initialize console
