@@ -59,6 +59,9 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             raise RuntimeError(error_msg)
         return pipeline
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return self.pipe_params.runtime_parameters.validate_before_node_run()
+
     async def aprocess(self) -> None:
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()

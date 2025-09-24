@@ -145,3 +145,6 @@ class DiffusionPipelineRuntimeParameters(ABC):
         image_artifact = pil_to_image_artifact(output_image_pil)
         self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return None
