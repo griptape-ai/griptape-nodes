@@ -20,6 +20,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineRuntimeNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.did_pipeline_change = False
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
 
@@ -29,8 +30,13 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
 
+    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "pipeline":
+            current_pipeline = self.get_parameter_value("pipeline")
+            self.did_pipeline_change = current_pipeline != value
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_runtime_parameters = parameter.name == "pipeline"
+        reset_runtime_parameters = parameter.name == "pipeline" and self.did_pipeline_change
         if reset_runtime_parameters:
             self.pipe_params.runtime_parameters.remove_input_parameters()
             self.pipe_params.runtime_parameters.remove_output_parameters()
