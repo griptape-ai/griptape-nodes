@@ -571,9 +571,6 @@ If no title is provided, just use "Segment X:" format.
         detected_format: str,
     ) -> None:
         """Performs the synchronous video splitting operation."""
-        # First clear the parameter list
-        self._clear_list()
-
         try:
             self.append_value_to_parameter("logs", f"Splitting video into {len(segments)} segments\n")
 
@@ -629,6 +626,9 @@ If no title is provided, just use "Segment X:" format.
 
         # Initialize logs
         self.append_value_to_parameter("logs", "[Processing video split..]\n")
+
+        # Clear the parameter list
+        self._clear_list()
 
         try:
             # Convert to video artifact
