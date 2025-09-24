@@ -106,6 +106,18 @@ class ResourceInstance(ABC):
         """Get the current lock owner, if any."""
         return self._locked_by
 
+    def force_unlock(self) -> None:
+        """Force unlock this resource instance (for administrative operations)."""
+        self._locked_by = None
+
+    def get_all_capabilities_and_current_values(self) -> dict[str, Any]:
+        """Get the complete capabilities dictionary with current values.
+
+        This method returns all capability keys and their current values, which may
+        include real-time queries for volatile resources that override get_capability_value().
+        """
+        return {key: self.get_capability_value(key) for key in self._capabilities}
+
     def is_compatible_with(self, requirements: Requirements | None) -> bool:
         """Check if this instance can satisfy the requirements."""
         if requirements is None:

@@ -152,7 +152,7 @@ class ResourceManager:
                 )
 
             owner = instance.get_lock_owner()
-            instance._locked_by = None  # Force unlock
+            instance.force_unlock()
 
         try:
             instance.free()
@@ -267,7 +267,7 @@ class ResourceManager:
             resource_type=instance.get_resource_type(),
             instance_id=request.instance_id,
             owner_of_lock=instance.get_lock_owner(),
-            capabilities=instance._capabilities,
+            capabilities=instance.get_all_capabilities_and_current_values(),
         )
 
         return GetResourceInstanceStatusResultSuccess(
