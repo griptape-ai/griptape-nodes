@@ -861,7 +861,7 @@ class BaseNode(ABC):
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
 
-    def reorder_elements(self, element_order: list[str | int]) -> None:
+    def reorder_elements(self, element_order: list[str] | list[int] | list[str | int]) -> None:
         """Reorder the elements of this node.
 
         Args:
