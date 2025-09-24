@@ -1802,7 +1802,7 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:  # noqa: ARG002
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
         if self._global_control_flow_machine is None:
             return None, None, None
         control_flow_context = self._global_control_flow_machine.context
@@ -1817,12 +1817,16 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            if self._global_single_node_resolution:
+                involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            else:
+                involved_nodes = list(flow.nodes.keys())
             return current_control_nodes, current_resolving_nodes, involved_nodes if len(involved_nodes) != 0 else None
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else None, None
+            involved_nodes = list(flow.nodes.keys())
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else None, involved_nodes
         return current_control_nodes, None, None
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
