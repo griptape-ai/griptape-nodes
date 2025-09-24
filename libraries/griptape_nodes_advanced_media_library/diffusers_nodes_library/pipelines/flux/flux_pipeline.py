@@ -9,16 +9,14 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
-    optimize_flux_pipeline,
-)  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
-logger = logging.getLogger("diffusers_nodes_library")
+logger = logging.getLogger("griptape_nodes")
 
 
 class FluxPipeline(ControlNode):
@@ -41,6 +39,7 @@ class FluxPipeline(ControlNode):
 
     def preprocess(self) -> None:
         self.pipe_params.preprocess()
+        self.log_params.clear_logs()
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
@@ -61,7 +60,7 @@ class FluxPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(pipe=pipe)
+            safe_optimize_flux_pipeline(pipe)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),

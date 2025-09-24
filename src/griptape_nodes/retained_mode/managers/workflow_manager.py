@@ -24,7 +24,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry, WorkflowShape
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -1201,6 +1201,19 @@ class WorkflowManager:
             if serialized_flow_commands.referenced_workflows:
                 workflows_referenced = list(serialized_flow_commands.referenced_workflows)
 
+            # Extract workflow shape if possible
+            workflow_shape = None
+            try:
+                workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+                workflow_shape = WorkflowShape(
+                    inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"]
+                )
+            except ValueError:
+                # If we can't extract workflow shape, the user did not specify Start and End nodes,
+                # meaning it can't be invoked by other workflows or published. That's their prerogative.
+                # Continue without it.
+                pass
+
             workflow_metadata = self._generate_workflow_metadata(
                 file_name=file_name,
                 engine_version=engine_version,
@@ -1208,6 +1221,7 @@ class WorkflowManager:
                 node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
                 workflows_referenced=workflows_referenced,
                 prior_workflow=prior_workflow,
+                workflow_shape=workflow_shape,
             )
             if workflow_metadata is None:
                 details = f"Failed to generate metadata for workflow '{file_name}'."
@@ -1331,6 +1345,7 @@ class WorkflowManager:
             self._generate_workflow_execution(
                 flow_name=top_level_flow_name,
                 import_recorder=import_recorder,
+                workflow_metadata=workflow_metadata,
             )
             if top_level_flow_name
             else None
@@ -1469,6 +1484,7 @@ class WorkflowManager:
         node_libraries_referenced: list[LibraryNameAndVersion],
         workflows_referenced: list[str] | None = None,
         prior_workflow: Workflow | None = None,
+        workflow_shape: WorkflowShape | None = None,
     ) -> WorkflowMetadata | None:
         # Preserve branched workflow information if it exists
         branched_from = None
@@ -1484,6 +1500,7 @@ class WorkflowManager:
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
             branched_from=branched_from,
+            workflow_shape=workflow_shape,
         )
 
         return workflow_metadata
@@ -1516,11 +1533,13 @@ class WorkflowManager:
             toml_doc = tomlkit.document()
             toml_doc.add("dependencies", tomlkit.item([]))
             griptape_tool_table = tomlkit.table()
-            metadata_dict = workflow_metadata.model_dump()
+            # Strip out the Nones since TOML doesn't like those
+            # WorkflowShape is now serialized as JSON string by Pydantic field_serializer;
+            # this preserves the nil/null/None values that we WANT, but for all of the
+            # Python-related Nones, TOML will flip out if they are not stripped.
+            metadata_dict = workflow_metadata.model_dump(exclude_none=True)
             for key, value in metadata_dict.items():
-                # Strip out the Nones since TOML doesn't like those.
-                if value is not None:
-                    griptape_tool_table.add(key=key, value=value)
+                griptape_tool_table.add(key=key, value=value)
             toml_doc["tool"] = tomlkit.table()
             toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
@@ -1545,13 +1564,19 @@ class WorkflowManager:
         self,
         flow_name: str,
         import_recorder: ImportRecorder,
+        workflow_metadata: WorkflowMetadata,
     ) -> list[ast.AST] | None:
         """Generates execute_workflow(...) and the __main__ guard."""
-        try:
-            workflow_shape = self.extract_workflow_shape(flow_name)
-        except ValueError:
+        # Use workflow shape from metadata if available, otherwise skip execution block
+        if workflow_metadata.workflow_shape is None:
             logger.info("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
             return None
+
+        # Convert WorkflowShape to dict format expected by the rest of the method
+        workflow_shape = {
+            "input": workflow_metadata.workflow_shape.inputs,
+            "output": workflow_metadata.workflow_shape.outputs,
+        }
 
         # === imports ===
         import_recorder.add_import("argparse")
