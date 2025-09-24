@@ -1615,6 +1615,9 @@ class FlowManager:
             if self.check_for_existing_running_flow():
                 self.cancel_flow_run()
             raise
+        GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
 
     def check_for_existing_running_flow(self) -> bool:
         if self._global_control_flow_machine is None:
@@ -1742,6 +1745,12 @@ class FlowManager:
                 self._global_dag_builder.add_node_with_dependencies(node)
                 resolution_machine.context.dag_builder = self._global_dag_builder
             # Send a GetFlowStateRequest
+            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
+            )
             try:
                 await resolution_machine.resolve_node(node)
             except Exception as e:
@@ -1751,6 +1760,11 @@ class FlowManager:
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[]))
+                    )
+                )
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
@@ -1808,7 +1822,7 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:  # noqa: ARG002
         if not self.check_for_existing_running_flow():
             return None, None
         if self._global_control_flow_machine is None:

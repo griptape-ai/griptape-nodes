@@ -536,10 +536,6 @@ class ErrorState(State):
 class DagCompleteState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        # Emit empty involved nodes list to indicate DAG execution complete
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
         # Clear the DAG builder so we don't have any leftover nodes in node_to_reference.
         if context.dag_builder is not None:
             context.dag_builder.clear()
@@ -565,7 +561,6 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         """Execute the DAG structure using the existing DagBuilder."""
         if self.context.dag_builder is None:
             self.context.dag_builder = GriptapeNodes.FlowManager().global_dag_builder
-        ExecuteDagState._emit_involved_nodes_update(self.context)
         await self.start(ExecuteDagState)
 
     def change_debug_mode(self, *, debug_mode: bool) -> None:

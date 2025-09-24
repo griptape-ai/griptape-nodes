@@ -229,11 +229,6 @@ class CompleteState(State):
                     )
                 )
             )
-
-        # Emit empty involved nodes list to indicate execution complete
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
-        )
         logger.info("Flow is complete.")
         return None
 
@@ -269,10 +264,10 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         flow = flow_manager.get_flow_by_name(self._context.flow_name)
         involved_nodes = list(flow.nodes.keys())
         GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
-                )
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
             )
+        )
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:
