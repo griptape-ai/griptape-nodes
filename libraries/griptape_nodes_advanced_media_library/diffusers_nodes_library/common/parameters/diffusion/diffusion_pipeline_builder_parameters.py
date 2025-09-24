@@ -38,6 +38,7 @@ class DiffusionPipelineBuilderParameters:
         self.provider_choices = ["Flux", "Allegro", "Amused", "AudioLDM", "Stable Diffusion", "WAN", "Wuerstchen"]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
+        self.did_provider_change = False
         self.set_pipeline_type_parameters(self.provider_choices[0])
 
     def add_input_parameters(self) -> None:
@@ -87,9 +88,13 @@ class DiffusionPipelineBuilderParameters:
                 logger.error(msg)
                 raise ValueError(msg)
 
+    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "provider":
+            current_provider = self._node.get_parameter_value("provider")
+            self.did_provider_change = current_provider != value
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_provider = parameter.name == "provider" and self.get_provider() != value
-        if reset_provider:
+        if parameter.name == "provider" and self.did_provider_change:
             self.pipeline_type_parameters.remove_input_parameters()
             self.set_pipeline_type_parameters(value)
             self.pipeline_type_parameters.add_input_parameters()
@@ -113,6 +118,7 @@ class DiffusionPipelineBuilderParameters:
                 [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
             )
             self._node.reorder_elements(sorted_parameters)
+        self._node.print_ui_element_tree()
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     @property

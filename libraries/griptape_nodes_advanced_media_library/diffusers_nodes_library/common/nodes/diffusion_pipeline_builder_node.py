@@ -62,6 +62,10 @@ class DiffusionPipelineBuilderNode(ControlNode):
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
 
+    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+        self.params.before_value_set(parameter, value)
+        return super().before_value_set(parameter, value)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.params.after_value_set(parameter, value)
         self.huggingface_pipeline_params.after_value_set(parameter, value)
