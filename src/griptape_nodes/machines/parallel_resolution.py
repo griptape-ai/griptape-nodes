@@ -193,7 +193,7 @@ class ExecuteDagState(State):
 
         if flow_manager.global_single_node_resolution:
             # Clean up nodes from emptied graphs in single node resolution mode
-            if network_value and context.dag_builder is not None:
+            if not network_value and context.dag_builder is not None:
                 context.dag_builder.cleanup_empty_graph_nodes(network_name)
                 GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=context.flow_name))
             return True
