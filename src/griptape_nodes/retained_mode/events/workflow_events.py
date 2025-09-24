@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Literal
+from datetime import datetime
+from typing import TYPE_CHECKING, Literal
 
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -10,6 +11,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.flow_events import SerializedFlowCommands
 
 
 @dataclass
@@ -632,3 +636,52 @@ class RegisterWorkflowsFromConfigResultSuccess(WorkflowNotAlteredMixin, ResultPa
 @PayloadRegistry.register
 class RegisterWorkflowsFromConfigResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Workflow registration from configuration failed. Common causes: configuration not found, invalid paths, registration errors."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
+    """Save a workflow file from serialized flow commands without registry overhead.
+
+    Use when: Creating workflow files from user-supplied subsets of existing workflows,
+    exporting partial workflows, creating standalone workflow files without registration.
+
+    Args:
+        serialized_flow_commands: The serialized commands representing the workflow structure
+        file_name: Name for the workflow file (without .py extension)
+        creation_date: Optional creation date for the workflow metadata (defaults to current time if not provided)
+        image_path: Optional path to workflow image/thumbnail
+        execution_flow_name: Optional flow name to use for execution code (defaults to file_name if not provided)
+        branched_from: Optional branched from information to preserve workflow lineage
+        workflow_shape: Optional workflow shape defining inputs and outputs for external callers
+
+    Results: SaveWorkflowFileFromSerializedFlowResultSuccess (with file path) | SaveWorkflowFileFromSerializedFlowResultFailure (save error)
+    """
+
+    serialized_flow_commands: "SerializedFlowCommands"
+    file_name: str
+    creation_date: datetime | None = None
+    image_path: str | None = None
+    execution_flow_name: str | None = None
+    branched_from: str | None = None
+    workflow_shape: WorkflowShape | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveWorkflowFileFromSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow file saved successfully from serialized flow commands.
+
+    Args:
+        file_path: Path where the workflow file was written
+        workflow_metadata: The metadata that was generated for the workflow
+    """
+
+    file_path: str
+    workflow_metadata: WorkflowMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class SaveWorkflowFileFromSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow file save failed. Common causes: file system error, permission denied, invalid serialized commands."""
