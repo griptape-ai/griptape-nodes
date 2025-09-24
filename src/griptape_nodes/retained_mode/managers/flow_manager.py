@@ -1564,10 +1564,24 @@ class FlowManager:
             end_node_result.end_node_commands,
         ]
 
+        # Create a CreateFlowRequest for the packaged flow so that it can
+        # run as a standalone workflow.
+        package_flow_name = (
+            f"Packaged_{serialized_package_result.serialized_node_commands.create_node_command.node_name}"
+        )
+        packaged_flow_metadata = {}  # Keep it simple until we have reason to populate it
+
+        create_packaged_flow_request = CreateFlowRequest(
+            parent_flow_name=None,  # Standalone flow
+            flow_name=package_flow_name,
+            set_as_new_context=False,  # Let deserializer decide
+            metadata=packaged_flow_metadata,
+        )
+
         # Build the complete SerializedFlowCommands
         return SerializedFlowCommands(
             node_libraries_used=node_libraries_used,
-            flow_initialization_command=None,
+            flow_initialization_command=create_packaged_flow_request,
             serialized_node_commands=all_serialized_nodes,
             serialized_connections=all_connections,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
