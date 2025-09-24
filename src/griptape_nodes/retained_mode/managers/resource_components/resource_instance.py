@@ -11,6 +11,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+# Type aliases for resource requirements
+RequirementValue = (
+    Any  # Simple values: "present", 8, True
+    | tuple[Any, str]  # Tuple format: (8, ">"), ("cuda", "present")
+    | tuple[Any, Comparator]  # Enum format: (8, Comparator.GREATER_THAN)
+)
+Requirements = dict[str, RequirementValue]
+
 
 class ResourceInstance(ABC):
     """Base class for resource instances that can be locked and managed."""
@@ -98,7 +106,7 @@ class ResourceInstance(ABC):
         """Get the current lock owner, if any."""
         return self._locked_by
 
-    def is_compatible_with(self, requirements: dict[str, Any] | None) -> bool:
+    def is_compatible_with(self, requirements: Requirements | None) -> bool:
         """Check if this instance can satisfy the requirements."""
         if requirements is None:
             return True

@@ -3,7 +3,10 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.resource_components.capability_field import CapabilityField
-    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import ResourceInstance
+    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
+        Requirements,
+        ResourceInstance,
+    )
 
 
 class ResourceType(ABC):
@@ -18,7 +21,7 @@ class ResourceType(ABC):
         """Create a resource instance with the specified capabilities."""
 
     def select_best_compatible_instance(
-        self, compatible_instances: list["ResourceInstance"], _requirements: dict[str, Any] | None = None
+        self, compatible_instances: list["ResourceInstance"], _requirements: "Requirements | None" = None
     ) -> "ResourceInstance | None":
         """Select the best instance from pre-filtered compatible instances.
 

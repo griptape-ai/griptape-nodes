@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
     from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceStatus
 
@@ -146,7 +147,7 @@ class AcquireResourceInstanceLockRequest(RequestPayload):
 
     owner_id: str
     resource_type_name: str
-    requirements: dict[str, Any] | None = None
+    requirements: "Requirements | None" = None
 
 
 @dataclass
@@ -209,7 +210,7 @@ class ListCompatibleResourceInstancesRequest(RequestPayload):
     """
 
     resource_type_name: str
-    requirements: dict[str, Any] | None = None
+    requirements: "Requirements | None" = None
     include_locked: bool = False
 
 

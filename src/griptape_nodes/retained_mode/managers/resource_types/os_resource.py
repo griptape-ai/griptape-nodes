@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from griptape_nodes.retained_mode.managers.resource_components.capability_field import (
     CapabilityField,
@@ -7,6 +7,9 @@ from griptape_nodes.retained_mode.managers.resource_components.capability_field 
 )
 from griptape_nodes.retained_mode.managers.resource_components.resource_instance import ResourceInstance
 from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -72,7 +75,7 @@ class OSResourceType(ResourceType):
         return OSInstance(resource_type=self, instance_id_prefix="os", capabilities=capabilities)
 
     def select_best_compatible_instance(
-        self, compatible_instances: list[ResourceInstance], _requirements: dict[str, Any] | None = None
+        self, compatible_instances: list[ResourceInstance], _requirements: "Requirements | None" = None
     ) -> ResourceInstance | None:
         """Select the best OS instance from compatible ones.
 
