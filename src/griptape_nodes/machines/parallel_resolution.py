@@ -186,19 +186,21 @@ class ExecuteDagState(State):
     ) -> bool:
         """Check if control flow processing should be skipped."""
         # Get network once to avoid duplicate lookups
-        network_value = False
-        if context.dag_builder is not None:
-            network = context.dag_builder.graphs.get(network_name, None)
-            network_value = network is not None and len(network) > 0
-
+        if context.dag_builder is None:
+            msg = "DAG builder is not initialized"
+            raise ValueError(msg)
+        network = context.dag_builder.graphs.get(network_name, None)
+        if network is None:
+            msg = f"Network {network_name} not found in DAG builder"
+            raise ValueError(msg)
         if flow_manager.global_single_node_resolution:
             # Clean up nodes from emptied graphs in single node resolution mode
-            if not network_value and context.dag_builder is not None:
+            if len(network) == 0 and context.dag_builder is not None:
                 context.dag_builder.cleanup_empty_graph_nodes(network_name)
                 GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=context.flow_name))
             return True
 
-        return bool(network_value or node.stop_flow)
+        return bool(len(network) > 0 or node.stop_flow)
 
     @staticmethod
     def _process_next_control_node(
