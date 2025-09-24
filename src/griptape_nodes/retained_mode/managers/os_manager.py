@@ -374,7 +374,7 @@ class OSManager:
                     try:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
-                        is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        _is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
                         mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(

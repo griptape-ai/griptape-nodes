@@ -14,7 +14,6 @@ class SeedParameter:
         self._node.add_parameter(
             Parameter(
                 name="randomize_seed",
-                input_types=["bool"],
                 type="bool",
                 output_type="bool",
                 tooltip="randomize the seed on each run",
@@ -24,12 +23,15 @@ class SeedParameter:
         self._node.add_parameter(
             Parameter(
                 name="seed",
-                input_types=["int"],
                 type="int",
                 tooltip="seed",
                 default_value=42,
             )
         )
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("randomize_seed")
+        self._node.remove_parameter_element_by_name("seed")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name != "randomize_seed":
