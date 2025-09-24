@@ -63,10 +63,10 @@ class DiffusionPipelineBuilderNode(ControlNode):
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name != "pipeline":
-            self.set_config_hash()
         self.params.after_value_set(parameter, value)
         self.huggingface_pipeline_params.after_value_set(parameter, value)
+        if parameter.name != "pipeline":
+            self.set_config_hash()
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
