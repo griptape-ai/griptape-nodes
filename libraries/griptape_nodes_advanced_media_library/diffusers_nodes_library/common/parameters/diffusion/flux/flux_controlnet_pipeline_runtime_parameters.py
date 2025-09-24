@@ -1,11 +1,12 @@
 import logging
 from typing import Any
+
+from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
 )
 from utils.image_utils import load_image_from_url_artifact
-from griptape.artifacts import ImageUrlArtifact
 
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -120,7 +121,11 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
         super().after_value_set(parameter, value)
         if parameter.name == "pipeline":
             pipe = model_cache.get_pipeline(value)
-            if pipe is not None and hasattr(pipe, "controlnet") and pipe.controlnet.config._name_or_path == "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0":
+            if (
+                pipe is not None
+                and hasattr(pipe, "controlnet")
+                and pipe.controlnet.config._name_or_path == "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
+            ):
                 self._node.hide_parameter_by_name("control_mode")
 
     def _get_pipe_kwargs(self) -> dict:
@@ -136,11 +141,10 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
             "control_guidance_end": self._node.get_parameter_value("control_guidance_end"),
             "control_mode": self._node.get_parameter_value("control_mode"),
         }
-    
+
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
         if isinstance(control_image_artifact, ImageUrlArtifact):
             control_image_artifact = load_image_from_url_artifact(control_image_artifact)
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
-        

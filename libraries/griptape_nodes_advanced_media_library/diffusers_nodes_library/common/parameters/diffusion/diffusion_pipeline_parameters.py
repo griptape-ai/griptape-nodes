@@ -4,20 +4,20 @@ from typing import Any
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
-    FluxPipelineRuntimeParameters,
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_controlnet_pipeline_runtime_parameters import (
+    FluxControlNetPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_fill_pipeline_runtime_parameters import (
     FluxFillPipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.flux.flux_controlnet_pipeline_runtime_parameters import (
-    FluxControlNetPipelineRuntimeParameters,
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipeline_runtime_parameters import (
+    FluxImg2ImgPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipeline_runtime_parameters import (
     FluxKontextPipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipeline_runtime_parameters import (
-    FluxImg2ImgPipelineRuntimeParameters,
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
+    FluxPipelineRuntimeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode

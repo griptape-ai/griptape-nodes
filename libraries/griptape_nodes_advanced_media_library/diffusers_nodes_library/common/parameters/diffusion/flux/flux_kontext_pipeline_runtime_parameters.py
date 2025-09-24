@@ -1,10 +1,11 @@
 import logging
+
+from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
 )
 from utils.image_utils import load_image_from_url_artifact
-from griptape.artifacts import ImageUrlArtifact
 
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -93,7 +94,7 @@ class FluxKontextPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "image": self.get_input_image_pil(),
         }
-    
+
     def get_input_image_pil(self) -> Image | None:
         image_artifact = self._node.get_parameter_value("image")
         if image_artifact is None:

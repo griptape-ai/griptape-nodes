@@ -63,7 +63,7 @@ class ModelCache:
 
     def from_pretrained(self, cls: Any, *args, **kwargs) -> Any:
         return cls.from_pretrained(*args, **kwargs)
-    
+
     def get_pipeline(self, config_hash: str) -> Any | None:
         """Get cached pipeline by config hash."""
         return self._pipeline_cache.get(config_hash)
