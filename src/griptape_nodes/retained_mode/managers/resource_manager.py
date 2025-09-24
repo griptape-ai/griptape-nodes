@@ -123,8 +123,8 @@ class ResourceManager:
                 result_details=f"Attempted to create resource instance with resource type {request.resource_type_name} and capabilities {request.capabilities}. Failed due to resource type creation failed: {e}."
             )
 
-        self._instances[new_instance.get_instance_id()] = new_instance
         instance_id = new_instance.get_instance_id()
+        self._instances[instance_id] = new_instance
 
         return CreateResourceInstanceResultSuccess(
             instance_id=instance_id, result_details=f"Successfully created resource instance {instance_id}"
