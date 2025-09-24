@@ -48,9 +48,6 @@ class FluxPipelineTypeFluxPipelineParameters(DiffusionPipelineTypePipelineParame
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder_2")
         self._node.remove_parameter_element_by_name("text_encoder")
         self._node.remove_parameter_element_by_name("text_encoder_2")
 
