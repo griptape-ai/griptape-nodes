@@ -71,7 +71,7 @@ class TestNodeManagerResolutionStateSerialization:
         )
 
         # Call the function
-        result = NodeManager._handle_parameter_value_saving(
+        result = NodeManager.handle_parameter_value_saving(
             parameter=mock_parameter,
             node=mock_node,
             unique_parameter_uuid_to_values={},
@@ -112,7 +112,7 @@ class TestNodeManagerResolutionStateSerialization:
         mock_tracker.get_tracker_state.return_value = SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE
 
         # Call the function - this should trigger the serialization failure path
-        NodeManager._handle_parameter_value_saving(
+        NodeManager.handle_parameter_value_saving(
             parameter=mock_parameter,
             node=mock_node,
             unique_parameter_uuid_to_values={},

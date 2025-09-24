@@ -2061,7 +2061,7 @@ class NodeManager:
             # Normal node - use current parameter values
             for parameter in node.parameters:
                 # SetParameterValueRequest event
-                set_param_value_requests = NodeManager._handle_parameter_value_saving(
+                set_param_value_requests = NodeManager.handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
@@ -2482,7 +2482,7 @@ class NodeManager:
         return indirect_set_value_command
 
     @staticmethod
-    def _handle_parameter_value_saving(
+    def handle_parameter_value_saving(
         parameter: Parameter,
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
