@@ -38,6 +38,7 @@ class DiffusionPipelineBuilderParameters:
         self.provider_choices = ["Flux", "Allegro", "Amused", "AudioLDM", "Stable Diffusion", "WAN", "Wuerstchen"]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
+        self.set_pipeline_type_parameters(self.provider_choices[0])
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -49,7 +50,6 @@ class DiffusionPipelineBuilderParameters:
                 tooltip="AI model provider",
             )
         )
-        self.set_pipeline_type_parameters(self._node.get_parameter_value("provider"))
         self._pipeline_type_parameters.add_input_parameters()
 
     def add_output_parameters(self) -> None:
