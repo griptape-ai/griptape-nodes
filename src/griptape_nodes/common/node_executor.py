@@ -5,6 +5,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
+from griptape_nodes.retained_mode.managers.library_manager import RegisteredEventHandler
+from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -47,6 +50,16 @@ class NodeExecutor:
         msg = f"No library specified or library '{library_name}' not found"
         raise KeyError(msg)
 
+    def get_workflow_handler(self, library_name: str) -> RegisteredEventHandler | None:
+        """Get the PublishWorkflowRequest handler for a library, or None if not available."""
+        if library_name in self._advanced_libraries:
+
+            library_manager = GriptapeNodes.LibraryManager()
+            registered_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
+            if library_name in registered_handlers:
+                return registered_handlers[library_name]
+        return None
+
     async def execute(self, node: BaseNode, library_name: str | None = None) -> None:
         """Execute the given node.
 
@@ -54,6 +67,9 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
+        #TODO: Use some type of config base to determine if a node should use a handler here.
+
+        #TODO: Call James' package node request in order to get the workflow file that we need to publish. 
         try:
             # Get the node's library name
             if library_name is not None:
@@ -62,8 +78,18 @@ class NodeExecutor:
                 node_type = node.__class__.__name__
                 library = LibraryRegistry.get_library_for_node_type(node_type=node_type)
             library_name = library.get_library_data().name
-            # Execute using the node's specific library
-            await self.execute_method("execute", library_name, node)
+
+            # Check if the library has a PublishWorkflowRequest handler
+            workflow_handler = self.get_workflow_handler(library_name)
+            if workflow_handler is not None:
+                # Call the library's workflow handler
+                # TODO: Call the publishworkflow handler with the workflow file given. 
+                request = PublishWorkflowRequest(node=node)
+                await workflow_handler.handler(request)
+                #TODO: handle the result shape - maybe this should be defined in library too.
+            else:
+                # Fallback to default node processing
+                await node.aprocess()
         except KeyError:
             # Fallback to default node processing
             await node.aprocess()
