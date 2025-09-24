@@ -68,17 +68,17 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         #TODO: Use some type of config base to determine if a node should use a handler here.
-
-        #TODO: Call James' package node request in order to get the workflow file that we need to publish. 
-        try:
-            # Get the node's library name
-            if library_name is not None:
-                library = LibraryRegistry.get_library(name=library_name)
-            else:
-                node_type = node.__class__.__name__
-                library = LibraryRegistry.get_library_for_node_type(node_type=node_type)
+        execution_type = node.get_parameter_value(node.execution_environment.name)
+        if execution_type != "local":
+            try:
+                # Get the node's library name
+                library = LibraryRegistry.get_library(name=execution_type)
+            except KeyError:
+                # Fallback to default node processing
+                logger.error("Could not find library for node '%s', defaulting to local execution.", node.name)
+                await node.aprocess()
+                return
             library_name = library.get_library_data().name
-
             # Check if the library has a PublishWorkflowRequest handler
             workflow_handler = self.get_workflow_handler(library_name)
             if workflow_handler is not None:
@@ -87,12 +87,14 @@ class NodeExecutor:
                 request = PublishWorkflowRequest(node=node)
                 await workflow_handler.handler(request)
                 #TODO: handle the result shape - maybe this should be defined in library too.
-            else:
-                # Fallback to default node processing
-                await node.aprocess()
-        except KeyError:
-            # Fallback to default node processing
-            await node.aprocess()
+                return
+        # Fallback to default node processing
+        await node.aprocess()
+
+
+    def create_packaged_workflow_file(self, library:Library, node:BaseNode) -> str:
+        GriptapeNodes.handle_request()
+        return library.create_packaged_workflow_file(node=node)
 
     def clear(self) -> None:
         self._advanced_libraries = {}

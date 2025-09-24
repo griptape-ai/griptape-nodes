@@ -104,6 +104,16 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self.set_entry_control_parameter(None)
+        self.execution_environment = Parameter(
+            name="Execution Environment",
+            tooltip="Environment that the node should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value="local",
+            traits={Options(choices=["local", "AWS Deadline Cloud Library"])},
+            ui_options={"hidden": True},
+        )
+        self.add_parameter(self.execution_environment)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
