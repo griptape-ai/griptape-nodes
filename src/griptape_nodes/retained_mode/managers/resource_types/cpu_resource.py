@@ -23,13 +23,13 @@ CPUCapability = Literal[
 class CPUInstance(ResourceInstance):
     """Resource instance representing CPU compute resources."""
 
-    def can_be_reclaimed(self) -> bool:
-        """CPU resources can typically be reclaimed when not in use."""
+    def can_be_freed(self) -> bool:
+        """CPU resources can typically be freed when not in use."""
         return True
 
-    def cleanup(self) -> None:
-        """Clean up CPU resource instance."""
-        logger.debug("Cleaning up CPU resource instance %s", self.get_instance_id())
+    def free(self) -> None:
+        """Free CPU resource instance."""
+        logger.debug("Freeing CPU resource instance %s", self.get_instance_id())
 
     def get_capability_typed(self, key: CPUCapability) -> Any:
         """Type-safe capability getter using Literal types."""

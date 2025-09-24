@@ -22,13 +22,13 @@ OSCapability = Literal[
 class OSInstance(ResourceInstance):
     """Resource instance representing an operating system environment."""
 
-    def can_be_reclaimed(self) -> bool:
-        """OS resources typically cannot be reclaimed safely."""
-        return False
+    def can_be_freed(self) -> bool:
+        """OS resources can be freed when no longer needed."""
+        return True
 
-    def cleanup(self) -> None:
-        """Clean up OS resource instance."""
-        logger.debug("Cleaning up OS resource instance %s", self.get_instance_id())
+    def free(self) -> None:
+        """Free OS resource instance."""
+        logger.debug("Freeing OS resource instance %s", self.get_instance_id())
 
     def get_capability_typed(self, key: OSCapability) -> Any:
         """Type-safe capability getter using Literal types."""

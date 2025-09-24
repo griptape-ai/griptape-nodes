@@ -10,9 +10,9 @@ from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultFailure,
     CreateResourceInstanceResultSuccess,
-    DeleteResourceInstanceRequest,
-    DeleteResourceInstanceResultFailure,
-    DeleteResourceInstanceResultSuccess,
+    FreeResourceInstanceRequest,
+    FreeResourceInstanceResultFailure,
+    FreeResourceInstanceResultSuccess,
     GetResourceInstanceStatusRequest,
     GetResourceInstanceStatusResultFailure,
     GetResourceInstanceStatusResultSuccess,
@@ -70,7 +70,7 @@ class ResourceManager:
             request_type=CreateResourceInstanceRequest, callback=self.on_create_resource_instance_request
         )
         event_manager.assign_manager_to_request_type(
-            request_type=DeleteResourceInstanceRequest, callback=self.on_delete_resource_instance_request
+            request_type=FreeResourceInstanceRequest, callback=self.on_free_resource_instance_request
         )
         event_manager.assign_manager_to_request_type(
             request_type=AcquireResourceInstanceLockRequest, callback=self.on_acquire_resource_instance_lock_request
@@ -130,35 +130,41 @@ class ResourceManager:
             instance_id=instance_id, result_details=f"Successfully created resource instance {instance_id}"
         )
 
-    def on_delete_resource_instance_request(self, request: DeleteResourceInstanceRequest) -> ResultPayload:
-        """Handle request to delete a resource instance."""
+    def on_free_resource_instance_request(self, request: FreeResourceInstanceRequest) -> ResultPayload:
+        """Handle request to free a resource instance."""
         instance = self._instances.get(request.instance_id)
         if instance is None:
-            return DeleteResourceInstanceResultFailure(
-                result_details=f"Attempted to delete resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed due to resource instance does not exist."
+            return FreeResourceInstanceResultFailure(
+                result_details=f"Attempted to free resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed due to resource instance does not exist."
+            )
+
+        # Check if resource can be safely freed before touching locks
+        if not instance.can_be_freed():
+            return FreeResourceInstanceResultFailure(
+                result_details=f"Resource instance {request.instance_id} cannot be freed and therefore cannot be deleted."
             )
 
         if instance.is_locked():
             if not request.force_unlock:
                 owner = instance.get_lock_owner()
-                return DeleteResourceInstanceResultFailure(
-                    result_details=f"Attempted to delete resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed due to resource instance is locked by {owner}."
+                return FreeResourceInstanceResultFailure(
+                    result_details=f"Attempted to free resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed due to resource instance is locked by {owner}."
                 )
 
             owner = instance.get_lock_owner()
             instance._locked_by = None  # Force unlock
 
         try:
-            instance.cleanup()
+            instance.free()
         except Exception as e:
-            return DeleteResourceInstanceResultFailure(
-                result_details=f"Attempted to delete resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed due to cleanup failed: {e}."
+            return FreeResourceInstanceResultFailure(
+                result_details=f"Attempted to free resource instance {request.instance_id} with force_unlock={request.force_unlock}. Failed to free: {e}."
             )
 
         del self._instances[request.instance_id]
 
-        return DeleteResourceInstanceResultSuccess(
-            result_details=f"Successfully deleted resource instance {request.instance_id}"
+        return FreeResourceInstanceResultSuccess(
+            result_details=f"Successfully freed resource instance {request.instance_id}"
         )
 
     def on_acquire_resource_instance_lock_request(self, request: AcquireResourceInstanceLockRequest) -> ResultPayload:

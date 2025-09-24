@@ -99,17 +99,17 @@ class CreateResourceInstanceResultFailure(WorkflowNotAlteredMixin, ResultPayload
     """Resource instance creation failed. Common causes: invalid capabilities, resource creation error."""
 
 
-# Delete Resource Instance Events
+# Free Resource Instance Events
 @dataclass
 @PayloadRegistry.register
-class DeleteResourceInstanceRequest(RequestPayload):
-    """Delete a resource instance.
+class FreeResourceInstanceRequest(RequestPayload):
+    """Free a resource instance.
 
-    Use when: Permanently removing a resource instance from tracking and cleaning up
+    Use when: Permanently removing a resource instance from tracking and freeing
     its resources.
 
     Args:
-        instance_id: The ID of the instance to delete
+        instance_id: The ID of the instance to free
         force_unlock: If True, force unlock locked instances. If False, raise exception for locked instances.
     """
 
@@ -119,14 +119,14 @@ class DeleteResourceInstanceRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class DeleteResourceInstanceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Resource instance deleted successfully."""
+class FreeResourceInstanceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Resource instance freed successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class DeleteResourceInstanceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Resource instance deletion failed. Common causes: instance not found, instance locked and force_unlock=False."""
+class FreeResourceInstanceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Resource instance freeing failed. Common causes: instance not found, instance locked and force_unlock=False."""
 
 
 # Acquire Resource Lock Events

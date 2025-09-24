@@ -197,9 +197,9 @@ class ResourceInstance(ABC):
                 raise ValueError(msg)
 
     @abstractmethod
-    def can_be_reclaimed(self) -> bool:
-        """Check if this resource can be safely destroyed."""
+    def can_be_freed(self) -> bool:
+        """Check if this resource can be safely freed."""
 
     @abstractmethod
-    def cleanup(self) -> None:
-        """Clean up/destroy this resource instance."""
+    def free(self) -> None:
+        """Free this resource instance."""
