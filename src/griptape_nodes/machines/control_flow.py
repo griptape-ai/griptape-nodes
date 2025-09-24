@@ -261,18 +261,18 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # For control flow/sequential: emit all nodes in flow as involved
             flow_manager = GriptapeNodes.FlowManager()
             flow = flow_manager.get_flow_by_name(self._context.flow_name)
-            involved_nodes = list(flow.nodes.keys())
-            GriptapeNodes.EventManager().put_event(
-                ExecutionGriptapeNodeEvent(
-                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
-                )
-            )
         self._context.current_nodes = current_nodes
         # Set entry control parameter for initial node (None for workflow start)
         for node in current_nodes:
             node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
+        involved_nodes = list(flow.nodes.keys())
+        GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
+            )
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:
