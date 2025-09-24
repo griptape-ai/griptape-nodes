@@ -69,6 +69,7 @@ if TYPE_CHECKING:
         OperationDepthManager,
     )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.retained_mode.managers.session_manager import SessionManager
     from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -149,9 +150,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
+    _resource_manager: ResourceManager
     _sync_manager: SyncManager
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -169,6 +171,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             OperationDepthManager,
         )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -188,6 +191,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
+            self._resource_manager = ResourceManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
             self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
@@ -373,6 +377,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
         return GriptapeNodes.get_instance()._engine_identity_manager
+
+    @classmethod
+    def ResourceManager(cls) -> ResourceManager:
+        return GriptapeNodes.get_instance()._resource_manager
 
     @classmethod
     def SyncManager(cls) -> SyncManager:
