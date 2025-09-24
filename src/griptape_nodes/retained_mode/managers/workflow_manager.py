@@ -1120,8 +1120,6 @@ class WorkflowManager:
 
         return True
 
-
-
     class WriteWorkflowFileResult(NamedTuple):
         """Result of writing a workflow file."""
 
@@ -1247,6 +1245,15 @@ class WorkflowManager:
         if prior_workflow and prior_workflow.metadata.branched_from:
             branched_from = prior_workflow.metadata.branched_from
 
+        # Extract workflow shape if possible
+        workflow_shape = None
+        try:
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
+        except ValueError:
+            # If we can't extract workflow shape, continue without it
+            pass
+
         # Use the standalone request to save the workflow file
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
@@ -1255,6 +1262,7 @@ class WorkflowManager:
             image_path=request.image_path,
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
+            workflow_shape=workflow_shape,
         )
         save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
@@ -1305,6 +1313,7 @@ class WorkflowManager:
                 creation_date=creation_date,
                 image_path=request.image_path,
                 branched_from=request.branched_from,
+                workflow_shape=request.workflow_shape,
             )
         except Exception as err:
             details = f"Attempted to save workflow file '{request.file_name}' from serialized flow commands. Failed during metadata generation: {err}"
@@ -1338,13 +1347,14 @@ class WorkflowManager:
             result_details=ResultDetails(message=details, level=logging.INFO),
         )
 
-    def _generate_workflow_metadata_from_commands(
+    def _generate_workflow_metadata_from_commands(  # noqa: PLR0913
         self,
         serialized_flow_commands: SerializedFlowCommands,
         file_name: str,
         creation_date: datetime,
         image_path: str | None = None,
         branched_from: str | None = None,
+        workflow_shape: WorkflowShape | None = None,
     ) -> WorkflowMetadata:
         """Generate workflow metadata from serialized commands."""
         # Get the engine version
@@ -1361,16 +1371,6 @@ class WorkflowManager:
         workflows_referenced = None
         if serialized_flow_commands.referenced_workflows:
             workflows_referenced = list(serialized_flow_commands.referenced_workflows)
-
-        # Extract workflow shape if possible
-        workflow_shape = None
-        try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
-            workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
-        except ValueError:
-            # If we can't extract workflow shape, continue without it
-            pass
-
 
         return WorkflowMetadata(
             name=str(file_name),
@@ -1522,7 +1522,6 @@ class WorkflowManager:
         ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
         import_output = import_recorder.generate_imports()
         return f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
-
 
     def _replace_workflow_metadata_header(self, workflow_content: str, new_metadata: WorkflowMetadata) -> str | None:
         """Replace the metadata header in a workflow file with new metadata.

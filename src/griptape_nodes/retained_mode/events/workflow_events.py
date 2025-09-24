@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+from griptape_nodes.node_library.workflow_registry import WorkflowMetadata, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -653,6 +653,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
         image_path: Optional path to workflow image/thumbnail
         execution_flow_name: Optional flow name to use for execution code (defaults to file_name if not provided)
         branched_from: Optional branched from information to preserve workflow lineage
+        workflow_shape: Optional workflow shape defining inputs and outputs for external callers
 
     Results: SaveWorkflowFileFromSerializedFlowResultSuccess (with file path) | SaveWorkflowFileFromSerializedFlowResultFailure (save error)
     """
@@ -663,6 +664,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
     image_path: str | None = None
     execution_flow_name: str | None = None
     branched_from: str | None = None
+    workflow_shape: WorkflowShape | None = None
 
 
 @dataclass
