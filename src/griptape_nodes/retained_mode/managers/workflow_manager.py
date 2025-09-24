@@ -2652,7 +2652,7 @@ class WorkflowManager:
         )
 
         if flow_initialization_command is None:
-            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow_name())"
+            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow().flow_name)"
             flow_call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
@@ -2662,16 +2662,22 @@ class WorkflowManager:
                     col_offset=0,
                 ),
                 args=[
-                    ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
-                            attr="get_current_flow_name",
-                            ctx=ast.Load(),
+                    ast.Attribute(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                                attr="get_current_flow",
+                                ctx=ast.Load(),
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            args=[],
+                            keywords=[],
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[],
-                        keywords=[],
+                        attr="flow_name",
+                        ctx=ast.Load(),
                         lineno=1,
                         col_offset=0,
                     )
