@@ -350,6 +350,18 @@ class NodeFinishProcessEvent(ExecutionPayload):
 
 @dataclass
 @PayloadRegistry.register
+class InvolvedNodesEvent(ExecutionPayload):
+    """Event indicating which nodes are involved in the current execution.
+
+    For parallel resolution: Dynamic list based on DAG builder state
+    For control flow/sequential: All nodes when started, empty when complete
+    """
+
+    involved_nodes: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
 class GriptapeEvent(ExecutionPayload):
     node_name: str
     parameter_name: str

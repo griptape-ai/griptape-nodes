@@ -48,6 +48,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     GetIsFlowRunningRequest,
     GetIsFlowRunningResultFailure,
     GetIsFlowRunningResultSuccess,
+    InvolvedNodesEvent,
     SingleExecutionStepRequest,
     SingleExecutionStepResultFailure,
     SingleExecutionStepResultSuccess,
@@ -1076,6 +1077,8 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
 
         details = f"Successfully kicked off flow with name {flow_name}"
+        # And also here.
+        GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow_name))
 
         return StartFlowResultSuccess(result_details=details)
 
@@ -1608,6 +1611,7 @@ class FlowManager:
         # Initialize global control flow machine and DAG builder
 
         self._global_control_flow_machine = ControlFlowMachine(flow.name)
+        # Set off the request here.
         try:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
         except Exception:
@@ -1720,7 +1724,13 @@ class FlowManager:
         if self.check_for_existing_running_flow():
             # Now we know something is running, it's ParallelResolutionMachine, and that we are in single_node_resolution.
             self._global_dag_builder.add_node_with_dependencies(node, node.name)
-            GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow.name))
+            # Emit involved nodes update after adding node to DAG
+            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
+            )
         else:
             # Set that we are only working on one node right now!
             self._global_single_node_resolution = True
@@ -1735,7 +1745,6 @@ class FlowManager:
                 self._global_dag_builder.add_node_with_dependencies(node)
                 resolution_machine.context.dag_builder = self._global_dag_builder
             # Send a GetFlowStateRequest
-            GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow.name))
             try:
                 await resolution_machine.resolve_node(node)
             except Exception as e:
@@ -1803,6 +1812,8 @@ class FlowManager:
             node.set_entry_control_parameter(None)
 
     def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
+        if not self.check_for_existing_running_flow():
+            return None, None, None
         if self._global_control_flow_machine is None:
             return None, None, None
         control_flow_context = self._global_control_flow_machine.context
@@ -1817,9 +1828,10 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
+            involved_nodes = []
             if self._global_single_node_resolution:
                 involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
-            else:
+            elif current_control_nodes is not None:
                 involved_nodes = list(flow.nodes.keys())
             return current_control_nodes, current_resolving_nodes, involved_nodes if len(involved_nodes) != 0 else None
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):

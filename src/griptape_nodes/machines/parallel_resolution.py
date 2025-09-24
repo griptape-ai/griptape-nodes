@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
-    GetFlowStateRequest,
+    InvolvedNodesEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
@@ -197,7 +197,7 @@ class ExecuteDagState(State):
             # Clean up nodes from emptied graphs in single node resolution mode
             if len(network) == 0 and context.dag_builder is not None:
                 context.dag_builder.cleanup_empty_graph_nodes(network_name)
-                GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=context.flow_name))
+                ExecuteDagState._emit_involved_nodes_update(context)
             return True
 
         return bool(len(network) > 0 or node.stop_flow)
@@ -232,6 +232,17 @@ class ExecuteDagState(State):
                     )
                 )
             ExecuteDagState._add_and_queue_nodes(context, next_node, network_name)
+
+    @staticmethod
+    def _emit_involved_nodes_update(context: ParallelResolutionContext) -> None:
+        """Emit update of involved nodes based on current DAG state."""
+        if context.dag_builder is not None:
+            involved_nodes = list(context.node_to_reference.keys())
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
+            )
 
     @staticmethod
     def _add_and_queue_nodes(context: ParallelResolutionContext, next_node: BaseNode, network_name: str) -> None:
@@ -383,6 +394,9 @@ class ExecuteDagState(State):
 
         context.workflow_state = WorkflowState.NO_ERROR
 
+        # Emit initial involved nodes for DAG execution
+        ExecuteDagState._emit_involved_nodes_update(context)
+
         if not context.paused:
             return ExecuteDagState
         return None
@@ -525,6 +539,10 @@ class ErrorState(State):
 class DagCompleteState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
+        # Emit empty involved nodes list to indicate DAG execution complete
+        GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
         # Clear the DAG builder so we don't have any leftover nodes in node_to_reference.
         if context.dag_builder is not None:
             context.dag_builder.clear()
