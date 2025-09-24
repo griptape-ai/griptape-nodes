@@ -44,7 +44,7 @@ class HuggingFaceModelParameter(ABC):
         if not choices:
             self._node.add_node_element(
                 ParameterMessage(
-                    name="huggingface_repo_parameter_message",
+                    name=f"huggingface_repo_parameter_message_{self._parameter_name}",
                     title="Huggingface Model Download Required",
                     variant="warning",
                     value=self.get_help_message(),

@@ -51,6 +51,7 @@ class AmusedPipelineTypeAmusedInpaintPipelineParameters(DiffusionPipelineTypePip
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("model")
+        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
         self._node.remove_parameter_element_by_name("input_image")
         self._node.remove_parameter_element_by_name("mask_image")
 

@@ -55,24 +55,28 @@ class DiffusionPipelineTypeParameters(ABC):
             self.pipeline_type_pipeline_params.remove_input_parameters()
             self.pipeline_type_pipeline_params.add_input_parameters()
 
+            # Get all current element names
+            all_element_names = [element.name for element in self._node.root_ui_element.children]
+
+            # Start with required positioning
             sorted_parameters = ["provider", "pipeline_type"]
+
+            # Add all other parameters that aren't already positioned or at the end
+            hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
+            end_params = {*hf_param_names, "pipeline", "logs"}
+            positioned_params = {"provider", "pipeline_type"}
+
             sorted_parameters.extend(
                 [
-                    param.name
-                    for param in self._node.parameters
-                    if param.name
-                    not in [
-                        "provider",
-                        "pipeline_type",
-                        *HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(),
-                        "pipeline",
-                        "logs",
-                    ]
+                    param_name
+                    for param_name in all_element_names
+                    if param_name not in positioned_params and param_name not in end_params
                 ]
             )
-            sorted_parameters.extend(
-                [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
-            )
+
+            # Add end parameters
+            sorted_parameters.extend([*hf_param_names, "pipeline", "logs"])
+
             self._node.reorder_elements(sorted_parameters)
 
     @property

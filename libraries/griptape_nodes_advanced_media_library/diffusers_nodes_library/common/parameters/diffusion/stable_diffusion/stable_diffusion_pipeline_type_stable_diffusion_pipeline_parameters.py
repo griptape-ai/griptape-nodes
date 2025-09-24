@@ -31,11 +31,12 @@ class StableDiffusionPipelineTypeStableDiffusionPipelineParameters(DiffusionPipe
         self._huggingface_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("huggingface_repo")
+        self._node.remove_parameter_element_by_name("model")
+        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
 
     def get_config_kwargs(self) -> dict:
         return {
-            "huggingface_repo": self._node.get_parameter_value("huggingface_repo"),
+            "model": self._node.get_parameter_value("model"),
         }
 
     @property
