@@ -33,7 +33,7 @@ class CPUInstance(ResourceInstance):
 
     def get_capability_typed(self, key: CPUCapability) -> Any:
         """Type-safe capability getter using Literal types."""
-        return self.get_capability(key)
+        return self.get_capability_value(key)
 
 
 class CPUResourceType(ResourceType):
@@ -92,11 +92,11 @@ class CPUResourceType(ResourceType):
 
         def sort_key(instance: ResourceInstance) -> tuple[int, float]:
             # More cores is better
-            cores = instance.get_capability("cores") if instance.has_capability("cores") else 1
+            cores = instance.get_capability_value("cores") if instance.has_capability("cores") else 1
 
             # Higher clock speed is better
             clock_speed = (
-                instance.get_capability("clock_speed_ghz") if instance.has_capability("clock_speed_ghz") else 0
+                instance.get_capability_value("clock_speed_ghz") if instance.has_capability("clock_speed_ghz") else 0
             )
 
             return (int(cores), float(clock_speed))

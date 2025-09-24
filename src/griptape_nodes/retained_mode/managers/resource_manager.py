@@ -267,7 +267,7 @@ class ResourceManager:
             resource_type=instance.get_resource_type(),
             instance_id=request.instance_id,
             owner_of_lock=instance.get_lock_owner(),
-            capabilities=instance.get_capabilities(),
+            capabilities=instance._capabilities,
         )
 
         return GetResourceInstanceStatusResultSuccess(

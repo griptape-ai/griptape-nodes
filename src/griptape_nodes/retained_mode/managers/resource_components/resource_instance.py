@@ -25,16 +25,23 @@ class ResourceInstance(ABC):
         """Get the resource type of this instance."""
         return self._resource_type
 
-    def get_capabilities(self) -> dict[str, Any]:
-        """Get all capabilities of this resource."""
-        return self._capabilities
+    def get_capabilities(self) -> list[str]:
+        """Get the capability keys available for this resource."""
+        return list(self._capabilities.keys())
 
     def has_capability(self, key: str) -> bool:
         """Check if resource has a specific capability key."""
         return key in self._capabilities
 
-    def get_capability(self, key: str) -> Any:
-        """Get a specific capability value."""
+    def get_capability_value(self, key: str) -> Any:
+        """Get a specific capability value.
+
+        This method can be overridden by subclasses to support volatile resources
+        that require real-time queries (e.g., current memory usage, GPU temperature)
+        or resources that need external API calls to retrieve current values.
+
+        The default implementation returns the static value from the capabilities dict.
+        """
         return self._capabilities[key]
 
     def get_instance_id(self) -> str:

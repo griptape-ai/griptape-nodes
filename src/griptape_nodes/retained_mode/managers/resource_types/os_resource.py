@@ -32,7 +32,7 @@ class OSInstance(ResourceInstance):
 
     def get_capability_typed(self, key: OSCapability) -> Any:
         """Type-safe capability getter using Literal types."""
-        return self.get_capability(key)
+        return self.get_capability_value(key)
 
 
 class OSResourceType(ResourceType):
