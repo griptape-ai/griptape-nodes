@@ -16,6 +16,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineTypeParameters(ABC):
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
+        self.did_pipeline_type_change = False
         self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
 
     @property
@@ -43,11 +44,15 @@ class DiffusionPipelineTypeParameters(ABC):
         self._node.remove_parameter_element_by_name("pipeline_type")
         self.pipeline_type_pipeline_params.remove_input_parameters()
 
+    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "pipeline_type":
+            current_pipeline_type = self._node.get_parameter_value("pipeline_type")
+            self.did_pipeline_type_change = current_pipeline_type != value
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_pipeline_type_pipeline_params = parameter.name == "pipeline_type"
-        if reset_pipeline_type_pipeline_params:
-            self.pipeline_type_pipeline_params.remove_input_parameters()
+        if parameter.name == "pipeline_type" and self.did_pipeline_type_change:
             self.set_pipeline_type_pipeline_params(value)
+            self.pipeline_type_pipeline_params.remove_input_parameters()
             self.pipeline_type_pipeline_params.add_input_parameters()
 
             sorted_parameters = ["provider", "pipeline_type"]
