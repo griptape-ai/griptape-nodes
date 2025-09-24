@@ -30,10 +30,11 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
 
-    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
         if parameter.name == "pipeline":
             current_pipeline = self.get_parameter_value("pipeline")
             self.did_pipeline_change = current_pipeline != value
+        return super().before_value_set(parameter, value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         reset_runtime_parameters = parameter.name == "pipeline" and self.did_pipeline_change
@@ -52,6 +53,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
+        return super().after_value_set(parameter, value)
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()
