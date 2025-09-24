@@ -115,8 +115,12 @@ class ResourceInstance(ABC):
 
         This method returns all capability keys and their current values, which may
         include real-time queries for volatile resources that override get_capability_value().
+        Returns a deep copy to prevent external modification of nested mutable objects.
         """
-        return {key: self.get_capability_value(key) for key in self._capabilities}
+        # First get current values (may trigger real-time queries for volatile resources)
+        result = {key: self.get_capability_value(key) for key in self._capabilities}
+        # Then deep copy to protect against modification of nested mutable objects
+        return deepcopy(result)
 
     def is_compatible_with(self, requirements: Requirements | None) -> bool:
         """Check if this instance can satisfy the requirements."""
