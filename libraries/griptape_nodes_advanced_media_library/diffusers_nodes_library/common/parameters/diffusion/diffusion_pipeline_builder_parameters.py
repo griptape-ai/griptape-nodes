@@ -25,7 +25,6 @@ from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_p
 from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_pipeline_type_parameters import (
     WuerstchenPipelineTypeParameters,
 )
-from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
@@ -100,25 +99,6 @@ class DiffusionPipelineBuilderParameters:
             self.set_pipeline_type_parameters(value)
             self.pipeline_type_parameters.add_input_parameters()
             self._node.set_parameter_value("pipeline_type", self.pipeline_type_parameters.pipeline_types[0])
-
-            sorted_parameters = ["provider"]
-            sorted_parameters.extend(
-                [
-                    param.name
-                    for param in self._node.parameters
-                    if param.name
-                    not in [
-                        "provider",
-                        *HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(),
-                        "pipeline",
-                        "logs",
-                    ]
-                ]
-            )
-            sorted_parameters.extend(
-                [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
-            )
-            self._node.reorder_elements(sorted_parameters)
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     @property

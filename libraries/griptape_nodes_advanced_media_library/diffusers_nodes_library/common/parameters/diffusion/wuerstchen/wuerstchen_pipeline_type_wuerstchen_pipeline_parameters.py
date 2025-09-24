@@ -36,7 +36,9 @@ class WuerstchenPipelineTypeWuerstchenPipelineParameters(DiffusionPipelineTypePi
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prior_model")
+        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_prior_model")
         self._node.remove_parameter_element_by_name("decoder_model")
+        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_decoder_model")
 
     def get_config_kwargs(self) -> dict:
         return {
