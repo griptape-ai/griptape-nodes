@@ -1558,9 +1558,11 @@ class ParameterList(ParameterContainer):
     def grid_columns(self, value: int | None) -> None:
         self._grid_columns = value
 
-    def to_dict(self) -> dict[str, Any]:
-        """Override to_dict to merge convenience parameters into ui_options."""
-        data = super().to_dict()
+    @property
+    def ui_options(self) -> dict:
+        """Override ui_options to merge convenience parameters in real-time."""
+        # Get base ui_options from parent
+        base_ui_options = super().ui_options
 
         # Build convenience options from instance parameters
         convenience_options = {}
@@ -1577,13 +1579,40 @@ class ParameterList(ParameterContainer):
         if self._grid_columns is not None and self._grid:
             convenience_options["columns"] = self._grid_columns
 
-        # Merge convenience options with existing ui_options
-        merged_ui_options = {
-            **self.ui_options,
+        # Merge convenience options with base ui_options
+        return {
+            **base_ui_options,
             **convenience_options,
         }
 
-        data["ui_options"] = merged_ui_options
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        """Set ui_options, preserving convenience parameters."""
+        # Extract convenience parameters from the incoming value
+        if "display" in value and value["display"] == "grid":
+            self._grid = True
+            if "columns" in value:
+                self._grid_columns = value["columns"]
+        else:
+            self._grid = False
+
+        if "collapsed" in value:
+            self._collapsed = value["collapsed"]
+
+        if "child_prefix" in value:
+            self._child_prefix = value["child_prefix"]
+
+        # Set the base ui_options (excluding convenience parameters)
+        base_ui_options = {
+            k: v for k, v in value.items() if k not in ["display", "columns", "collapsed", "child_prefix"]
+        }
+        self._ui_options = base_ui_options
+
+    def to_dict(self) -> dict[str, Any]:
+        """Override to_dict to use the merged ui_options."""
+        data = super().to_dict()
+        data["ui_options"] = self.ui_options
         return data
 
     def _custom_getter_for_property_type(self) -> str:
