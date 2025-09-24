@@ -13,6 +13,8 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -36,7 +38,9 @@ class DiffusionPipelineBuilderNode(ControlNode):
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
         self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")
-        self.set_parameter_value("pipeline", config_hash)
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(parameter_name="pipeline", value=config_hash, node_name=self.name)
+        )
         self.parameter_output_values["pipeline"] = config_hash
 
     @property
