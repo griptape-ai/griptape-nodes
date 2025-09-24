@@ -1077,8 +1077,6 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
 
         details = f"Successfully kicked off flow with name {flow_name}"
-        # And also here.
-        GriptapeNodes.handle_request(GetFlowStateRequest(flow_name=flow_name))
 
         return StartFlowResultSuccess(result_details=details)
 
@@ -1093,7 +1091,7 @@ class FlowManager:
             details = f"Could not get flow state. Error: {err}"
             return GetFlowStateResultFailure(result_details=details)
         try:
-            control_nodes, resolving_nodes, involved_nodes = self.flow_state(flow)
+            control_nodes, resolving_nodes = self.flow_state(flow)
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
@@ -1103,7 +1101,6 @@ class FlowManager:
             control_nodes=control_nodes,
             resolving_node=resolving_nodes,
             result_details=details,
-            involved_nodes=involved_nodes,
         )
 
     def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
@@ -1811,11 +1808,11 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:
         if not self.check_for_existing_running_flow():
-            return None, None, None
+            return None, None
         if self._global_control_flow_machine is None:
-            return None, None, None
+            return None, None
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
             [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
@@ -1828,18 +1825,12 @@ class FlowManager:
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            involved_nodes = []
-            if self._global_single_node_resolution:
-                involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
-            elif current_control_nodes is not None:
-                involved_nodes = list(flow.nodes.keys())
-            return current_control_nodes, current_resolving_nodes, involved_nodes if len(involved_nodes) != 0 else None
+            return current_control_nodes, current_resolving_nodes
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            involved_nodes = list(flow.nodes.keys())
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else None, involved_nodes
-        return current_control_nodes, None, None
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else None
+        return current_control_nodes, None
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
