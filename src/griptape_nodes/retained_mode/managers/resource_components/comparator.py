@@ -15,4 +15,4 @@ class Comparator(StrEnum):
     NOT_PRESENT = "~"  # key should not exist
     HAS_ANY = "has_any"  # container has any of the required items
     HAS_ALL = "has_all"  # container has all of the required items
-    CUSTOM = "custom"
+    CUSTOM = "custom"  # allows ResourceType to implement custom comparison logic

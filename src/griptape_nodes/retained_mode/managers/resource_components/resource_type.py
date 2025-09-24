@@ -49,6 +49,16 @@ class ResourceType(ABC):
     ) -> bool:
         """Handle custom requirement logic with full context.
 
+        This method is called when a requirement uses the Comparator.CUSTOM comparator,
+        allowing ResourceType implementations to define complex comparison logic that
+        goes beyond the standard built-in comparators.
+
+        Use cases for custom comparators:
+        - Complex mathematical relationships (e.g., GPU memory + system memory > threshold)
+        - Version compatibility checks (e.g., CUDA version compatibility matrices)
+        - Hardware compatibility logic (e.g., CPU instruction set compatibility)
+        - Multi-field validation (e.g., ensuring RAM and CPU are balanced)
+
         Args:
             _instance: The resource instance being evaluated
             _key: The requirement key being evaluated
@@ -58,6 +68,9 @@ class ResourceType(ABC):
 
         Returns:
             True if the custom requirement is satisfied, False otherwise
+
+        Raises:
+            NotImplementedError: If the ResourceType doesn't implement custom logic
         """
         msg = f"Custom requirement handling not implemented for {type(self).__name__}"
         raise NotImplementedError(msg)
