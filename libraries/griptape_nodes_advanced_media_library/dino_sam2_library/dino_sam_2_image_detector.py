@@ -218,7 +218,7 @@ class DinoSam2ImageDetector(ControlNode):
                 input_image_pil = self.get_input_image_pil()
                 image_np = np.array(input_image_pil)
                 sam2_predictor.set_image(image_np)
-                masks, scores, logits = sam2_predictor.predict(
+                masks, _scores, _logits = sam2_predictor.predict(
                     box=box,
                     multimask_output=False,
                 )

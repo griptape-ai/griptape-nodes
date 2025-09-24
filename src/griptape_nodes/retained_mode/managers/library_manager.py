@@ -2045,32 +2045,26 @@ class LibraryManager:
         config_mgr = GriptapeNodes.ConfigManager()
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
 
-        libraries_to_process = []
-
-        # Add from config
-        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
-        libraries_to_process.extend(config_libraries)
-
-        # Add from workspace - recursive discovery of library JSON files
-        workspace_path = config_mgr.workspace_path
-        libraries_to_process.append(str(workspace_path))
-
-        library_files = []
+        discovered_libraries = set()
 
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Process all library JSON files recursively in the directory
-                library_files.extend(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
+                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
             elif path.suffix == ".json":
-                library_files.append(path)
+                discovered_libraries.add(path)
 
-        # Process library paths
-        for library_to_process in libraries_to_process:
-            library_path = Path(library_to_process)
-
-            # Handle library config files and directories only (skip requirement specifiers)
+        # Add from config
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+        for library_path_str in config_libraries:
+            library_path = Path(library_path_str)
             if library_path.exists():
                 process_path(library_path)
 
-        return library_files
+        # Add from workspace - recursive discovery of library JSON files
+        workspace_path = config_mgr.workspace_path
+        if workspace_path.exists():
+            process_path(workspace_path)
+
+        return list(discovered_libraries)

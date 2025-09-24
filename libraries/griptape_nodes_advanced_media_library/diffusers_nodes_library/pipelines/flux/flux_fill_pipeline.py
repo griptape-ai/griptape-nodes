@@ -15,9 +15,7 @@ from diffusers_nodes_library.pipelines.flux.flux_fill_pipeline_parameters import
     FluxFillPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
-from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import (
-    optimize_flux_pipeline,
-)  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
@@ -51,6 +49,7 @@ class FluxFillPipeline(ControlNode):
 
     def preprocess(self) -> None:
         self.pipe_params.preprocess()
+        self.log_params.clear_logs()
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
@@ -72,7 +71,7 @@ class FluxFillPipeline(ControlNode):
             )
 
         with self.log_params.append_profile_to_logs("Loading model"), self.log_params.append_logs_to_logs(logger):
-            optimize_flux_pipeline(pipe=pipe, pipe_params=self.pipe_params)
+            safe_optimize_flux_pipeline(pipe)
 
         with (
             self.log_params.append_profile_to_logs("Configuring flux loras"),

@@ -384,9 +384,7 @@ class BaseNode(ABC):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                ui_options = parameter.ui_options
-                ui_options["hide"] = not visible
-                parameter.ui_options = ui_options
+                parameter.ui_options = {**parameter.ui_options, "hide": not visible}
 
     def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
         element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
@@ -408,9 +406,7 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                ui_options = message.ui_options
-                ui_options["hide"] = not visible
-                message.ui_options = ui_options
+                message.ui_options = {**message.ui_options, "hide": not visible}
 
     def hide_message_by_name(self, names: str | list[str]) -> None:
         self._set_message_visibility(names, visible=False)
@@ -727,11 +723,9 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
-    @abstractmethod
-    def process[T](self) -> AsyncResult | None:
-        pass
+    def process(self) -> AsyncResult | None:
+        raise NotImplementedError
 
     async def aprocess(self) -> None:
         """Async version of process().
@@ -867,7 +861,7 @@ class BaseNode(ABC):
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
 
-    def reorder_elements(self, element_order: list[str | int]) -> None:
+    def reorder_elements(self, element_order: list[str] | list[int] | list[str | int]) -> None:
         """Reorder the elements of this node.
 
         Args:
@@ -1109,7 +1103,10 @@ class TrackedParameterOutputValues(dict[str, Any]):
             keys_to_clear = list(self.keys())
             super().clear()
             for key in keys_to_clear:
-                self._emit_parameter_change_event(key, None, deleted=True)
+                # Some nodes still have values set, even if their output values are cleared
+                # Here, we are emitting an event with those set values, to not misrepresent the values of the parameters in the UI.
+                value = self._node.get_parameter_value(key)
+                self._emit_parameter_change_event(key, value, deleted=True)
 
     def silent_clear(self) -> None:
         """Clear all values without emitting parameter change events."""

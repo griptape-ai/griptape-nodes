@@ -1,10 +1,11 @@
 import logging
-from functools import cache
 from pathlib import Path
 from typing import Any
 
 from huggingface_hub import scan_cache_dir  # pyright: ignore[reportMissingImports]
-from huggingface_hub.constants import HF_HUB_CACHE  # pyright: ignore[reportMissingImports]
+from huggingface_hub.constants import HF_HUB_CACHE
+
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -57,9 +58,34 @@ def list_repo_revisions_with_file_in_cache(repo_id: str, file: str) -> list[tupl
 
 
 class ModelCache:
-    @cache  # noqa: B019
+    def __init__(self) -> None:
+        self._pipeline_cache: dict[str, Any] = {}
+
     def from_pretrained(self, cls: Any, *args, **kwargs) -> Any:
         return cls.from_pretrained(*args, **kwargs)
+
+    def get_or_build_pipeline(self, config_hash: str, builder_func: Any) -> Any:
+        """Get cached pipeline or build new one if not exists."""
+        if config_hash not in self._pipeline_cache:
+            logger.info("Building new pipeline with config hash: %s", config_hash)
+            self._pipeline_cache[config_hash] = builder_func()
+        else:
+            logger.info("Using cached pipeline with config hash: %s", config_hash)
+        return self._pipeline_cache[config_hash]
+
+    def clear_pipeline_cache(self) -> None:
+        """Clear all cached pipelines."""
+        logger.info("Clearing pipeline cache")
+        for pipe in self._pipeline_cache.values():
+            clear_diffusion_pipeline(pipe)
+        self._pipeline_cache.clear()
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        """Get statistics about the pipeline cache."""
+        return {
+            "cached_pipelines": len(self._pipeline_cache),
+            "cache_keys": list(self._pipeline_cache.keys()),
+        }
 
 
 model_cache = ModelCache()

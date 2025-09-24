@@ -535,7 +535,7 @@ If no title is provided, just use "Segment X:" format.
             _validate_and_raise_if_invalid(input_url)
 
             # Get ffmpeg executable paths
-            ffmpeg_path, ffprobe_path = self._validate_ffmpeg_paths()
+            ffmpeg_path, _ffprobe_path = self._validate_ffmpeg_paths()
 
             # Create temporary directory for output files
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -639,7 +639,7 @@ If no title is provided, just use "Segment X:" format.
 
             # Always detect video properties for best results
             self.append_value_to_parameter("logs", "Detecting video properties...\n")
-            ffmpeg_path, ffprobe_path = self._validate_ffmpeg_paths()
+            _ffmpeg_path, ffprobe_path = self._validate_ffmpeg_paths()
             frame_rate, drop_frame, video_duration = self._detect_video_properties(input_url, ffprobe_path)
 
             self.append_value_to_parameter("logs", f"Detected frame rate: {frame_rate} fps\n")
