@@ -28,14 +28,14 @@ def validate_capabilities(schema: list[CapabilityField], capabilities: dict[str,
     for field_name, value in capabilities.items():
         schema_field = next((f for f in schema if f.name == field_name), None)
         if schema_field:
-            # Basic type checking
-            if schema_field.type_hint is list and not isinstance(value, list):
-                errors.append(f"Field '{field_name}' should be a list, got {type(value).__name__}")
-            elif schema_field.type_hint is bool and not isinstance(value, bool):
-                errors.append(f"Field '{field_name}' should be a boolean, got {type(value).__name__}")
-            elif schema_field.type_hint in (int, float) and not isinstance(value, (int, float)):
-                errors.append(f"Field '{field_name}' should be numeric, got {type(value).__name__}")
-            elif schema_field.type_hint is str and not isinstance(value, str):
-                errors.append(f"Field '{field_name}' should be a string, got {type(value).__name__}")
+            # Handle numeric types (int/float are interchangeable)
+            if schema_field.type_hint in (int, float):
+                if not isinstance(value, (int, float)):
+                    errors.append(f"Field '{field_name}' should be numeric, got {type(value).__name__}")
+            # Standard type checking for all other types
+            elif not isinstance(value, schema_field.type_hint):
+                errors.append(
+                    f"Field '{field_name}' should be a {schema_field.type_hint.__name__}, got {type(value).__name__}"
+                )
 
     return errors
