@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
@@ -118,8 +119,9 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         if parameter.name == "pipeline":
-            pipe = model_cache.get(value)
+            pipe = model_cache.get_pipeline(value)
             # TODO: CJ, is this actual real code?
+            logger.info(f"Pipeline controlnet: {pipe.__dict__}")
             if pipe is not None and hasattr(pipe, "controlnet") and pipe.controlnet == "Union Pro 2":
                 self._node.hide_parameter_by_name("control_mode")
 
@@ -136,9 +138,6 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
             "control_guidance_end": self._node.get_parameter_value("control_guidance_end"),
             "control_mode": self._node.get_parameter_value("control_mode"),
         }
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        return None
     
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
