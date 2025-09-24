@@ -1288,6 +1288,8 @@ class FlowManager:
             return PackageNodeAsSerializedFlowResultFailure(result_details=details)
 
         # Add ALTER parameter commands for PROPERTY-only parameters to enable OUTPUT mode
+        # We need these to emit their values back so that the orchestrator/caller
+        # can reconcile the packaged node's values after it is executed.
         package_alter_parameter_commands = []
         for package_param in package_node.parameters:
             has_output_mode = ParameterMode.OUTPUT in package_param.allowed_modes
@@ -1302,19 +1304,10 @@ class FlowManager:
                 )
                 package_alter_parameter_commands.append(alter_param_request)
 
-        # If we have alter parameter commands, inject them into the serialized result
+        # If we have alter parameter commands, append them to the existing element_modification_commands
         if package_alter_parameter_commands:
-            updated_element_modification_commands = list(
-                serialize_node_result.serialized_node_commands.element_modification_commands
-            )
-            updated_element_modification_commands.extend(package_alter_parameter_commands)
-
-            # Create new SerializedNodeCommands with the additional alter commands
-            serialize_node_result.serialized_node_commands = SerializedNodeCommands(
-                create_node_command=serialize_node_result.serialized_node_commands.create_node_command,
-                element_modification_commands=updated_element_modification_commands,
-                node_library_details=serialize_node_result.serialized_node_commands.node_library_details,
-                node_uuid=serialize_node_result.serialized_node_commands.node_uuid,
+            serialize_node_result.serialized_node_commands.element_modification_commands.extend(
+                package_alter_parameter_commands
             )
 
         return serialize_node_result

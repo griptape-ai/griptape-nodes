@@ -1534,7 +1534,9 @@ class WorkflowManager:
             toml_doc.add("dependencies", tomlkit.item([]))
             griptape_tool_table = tomlkit.table()
             # Strip out the Nones since TOML doesn't like those
-            # WorkflowShape is now serialized as JSON string by Pydantic field_serializer
+            # WorkflowShape is now serialized as JSON string by Pydantic field_serializer;
+            # this preserves the nil/null/None values that we WANT, but for all of the
+            # Python-related Nones, TOML will flip out if they are not stripped.
             metadata_dict = workflow_metadata.model_dump(exclude_none=True)
             for key, value in metadata_dict.items():
                 griptape_tool_table.add(key=key, value=value)
