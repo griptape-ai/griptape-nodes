@@ -16,6 +16,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineTypeParameters(ABC):
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
+        self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
 
     @property
     @abstractmethod

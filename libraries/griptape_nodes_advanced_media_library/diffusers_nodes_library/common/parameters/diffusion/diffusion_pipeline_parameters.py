@@ -4,6 +4,18 @@ from typing import Any
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_controlnet_pipeline_runtime_parameters import (
+    FluxControlNetPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_fill_pipeline_runtime_parameters import (
+    FluxFillPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipeline_runtime_parameters import (
+    FluxImg2ImgPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipeline_runtime_parameters import (
+    FluxKontextPipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
 )
@@ -33,6 +45,14 @@ class DiffusionPipelineParameters:
         match pipeline_class:
             case "FluxPipeline":
                 self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
+            case "FluxFillPipeline":
+                self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
+            case "FluxControlNetPipeline":
+                self._runtime_parameters = FluxControlNetPipelineRuntimeParameters(self._node)
+            case "FluxKontextPipeline":
+                self._runtime_parameters = FluxKontextPipelineRuntimeParameters(self._node)
+            case "FluxImg2ImgPipeline":
+                self._runtime_parameters = FluxImg2ImgPipelineRuntimeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline class: {pipeline_class}"
                 logger.error(msg)
@@ -45,8 +65,8 @@ class DiffusionPipelineParameters:
         pipeline_class = value.split("-", 1)[0]
         self.set_runtime_parameters(pipeline_class)
 
-        self._runtime_parameters.add_input_parameters()
-        self._runtime_parameters.add_output_parameters()
+        self.runtime_parameters.add_input_parameters()
+        self.runtime_parameters.add_output_parameters()
 
     @property
     def runtime_parameters(self) -> DiffusionPipelineRuntimeParameters:
