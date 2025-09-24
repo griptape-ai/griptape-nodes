@@ -60,6 +60,8 @@ SIZE_OPTIONS = {
     ],
 }
 
+SEEDREAM_4_0_MAX_IMAGES = 10
+
 
 class SeedreamImageGeneration(DataNode):
     """Generate images using Seedream models via Griptape model proxy.
@@ -144,7 +146,14 @@ class SeedreamImageGeneration(DataNode):
         self.add_parameter(
             ParameterList(
                 name="images",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str", "list", "list[ImageArtifact]", "list[ImageUrlArtifact]"],
+                input_types=[
+                    "ImageArtifact",
+                    "ImageUrlArtifact",
+                    "str",
+                    "list",
+                    "list[ImageArtifact]",
+                    "list[ImageUrlArtifact]",
+                ],
                 default_value=[],
                 tooltip="Input images for seedream-4.0 (up to 10 images total)",
                 allowed_modes={ParameterMode.INPUT},
@@ -300,8 +309,12 @@ class SeedreamImageGeneration(DataNode):
         # Validate image count for seedream-4.0
         if model == "seedream-4.0":
             images = self.get_parameter_list_value("images") or []
-            if len(images) > 10:
-                exceptions.append(ValueError(f"{self.name}: seedream-4.0 supports maximum 10 images, got {len(images)}"))
+            if len(images) > SEEDREAM_4_0_MAX_IMAGES:
+                exceptions.append(
+                    ValueError(
+                        f"{self.name}: seedream-4.0 supports maximum {SEEDREAM_4_0_MAX_IMAGES} images, got {len(images)}"
+                    )
+                )
 
         return exceptions if exceptions else None
 
