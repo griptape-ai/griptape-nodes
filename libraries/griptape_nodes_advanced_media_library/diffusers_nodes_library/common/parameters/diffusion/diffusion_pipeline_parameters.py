@@ -7,6 +7,18 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runt
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_fill_pipeline_runtime_parameters import (
+    FluxFillPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_controlnet_pipeline_runtime_parameters import (
+    FluxControlNetPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipeline_runtime_parameters import (
+    FluxKontextPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipeline_runtime_parameters import (
+    FluxImg2ImgPipelineRuntimeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -33,6 +45,14 @@ class DiffusionPipelineParameters:
         match pipeline_class:
             case "FluxPipeline":
                 self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)
+            case "FluxFillPipeline":
+                self._runtime_parameters = FluxFillPipelineRuntimeParameters(self._node)
+            case "FluxControlNetPipeline":
+                self._runtime_parameters = FluxControlNetPipelineRuntimeParameters(self._node)
+            case "FluxKontextPipeline":
+                self._runtime_parameters = FluxKontextPipelineRuntimeParameters(self._node)
+            case "FluxImg2ImgPipeline":
+                self._runtime_parameters = FluxImg2ImgPipelineRuntimeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline class: {pipeline_class}"
                 logger.error(msg)

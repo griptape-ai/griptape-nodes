@@ -1,4 +1,10 @@
 import logging
+from PIL.Image import Image
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+)
+from utils.image_utils import load_image_from_url_artifact
+from griptape.artifacts import ImageUrlArtifact
 
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -9,7 +15,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
+class FluxImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 
@@ -46,10 +52,18 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
-                name="true_cfg_scale",
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Image to be used as the starting point.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="strength",
                 default_value=1.0,
                 type="float",
-                tooltip="True classifier-free guidance (guidance scale) is enabled when true_cfg_scale > 1 and negative_prompt is provided.",
+                tooltip="Indicates extent to transform the reference image.",
             )
         )
         self._node.add_parameter(
@@ -66,8 +80,16 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.remove_parameter_element_by_name("prompt_2")
         self._node.remove_parameter_element_by_name("negative_prompt")
         self._node.remove_parameter_element_by_name("negative_prompt_2")
-        self._node.remove_parameter_element_by_name("true_cfg_scale")
         self._node.remove_parameter_element_by_name("guidance_scale")
+        self._node.remove_parameter_element_by_name("image")
+        self._node.remove_parameter_element_by_name("strength")
+
+    def get_image_pil(self) -> Image:
+        input_image_artifact = self._node.get_parameter_value("image")
+        if isinstance(input_image_artifact, ImageUrlArtifact):
+            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
+        input_image_pil = image_artifact_to_pil(input_image_artifact)
+        return input_image_pil.convert("RGB")
 
     def _get_pipe_kwargs(self) -> dict:
         return {
@@ -75,9 +97,7 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
             "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
-            "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
+            "image": self.get_input_image_pil(),
+            "strength": self._node.get_parameter_value("strength"),
         }
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        return None

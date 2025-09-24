@@ -58,6 +58,9 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache"
             raise RuntimeError(error_msg)
         return pipeline
+    
+    def validate_before_node_run(self) -> list[Exception] | None:
+        return self.pipe_params.runtime_parameters.validate_before_node_run()
 
     async def aprocess(self) -> None:
         self.preprocess()

@@ -63,6 +63,10 @@ class ModelCache:
 
     def from_pretrained(self, cls: Any, *args, **kwargs) -> Any:
         return cls.from_pretrained(*args, **kwargs)
+    
+    def get_pipeline(self, config_hash: str) -> Any | None:
+        """Get cached pipeline by config hash."""
+        return self._pipeline_cache.get(config_hash)
 
     def get_or_build_pipeline(self, config_hash: str, builder_func: Any) -> Any:
         """Get cached pipeline or build new one if not exists."""

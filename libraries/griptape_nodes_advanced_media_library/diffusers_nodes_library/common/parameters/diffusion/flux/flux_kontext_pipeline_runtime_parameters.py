@@ -1,4 +1,10 @@
 import logging
+from PIL.Image import Image
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+)
+from utils.image_utils import load_image_from_url_artifact
+from griptape.artifacts import ImageUrlArtifact
 
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -9,7 +15,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
+class FluxKontextPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 
@@ -46,6 +52,14 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Image to be used as the starting point (optional).",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="true_cfg_scale",
                 default_value=1.0,
                 type="float",
@@ -77,7 +91,14 @@ class FluxPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
             "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
+            "image": self.get_input_image_pil(),
         }
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        return None
+    
+    def get_input_image_pil(self) -> Image | None:
+        image_artifact = self._node.get_parameter_value("image")
+        if image_artifact is None:
+            return None
+        if isinstance(image_artifact, ImageUrlArtifact):
+            image_artifact = load_image_from_url_artifact(image_artifact)
+        input_image_pil = image_artifact_to_pil(image_artifact)
+        return input_image_pil.convert("RGB")
