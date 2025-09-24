@@ -3210,7 +3210,9 @@ class WorkflowManager:
 
         return workflow_shape
 
-    def extract_parameter_shape_info(self, parameter: Parameter, *, include_control_params: bool = False) -> ParameterShapeInfo | None:
+    def extract_parameter_shape_info(
+        self, parameter: Parameter, *, include_control_params: bool = False
+    ) -> ParameterShapeInfo | None:
         """Extract shape information from a parameter for workflow shape building.
 
         Expose only the parameters that are relevant for workflow input and output.
@@ -3225,7 +3227,11 @@ class WorkflowManager:
         # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
         # Always exclude list types until container type handling is implemented
         if parameter.type.startswith("list"):
-            logger.warning("Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported", parameter.name, parameter.type)
+            logger.warning(
+                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
+                parameter.name,
+                parameter.type,
+            )
             return None
 
         # Conditionally exclude control types
@@ -3235,9 +3241,7 @@ class WorkflowManager:
         return self._convert_parameter_to_minimal_dict(parameter)
 
     def build_workflow_shape_from_parameter_info(
-        self,
-        input_node_params: WorkflowShapeNodes,
-        output_node_params: WorkflowShapeNodes
+        self, input_node_params: WorkflowShapeNodes, output_node_params: WorkflowShapeNodes
     ) -> WorkflowShape:
         """Build a WorkflowShape from collected parameter information.
 
@@ -3248,10 +3252,7 @@ class WorkflowManager:
         Returns:
             WorkflowShape object with inputs and outputs
         """
-        return WorkflowShape(
-            inputs=input_node_params,
-            outputs=output_node_params
-        )
+        return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
 
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
