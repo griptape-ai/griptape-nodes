@@ -19,9 +19,6 @@ from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.com
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_kontext_pipeline_parameters import (
     FluxPipelineTypeFluxKontextPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_lora_pipeline_parameters import (
-    FluxPipelineTypeFluxLoRAPipelineParameters,
-)
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_pipeline_parameters import (
     FluxPipelineTypeFluxPipelineParameters,
 )
@@ -57,8 +54,6 @@ class FluxPipelineTypeParameters(DiffusionPipelineTypeParameters):
                 self._pipeline_type_pipeline_params = FluxPipelineTypeFluxImg2ImgPipelineParameters(self._node)
             case "FluxControlNetPipeline":
                 self._pipeline_type_pipeline_params = FluxPipelineTypeFluxControlNetPipelineParameters(self._node)
-            case "FluxLoRAPipeline":
-                self._pipeline_type_pipeline_params = FluxPipelineTypeFluxLoRAPipelineParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline type: {pipeline_type}"
                 logger.error(msg)
