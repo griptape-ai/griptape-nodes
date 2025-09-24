@@ -88,7 +88,7 @@ class DiffusionPipelineBuilderParameters:
                 raise ValueError(msg)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_provider = parameter.name == "provider"
+        reset_provider = parameter.name == "provider" and self.get_provider() != value
         if reset_provider:
             self.pipeline_type_parameters.remove_input_parameters()
             self.set_pipeline_type_parameters(value)
