@@ -1,29 +1,11 @@
 import logging
 from typing import Any
 
-from diffusers_nodes_library.common.parameters.diffusion.allegro.allegro_pipeline_type_parameters import (
-    AllegroPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_parameters import (
-    AmusedPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.audioldm.audioldm_pipeline_type_parameters import (
-    AudioldmPipelineTypeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_parameters import (
     FluxPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.stable_diffusion_pipeline_type_parameters import (
-    StableDiffusionPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_parameters import (
-    WanPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_pipeline_type_parameters import (
-    WuerstchenPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -35,7 +17,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DiffusionPipelineBuilderParameters:
     def __init__(self, node: BaseNode):
-        self.provider_choices = ["Flux", "Allegro", "Amused", "AudioLDM", "Stable Diffusion", "WAN", "Wuerstchen"]
+        self.provider_choices = ["Flux"]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
         self.set_pipeline_type_parameters(self.provider_choices[0])
@@ -70,18 +52,6 @@ class DiffusionPipelineBuilderParameters:
         match provider:
             case "Flux":
                 self._pipeline_type_parameters = FluxPipelineTypeParameters(self._node)
-            case "Allegro":
-                self._pipeline_type_parameters = AllegroPipelineTypeParameters(self._node)
-            case "Amused":
-                self._pipeline_type_parameters = AmusedPipelineTypeParameters(self._node)
-            case "AudioLDM":
-                self._pipeline_type_parameters = AudioldmPipelineTypeParameters(self._node)
-            case "Stable Diffusion":
-                self._pipeline_type_parameters = StableDiffusionPipelineTypeParameters(self._node)
-            case "WAN":
-                self._pipeline_type_parameters = WanPipelineTypeParameters(self._node)
-            case "Wuerstchen":
-                self._pipeline_type_parameters = WuerstchenPipelineTypeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline provider: {provider}"
                 logger.error(msg)
@@ -92,7 +62,6 @@ class DiffusionPipelineBuilderParameters:
         if reset_provider:
             self.pipeline_type_parameters.remove_input_parameters()
             self.set_pipeline_type_parameters(value)
-            self._node.set_parameter_value("pipeline_type", self.pipeline_type_parameters.pipeline_types[0])
             self.pipeline_type_parameters.add_input_parameters()
 
             sorted_parameters = ["provider"]
