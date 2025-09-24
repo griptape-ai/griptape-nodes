@@ -394,9 +394,6 @@ class ExecuteDagState(State):
 
         context.workflow_state = WorkflowState.NO_ERROR
 
-        # Emit initial involved nodes for DAG execution
-        ExecuteDagState._emit_involved_nodes_update(context)
-
         if not context.paused:
             return ExecuteDagState
         return None
@@ -568,6 +565,7 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         """Execute the DAG structure using the existing DagBuilder."""
         if self.context.dag_builder is None:
             self.context.dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+        ExecuteDagState._emit_involved_nodes_update(self.context)
         await self.start(ExecuteDagState)
 
     def change_debug_mode(self, *, debug_mode: bool) -> None:
