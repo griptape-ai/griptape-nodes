@@ -65,8 +65,8 @@ class DiffusionPipelineParameters:
         pipeline_class = value.split("-", 1)[0]
         self.set_runtime_parameters(pipeline_class)
 
-        self._runtime_parameters.add_input_parameters()
-        self._runtime_parameters.add_output_parameters()
+        self.runtime_parameters.add_input_parameters()
+        self.runtime_parameters.add_output_parameters()
 
     @property
     def runtime_parameters(self) -> DiffusionPipelineRuntimeParameters:
