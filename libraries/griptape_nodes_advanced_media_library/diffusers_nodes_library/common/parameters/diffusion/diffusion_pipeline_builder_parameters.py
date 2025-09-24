@@ -118,7 +118,6 @@ class DiffusionPipelineBuilderParameters:
                 [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
             )
             self._node.reorder_elements(sorted_parameters)
-        self._node.print_ui_element_tree()
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     @property
