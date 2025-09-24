@@ -45,6 +45,7 @@ class FluxPipelineTypeFluxControlNetPipelineParameters(DiffusionPipelineTypePipe
             repo_ids=[
                 "InstantX/FLUX.1-dev-Controlnet-Union",
                 "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro",
+                "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
             ],
             parameter_name="controlnet_model",
         )
