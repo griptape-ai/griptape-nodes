@@ -513,7 +513,7 @@
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
-        "category": "",
+        "category": "misc",
         "description": "Build and cache 🤗 Diffuser Pipelines for reuse across multiple execution nodes.",
         "display_name": "Diffusion Pipeline Builder",
         "group": "diffusion"
