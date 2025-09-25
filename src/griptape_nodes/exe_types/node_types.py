@@ -167,6 +167,10 @@ class BaseNode(ABC):
         """Callback before validating a Connection coming TO this Node."""
         return
 
+    def after_init(self) -> None:
+        """Callback after Node initialization."""
+        return
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,  # noqa: ARG002

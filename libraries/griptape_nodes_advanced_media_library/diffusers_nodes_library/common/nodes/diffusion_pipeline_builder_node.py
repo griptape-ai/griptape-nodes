@@ -35,7 +35,9 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.log_params.add_output_parameters()
         self._initializing = False
 
+    def after_init(self) -> None:
         self.set_config_hash()
+        return super().after_init()
 
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
