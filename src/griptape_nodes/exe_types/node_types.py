@@ -51,6 +51,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+CONTROL_OUTPUT_PARAMETER = "Control Output Selection"
 
 
 class NodeResolutionState(StrEnum):
@@ -1427,7 +1428,7 @@ class EndNode(BaseNode):
         next_control_output = self.get_next_control_output()
         # Update which control parameter to flag as the output value.
         if next_control_output is not None:
-            self.parameter_output_values[next_control_output.name] = 1
+            self.parameter_output_values[next_control_output.name] = CONTROL_OUTPUT_PARAMETER
 
 
 class StartLoopNode(BaseNode):

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import StartNode, EndNode, LOCAL_EXECUTION
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import PackageNodeAsSerializedFlowRequest, PackageNodeAsSerializedFlowResultSuccess
@@ -88,30 +89,54 @@ class NodeExecutor:
                 # TODO: Call the publishworkflow handler with the workflow file given.
                 start_node_type = library.get_nodes_by_base_type(StartNode)[0]
                 end_node_type = library.get_nodes_by_base_type(EndNode)[0]
-                request = PackageNodeAsSerializedFlowRequest(
-                    node_name= node.name,
-                    start_node_type=start_node_type,
-                    end_node_type=end_node_type,
-                    start_end_specific_library_name=library_name,
-                    # TODO: How are we going to set this?
-                    entry_control_parameter_name=None
-                )
-                # now we package the flow into a serialized flow commands. 
-                package_result = GriptapeNodes.handle_request(request)
-                if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
-                    msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
-                    raise ValueError(msg)
-                file_name = f"{node.name}_{library_name}_packaged_flow"
-                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
-                workflow_result = GriptapeNodes.handle_request(workflow_file_request)
-                if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-                    msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
-                    raise ValueError(msg)
-                # TODO: What is the workflow metadata for?
-                publish_request = PublishWorkflowRequest(workflow_name=workflow_result.file_path, publisher_name=library_name, execute_on_publish=True, published_workflow_file_name=workflow_result.file_path)
-                publish_result = await workflow_handler.handler(publish_request)
-                #TODO: handle the result shape - maybe this should be defined in library too.
+                sanitized_name = "".join(c for c in node.name if c.isalnum())
+                output_parameter_prefix = f"{sanitized_name}_packaged_node_"
+                if False:
+                    request = PackageNodeAsSerializedFlowRequest(
+                        node_name= node.name,
+                        start_node_type=start_node_type,
+                        end_node_type=end_node_type,
+                        start_end_specific_library_name=library_name,
+                        entry_control_parameter_name=None,
+                        output_parameter_prefix=output_parameter_prefix
+                    )
+                    # now we package the flow into a serialized flow commands. 
+                    package_result = GriptapeNodes.handle_request(request)
+                    if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
+                        msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
+                        raise ValueError(msg)
+                    file_name = f"{node.name}_{library_name}_packaged_flow"
+                    workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
+                    workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+                    if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+                        msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+                        raise ValueError(msg)
+                    # TODO: What is the workflow metadata for?
+                    publish_request = PublishWorkflowRequest(workflow_name=workflow_result.file_path, publisher_name=library_name, execute_on_publish=True, published_workflow_file_name=workflow_result.file_path)
+                    publish_result = await workflow_handler.handler(publish_request)
 
+                    #TODO: HEre i call the packaging 
+
+                    # Here I call the subprocess executor 
+                    # get my output hell yeah.
+                    my_subprocess_result = subprocess_executor.output
+                # {end_node_name: parameter_output_values dict}
+                my_subprocess_result = {"EndNode":{"Agent_packaged_node_output":"THIS IS A TEST AND NOW IT'S DONE", "Agent_packaged_node_prompt": "WOAH WE HAVE A PROMPT TOO"}}
+                # For now, we know we have one end node, I believe.
+                parameter_output_values = {k: v for result_dict in my_subprocess_result.values() for k, v in result_dict.items()}
+
+                # Remove the output_parameter_prefix and set values on BaseNode
+                for param_name, param_value in parameter_output_values.items():
+                    if param_name.startswith(output_parameter_prefix):
+                        clean_param_name = param_name[len(output_parameter_prefix):]
+                        # Set this value for certain hacks
+                        parameter = node.get_parameter_by_name(clean_param_name)
+                        if parameter is not None:
+                            # Don't run set_parameter_value on control parameters
+                            if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                node.set_parameter_value(clean_param_name, param_value)
+                            # Set this value for output values. Include if a control parameter has an output value, because it signals the path to take.
+                            node.parameter_output_values[clean_param_name] = param_value
                 return
         # Fallback to default node processing
         await node.aprocess()

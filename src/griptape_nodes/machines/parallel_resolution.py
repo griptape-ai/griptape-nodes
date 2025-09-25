@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterType, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import CONTROL_OUTPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -168,6 +168,16 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
+    def get_next_control_output_for_non_local_execution(node:BaseNode) -> Parameter | None:
+        for param_name, value in node.parameter_output_values.items():
+            parameter = node.get_parameter_by_name(param_name)
+            if parameter is not None and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE and value==CONTROL_OUTPUT_PARAMETER:
+                # This is the parameter
+                return parameter
+        return None
+
+
+    @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
         flow_manager = GriptapeNodes.FlowManager()
@@ -175,8 +185,10 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
-
-        next_output = node.get_next_control_output()
+        if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
+            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
+        else:
+            next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 
