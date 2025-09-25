@@ -21,6 +21,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
+        self._initializing = True
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.params.add_input_parameters()
@@ -32,6 +33,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
+        self._initializing = False
 
         self.set_config_hash()
 
@@ -65,6 +67,22 @@ class DiffusionPipelineBuilderNode(ControlNode):
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
+
+    def add_parameter(self, parameter: Parameter) -> None:
+        """Add a parameter to the node.
+
+        During initialization, parameters are added normally.
+        After initialization (dynamic mode), parameters are marked as user-defined
+        for serialization and duplicates are prevented.
+        """
+        if self._initializing:
+            super().add_parameter(parameter)
+            return
+
+        # Dynamic mode: prevent duplicates and mark as user-defined
+        if parameter.name not in self.parameters:
+            parameter.user_defined = True
+            super().add_parameter(parameter)
 
     def before_value_set(self, parameter: Parameter, value: Any) -> None:
         self.params.before_value_set(parameter, value)
