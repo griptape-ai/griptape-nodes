@@ -174,6 +174,7 @@ class PackagingStartNodeResult(NamedTuple):
     start_node_commands: SerializedNodeCommands
     start_to_package_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
     input_shape_data: WorkflowShapeNodes
+    start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -1087,10 +1088,12 @@ class FlowManager:
 
         # Step 4: Serialize the package node
         unique_parameter_uuid_to_values = {}
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
         serialized_package_result = self._serialize_package_node(
             node_name=package_node_info.package_node.name,
             package_node=package_node_info.package_node,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
             return serialized_package_result
@@ -1102,6 +1105,8 @@ class FlowManager:
             package_node=package_node_info.package_node,
             package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
             library_version=library_version,
+            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
         if isinstance(start_node_result, PackageNodeAsSerializedFlowResultFailure):
             return start_node_result
@@ -1278,10 +1283,10 @@ class FlowManager:
         node_name: str,
         package_node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> SerializeNodeToCommandsResultSuccess | PackageNodeAsSerializedFlowResultFailure:
         """Serialize the package node to commands, adding OUTPUT mode to PROPERTY-only parameters."""
-        # Initialize parameter tracking structures
-        serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        # Use the provided parameter tracking structures
 
         # Create serialization request for the package node
         serialize_node_request = SerializeNodeToCommandsRequest(
@@ -1321,13 +1326,15 @@ class FlowManager:
 
         return serialize_node_result
 
-    def _create_start_node_commands(
+    def _create_start_node_commands(  # noqa: PLR0913
         self,
         request: PackageNodeAsSerializedFlowRequest,
         incoming_data_connections: list[IncomingConnection],
         package_node: BaseNode,
         package_node_uuid: SerializedNodeCommands.NodeUUID,
         library_version: str,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> PackagingStartNodeResult | PackageNodeAsSerializedFlowResultFailure:
         """Create start node commands and connections for incoming data connections."""
         # Generate UUID and name for start node
@@ -1353,6 +1360,7 @@ class FlowManager:
         # Create parameter modification commands and connection mappings for the start node based on incoming DATA connections
         start_node_parameter_commands = []
         start_to_package_data_connections = []
+        start_node_parameter_value_commands = []
         input_shape_data: WorkflowShapeNodes = {}
 
         for incoming_conn in incoming_data_connections:
@@ -1380,6 +1388,21 @@ class FlowManager:
                 if start_node_name not in input_shape_data:
                     input_shape_data[start_node_name] = {}
                 input_shape_data[start_node_name][param_name] = param_shape_info
+
+            # Extract parameter value from source node to set on start node
+            param_value_commands = GriptapeNodes.NodeManager().handle_parameter_value_saving(
+                parameter=source_param,
+                node=source_node,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                create_node_request=start_create_node_command,
+            )
+            if param_value_commands is not None:
+                # Modify each command to target the start node parameter instead
+                for param_value_command in param_value_commands:
+                    param_value_command.set_parameter_value_command.node_name = start_node_name
+                    param_value_command.set_parameter_value_command.parameter_name = param_name
+                    start_node_parameter_value_commands.append(param_value_command)
 
             # Create parameter command for start node
             add_param_request = AddParameterToNodeRequest(
@@ -1415,6 +1438,7 @@ class FlowManager:
             start_node_commands=start_node_commands,
             start_to_package_data_connections=start_to_package_data_connections,
             input_shape_data=input_shape_data,
+            start_node_parameter_value_commands=start_node_parameter_value_commands,
         )
 
     def _create_end_node_commands(
@@ -1617,7 +1641,8 @@ class FlowManager:
             serialized_connections=all_connections,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands={
-                serialized_package_result.serialized_node_commands.node_uuid: serialized_package_result.set_parameter_value_commands
+                serialized_package_result.serialized_node_commands.node_uuid: serialized_package_result.set_parameter_value_commands,
+                start_node_result.start_node_commands.node_uuid: start_node_result.start_node_parameter_value_commands,
             },
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
