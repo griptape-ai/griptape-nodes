@@ -1,4 +1,3 @@
-import uuid
 from io import BytesIO
 from typing import Any
 
@@ -9,6 +8,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     save_pil_image_to_static_file,
@@ -74,7 +74,11 @@ class PaintMask(DataNode):
             mask_buffer = BytesIO()
             mask_pil.save(mask_buffer, format="PNG")
             mask_buffer.seek(0)
-            mask_filename = f"mask_{uuid.uuid4()}.png"
+            mask_filename = generate_filename(
+                node_name=self.name,
+                suffix="_mask",
+                extension="png",
+            )
             mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
 
             # Create ImageUrlArtifact directly with source_image_url in meta
@@ -121,7 +125,11 @@ class PaintMask(DataNode):
         mask_buffer = BytesIO()
         output_mask_value.save(mask_buffer, format="PNG")
         mask_buffer.seek(0)
-        mask_filename = f"mask_{uuid.uuid4()}.png"
+        mask_filename = generate_filename(
+            node_name=self.name,
+            suffix="_mask",
+            extension="png",
+        )
         mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
         output_mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
         self.set_parameter_value("output_mask", output_mask_artifact)
@@ -143,7 +151,11 @@ class PaintMask(DataNode):
                 response = httpx.get(mask_url, timeout=30)
                 response.raise_for_status()
                 mask_content = response.content
-                new_mask_filename = f"mask_{uuid.uuid4()}.png"
+                new_mask_filename = generate_filename(
+                    node_name=self.name,
+                    suffix="_mask",
+                    extension="png",
+                )
                 mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
                 mask_artifact = ImageUrlArtifact(
                     mask_url, meta={"source_image_url": image_artifact.value, "maskEdited": True}

@@ -6,12 +6,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
-from typing import Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
     ControlParameterOutput,
+    NodeMessageResult,
     Parameter,
     ParameterContainer,
     ParameterDictionary,
@@ -21,6 +22,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterTypeBuiltin,
 )
+from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -39,11 +41,16 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.traits.options import Options
 
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import NodeMessagePayload
+
 logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
 AsyncResult = Generator[Callable[[], T], T]
+
+LOCAL_EXECUTION = "Local Execution"
 
 
 class NodeResolutionState(StrEnum):
@@ -54,21 +61,21 @@ class NodeResolutionState(StrEnum):
     RESOLVED = auto()
 
 
-class NodeMessageResult(NamedTuple):
-    """Result from a node message callback.
+def get_library_names_with_publish_handlers() -> list[str]:
+    """Get names of all registered libraries that have PublishWorkflowRequest handlers."""
+    from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    Attributes:
-        success: True if the message was handled successfully, False otherwise
-        details: Human-readable description of what happened
-        response: Optional response data to return to the sender
-        altered_workflow_state: True if the message handling altered workflow state.
-            Clients can use this to determine if the workflow needs to be re-saved.
-    """
+    library_manager = GriptapeNodes.LibraryManager()
+    event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    success: bool
-    details: str
-    response: Any = None
-    altered_workflow_state: bool = True
+    # Always include "local" as the first option
+    library_names = [LOCAL_EXECUTION]
+
+    # Add all registered library names that can handle PublishWorkflowRequest
+    library_names.extend(sorted(event_handlers.keys()))
+
+    return library_names
 
 
 class BaseNode(ABC):
@@ -80,7 +87,7 @@ class BaseNode(ABC):
     state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
-    parameter_output_values: dict[str, Any]
+    parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
     _tracked_parameters: list[BaseNodeElement]
@@ -116,6 +123,16 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self.set_entry_control_parameter(None)
+        self.execution_environment = Parameter(
+            name="execution_environment",
+            tooltip="Environment that the node should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
+            ui_options={"hide": True},
+        )
+        self.add_parameter(self.execution_environment)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -289,14 +306,17 @@ class BaseNode(ABC):
 
     def on_node_message_received(
         self,
-        optional_element_name: str | None,  # noqa: ARG002
+        optional_element_name: str | None,
         message_type: str,
-        message: Any,  # noqa: ARG002
+        message: NodeMessagePayload | None,
     ) -> NodeMessageResult:
         """Callback for when a message is sent directly to this node.
 
         Custom nodes may elect to override this method to handle specific message types
         and implement custom communication patterns with external systems.
+
+        If optional_element_name is provided, this method will attempt to find the
+        element and delegate the message handling to that element's on_message_received method.
 
         Args:
             optional_element_name: Optional element name this message relates to
@@ -306,6 +326,26 @@ class BaseNode(ABC):
         Returns:
             NodeMessageResult: Result containing success status, details, and optional response
         """
+        # If optional_element_name is provided, delegate to the specific element
+        if optional_element_name is not None:
+            element = self.root_ui_element.find_element_by_name(optional_element_name)
+            if element is None:
+                return NodeMessageResult(
+                    success=False,
+                    details=f"Node '{self.name}' received message for element '{optional_element_name}' but no element with that name was found",
+                    response=None,
+                )
+            # Delegate to the element's message handler
+            result = element.on_message_received(message_type, message)
+            if result is None:
+                return NodeMessageResult(
+                    success=False,
+                    details=f"Element '{optional_element_name}' received message type '{message_type}' but no handler was available",
+                    response=None,
+                )
+            return result
+
+        # If no element name specified, fall back to node-level handling
         return NodeMessageResult(
             success=False,
             details=f"Node '{self.name}' was sent a message of type '{message_type}'. Failed because no message handler was specified for this node. Implement the on_node_message_received method in this node class in order for it to receive messages.",
@@ -324,7 +364,7 @@ class BaseNode(ABC):
             msg = f"Failed to add Parameter `{param.name}`. Parameter names cannot currently any whitespace characters. Please see https://github.com/griptape-ai/griptape-nodes/issues/714 to check the status on a remedy for this issue."
             raise ValueError(msg)
         if self.does_name_exist(param.name):
-            msg = "Cannot have duplicate names on parameters."
+            msg = f"Cannot have duplicate names on parameters. Encountered two instances of '{param.name}'."
             raise ValueError(msg)
         self.add_node_element(param)
         self._emit_parameter_lifecycle_event(param)
@@ -373,9 +413,7 @@ class BaseNode(ABC):
         for name in names:
             parameter = self.get_parameter_by_name(name)
             if parameter is not None:
-                ui_options = parameter.ui_options
-                ui_options["hide"] = not visible
-                parameter.ui_options = ui_options
+                parameter.ui_options = {**parameter.ui_options, "hide": not visible}
 
     def get_message_by_name_or_element_id(self, element: str) -> ParameterMessage | None:
         element_items = self.root_ui_element.find_elements_by_type(ParameterMessage)
@@ -397,9 +435,7 @@ class BaseNode(ABC):
         for name in names:
             message = self.get_message_by_name_or_element_id(name)
             if message is not None:
-                ui_options = message.ui_options
-                ui_options["hide"] = not visible
-                message.ui_options = ui_options
+                message.ui_options = {**message.ui_options, "hide": not visible}
 
     def hide_message_by_name(self, names: str | list[str]) -> None:
         self._set_message_visibility(names, visible=False)
@@ -705,6 +741,9 @@ class BaseNode(ABC):
             raise KeyError(err)
 
     def get_next_control_output(self) -> Parameter | None:
+        # The default behavior for nodes is to find the first control output found.
+        # Advanced nodes can override this behavior (e.g., nodes that have multiple possible
+        # control paths).
         for param in self.parameters:
             if (
                 ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
@@ -713,11 +752,9 @@ class BaseNode(ABC):
                 return param
         return None
 
-    # Abstract method to process the node. Must be defined by the type
     # Must save the values of the output parameters in NodeContext.
-    @abstractmethod
-    def process[T](self) -> AsyncResult | None:
-        pass
+    def process(self) -> AsyncResult | None:
+        raise NotImplementedError
 
     async def aprocess(self) -> None:
         """Async version of process().
@@ -853,7 +890,7 @@ class BaseNode(ABC):
             msg = f"Parameter '{parameter_name} doesn't exist on {self.name}'"
             raise RuntimeError(msg)
 
-    def reorder_elements(self, element_order: list[str | int]) -> None:
+    def reorder_elements(self, element_order: list[str] | list[int] | list[str | int]) -> None:
         """Reorder the elements of this node.
 
         Args:
@@ -1095,7 +1132,14 @@ class TrackedParameterOutputValues(dict[str, Any]):
             keys_to_clear = list(self.keys())
             super().clear()
             for key in keys_to_clear:
-                self._emit_parameter_change_event(key, None, deleted=True)
+                # Some nodes still have values set, even if their output values are cleared
+                # Here, we are emitting an event with those set values, to not misrepresent the values of the parameters in the UI.
+                value = self._node.get_parameter_value(key)
+                self._emit_parameter_change_event(key, value, deleted=True)
+
+    def silent_clear(self) -> None:
+        """Clear all values without emitting parameter change events."""
+        super().clear()
 
     def update(self, *args, **kwargs) -> None:
         # Handle both dict.update(other) and dict.update(**kwargs) patterns
@@ -1136,27 +1180,187 @@ class TrackedParameterOutputValues(dict[str, Any]):
 
 class ControlNode(BaseNode):
     # Control Nodes may have one Control Input Port and at least one Control Output Port
-    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+        input_control_name: str | None = None,
+        output_control_name: str | None = None,
+    ) -> None:
         super().__init__(name, metadata=metadata)
-        control_parameter_in = ControlParameterInput()
-        control_parameter_out = ControlParameterOutput()
+        self.control_parameter_in = ControlParameterInput(
+            display_name=input_control_name if input_control_name is not None else "Flow In"
+        )
+        self.control_parameter_out = ControlParameterOutput(
+            display_name=output_control_name if output_control_name is not None else "Flow Out"
+        )
 
-        self.add_parameter(control_parameter_in)
-        self.add_parameter(control_parameter_out)
-
-    def get_next_control_output(self) -> Parameter | None:
-        for param in self.parameters:
-            if (
-                ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type
-                and ParameterMode.OUTPUT in param.allowed_modes
-            ):
-                return param
-        return None
+        self.add_parameter(self.control_parameter_in)
+        self.add_parameter(self.control_parameter_out)
 
 
 class DataNode(BaseNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata=metadata)
+
+        # Create control parameters like ControlNode, but initialize them as hidden
+        # This allows the user to turn a DataNode "into" a Control Node; useful when
+        # in situations like within a For Loop.
+        self.control_parameter_in = ControlParameterInput()
+        self.control_parameter_out = ControlParameterOutput()
+
+        # Hide the control parameters by default
+        self.control_parameter_in.ui_options["hide"] = True
+        self.control_parameter_out.ui_options["hide"] = True
+
+        self.add_parameter(self.control_parameter_in)
+        self.add_parameter(self.control_parameter_out)
+
+
+class SuccessFailureNode(BaseNode):
+    """Base class for nodes that have success/failure branching with control outputs.
+
+    This class provides:
+    - Control input parameter
+    - Two control outputs: success ("exec_out") and failure ("failure")
+    - Execution state tracking for control flow routing
+    - Helper method to check outgoing connections
+    - Helper method to create standard status output parameters
+    """
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata=metadata)
+
+        # Track execution state for control flow routing
+        self._execution_succeeded: bool | None = None
+
+        # Add control input parameter
+        self.control_parameter_in = ControlParameterInput()
+        self.add_parameter(self.control_parameter_in)
+
+        # Add success control output (uses default "exec_out" name)
+        self.control_parameter_out = ControlParameterOutput(
+            display_name="Succeeded", tooltip="Control path when the operation succeeds"
+        )
+        self.add_parameter(self.control_parameter_out)
+
+        # Add failure control output
+        self.failure_output = ControlParameterOutput(
+            name="failure",
+            display_name="Failed",
+            tooltip="Control path when the operation fails",
+        )
+        self.add_parameter(self.failure_output)
+
+    def get_next_control_output(self) -> Parameter | None:
+        """Determine which control output to follow based on execution result."""
+        if self._execution_succeeded is None:
+            # Execution hasn't completed yet
+            self.stop_flow = True
+            return None
+
+        if self._execution_succeeded:
+            return self.control_parameter_out
+        return self.failure_output
+
+    def _has_outgoing_connections(self, parameter: Parameter) -> bool:
+        """Check if a specific parameter has outgoing connections."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Check if node has any outgoing connections
+        node_connections = connections.outgoing_index.get(self.name)
+        if node_connections is None:
+            return False
+
+        # Check if this specific parameter has any outgoing connections
+        param_connections = node_connections.get(parameter.name, [])
+        return len(param_connections) > 0
+
+    def _create_status_parameters(
+        self,
+        *,
+        result_details_tooltip: str = "Details about the operation result",
+        result_details_placeholder: str = "Details on the operation will be presented here.",
+        parameter_group_initially_collapsed: bool = True,
+    ) -> None:
+        """Create and add standard status output parameters in a collapsible group.
+
+        This method creates a "Status" ParameterGroup and immediately adds it to the node.
+        Nodes that use this are responsible for calling this at their desired location
+        in their class constructor.
+
+        Creates and adds:
+        - was_successful: Boolean parameter indicating success/failure
+        - result_details: String parameter with operation details
+
+        Args:
+            result_details_tooltip: Custom tooltip for result_details parameter
+            result_details_placeholder: Custom placeholder text for result_details parameter
+            parameter_group_initially_collapsed: Whether the Status group should start collapsed
+        """
+        # Create status component with OUTPUT modes for SuccessFailureNode
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.OUTPUT},
+            result_details_modes={ParameterMode.OUTPUT},
+            parameter_group_initially_collapsed=parameter_group_initially_collapsed,
+            result_details_tooltip=result_details_tooltip,
+            result_details_placeholder=result_details_placeholder,
+        )
+
+    def _clear_execution_status(self) -> None:
+        """Clear execution status and reset status parameters.
+
+        This method should be called at the start of process() to reset the node state.
+        """
+        self._execution_succeeded = None
+        self.status_component.clear_execution_status("Beginning execution...")
+
+    def _set_status_results(self, *, was_successful: bool, result_details: str) -> None:
+        """Set status results and update execution state.
+
+        This method should be called from the process() method to communicate success or failure.
+        It sets the execution state for control flow routing and updates the status output parameters.
+
+        Args:
+            was_successful: Whether the operation succeeded
+            result_details: Details about the operation result
+        """
+        self._execution_succeeded = was_successful
+        self.status_component.set_execution_result(was_successful=was_successful, result_details=result_details)
+
+    def _handle_failure_exception(self, exception: Exception) -> None:
+        """Handle failure exceptions based on whether failure output is connected.
+
+        If the failure output has outgoing connections, logs the error and continues execution
+        to allow graceful failure handling. If no connections exist, raises the exception
+        to crash the flow and provide immediate feedback.
+
+        Args:
+            exception: The exception that caused the failure
+        """
+        if self._has_outgoing_connections(self.failure_output):
+            # User has connected something to Failed output, they want to handle errors gracefully
+            logger.error(
+                "Error in node '%s': %s. Continuing execution since failure output is connected for graceful handling.",
+                self.name,
+                exception,
+            )
+        else:
+            # No graceful handling, raise the exception to crash the flow
+            raise exception
+
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        """Clear result details before workflow runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_workflow_run()
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Clear result details before node runs to avoid confusion from previous sessions."""
+        self._set_status_results(was_successful=False, result_details="<Results will appear when the node executes>")
+        return super().validate_before_node_run()
 
 
 class StartNode(BaseNode):
@@ -1169,7 +1373,61 @@ class EndNode(BaseNode):
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/854
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-        self.add_parameter(ControlParameterInput())
+
+        # Add dual control inputs
+        self.succeeded_control = ControlParameterInput(
+            display_name="Succeeded", tooltip="Control path when the flow completed successfully"
+        )
+        self.failed_control = ControlParameterInput(
+            name="failed", display_name="Failed", tooltip="Control path when the flow failed"
+        )
+
+        self.add_parameter(self.succeeded_control)
+        self.add_parameter(self.failed_control)
+
+        # Create status component with INPUT and PROPERTY modes
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.PROPERTY},
+            result_details_modes={ParameterMode.INPUT},
+            parameter_group_initially_collapsed=False,
+            result_details_placeholder="Details about the completion or failure will be shown here.",
+        )
+
+    def process(self) -> None:
+        # Detect which control input was used to enter this node and determine success status
+        match self._entry_control_parameter:
+            case self.succeeded_control:
+                was_successful = True
+                status_prefix = "[SUCCEEDED]"
+            case self.failed_control:
+                was_successful = False
+                status_prefix = "[FAILED]"
+            case _:
+                # No specific success/failure connection provided, assume success
+                was_successful = True
+                status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+
+        # Get result details and format the final message
+        result_details_value = self.get_parameter_value("result_details")
+        if result_details_value and self._entry_control_parameter in (self.succeeded_control, self.failed_control):
+            details = f"{status_prefix}\n{result_details_value}"
+        elif self._entry_control_parameter in (self.succeeded_control, self.failed_control):
+            details = f"{status_prefix}\nNo details supplied by flow"
+        else:
+            details = status_prefix
+
+        self.status_component.set_execution_result(was_successful=was_successful, result_details=details)
+
+        # Update all values to use the output value
+        for param in self.parameters:
+            if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                value = self.get_parameter_value(param.name)
+                self.parameter_output_values[param.name] = value
+        next_control_output = self.get_next_control_output()
+        # Update which control parameter to flag as the output value.
+        if next_control_output is not None:
+            self.parameter_output_values[next_control_output.name] = 1
 
 
 class StartLoopNode(BaseNode):

@@ -69,6 +69,12 @@ class UnionOneFluxControlNetParameters:
         control_image_pil = image_artifact_to_pil(control_image_artifact)
         return control_image_pil.convert("RGB")
 
+    def get_quantization_mode(self) -> str:
+        return str(self._node.get_parameter_value("quantization_mode"))
+
+    def get_skip_memory_check(self) -> bool:
+        return bool(self._node.get_parameter_value("skip_memory_check"))
+
     def get_pipe_kwargs(self) -> dict:
         control_image_pil = self.get_control_image_pil()
         controlnet_conditioning_scale = float(self._node.get_parameter_value("controlnet_conditioning_scale"))

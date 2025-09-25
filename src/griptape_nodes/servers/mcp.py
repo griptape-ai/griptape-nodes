@@ -16,7 +16,6 @@ from pydantic import TypeAdapter
 from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
-from griptape_nodes.mcp_server.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -38,6 +37,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.servers.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Nodes

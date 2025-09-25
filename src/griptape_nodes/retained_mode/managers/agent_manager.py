@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import uuid
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentResultStarted,
     RunAgentResultSuccess,
 )
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -45,6 +47,7 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.retained_mode.managers.static_files_manager import (
     StaticFilesManager,
 )
+from griptape_nodes.servers.mcp import start_mcp_server
 
 if TYPE_CHECKING:
     from griptape.tools.mcp.sessions import StreamableHttpConnection
@@ -104,6 +107,11 @@ class AgentManager:
             event_manager.assign_manager_to_request_type(
                 GetConversationMemoryRequest, self.on_handle_get_conversation_memory_request
             )
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
+            # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop mcp server
 
     def _initialize_prompt_driver(self) -> GriptapeCloudPromptDriver:
         api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
@@ -251,3 +259,9 @@ class AgentManager:
         return GetConversationMemoryResultSuccess(
             runs=conversation_memory, result_details="Conversation memory retrieved successfully."
         )
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        secrets_manager = GriptapeNodes.SecretsManager()
+        api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
+        # Start MCP server in daemon thread
+        threading.Thread(target=start_mcp_server, args=(api_key,), daemon=True, name="mcp-server").start()

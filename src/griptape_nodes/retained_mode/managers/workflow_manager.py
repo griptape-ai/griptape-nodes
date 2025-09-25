@@ -4,7 +4,6 @@ import ast
 import asyncio
 import logging
 import pickle
-import pkgutil
 import re
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
@@ -24,7 +23,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry, WorkflowShape
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -100,6 +99,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowWithCurrentStateRequest,
     RunWorkflowWithCurrentStateResultFailure,
     RunWorkflowWithCurrentStateResultSuccess,
+    SaveWorkflowFileFromSerializedFlowRequest,
+    SaveWorkflowFileFromSerializedFlowResultFailure,
+    SaveWorkflowFileFromSerializedFlowResultSuccess,
     SaveWorkflowRequest,
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
@@ -115,7 +117,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from griptape_nodes.exe_types.core_types import Parameter
-    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.events.node_events import SetLockNodeStateRequest
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -123,6 +124,10 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
+# Type aliases for workflow shape building
+ParameterShapeInfo = dict[str, Any]  # Parameter metadata dict from _convert_parameter_to_minimal_dict
+NodeParameterMap = dict[str, ParameterShapeInfo]  # {param_name: param_info}
+WorkflowShapeNodes = dict[str, NodeParameterMap]  # {node_name: {param_name: param_info}}
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -269,6 +274,10 @@ class WorkflowManager:
             SaveWorkflowRequest,
             self.on_save_workflow_request,
         )
+        event_manager.assign_manager_to_request_type(
+            SaveWorkflowFileFromSerializedFlowRequest,
+            self.on_save_workflow_file_from_serialized_flow_request,
+        )
         event_manager.assign_manager_to_request_type(LoadWorkflowMetadata, self.on_load_workflow_metadata_request)
         event_manager.assign_manager_to_request_type(
             PublishWorkflowRequest,
@@ -317,17 +326,22 @@ class WorkflowManager:
 
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
-        # See if there are USER workflow JSONs to load.
+        # Discover workflows from both config and workspace.
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+        config_mgr = GriptapeNodes.ConfigManager()
 
-        # Use the request/response pattern for workflow registration
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        workflows_to_register = []
 
-        register_request = RegisterWorkflowsFromConfigRequest(config_section=default_workflow_section)
-        register_result = GriptapeNodes.handle_request(register_request)
+        # Add from config
+        config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
+        workflows_to_register.extend(config_workflows)
 
-        if not isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):
-            logger.warning("Failed to register workflows from configuration during library initialization")
+        # Add from workspace (avoiding duplicates)
+        workspace_path = config_mgr.workspace_path
+        workflows_to_register.extend([workspace_path])
+
+        # Register all discovered workflows at once if any were found
+        self._process_workflows_for_registration(workflows_to_register)
 
         # Print it all out nicely.
         self.print_workflow_load_status()
@@ -340,7 +354,6 @@ class WorkflowManager:
                 paths_to_remove.add(workflow_path.lower())
 
         if paths_to_remove:
-            config_mgr = GriptapeNodes.ConfigManager()
             workflows_to_register = config_mgr.get_config_value(default_workflow_section)
             if workflows_to_register:
                 workflows_to_register = [
@@ -602,8 +615,8 @@ class WorkflowManager:
             if not execution_result.execution_successful:
                 result_messages = []
                 if context_warning:
-                    result_messages.append(ResultDetail(message=context_warning, level="WARNING"))
-                result_messages.append(ResultDetail(message=execution_result.execution_details, level="ERROR"))
+                    result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
+                result_messages.append(ResultDetail(message=execution_result.execution_details, level=logging.ERROR))
 
                 # Attempt to clear everything out, as we modified the engine state getting here.
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
@@ -615,8 +628,8 @@ class WorkflowManager:
         # Success!
         result_messages = []
         if context_warning:
-            result_messages.append(ResultDetail(message=context_warning, level="WARNING"))
-        result_messages.append(ResultDetail(message=execution_result.execution_details, level="DEBUG"))
+            result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
+        result_messages.append(ResultDetail(message=execution_result.execution_details, level=logging.DEBUG))
         return RunWorkflowFromRegistryResultSuccess(result_details=ResultDetails(*result_messages))
 
     def on_register_workflow_request(self, request: RegisterWorkflowRequest) -> ResultPayload:
@@ -631,7 +644,8 @@ class WorkflowManager:
         return RegisterWorkflowResultSuccess(
             workflow_name=workflow.metadata.name,
             result_details=ResultDetails(
-                message=f"Successfully registered workflow: {workflow.metadata.name}", level="INFO"
+                message=f"Successfully registered workflow: {workflow.metadata.name}",
+                level=logging.DEBUG,
             ),
         )
 
@@ -671,7 +685,7 @@ class WorkflowManager:
         return ImportWorkflowResultSuccess(
             workflow_name=register_result.workflow_name,
             result_details=ResultDetails(
-                message=f"Successfully imported workflow: {register_result.workflow_name}", level="INFO"
+                message=f"Successfully imported workflow: {register_result.workflow_name}", level=logging.INFO
             ),
         )
 
@@ -705,7 +719,7 @@ class WorkflowManager:
             details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
             return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess(
-            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level="INFO")
+            result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
         )
 
     def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
@@ -722,7 +736,7 @@ class WorkflowManager:
 
         return RenameWorkflowResultSuccess(
             result_details=ResultDetails(
-                message=f"Successfully renamed workflow to: {request.requested_name}", level="INFO"
+                message=f"Successfully renamed workflow to: {request.requested_name}", level=logging.INFO
             )
         )
 
@@ -784,17 +798,17 @@ class WorkflowManager:
         except OSError as e:
             error_messages = []
             main_error = f"Failed to move workflow file '{current_file_path}' to '{new_absolute_path}': {e!s}"
-            error_messages.append(ResultDetail(message=main_error, level="ERROR"))
+            error_messages.append(ResultDetail(message=main_error, level=logging.ERROR))
 
             # Attempt to rollback if file was moved but registry update failed
             if new_absolute_path.exists() and not Path(current_file_path).exists():
                 try:
                     new_absolute_path.rename(current_file_path)
                     rollback_message = f"Rolled back file move for workflow '{request.workflow_name}'"
-                    error_messages.append(ResultDetail(message=rollback_message, level="INFO"))
+                    error_messages.append(ResultDetail(message=rollback_message, level=logging.INFO))
                 except OSError:
                     rollback_failure = f"Failed to rollback file move for workflow '{request.workflow_name}'"
-                    error_messages.append(ResultDetail(message=rollback_failure, level="ERROR"))
+                    error_messages.append(ResultDetail(message=rollback_failure, level=logging.ERROR))
 
             return MoveWorkflowResultFailure(result_details=ResultDetails(*error_messages))
         except Exception as e:
@@ -803,7 +817,7 @@ class WorkflowManager:
         else:
             details = f"Successfully moved workflow '{request.workflow_name}' to '{new_relative_path}'"
             return MoveWorkflowResultSuccess(
-                moved_file_path=new_relative_path, result_details=ResultDetails(message=details, level="INFO")
+                moved_file_path=new_relative_path, result_details=ResultDetails(message=details, level=logging.INFO)
             )
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
@@ -1055,21 +1069,7 @@ class WorkflowManager:
             self.register_list_of_workflows(workflows_to_register)
 
     def register_list_of_workflows(self, workflows_to_register: list[str]) -> None:
-        for workflow_to_register in workflows_to_register:
-            path = Path(workflow_to_register)
-
-            if path.is_dir():
-                # If it's a directory, register all the workflows in it.
-                for workflow_file in path.glob("*.py"):
-                    # Check that the python file has script metadata
-                    metadata_blocks = self.get_workflow_metadata(
-                        workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
-                    )
-                    if len(metadata_blocks) == 1:
-                        self._register_workflow(str(workflow_file))
-            else:
-                # If it's a file, register it directly.
-                self._register_workflow(str(path))
+        self._process_workflows_for_registration(workflows_to_register)
 
     def _register_workflow(self, workflow_to_register: str) -> bool:
         """Registers a workflow from a file.
@@ -1124,238 +1124,47 @@ class WorkflowManager:
 
         return True
 
-    def _gather_workflow_imports(self) -> list[str]:
-        """Gathers all the imports for the saved workflow file, specifically for the events."""
-        import_template = "from {} import *"
-        import_statements = []
+    class WriteWorkflowFileResult(NamedTuple):
+        """Result of writing a workflow file."""
 
-        from griptape_nodes.retained_mode import events as events_pkg
+        success: bool
+        error_details: str
 
-        # Iterate over all modules in the events package
-        for _finder, module_name, _is_pkg in pkgutil.iter_modules(events_pkg.__path__, events_pkg.__name__ + "."):
-            if module_name.endswith("generate_request_payload_schemas"):
-                continue
-            import_statements.append(import_template.format(module_name))
-
-        return import_statements
-
-    def _generate_workflow_file_contents_and_metadata(  # noqa: C901, PLR0912, PLR0915
-        self,
-        file_name: str,
-        creation_date: datetime,
-        image_path: str | None = None,
-        prior_workflow: Workflow | None = None,
-        custom_metadata: WorkflowMetadata | None = None,
-    ) -> tuple[str, WorkflowMetadata]:
-        """Generate the contents of a workflow file.
+    def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
+        """Write workflow content to file with proper validation and error handling.
 
         Args:
-            file_name: The name of the workflow file
-            creation_date: The creation date for the workflow
-            image_path: Optional; the path to an image to include in the workflow metadata
-            prior_workflow: Optional; existing workflow to preserve branch info from
-            custom_metadata: Optional; pre-constructed metadata to use instead of generating it
-                           from the current workflow state. When provided, this metadata will be
-                           used directly, allowing branch/merge operations to pass specific metadata.
+            file_path: Path where to write the file
+            content: Content to write
+            file_name: Name for error messages
 
         Returns:
-            A tuple of (workflow_file_contents, workflow_metadata)
-
-        Raises:
-            ValueError, TypeError: If workflow generation fails
+            WriteWorkflowFileResult with success status and error details if failed
         """
-        # Get the engine version.
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
-        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
-            details = f"Failed getting the engine version for workflow '{file_name}'."
-            raise TypeError(details)
+        # Check disk space before any file system operations
+        config_manager = GriptapeNodes.ConfigManager()
+        min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_workflows")
+        if not OSManager.check_available_disk_space(file_path.parent, min_space_gb):
+            error_msg = OSManager.format_disk_space_error(file_path.parent)
+            details = f"Attempted to save workflow '{file_name}' (requires {min_space_gb:.1f} GB). Failed due to insufficient disk space: {error_msg}"
+            return self.WriteWorkflowFileResult(success=False, error_details=details)
+
+        # Create directory structure
         try:
-            engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
-            engine_version = (
-                f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
-            )
-        except Exception as err:
-            details = f"Failed getting the engine version for workflow '{file_name}': {err}"
-            raise ValueError(details) from err
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            details = f"Attempted to save workflow '{file_name}'. Failed when creating directory structure: {e}"
+            return self.WriteWorkflowFileResult(success=False, error_details=details)
 
-        # Keep track of all of the nodes we create and the generated variable names for them.
-        node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
+        # Write the file content
+        try:
+            with file_path.open("w", encoding="utf-8") as file:
+                file.write(content)
+        except OSError as e:
+            details = f"Attempted to save workflow '{file_name}'. Failed when writing file content: {e}"
+            return self.WriteWorkflowFileResult(success=False, error_details=details)
 
-        # Keep track of each flow and node index we've created.
-        flow_creation_index = 0
-
-        # Serialize from the top.
-        top_level_flow_request = GetTopLevelFlowRequest()
-        top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
-        if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
-            details = f"Failed when requesting to get top level flow for workflow '{file_name}'."
-            raise TypeError(details)
-        top_level_flow_name = top_level_flow_result.flow_name
-        serialized_flow_request = SerializeFlowToCommandsRequest(
-            flow_name=top_level_flow_name, include_create_flow_command=True
-        )
-        serialized_flow_result = GriptapeNodes.handle_request(serialized_flow_request)
-        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
-            details = f"Failed when serializing flow for workflow '{file_name}'."
-            raise TypeError(details)
-        serialized_flow_commands = serialized_flow_result.serialized_flow_commands
-
-        # Use custom metadata if provided, otherwise generate it
-        if custom_metadata is not None:
-            workflow_metadata = custom_metadata
-        else:
-            # Create the Workflow Metadata header.
-            workflows_referenced = None
-            if serialized_flow_commands.referenced_workflows:
-                workflows_referenced = list(serialized_flow_commands.referenced_workflows)
-
-            workflow_metadata = self._generate_workflow_metadata(
-                file_name=file_name,
-                engine_version=engine_version,
-                creation_date=creation_date,
-                node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
-                workflows_referenced=workflows_referenced,
-                prior_workflow=prior_workflow,
-            )
-            if workflow_metadata is None:
-                details = f"Failed to generate metadata for workflow '{file_name}'."
-                raise ValueError(details)
-
-        # Set the image if provided
-        if image_path:
-            workflow_metadata.image = image_path
-
-        metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
-        if metadata_block is None:
-            details = f"Failed to generate metadata block for workflow '{file_name}'."
-            raise ValueError(details)
-
-        import_recorder = ImportRecorder()
-        import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
-
-        ast_container = ASTContainer()
-
-        prereq_code = self._generate_workflow_run_prerequisite_code(
-            workflow_name=workflow_metadata.name, import_recorder=import_recorder
-        )
-        for node in prereq_code:
-            ast_container.add_node(node)
-
-        # Generate unique values code AST node.
-        unique_values_node = self._generate_unique_values_code(
-            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
-            prefix="top_level",
-            import_recorder=import_recorder,
-        )
-        ast_container.add_node(unique_values_node)
-
-        # See if this serialized flow has a flow initialization command; if it does, we'll need to insert that.
-        flow_initialization_command = serialized_flow_commands.flow_initialization_command
-
-        match flow_initialization_command:
-            case CreateFlowRequest():
-                # Generate create flow context AST module
-                create_flow_context_module = self._generate_create_flow(
-                    flow_initialization_command, import_recorder, flow_creation_index
-                )
-                for node in create_flow_context_module.body:
-                    ast_container.add_node(node)
-            case ImportWorkflowAsReferencedSubFlowRequest():
-                # Generate import workflow context AST module
-                import_workflow_context_module = self._generate_import_workflow(
-                    flow_initialization_command, import_recorder, flow_creation_index
-                )
-                for node in import_workflow_context_module.body:
-                    ast_container.add_node(node)
-            case None:
-                # No initialization command, deserialize into current context
-                pass
-
-        # Generate assign flow context AST node, if we have any children commands.
-        # Skip content generation for referenced workflows - they should only have the import command
-        is_referenced_workflow = isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest)
-        has_content_to_serialize = (
-            len(serialized_flow_commands.serialized_node_commands) > 0
-            or len(serialized_flow_commands.serialized_connections) > 0
-            or len(serialized_flow_commands.set_parameter_value_commands) > 0
-            or len(serialized_flow_commands.sub_flows_commands) > 0
-            or len(serialized_flow_commands.set_lock_commands_per_node) > 0
-        )
-
-        if not is_referenced_workflow and has_content_to_serialize:
-            # Create the "with..." statement
-            assign_flow_context_node = self._generate_assign_flow_context(
-                flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
-            )
-
-            # Generate nodes in flow AST node. This will create the node and apply all element modifiers.
-            nodes_in_flow = self._generate_nodes_in_flow(
-                serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
-            )
-
-            # Add the nodes to the body of the Current Context flow's "with" statement
-            assign_flow_context_node.body.extend(nodes_in_flow)
-
-            # Process sub-flows - for each sub-flow, generate its initialization command
-            for sub_flow_index, sub_flow_commands in enumerate(serialized_flow_commands.sub_flows_commands):
-                sub_flow_creation_index = flow_creation_index + 1 + sub_flow_index
-
-                # Generate initialization command for the sub-flow
-                sub_flow_initialization_command = sub_flow_commands.flow_initialization_command
-                if sub_flow_initialization_command is not None:
-                    match sub_flow_initialization_command:
-                        case CreateFlowRequest():
-                            sub_flow_create_node = self._generate_create_flow(
-                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
-                            )
-                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_create_node))
-                        case ImportWorkflowAsReferencedSubFlowRequest():
-                            sub_flow_import_node = self._generate_import_workflow(
-                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
-                            )
-                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
-
-            # Now generate the connection code and add it to the flow context.
-            connection_asts = self._generate_connections_code(
-                serialized_connections=serialized_flow_commands.serialized_connections,
-                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
-                import_recorder=import_recorder,
-            )
-            assign_flow_context_node.body.extend(connection_asts)
-
-            # Now generate all the set parameter value code and add it to the flow context.
-            set_parameter_value_asts = self._generate_set_parameter_value_code(
-                set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
-                lock_commands=serialized_flow_commands.set_lock_commands_per_node,
-                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
-                unique_values_dict_name="top_level_unique_values_dict",
-                import_recorder=import_recorder,
-            )
-            assign_flow_context_node.body.extend(set_parameter_value_asts)
-
-            ast_container.add_node(assign_flow_context_node)
-
-        workflow_execution_code = (
-            self._generate_workflow_execution(
-                flow_name=top_level_flow_name,
-                import_recorder=import_recorder,
-            )
-            if top_level_flow_name
-            else None
-        )
-        if workflow_execution_code is not None:
-            for node in workflow_execution_code:
-                ast_container.add_node(node)
-
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1190 do child workflows
-
-        # Generate final code from ASTContainer
-        ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
-        import_output = import_recorder.generate_imports()
-        final_code_output = f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
-
-        return final_code_output, workflow_metadata
+        return self.WriteWorkflowFileResult(success=True, error_details="")
 
     def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         # Start with the file name provided; we may change it.
@@ -1417,39 +1226,57 @@ class WorkflowManager:
             relative_file_path = f"{file_name}.py"
             file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
-        # Generate the workflow file contents
-        try:
-            final_code_output, workflow_metadata = self._generate_workflow_file_contents_and_metadata(
-                file_name=file_name,
-                creation_date=creation_date,
-                image_path=request.image_path,
-                prior_workflow=prior_workflow,
-            )
-        except Exception as err:
-            details = f"Attempted to save workflow '{relative_file_path}', but {err}"
+        # First, serialize the current workflow state
+        top_level_flow_request = GetTopLevelFlowRequest()
+        top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
+        if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
             return SaveWorkflowResultFailure(result_details=details)
 
-        # Create the pathing and write the file
-        try:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            details = f"Attempted to save workflow '{file_name}'. Failed when creating directory: {e}"
+        top_level_flow_name = top_level_flow_result.flow_name
+        serialized_flow_request = SerializeFlowToCommandsRequest(
+            flow_name=top_level_flow_name, include_create_flow_command=True
+        )
+        serialized_flow_result = GriptapeNodes.handle_request(serialized_flow_request)
+        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
             return SaveWorkflowResultFailure(result_details=details)
 
-        # Check disk space before writing
-        config_manager = GriptapeNodes.ConfigManager()
-        min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_workflows")
-        if not OSManager.check_available_disk_space(file_path.parent, min_space_gb):
-            error_msg = OSManager.format_disk_space_error(file_path.parent)
-            details = f"Attempted to save workflow '{file_name}' (requires {min_space_gb:.1f} GB). Failed: {error_msg}"
+        serialized_flow_commands = serialized_flow_result.serialized_flow_commands
+
+        # Extract branched_from information if it exists
+        branched_from = None
+        if prior_workflow and prior_workflow.metadata.branched_from:
+            branched_from = prior_workflow.metadata.branched_from
+
+        # Extract workflow shape if possible
+        workflow_shape = None
+        try:
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
+        except ValueError:
+            # If we can't extract workflow shape, continue without it
+            pass
+
+        # Use the standalone request to save the workflow file
+        save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+            serialized_flow_commands=serialized_flow_commands,
+            file_name=file_name,
+            creation_date=creation_date,
+            image_path=request.image_path,
+            execution_flow_name=top_level_flow_name,
+            branched_from=branched_from,
+            workflow_shape=workflow_shape,
+            file_path=str(file_path),
+        )
+        save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
+
+        if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed during file generation: {save_file_result.result_details}"
             return SaveWorkflowResultFailure(result_details=details)
 
-        try:
-            with file_path.open("w", encoding="utf-8") as file:
-                file.write(final_code_output)
-        except OSError as e:
-            details = f"Attempted to save workflow '{file_name}'. Failed when writing file: {e}"
-            return SaveWorkflowResultFailure(result_details=details)
+        # Use the metadata returned by the save operation
+        workflow_metadata = save_file_result.workflow_metadata
 
         # save the created workflow as an entry in the JSON config file.
         registered_workflows = WorkflowRegistry.list_workflows()
@@ -1465,37 +1292,246 @@ class WorkflowManager:
         # Update existing workflow's metadata in the registry
         existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
         existing_workflow.metadata = workflow_metadata
-        details = f"Successfully saved workflow to: {file_path}"
+        details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
-            file_path=str(file_path), result_details=ResultDetails(message=details, level="INFO")
+            file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
         )
 
-    def _generate_workflow_metadata(  # noqa: PLR0913
-        self,
-        file_name: str,
-        engine_version: str,
-        creation_date: datetime,
-        node_libraries_referenced: list[LibraryNameAndVersion],
-        workflows_referenced: list[str] | None = None,
-        prior_workflow: Workflow | None = None,
-    ) -> WorkflowMetadata | None:
-        # Preserve branched workflow information if it exists
-        branched_from = None
-        if prior_workflow and prior_workflow.metadata.branched_from:
-            branched_from = prior_workflow.metadata.branched_from
+    def on_save_workflow_file_from_serialized_flow_request(
+        self, request: SaveWorkflowFileFromSerializedFlowRequest
+    ) -> ResultPayload:
+        """Save a workflow file from serialized flow commands without registry overhead."""
+        # Determine file path
+        if request.file_path:
+            # Use provided file path
+            file_path = Path(request.file_path)
+        else:
+            # Default to workspace path
+            relative_file_path = f"{request.file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
-        workflow_metadata = WorkflowMetadata(
+        # Use provided creation date or default to current time
+        creation_date = request.creation_date
+        if creation_date is None:
+            creation_date = datetime.now(tz=UTC)
+
+        # Generate metadata from the serialized commands
+        try:
+            workflow_metadata = self._generate_workflow_metadata_from_commands(
+                serialized_flow_commands=request.serialized_flow_commands,
+                file_name=request.file_name,
+                creation_date=creation_date,
+                image_path=request.image_path,
+                branched_from=request.branched_from,
+                workflow_shape=request.workflow_shape,
+            )
+        except Exception as err:
+            details = f"Attempted to save workflow file '{request.file_name}' from serialized flow commands. Failed during metadata generation: {err}"
+            return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
+
+        # Use provided execution flow name or default to file name
+        execution_flow_name = request.execution_flow_name
+        if execution_flow_name is None:
+            execution_flow_name = request.file_name
+
+        # Generate the workflow file content
+        try:
+            final_code_output = self._generate_workflow_file_content(
+                serialized_flow_commands=request.serialized_flow_commands,
+                workflow_metadata=workflow_metadata,
+                execution_flow_name=execution_flow_name,
+            )
+        except Exception as err:
+            details = f"Attempted to save workflow file '{request.file_name}' from serialized flow commands. Failed during content generation: {err}"
+            return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
+
+        # Write the workflow file
+        write_result = self._write_workflow_file(file_path, final_code_output, request.file_name)
+        if not write_result.success:
+            return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
+
+        details = f"Successfully saved workflow file at: {file_path}"
+        return SaveWorkflowFileFromSerializedFlowResultSuccess(
+            file_path=str(file_path),
+            workflow_metadata=workflow_metadata,
+            result_details=ResultDetails(message=details, level=logging.INFO),
+        )
+
+    def _generate_workflow_metadata_from_commands(  # noqa: PLR0913
+        self,
+        serialized_flow_commands: SerializedFlowCommands,
+        file_name: str,
+        creation_date: datetime,
+        image_path: str | None = None,
+        branched_from: str | None = None,
+        workflow_shape: WorkflowShape | None = None,
+    ) -> WorkflowMetadata:
+        """Generate workflow metadata from serialized commands."""
+        # Get the engine version
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            details = f"Failed getting the engine version for workflow '{file_name}'."
+            raise TypeError(details)
+
+        engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+        engine_version = f"{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+
+        # Create the Workflow Metadata header
+        workflows_referenced = None
+        if serialized_flow_commands.referenced_workflows:
+            workflows_referenced = list(serialized_flow_commands.referenced_workflows)
+
+        return WorkflowMetadata(
             name=str(file_name),
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
-            node_libraries_referenced=node_libraries_referenced,
+            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
             branched_from=branched_from,
+            workflow_shape=workflow_shape,
+            image=image_path,
         )
 
-        return workflow_metadata
+    def _generate_workflow_file_content(  # noqa: PLR0912, C901
+        self,
+        serialized_flow_commands: SerializedFlowCommands,
+        workflow_metadata: WorkflowMetadata,
+        execution_flow_name: str,
+    ) -> str:
+        """Generate workflow file content from serialized commands and metadata."""
+        metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
+        if metadata_block is None:
+            details = f"Failed to generate metadata block for workflow '{workflow_metadata.name}'."
+            raise ValueError(details)
+
+        import_recorder = ImportRecorder()
+        import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
+
+        ast_container = ASTContainer()
+
+        prereq_code = self._generate_workflow_run_prerequisite_code(
+            workflow_name=workflow_metadata.name, import_recorder=import_recorder
+        )
+        for node in prereq_code:
+            ast_container.add_node(node)
+
+        # Generate unique values code AST node
+        unique_values_node = self._generate_unique_values_code(
+            unique_parameter_uuid_to_values=serialized_flow_commands.unique_parameter_uuid_to_values,
+            prefix="top_level",
+            import_recorder=import_recorder,
+        )
+        ast_container.add_node(unique_values_node)
+
+        # Keep track of each flow and node index we've created
+        flow_creation_index = 0
+
+        # See if this serialized flow has a flow initialization command; if it does, we'll need to insert that
+        flow_initialization_command = serialized_flow_commands.flow_initialization_command
+
+        match flow_initialization_command:
+            case CreateFlowRequest():
+                # Generate create flow context AST module
+                create_flow_context_module = self._generate_create_flow(
+                    flow_initialization_command, import_recorder, flow_creation_index
+                )
+                for node in create_flow_context_module.body:
+                    ast_container.add_node(node)
+            case ImportWorkflowAsReferencedSubFlowRequest():
+                # Generate import workflow context AST module
+                import_workflow_context_module = self._generate_import_workflow(
+                    flow_initialization_command, import_recorder, flow_creation_index
+                )
+                for node in import_workflow_context_module.body:
+                    ast_container.add_node(node)
+            case None:
+                # No initialization command, deserialize into current context
+                pass
+
+        # Generate assign flow context AST node, if we have any children commands
+        # Skip content generation for referenced workflows - they should only have the import command
+        is_referenced_workflow = isinstance(flow_initialization_command, ImportWorkflowAsReferencedSubFlowRequest)
+        has_content_to_serialize = (
+            len(serialized_flow_commands.serialized_node_commands) > 0
+            or len(serialized_flow_commands.serialized_connections) > 0
+            or len(serialized_flow_commands.set_parameter_value_commands) > 0
+            or len(serialized_flow_commands.sub_flows_commands) > 0
+            or len(serialized_flow_commands.set_lock_commands_per_node) > 0
+        )
+
+        if not is_referenced_workflow and has_content_to_serialize:
+            # Keep track of all of the nodes we create and the generated variable names for them
+            node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
+
+            # Create the "with..." statement
+            assign_flow_context_node = self._generate_assign_flow_context(
+                flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
+            )
+
+            # Generate nodes in flow AST node. This will create the node and apply all element modifiers
+            nodes_in_flow = self._generate_nodes_in_flow(
+                serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
+            )
+
+            # Add the nodes to the body of the Current Context flow's "with" statement
+            assign_flow_context_node.body.extend(nodes_in_flow)
+
+            # Process sub-flows - for each sub-flow, generate its initialization command
+            for sub_flow_index, sub_flow_commands in enumerate(serialized_flow_commands.sub_flows_commands):
+                sub_flow_creation_index = flow_creation_index + 1 + sub_flow_index
+
+                # Generate initialization command for the sub-flow
+                sub_flow_initialization_command = sub_flow_commands.flow_initialization_command
+                if sub_flow_initialization_command is not None:
+                    match sub_flow_initialization_command:
+                        case CreateFlowRequest():
+                            sub_flow_create_node = self._generate_create_flow(
+                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
+                            )
+                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_create_node))
+                        case ImportWorkflowAsReferencedSubFlowRequest():
+                            sub_flow_import_node = self._generate_import_workflow(
+                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
+                            )
+                            assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
+
+            # Now generate the connection code and add it to the flow context
+            connection_asts = self._generate_connections_code(
+                serialized_connections=serialized_flow_commands.serialized_connections,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                import_recorder=import_recorder,
+            )
+            assign_flow_context_node.body.extend(connection_asts)
+
+            # Generate parameter values
+            set_parameter_value_asts = self._generate_set_parameter_value_code(
+                set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
+                lock_commands=serialized_flow_commands.set_lock_commands_per_node,
+                node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                unique_values_dict_name="top_level_unique_values_dict",
+                import_recorder=import_recorder,
+            )
+            assign_flow_context_node.body.extend(set_parameter_value_asts)
+
+            ast_container.add_node(assign_flow_context_node)
+
+        # Generate workflow execution code
+        workflow_execution_code = self._generate_workflow_execution(
+            flow_name=execution_flow_name,
+            import_recorder=import_recorder,
+            workflow_metadata=workflow_metadata,
+        )
+        if workflow_execution_code is not None:
+            for node in workflow_execution_code:
+                ast_container.add_node(node)
+
+        # Generate final code from ASTContainer
+        ast_output = "\n\n".join([ast.unparse(node) for node in ast_container.get_ast()])
+        import_output = import_recorder.generate_imports()
+        return f"{metadata_block}\n\n{import_output}\n\n{ast_output}\n"
 
     def _replace_workflow_metadata_header(self, workflow_content: str, new_metadata: WorkflowMetadata) -> str | None:
         """Replace the metadata header in a workflow file with new metadata.
@@ -1525,11 +1561,13 @@ class WorkflowManager:
             toml_doc = tomlkit.document()
             toml_doc.add("dependencies", tomlkit.item([]))
             griptape_tool_table = tomlkit.table()
-            metadata_dict = workflow_metadata.model_dump()
+            # Strip out the Nones since TOML doesn't like those
+            # WorkflowShape is now serialized as JSON string by Pydantic field_serializer;
+            # this preserves the nil/null/None values that we WANT, but for all of the
+            # Python-related Nones, TOML will flip out if they are not stripped.
+            metadata_dict = workflow_metadata.model_dump(exclude_none=True)
             for key, value in metadata_dict.items():
-                # Strip out the Nones since TOML doesn't like those.
-                if value is not None:
-                    griptape_tool_table.add(key=key, value=value)
+                griptape_tool_table.add(key=key, value=value)
             toml_doc["tool"] = tomlkit.table()
             toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore (this is the only way I could find to get tomlkit to do the dotted notation correctly)
         except Exception as err:
@@ -1554,13 +1592,19 @@ class WorkflowManager:
         self,
         flow_name: str,
         import_recorder: ImportRecorder,
+        workflow_metadata: WorkflowMetadata,
     ) -> list[ast.AST] | None:
         """Generates execute_workflow(...) and the __main__ guard."""
-        try:
-            workflow_shape = self.extract_workflow_shape(flow_name)
-        except ValueError:
+        # Use workflow shape from metadata if available, otherwise skip execution block
+        if workflow_metadata.workflow_shape is None:
             logger.info("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
             return None
+
+        # Convert WorkflowShape to dict format expected by the rest of the method
+        workflow_shape = {
+            "input": workflow_metadata.workflow_shape.inputs,
+            "output": workflow_metadata.workflow_shape.outputs,
+        }
 
         # === imports ===
         import_recorder.add_import("argparse")
@@ -1615,7 +1659,7 @@ class WorkflowManager:
             ),
         )
 
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor()
+        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum)
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
             value=ast.BoolOp(
@@ -1625,31 +1669,45 @@ class WorkflowManager:
                     ast.Call(
                         func=ast.Name(id="LocalWorkflowExecutor", ctx=ast.Load()),
                         args=[],
-                        keywords=[],
+                        keywords=[
+                            ast.keyword(
+                                arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
+                            ),
+                        ],
                     ),
                 ],
             ),
         )
-        run_call = ast.Expr(
-            value=ast.Await(
-                value=ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Name(id="workflow_executor", ctx=ast.Load()),
-                        attr="arun",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[
-                        ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
-                        ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                        ast.keyword(arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())),
-                    ],
+        # Use async context manager for workflow execution
+        with_stmt = ast.AsyncWith(
+            items=[
+                ast.withitem(
+                    context_expr=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                    optional_vars=ast.Name(id="executor", ctx=ast.Store()),
                 )
-            )
+            ],
+            body=[
+                ast.Expr(
+                    value=ast.Await(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Name(id="executor", ctx=ast.Load()),
+                                attr="arun",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[
+                                ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
+                                ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                            ],
+                        )
+                    )
+                )
+            ],
         )
         return_stmt = ast.Return(
             value=ast.Attribute(
-                value=ast.Name(id="workflow_executor", ctx=ast.Load()),
+                value=ast.Name(id="executor", ctx=ast.Load()),
                 attr="output",
                 ctx=ast.Load(),
             )
@@ -1659,7 +1717,7 @@ class WorkflowManager:
         async_func_def = ast.AsyncFunctionDef(
             name="aexecute_workflow",
             args=args,
-            body=[ensure_context_call, storage_backend_convert, executor_assign, run_call, return_stmt],
+            body=[ensure_context_call, storage_backend_convert, executor_assign, with_stmt, return_stmt],
             decorator_list=[],
             returns=return_annotation,
             type_params=[],
@@ -2603,7 +2661,7 @@ class WorkflowManager:
         )
 
         if flow_initialization_command is None:
-            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow_name())"
+            # Construct AST for "GriptapeNodes.ContextManager().flow(GriptapeNodes.ContextManager().get_current_flow().flow_name)"
             flow_call = ast.Call(
                 func=ast.Attribute(
                     value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
@@ -2613,16 +2671,22 @@ class WorkflowManager:
                     col_offset=0,
                 ),
                 args=[
-                    ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
-                            attr="get_current_flow_name",
-                            ctx=ast.Load(),
+                    ast.Attribute(
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Call(func=context_manager, args=[], keywords=[], lineno=1, col_offset=0),
+                                attr="get_current_flow",
+                                ctx=ast.Load(),
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            args=[],
+                            keywords=[],
                             lineno=1,
                             col_offset=0,
                         ),
-                        args=[],
-                        keywords=[],
+                        attr="flow_name",
+                        ctx=ast.Load(),
                         lineno=1,
                         col_offset=0,
                     )
@@ -3096,17 +3160,12 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                # Excluding list types as the individual parameters are exposed in the workflow shape.
-                # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
-                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not param.type.startswith("list"):
+                param_info = self.extract_parameter_shape_info(param, include_control_params=False)
+                if param_info is not None:
                     if node.name in workflow_shape[workflow_shape_type]:
-                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
-                            self._convert_parameter_to_minimal_dict(param)
-                        )
+                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = param_info
                     else:
-                        workflow_shape[workflow_shape_type][node.name] = {
-                            param.name: self._convert_parameter_to_minimal_dict(param)
-                        }
+                        workflow_shape[workflow_shape_type][node.name] = {param.name: param_info}
         return workflow_shape
 
     def extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
@@ -3157,6 +3216,50 @@ class WorkflowManager:
 
         return workflow_shape
 
+    def extract_parameter_shape_info(
+        self, parameter: Parameter, *, include_control_params: bool = False
+    ) -> ParameterShapeInfo | None:
+        """Extract shape information from a parameter for workflow shape building.
+
+        Expose only the parameters that are relevant for workflow input and output.
+
+        Args:
+            parameter: The parameter to extract shape info from
+            include_control_params: Whether to include control type parameters (default: False)
+
+        Returns:
+            Parameter info dict if relevant for workflow shape, None if should be excluded
+        """
+        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
+        # Always exclude list types until container type handling is implemented
+        if parameter.type.startswith("list"):
+            logger.warning(
+                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
+                parameter.name,
+                parameter.type,
+            )
+            return None
+
+        # Conditionally exclude control types
+        if not include_control_params and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+            return None
+
+        return self._convert_parameter_to_minimal_dict(parameter)
+
+    def build_workflow_shape_from_parameter_info(
+        self, input_node_params: WorkflowShapeNodes, output_node_params: WorkflowShapeNodes
+    ) -> WorkflowShape:
+        """Build a WorkflowShape from collected parameter information.
+
+        Args:
+            input_node_params: Mapping of input node names to their parameter info
+            output_node_params: Mapping of output node names to their parameter info
+
+        Returns:
+            WorkflowShape object with inputs and outputs
+        """
+        return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
+
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:
             publisher_name = request.publisher_name
@@ -3171,43 +3274,70 @@ class WorkflowManager:
 
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
-                file = Path(result.published_workflow_file_path)
-                self._register_published_workflow_file(file)
+                workflow_file = Path(result.published_workflow_file_path)
+                result = self._register_published_workflow_file(workflow_file, result)
             return result  # noqa: TRY300
         except Exception as e:
             details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
 
-    def _register_published_workflow_file(self, workflow_file: Path) -> None:
+    def _register_published_workflow_file(
+        self, workflow_file: Path, result: PublishWorkflowResultSuccess
+    ) -> ResultPayload:
         """Register a published workflow file in the workflow registry."""
+        result_messages: list[ResultDetail] = []
+
+        final_result: ResultPayload = result
+        if isinstance(result.result_details, ResultDetails):
+            result_messages.extend(result.result_details.result_details)
+        else:
+            result_messages.append(ResultDetail(message=result.result_details, level=logging.INFO))
+
         if workflow_file.exists() and workflow_file.is_file():
             load_workflow_metadata_request = LoadWorkflowMetadata(
                 file_name=workflow_file.name,
             )
             load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                try:
+                    _workflow = WorkflowRegistry.get_workflow_by_name(load_metadata_result.metadata.name)
+                    # This workflow was registered previously, but now it's been updated (potentially including the metadata), so let's re-register
+                    WorkflowRegistry.delete_workflow_by_name(load_metadata_result.metadata.name)
+                except KeyError:
+                    pass
+
                 register_workflow_result = self.on_register_workflow_request(
                     RegisterWorkflowRequest(
                         metadata=load_metadata_result.metadata,
                         file_name=workflow_file.name,
                     )
                 )
-                result_messages = []
                 if isinstance(register_workflow_result, RegisterWorkflowResultSuccess):
                     success_message = f"Successfully registered new workflow with file '{workflow_file.name}'."
-                    result_messages.append(ResultDetail(message=success_message, level="INFO"))
+                    result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
+                    final_result.result_details = ResultDetails(*result_messages)
                 else:
-                    failure_message = f"Failed to register workflow with file '{workflow_file.name}': {cast('RegisterWorkflowResultFailure', register_workflow_result).exception}"
-                    result_messages.append(ResultDetail(message=failure_message, level="WARNING"))
+                    exception = cast("RegisterWorkflowResultFailure", register_workflow_result).exception
+                    failure_message = f"Failed to register workflow with file '{workflow_file.name}': {exception}"
+                    result_messages.append(ResultDetail(message=failure_message, level=logging.ERROR))
+                    final_result = PublishWorkflowResultFailure(
+                        result_details=ResultDetails(*result_messages), exception=exception
+                    )
             else:
                 metadata_failure_message = (
                     f"Failed to load metadata for workflow file '{workflow_file.name}'. Not registering workflow."
                 )
-                result_messages = [ResultDetail(message=metadata_failure_message, level="WARNING")]
+                result_messages = [ResultDetail(message=metadata_failure_message, level=logging.ERROR)]
+                final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
 
-            # Log all messages through consolidated ResultDetails
-            ResultDetails(*result_messages)
+        else:
+            result_messages.append(
+                ResultDetail(message=f"Workflow file '{workflow_file.name}' does not exist.", level=logging.ERROR)
+            )
+            final_result = PublishWorkflowResultFailure(result_details=ResultDetails(*result_messages))
+
+        return final_result
 
     def on_import_workflow_as_referenced_sub_flow_request(
         self, request: ImportWorkflowAsReferencedSubFlowRequest
@@ -3402,7 +3532,7 @@ class WorkflowManager:
             return BranchWorkflowResultSuccess(
                 branched_workflow_name=branch_name,
                 original_workflow_name=request.workflow_name,
-                result_details=ResultDetails(message=details, level="INFO"),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as e:
@@ -3476,16 +3606,16 @@ class WorkflowManager:
                 WorkflowRegistry.delete_workflow_by_name(request.workflow_name)
                 Path(branch_content_file_path).unlink()
                 cleanup_message = f"Deleted branch workflow file and registry entry for '{request.workflow_name}'"
-                result_messages.append(ResultDetail(message=cleanup_message, level="INFO"))
+                result_messages.append(ResultDetail(message=cleanup_message, level=logging.INFO))
             except Exception as delete_error:
                 warning_message = (
                     f"Failed to fully clean up branch workflow '{request.workflow_name}': {delete_error!s}"
                 )
-                result_messages.append(ResultDetail(message=warning_message, level="WARNING"))
+                result_messages.append(ResultDetail(message=warning_message, level=logging.WARNING))
                 # Continue anyway - the merge was successful even if cleanup failed
 
             success_message = f"Successfully merged branch workflow '{request.workflow_name}' into source workflow '{source_workflow_name}'"
-            result_messages.append(ResultDetail(message=success_message, level="INFO"))
+            result_messages.append(ResultDetail(message=success_message, level=logging.INFO))
 
             return MergeWorkflowBranchResultSuccess(
                 merged_workflow_name=source_workflow_name, result_details=ResultDetails(*result_messages)
@@ -3559,7 +3689,8 @@ class WorkflowManager:
         else:
             details = f"Successfully reset branch workflow '{request.workflow_name}' to match source workflow '{source_workflow_name}'"
             return ResetWorkflowBranchResultSuccess(
-                reset_workflow_name=request.workflow_name, result_details=ResultDetails(message=details, level="INFO")
+                reset_workflow_name=request.workflow_name,
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
     def on_compare_workflows_request(self, request: CompareWorkflowsRequest) -> ResultPayload:
@@ -3807,7 +3938,7 @@ class WorkflowManager:
                 failed_workflows=failed,
                 result_details=ResultDetails(
                     message=f"Successfully processed workflows: {len(succeeded)} succeeded, {len(failed)} failed.",
-                    level="INFO",
+                    level=logging.INFO,
                 ),
             )
 
@@ -3820,33 +3951,9 @@ class WorkflowManager:
         succeeded = []
         failed = []
 
-        for workflow_to_register in workflows_to_register:
-            path = Path(workflow_to_register)
-
-            if path.is_dir():
-                dir_result = self._process_workflow_directory(path)
-                succeeded.extend(dir_result.succeeded)
-                failed.extend(dir_result.failed)
-            elif path.suffix == ".py":
-                workflow_name = self._process_single_workflow_file(path)
-                if workflow_name:
-                    succeeded.append(workflow_name)
-                else:
-                    failed.append(str(path))
-
-        return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
-
-    def _process_workflow_directory(self, directory_path: Path) -> WorkflowRegistrationResult:
-        """Process all workflow files in a directory.
-
-        Returns:
-            WorkflowRegistrationResult with succeeded and failed workflow names
-        """
-        succeeded = []
-        failed = []
-
-        for workflow_file in directory_path.glob("*.py"):
-            # Check that the python file has script metadata
+        def process_workflow_file(workflow_file: Path) -> None:
+            """Process a single workflow file for registration."""
+            # Check if the file has workflow metadata before processing
             metadata_blocks = self.get_workflow_metadata(
                 workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
             )
@@ -3857,6 +3964,21 @@ class WorkflowManager:
                 else:
                     failed.append(str(workflow_file))
 
+        def process_path(path: Path) -> None:
+            """Process a path, handling both files and directories."""
+            if not path.exists():
+                failed.append(str(path))
+                return
+            if path.is_dir():
+                # Process all Python files recursively in the directory
+                for workflow_file in path.rglob("*.py"):
+                    process_workflow_file(workflow_file)
+            elif path.suffix == ".py":
+                process_workflow_file(path)
+
+        for workflow_to_register in workflows_to_register:
+            process_path(Path(workflow_to_register))
+
         return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 
     def _process_single_workflow_file(self, workflow_file: Path) -> str | None:
@@ -3865,6 +3987,8 @@ class WorkflowManager:
         Returns:
             Workflow name if registered successfully, None if failed or skipped
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
@@ -3880,10 +4004,20 @@ class WorkflowManager:
             logger.debug("Skipping already registered workflow: %s", workflow_file)
             return None
 
+        # Convert to relative path if the workflow is under workspace_path
+        config_mgr = GriptapeNodes.ConfigManager()
+        workspace_path = config_mgr.workspace_path
+
+        if workflow_file.is_relative_to(workspace_path):
+            relative_path = workflow_file.relative_to(workspace_path)
+            file_path_to_register = str(relative_path)
+        else:
+            file_path_to_register = str(workflow_file)
+
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
-        if self._register_workflow(str(workflow_file)):
+        if self._register_workflow(file_path_to_register):
             return workflow_metadata.name
         return None
 

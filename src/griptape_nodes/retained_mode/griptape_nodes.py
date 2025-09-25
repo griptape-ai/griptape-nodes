@@ -62,12 +62,14 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
     from griptape_nodes.retained_mode.managers.operation_manager import (
         OperationDepthManager,
     )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.retained_mode.managers.session_manager import SessionManager
     from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -138,6 +140,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _flow_manager: FlowManager
     _context_manager: ContextManager
     _library_manager: LibraryManager
+    _model_manager: ModelManager
     _workflow_manager: WorkflowManager
     _workflow_variables_manager: VariablesManager
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
@@ -147,9 +150,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
+    _resource_manager: ResourceManager
     _sync_manager: SyncManager
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -160,12 +164,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+        from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
         from griptape_nodes.retained_mode.managers.operation_manager import (
             OperationDepthManager,
         )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
@@ -185,6 +191,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
+            self._resource_manager = ResourceManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
             self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
@@ -193,6 +200,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
+            self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
@@ -307,6 +315,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._library_manager
 
     @classmethod
+    def ModelManager(cls) -> ModelManager:
+        return GriptapeNodes.get_instance()._model_manager
+
+    @classmethod
     def ObjectManager(cls) -> ObjectManager:
         return GriptapeNodes.get_instance()._object_manager
 
@@ -365,6 +377,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
         return GriptapeNodes.get_instance()._engine_identity_manager
+
+    @classmethod
+    def ResourceManager(cls) -> ResourceManager:
+        return GriptapeNodes.get_instance()._resource_manager
 
     @classmethod
     def SyncManager(cls) -> SyncManager:
@@ -560,7 +576,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             GriptapeNodes.EngineIdentityManager().set_engine_name(request.engine_name.strip())
             details = f"Engine name set to: {request.engine_name.strip()}"
             return SetEngineNameResultSuccess(
-                engine_name=request.engine_name.strip(), result_details=ResultDetails(message=details, level="INFO")
+                engine_name=request.engine_name.strip(),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as err:

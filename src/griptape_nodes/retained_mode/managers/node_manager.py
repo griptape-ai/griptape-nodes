@@ -22,6 +22,7 @@ from griptape_nodes.exe_types.node_types import (
     StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
@@ -362,8 +363,6 @@ class NodeManager:
             log_level = logging.WARNING
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
-        logger.log(level=log_level, msg=details)
-
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
         if isinstance(node, StartLoopNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
@@ -377,7 +376,7 @@ class NodeManager:
             # Check and see if the class exists
             libraries_with_node_type = LibraryRegistry.get_libraries_with_node_type(end_class_name)
             if not libraries_with_node_type:
-                msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
+                msg = f"Attempted to create a paired set of nodes for Node '{final_node_name}'. Failed because paired class '{end_class_name}' does not exist for start class '{node_class_name}'. The corresponding node will have to be created by hand and attached manually."
                 logger.error(msg)  # while this is bad, it's not unsalvageable, so we'll consider this a success.
             else:
                 # Create the EndNode
@@ -418,7 +417,7 @@ class NodeManager:
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
-            result_details=details,
+            result_details=ResultDetails(message=details, level=log_level),
         )
 
     def cancel_conditionally(
@@ -447,28 +446,27 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_name, resolving_node_name = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_names, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
-            if control_node_name is not None:
-                control_node = GriptapeNodes.ObjectManager().get_object_by_name(control_node_name)
-                if control_node in connected_nodes:
-                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                    cancelled = True
-                    if not result.succeeded():
-                        details = (
-                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
-                        )
-                        return DeleteNodeResultFailure(result_details=details)
-            if resolving_node_name is not None and not cancelled:
-                resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
-                if resolving_node in connected_nodes:
-                    result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                    if not result.succeeded():
-                        details = (
-                            f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
-                        )
-                        return DeleteNodeResultFailure(result_details=details)
+            if control_node_names is not None:
+                for control_node_name in control_node_names:
+                    control_node = GriptapeNodes.ObjectManager().get_object_by_name(control_node_name)
+                    if control_node in connected_nodes:
+                        result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                        cancelled = True
+                        if not result.succeeded():
+                            details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                            return DeleteNodeResultFailure(result_details=details)
+            if resolving_node_names is not None and not cancelled:
+                for resolving_node_name in resolving_node_names:
+                    resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
+                    if resolving_node in connected_nodes:
+                        result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
+                        if not result.succeeded():
+                            details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
+                            return DeleteNodeResultFailure(result_details=details)
+                        break  # Only need to cancel once
             # Clear the execution queue, because we don't want to hit this node eventually.
             parent_flow.clear_execution_queue()
         return None
@@ -1328,7 +1326,7 @@ class NodeManager:
                 # Early return with warning - we're just preserving the original changes
                 details = f"Parameter '{request.parameter_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
 
-                result_details = ResultDetails(message=details, level="WARNING")
+                result_details = ResultDetails(message=details, level=logging.WARNING)
                 return AlterParameterDetailsResultSuccess(result_details=result_details)
 
             # Reject runtime parameter alterations on ErrorProxy
@@ -1361,7 +1359,7 @@ class NodeManager:
                 # TODO: https://github.com/griptape-ai/griptape-nodes/issues/826
                 details = f"Attempted to alter details for Element '{request.parameter_name}' from Node '{node_name}'. Could only alter some values because the Element was not user-defined (i.e., critical to the Node implementation). Only user-defined Elements can be totally modified from a Node."
                 return AlterParameterDetailsResultSuccess(
-                    result_details=ResultDetails(message=details, level="WARNING")
+                    result_details=ResultDetails(message=details, level=logging.WARNING)
                 )
             self.modify_key_parameter_fields(request, element)
 
@@ -1523,8 +1521,9 @@ class NodeManager:
             return result
 
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
-        # This check comes after before_value_set to allow nodes to temporarily modify settable state
-        if not parameter.settable and not request.initial_setup:
+        # We skip this if it's a passthru from a connection or if we're on initial setup; those always trump settable.
+        # This check comes *AFTER* before_value_set() to allow nodes to temporarily modify settable state
+        if not parameter.settable and not incoming_node_set and not request.initial_setup:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
@@ -1858,9 +1857,28 @@ class NodeManager:
         if flow is None:
             details = f'Failed to fetch parent flow for "{node_name}"'
             return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
-        if GriptapeNodes.FlowManager().check_for_existing_running_flow():
-            details = f"Failed to resolve from node '{node_name}'. Flow is already running."
-            return ResolveNodeResultFailure(validation_exceptions=[], result_details=details)
+
+        # Check for existing running flow
+        flow_mgr = GriptapeNodes.FlowManager()
+        if flow_mgr.check_for_existing_running_flow():
+            # Behavior should stay the same for sequential flows.
+            if flow_mgr._global_control_flow_machine and isinstance(
+                flow_mgr._global_control_flow_machine.resolution_machine, SequentialResolutionMachine
+            ):
+                errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
+                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+            # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
+            if not flow_mgr._global_single_node_resolution:
+                errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
+                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+
+        # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
+        if node.name in flow_mgr._global_dag_builder.node_to_reference:
+            logger.error("Node %s is already executing. Cannot start execution.", node.name)
+            return ResolveNodeResultFailure(
+                validation_exceptions=[],
+                result_details=f"Node {node.name} is already executing. Cannot start execution.",
+            )
         try:
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
         except Exception as e:
@@ -2043,7 +2061,7 @@ class NodeManager:
             # Normal node - use current parameter values
             for parameter in node.parameters:
                 # SetParameterValueRequest event
-                set_param_value_requests = NodeManager._handle_parameter_value_saving(
+                set_param_value_requests = NodeManager.handle_parameter_value_saving(
                     parameter=parameter,
                     node=node,
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
@@ -2464,7 +2482,7 @@ class NodeManager:
         return indirect_set_value_command
 
     @staticmethod
-    def _handle_parameter_value_saving(
+    def handle_parameter_value_saving(
         parameter: Parameter,
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -2699,7 +2717,6 @@ class NodeManager:
 
         if not callback_result.success:
             details = f"Failed to handle message for Node '{node_name}': {callback_result.details}"
-            logger.warning(details)
             return SendNodeMessageResultFailure(
                 result_details=callback_result.details,
                 response=callback_result.response,
@@ -2707,7 +2724,6 @@ class NodeManager:
             )
 
         details = f"Successfully sent message to Node '{node_name}': {callback_result.details}"
-        logger.debug(details)
         return SendNodeMessageResultSuccess(
             result_details=callback_result.details,
             response=callback_result.response,

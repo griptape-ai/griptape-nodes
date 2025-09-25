@@ -7,11 +7,44 @@ from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
+from pydantic import BaseModel
+
+
+class NodeMessagePayload(BaseModel):
+    """Structured payload for node messages.
+
+    This replaces the use of Any in message payloads, providing
+    better type safety and validation for node message handling.
+    """
+
+    data: Any = None
+
+
+class NodeMessageResult(BaseModel):
+    """Result from a node message callback.
+
+    Attributes:
+        success: True if the message was handled successfully, False otherwise
+        details: Human-readable description of what happened
+        response: Optional response data to return to the sender
+        altered_workflow_state: True if the message handling altered workflow state.
+            Clients can use this to determine if the workflow needs to be re-saved.
+    """
+
+    success: bool
+    details: str
+    response: NodeMessagePayload | None = None
+    altered_workflow_state: bool = True
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
 
     from griptape_nodes.exe_types.node_types import BaseNode
+
+# Type alias for element message callback functions
+type ElementMessageCallback = Callable[[str, "NodeMessagePayload | None"], "NodeMessageResult"]
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
@@ -416,6 +449,31 @@ class BaseNodeElement:
         }
         return event_data
 
+    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
+        """Virtual method for handling messages sent to this element.
+
+        Attempts to delegate to child elements first. If any child handles the message
+        (returns non-None), that result is returned immediately. Otherwise, falls back
+        to default behavior (return None).
+
+        Args:
+            message_type: String indicating the message type for parsing
+            message: Message payload as NodeMessagePayload or None
+
+        Returns:
+            NodeMessageResult | None: Result if handled, None if no handler available
+        """
+        # Try to delegate to all children first
+        # NOTE: This returns immediately on the first child that accepts the message (returns non-None).
+        # In the future, we may need to expand this to handle multiple children processing the same message.
+        for child in self._children:
+            result = child.on_message_received(message_type, message)
+            if result is not None:
+                return result
+
+        # No child handled it, return None (indicating no handler)
+        return None
+
 
 class UIOptionsMixin:
     """Mixin providing UI options update functionality for classes with ui_options."""
@@ -443,18 +501,42 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "error": "Error",
         "success": "Success",
         "tip": "Tip",
+        "link": "Link",
+        "docs": "Documentation",
+        "help": "Help",
+        "note": "Note",
+        "none": "",
+    }
+
+    # Define default icons as a class-level constant (based on Lucide icons)
+    DEFAULT_ICONS: ClassVar[dict[str, str]] = {
+        "info": "info",
+        "warning": "alert-triangle",
+        "error": "x-circle",
+        "success": "check-circle",
+        "tip": "lightbulb",
+        "link": "external-link",
+        "docs": "book-open",
+        "help": "help-circle",
+        "note": "sticky-note",
         "none": "",
     }
 
     # Create a type alias using the keys from DEFAULT_TITLES
-    type VariantType = Literal["info", "warning", "error", "success", "tip", "none"]
+    type VariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+    type ButtonAlignType = Literal["full-width", "left", "center", "right"]
+    type ButtonVariantType = Literal["default", "destructive", "outline", "secondary", "ghost", "link"]
 
     element_type: str = field(default_factory=lambda: ParameterMessage.__name__)
     _variant: VariantType = field(init=False)
     _title: str | None = field(default=None, init=False)
     _value: str = field(init=False)
+    _message_icon: str | None = field(default="__DEFAULT__", init=False)
     _button_link: str | None = field(default=None, init=False)
     _button_text: str | None = field(default=None, init=False)
+    _button_icon: str | None = field(default=None, init=False)
+    _button_variant: ButtonVariantType = field(default="outline", init=False)
+    _button_align: ButtonAlignType = field(default="full-width", init=False)
     _full_width: bool = field(default=False, init=False)
     _ui_options: dict = field(default_factory=dict, init=False)
 
@@ -464,8 +546,12 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         value: str,
         *,
         title: str | None = None,
+        message_icon: str | None = "__DEFAULT__",
         button_link: str | None = None,
         button_text: str | None = None,
+        button_icon: str | None = None,
+        button_variant: ButtonVariantType = "outline",
+        button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
         ui_options: dict | None = None,
         **kwargs,
@@ -474,8 +560,12 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._variant = variant
         self._title = title
         self._value = value
+        self._message_icon = message_icon
         self._button_link = button_link
         self._button_text = button_text
+        self._button_icon = button_icon
+        self._button_variant = button_variant
+        self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
 
@@ -534,6 +624,42 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._full_width = value
 
     @property
+    def message_icon(self) -> str | None:
+        return self._message_icon
+
+    @message_icon.setter
+    @BaseNodeElement.emits_update_on_write
+    def message_icon(self, value: str | None) -> None:
+        self._message_icon = value
+
+    @property
+    def button_icon(self) -> str | None:
+        return self._button_icon
+
+    @button_icon.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_icon(self, value: str | None) -> None:
+        self._button_icon = value
+
+    @property
+    def button_variant(self) -> ButtonVariantType:
+        return self._button_variant
+
+    @button_variant.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_variant(self, value: ButtonVariantType) -> None:
+        self._button_variant = value
+
+    @property
+    def button_align(self) -> ButtonAlignType:
+        return self._button_align
+
+    @button_align.setter
+    @BaseNodeElement.emits_update_on_write
+    def button_align(self, value: ButtonAlignType) -> None:
+        self._button_align = value
+
+    @property
     def ui_options(self) -> dict:
         return self._ui_options
 
@@ -545,23 +671,46 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
 
-        # Use class-level default titles
+        # Use class-level default titles and icons
         title = self.title or self.DEFAULT_TITLES.get(str(self.variant), "")
 
+        # Handle message_icon logic:
+        # - "__DEFAULT__" means use the default icon for the variant
+        # - None means explicitly no icon (empty string)
+        # - Any other string means use that icon
+        if self.message_icon == "__DEFAULT__":
+            message_icon = self.DEFAULT_ICONS.get(str(self.variant), "")
+        elif self.message_icon is None:
+            message_icon = ""
+        else:
+            message_icon = self.message_icon
+
+        # Handle button_icon logic:
+        # - None means no icon
+        # - Empty string means no icon
+        # - Any other string means use that icon
+        if self.button_icon is None or self.button_icon == "":
+            button_icon = ""
+        else:
+            button_icon = self.button_icon
+
         # Merge the UI options with the message-specific options
+        # Always include these fields, even if they're None or empty
+        message_ui_options = {
+            "title": title,
+            "variant": self.variant,
+            "message_icon": message_icon,
+            "button_link": self.button_link,
+            "button_text": self.button_text,
+            "button_icon": button_icon,
+            "button_variant": self.button_variant,
+            "button_align": self.button_align,
+            "full_width": self.full_width,
+        }
+
         merged_ui_options = {
             **self.ui_options,
-            **{
-                k: v
-                for k, v in {
-                    "title": title,
-                    "variant": self.variant,
-                    "button_link": self.button_link,
-                    "button_text": self.button_text,
-                    "full_width": self.full_width,
-                }.items()
-                if v is not None
-            },
+            **message_ui_options,
         }
 
         data["name"] = self.name
@@ -928,11 +1077,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         for trait in traits:
             ui_options = ui_options | trait.ui_options_for_trait()
         ui_options = ui_options | self._ui_options
-        if self._parent is not None and isinstance(self._parent, ParameterGroup):
-            # Access the field value directly for ParameterGroup
-            parent_ui_options = getattr(self._parent, "ui_options", {})
-            if isinstance(parent_ui_options, dict):
-                ui_options = ui_options | parent_ui_options
         return ui_options
 
     @ui_options.setter
@@ -1339,11 +1483,22 @@ class ParameterList(ParameterContainer):
         user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
+        # UI convenience parameters
+        collapsed: bool | None = None,
+        child_prefix: str | None = None,
+        grid: bool | None = None,
+        grid_columns: int | None = None,
     ):
         if traits:
             self._original_traits = traits
         else:
             self._original_traits = set()
+
+        # Store the UI convenience parameters
+        self._collapsed = collapsed
+        self._child_prefix = child_prefix
+        self._grid = grid
+        self._grid_columns = grid_columns
 
         # Remember: we're a Parameter, too, just like everybody else.
         super().__init__(
@@ -1366,6 +1521,99 @@ class ParameterList(ParameterContainer):
             element_id=element_id,
             element_type=element_type,
         )
+
+    @property
+    def collapsed(self) -> bool | None:
+        return self._collapsed
+
+    @collapsed.setter
+    @BaseNodeElement.emits_update_on_write
+    def collapsed(self, value: bool | None) -> None:
+        self._collapsed = value
+
+    @property
+    def child_prefix(self) -> str | None:
+        return self._child_prefix
+
+    @child_prefix.setter
+    @BaseNodeElement.emits_update_on_write
+    def child_prefix(self, value: str | None) -> None:
+        self._child_prefix = value
+
+    @property
+    def grid(self) -> bool | None:
+        return self._grid
+
+    @grid.setter
+    @BaseNodeElement.emits_update_on_write
+    def grid(self, value: bool | None) -> None:
+        self._grid = value
+
+    @property
+    def grid_columns(self) -> int | None:
+        return self._grid_columns
+
+    @grid_columns.setter
+    @BaseNodeElement.emits_update_on_write
+    def grid_columns(self, value: int | None) -> None:
+        self._grid_columns = value
+
+    @property
+    def ui_options(self) -> dict:
+        """Override ui_options to merge convenience parameters in real-time."""
+        # Get base ui_options from parent
+        base_ui_options = super().ui_options
+
+        # Build convenience options from instance parameters
+        convenience_options = {}
+
+        if self._collapsed is not None:
+            convenience_options["collapsed"] = self._collapsed
+
+        if self._child_prefix is not None:
+            convenience_options["child_prefix"] = self._child_prefix
+
+        if self._grid is not None and self._grid:
+            convenience_options["display"] = "grid"
+
+        if self._grid_columns is not None and self._grid:
+            convenience_options["columns"] = self._grid_columns
+
+        # Merge convenience options with base ui_options
+        return {
+            **base_ui_options,
+            **convenience_options,
+        }
+
+    @ui_options.setter
+    @BaseNodeElement.emits_update_on_write
+    def ui_options(self, value: dict) -> None:
+        """Set ui_options, preserving convenience parameters."""
+        # Extract convenience parameters from the incoming value
+        if "display" in value and value["display"] == "grid":
+            self._grid = True
+            if "columns" in value:
+                self._grid_columns = value["columns"]
+        else:
+            self._grid = False
+
+        if "collapsed" in value:
+            self._collapsed = value["collapsed"]
+
+        if "child_prefix" in value:
+            self._child_prefix = value["child_prefix"]
+
+        # Set the base ui_options (excluding convenience parameters)
+        base_ui_options = {
+            k: v for k, v in value.items() if k not in ["display", "columns", "collapsed", "child_prefix"]
+        }
+        self._ui_options = base_ui_options
+
+    def to_dict(self) -> dict[str, Any]:
+        """Override to_dict to use the merged ui_options."""
+        data = super().to_dict()
+        data["ui_options"] = self.ui_options
+        return data
 
     def _custom_getter_for_property_type(self) -> str:
         base_type = super()._custom_getter_for_property_type()

@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
+    GetConfigSchemaRequest,
     GetConfigValueRequest,
     SetConfigCategoryRequest,
     SetConfigValueRequest,
@@ -1393,6 +1394,24 @@ class RetainedMode:
             result = cmd.set_config_category("my_category", values)
         """
         request = SetConfigCategoryRequest(category=category, contents=contents)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def get_config_schema(cls) -> ResultPayload:
+        """Gets the JSON schema for the configuration model.
+
+        Returns:
+            ResultPayload: Contains the configuration schema with field types, enums, and validation rules.
+
+        Example:
+            # Get the configuration schema
+            schema_result = cmd.get_config_schema()
+            if isinstance(schema_result, GetConfigSchemaResultSuccess):
+                schema = schema_result.schema
+                # Use schema to render appropriate UI components
+        """
+        request = GetConfigSchemaRequest()
         result = GriptapeNodes().handle_request(request)
         return result
 

@@ -6,10 +6,11 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -97,8 +98,14 @@ class InvertMask(DataNode):
                 inverted_mask = inverted_mask.convert("L")
                 logger.debug(f"{self.name}: Converted output to grayscale")
 
-            # Save output mask and create URL artifact
-            output_artifact = save_pil_image_to_static_file(inverted_mask, image_format="PNG")
+            # Save output mask and create URL artifact with proper filename
+            # Generate a meaningful filename
+            filename = generate_filename(
+                node_name=self.name,
+                suffix="_inverted_mask",
+                extension="png",
+            )
+            output_artifact = save_pil_image_with_named_filename(inverted_mask, filename, "PNG")
             self.set_parameter_value("output_mask", output_artifact)
             self.publish_update_to_parameter("output_mask", output_artifact)
             logger.debug(f"{self.name}: Successfully saved inverted mask")

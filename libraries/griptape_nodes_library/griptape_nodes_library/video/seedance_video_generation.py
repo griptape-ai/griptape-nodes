@@ -24,16 +24,22 @@ __all__ = ["SeedanceVideoGeneration"]
 
 
 class SeedanceVideoGeneration(DataNode):
-    """Generate a video using the Seedance model via Griptape Cloud Forwarders.
+    """Generate a video using the Seedance model via Griptape Cloud model proxy.
 
     Inputs:
-        - prompt (str): Text prompt (you can include provider flags like --resolution)
+        - prompt (str): Text prompt for the video (supports provider flags like --resolution)
         - model_id (str): Provider model id (default: seedance-1-0-pro-250528)
+        - resolution (str): Output resolution (default: 1080p, options: 480p, 720p, 1080p)
+        - ratio (str): Output aspect ratio (default: 16:9, options: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9)
+        - duration (int): Video duration in seconds (default: 5, options: 5, 10)
+        - camerafixed (bool): Camera fixed flag (default: False)
+        - first_frame (ImageArtifact|ImageUrlArtifact|str): Optional first frame image (URL or base64 data URI)
+        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for i2v model (URL or base64 data URI)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
-        - provider_response (dict): Verbatim provider response from the initial POST
+        - provider_response (dict): Verbatim response from API (initial POST)
         - video_url (VideoUrlArtifact): Saved static video URL
     """
 
@@ -44,13 +50,13 @@ class SeedanceVideoGeneration(DataNode):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
-        self.description = "Generate video via Seedance through Griptape Cloud forwarder"
+        self.description = "Generate video via Seedance through Griptape Cloud model proxy"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
         api_base = urljoin(base_slash, "api/")
-        self._forwarders_base = urljoin(api_base, "forwarders/")
+        self._proxy_base = urljoin(api_base, "proxy/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -74,11 +80,20 @@ class SeedanceVideoGeneration(DataNode):
                 input_types=["str"],
                 type="str",
                 default_value="seedance-1-0-pro-250528",
-                tooltip="Model id to call via forwarder",
+                tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "Model ID",
-                    "hide": True,
+                    "hide": False,
+                },
+                traits={
+                    Options(
+                        choices=[
+                            "seedance-1-0-pro-250528",
+                            "seedance-1-0-lite-t2v-250428",
+                            "seedance-1-0-lite-i2v-250428",
+                        ]
+                    )
                 },
             )
         )
@@ -118,7 +133,7 @@ class SeedanceVideoGeneration(DataNode):
                 default_value=5,
                 tooltip="Video duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["5", "10"])},
+                traits={Options(choices=[5, 10])},
             )
         )
 
@@ -147,6 +162,19 @@ class SeedanceVideoGeneration(DataNode):
             )
         )
 
+        # Optional last frame (image) - accepts artifact or URL/base64 string valid only with seedance-1-0-lite-i2v
+        self.add_parameter(
+            Parameter(
+                name="last_frame",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                default_value=None,
+                tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Last Frame", "hide": True},
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -162,7 +190,7 @@ class SeedanceVideoGeneration(DataNode):
                 name="provider_response",
                 output_type="dict",
                 type="dict",
-                tooltip="Verbatim response from provider (initial POST)",
+                tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
             )
@@ -179,6 +207,18 @@ class SeedanceVideoGeneration(DataNode):
                 ui_options={"is_full_width": True, "pulse_on_run": True},
             )
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to show/hide dependent parameters."""
+        if parameter.name == "model_id":
+            # Show last_frame parameter only for i2v model
+            show_last_frame = value == "seedance-1-0-lite-i2v-250428"
+            if show_last_frame:
+                self.show_parameter_by_name("last_frame")
+            else:
+                self.hide_parameter_by_name("last_frame")
+
+        return super().after_value_set(parameter, value)
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
@@ -197,7 +237,7 @@ class SeedanceVideoGeneration(DataNode):
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         # Build and submit request
-        generation_id, provider_response = self._submit_request(params, headers)
+        generation_id = self._submit_request(params, headers)
         if not generation_id:
             self.parameter_output_values["result"] = None
             self.parameter_output_values["video_url"] = None
@@ -213,6 +253,7 @@ class SeedanceVideoGeneration(DataNode):
             "resolution": self.get_parameter_value("resolution") or "1080p",
             "ratio": self.get_parameter_value("ratio") or "16:9",
             "first_frame": self.get_parameter_value("first_frame"),
+            "last_frame": self.get_parameter_value("last_frame"),
             "duration": self.get_parameter_value("duration"),
             "camerafixed": self.get_parameter_value("camerafixed"),
         }
@@ -225,20 +266,20 @@ class SeedanceVideoGeneration(DataNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> tuple[str, Any]:
-        post_url = urljoin(self._forwarders_base, f"models/{params['model_id']}")
+    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
+        post_url = urljoin(self._proxy_base, f"models/{params['model_id']}")
         payload = self._build_payload(params)
 
-        self._log(f"Submitting request to forwarder model={params['model_id']}")
+        self._log(f"Submitting request to proxy model={params['model_id']}")
         self._log_request(post_url, headers, payload)
 
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= 400:  # noqa: PLR2004
             self._set_safe_defaults()
             self._log(
-                f"Forwarder POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
             )
-            msg = f"{self.name} Forwarder POST error: {post_resp.status_code}"
+            msg = f"{self.name} Proxy POST error: {post_resp.status_code}"
             raise RuntimeError(msg)
 
         post_json = post_resp.json()
@@ -253,7 +294,7 @@ class SeedanceVideoGeneration(DataNode):
         else:
             self._log("No generation_id returned from POST response")
 
-        return generation_id, provider_response
+        return generation_id
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build text payload with flags
@@ -271,14 +312,56 @@ class SeedanceVideoGeneration(DataNode):
         text_payload = "  ".join([p for p in text_parts if p])
         content_list: list[dict[str, Any]] = [{"type": "text", "text": text_payload}]
 
-        # Handle first frame
-        first_frame_url = self._coerce_image_url_or_data_uri(params["first_frame"])
+        # Add frame images based on model capabilities
+        self._add_frame_images(content_list, params)
+
+        return {"model": params["model_id"], "content": content_list}
+
+    def _add_frame_images(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add frame images to content list based on model capabilities."""
+        model_id = params["model_id"]
+
+        if model_id == "seedance-1-0-pro-250528":
+            self._add_first_frame_only(content_list, params)
+        elif model_id == "seedance-1-0-lite-i2v-250428":
+            self._add_i2v_frames(content_list, params)
+        # Add other model handling here as needed
+
+    def _add_first_frame_only(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add first frame for models that only support single frame input."""
+        frame_url = self._prepare_frame_url(params["first_frame"])
+        if frame_url:
+            content_list.append({"type": "image_url", "image_url": {"url": frame_url}})
+
+    def _add_i2v_frames(self, content_list: list[dict[str, Any]], params: dict[str, Any]) -> None:
+        """Add frames for image-to-video models that support first and last frames."""
+        has_last_frame = params["last_frame"] is not None
+
+        # Add first frame
+        first_frame_url = self._prepare_frame_url(params["first_frame"])
         if first_frame_url:
-            first_frame_url = self._inline_external_url(first_frame_url)
-            if first_frame_url:
+            if has_last_frame:
+                # When both frames present, add role identifiers
+                content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}, "role": "first_frame"})
+            else:
+                # When only first frame, no role needed
                 content_list.append({"type": "image_url", "image_url": {"url": first_frame_url}})
 
-        return {"provider_request": {"model": params["model_id"], "content": content_list}}
+        # Add last frame if provided
+        if has_last_frame:
+            last_frame_url = self._prepare_frame_url(params["last_frame"])
+            if last_frame_url:
+                content_list.append({"type": "image_url", "image_url": {"url": last_frame_url}, "role": "last_frame"})
+
+    def _prepare_frame_url(self, frame_input: Any) -> str | None:
+        """Convert frame input to a usable URL, handling inlining of external URLs."""
+        if not frame_input:
+            return None
+
+        frame_url = self._coerce_image_url_or_data_uri(frame_input)
+        if not frame_url:
+            return None
+        return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -291,17 +374,17 @@ class SeedanceVideoGeneration(DataNode):
             if not ct.startswith("image/"):
                 ct = "image/jpeg"
             b64 = base64.b64encode(rff.content).decode("utf-8")
-            self._log("First frame URL converted to data URI for forwarder")
+            self._log("Frame URL converted to data URI for proxy")
             return f"data:{ct};base64,{b64}"  # noqa: TRY300
         except Exception as e:
-            self._log(f"Warning: failed to inline first frame URL: {e}")
+            self._log(f"Warning: failed to inline frame URL: {e}")
             return url
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         def _sanitize_body(b: dict[str, Any]) -> dict[str, Any]:
             try:
                 red = deepcopy(b)
-                cont = red.get("provider_request", {}).get("content", [])
+                cont = red.get("content", [])
                 for it in cont:
                     if isinstance(it, dict) and it.get("type") == "image_url":
                         iu = it.get("image_url") or {}
@@ -320,7 +403,7 @@ class SeedanceVideoGeneration(DataNode):
             self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(_sanitize_body(payload), indent=2)}")
 
     def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        get_url = urljoin(self._forwarders_base, f"generations/{generation_id}")
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         start_time = monotonic()
         last_json = None
         attempt = 0
@@ -369,7 +452,7 @@ class SeedanceVideoGeneration(DataNode):
 
         if video_bytes:
             try:
-                from griptape_nodes import GriptapeNodes
+                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 filename = f"seedance_video_{int(time.time())}.mp4"
                 static_files_manager = GriptapeNodes.StaticFilesManager()
@@ -383,7 +466,6 @@ class SeedanceVideoGeneration(DataNode):
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
-        self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["result"] = None
         self.parameter_output_values["status"] = "error"
         self.parameter_output_values["video_url"] = None
@@ -403,13 +485,6 @@ class SeedanceVideoGeneration(DataNode):
                 val = data.get(key)
                 if isinstance(val, str):
                     return val
-        # Provider response often carries status
-        prov = obj.get("provider_response") if isinstance(obj, dict) else None
-        if isinstance(prov, dict):
-            for key in ("status", "state", "phase", "task_status"):
-                val = prov.get(key)
-                if isinstance(val, str):
-                    return val
         return None
 
     @staticmethod
@@ -420,7 +495,7 @@ class SeedanceVideoGeneration(DataNode):
         if obj.get("result") not in (None, {}):
             return True
         # Check provider response
-        if SeedanceVideoGeneration._is_provider_complete(obj.get("provider_response")):
+        if SeedanceVideoGeneration._is_provider_complete(obj):
             return True
         # Timestamps that often signal completion
         for key in ("finished_at", "completed_at", "end_time"):
@@ -453,8 +528,8 @@ class SeedanceVideoGeneration(DataNode):
             val = obj.get(key) if isinstance(obj, dict) else None
             if isinstance(val, str) and val.startswith("http"):
                 return val
-        # 2) nested known containers (Seedance returns provider_response.content.video_url)
-        for key in ("result", "data", "output", "outputs", "content", "provider_response", "task_result"):
+        # 2) nested known containers (Seedance returns content.video_url)
+        for key in ("result", "data", "output", "outputs", "content", "task_result"):
             nested = obj.get(key) if isinstance(obj, dict) else None
             if isinstance(nested, dict):
                 url = SeedanceVideoGeneration._extract_video_url(nested)

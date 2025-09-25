@@ -3,9 +3,8 @@ from functools import cache
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
     print_pipeline_memory_footprint,
 )
@@ -13,21 +12,26 @@ from diffusers_nodes_library.common.utils.torch_utils import (  # type: ignore[r
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-def print_flux_pipeline_memory_footprint(pipe: diffusers.AmusedPipeline) -> None:
-    """Print pipeline memory footprint."""
-    print_pipeline_memory_footprint(
-        pipe,
-        [
-            "vae",
-            "text_encoder",
-            "text_encoder_2",
-            "transformer",
-        ],
-    )
+FLUX_PIPELINE_COMPONENT_NAMES = [
+    "vae",
+    "text_encoder",
+    "text_encoder_2",
+    "transformer",
+    "controlnet",
+]
+
+
+def print_flux_pipeline_memory_footprint(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+) -> None:
+    """Print memory footprint for the main sub-modules of Flux pipelines."""
+    print_pipeline_memory_footprint(pipe, FLUX_PIPELINE_COMPONENT_NAMES)
 
 
 @cache
-def optimize_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
+def safe_optimize_flux_pipeline(
+    pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline | diffusers.AmusedPipeline,
+) -> None:
     """Optimize pipeline memory footprint."""
     device = get_best_device()
 

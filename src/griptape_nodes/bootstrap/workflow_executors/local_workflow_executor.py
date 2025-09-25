@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, Self
 
 from griptape_nodes.bootstrap.workflow_executors.workflow_executor import WorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.node_types import EndNode, StartNode
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     ExecutionGriptapeNodeEvent,
@@ -15,6 +18,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,6 +29,29 @@ class LocalExecutorError(Exception):
 
 
 class LocalWorkflowExecutor(WorkflowExecutor):
+    def __init__(
+        self,
+        storage_backend: StorageBackend = StorageBackend.LOCAL,
+    ):
+        super().__init__()
+        self._set_storage_backend(storage_backend=storage_backend)
+
+    async def __aenter__(self) -> Self:
+        """Async context manager entry: initialize queue and broadcast app initialization."""
+        GriptapeNodes.EventManager().initialize_queue()
+        await GriptapeNodes.EventManager().broadcast_app_event(AppInitializationComplete())
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Async context manager exit."""
+        # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
+        return
+
     def _load_flow_for_workflow(self) -> str:
         try:
             context_manager = GriptapeNodes.ContextManager()
@@ -124,7 +153,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self,
         workflow_name: str,
         flow_input: Any,
-        storage_backend: StorageBackend = StorageBackend.LOCAL,
+        storage_backend: StorageBackend | None = None,
         **kwargs: Any,
     ) -> None:
         """Executes a local workflow.
@@ -140,11 +169,12 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         Returns:
             None
         """
+        if storage_backend is not None:
+            msg = "The storage_backend parameter is deprecated. Pass `storage_backend` to the constructor instead."
+            raise ValueError(msg)
+
         logger.info("Executing workflow: %s", workflow_name)
         GriptapeNodes.EventManager().initialize_queue()
-
-        # Set the storage backend
-        self._set_storage_backend(storage_backend=storage_backend)
 
         # Load workflow from file if workflow_path is provided
         workflow_path = kwargs.get("workflow_path")

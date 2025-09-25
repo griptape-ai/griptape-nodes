@@ -194,3 +194,33 @@ class ResetConfigResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class ResetConfigResultFailure(ResultPayloadFailure):
     """Configuration reset failed. Common causes: file system errors, permission issues, initialization errors."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigSchemaRequest(RequestPayload):
+    """Get the JSON schema for the configuration model.
+
+    Use when: Frontend needs to understand field types, enums, and validation rules
+    for rendering appropriate UI components (dropdowns, text inputs, etc.).
+
+    Results: GetConfigSchemaResultSuccess (with schema) | GetConfigSchemaResultFailure (schema generation error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigSchemaResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Configuration schema retrieved successfully.
+
+    Args:
+        schema: The JSON schema for the configuration model
+    """
+
+    schema: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConfigSchemaResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Configuration schema retrieval failed. Common causes: schema generation error, model validation issues."""

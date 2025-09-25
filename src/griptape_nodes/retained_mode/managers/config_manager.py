@@ -8,16 +8,18 @@ from typing import Any, Literal
 from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-from griptape_nodes.retained_mode.events.base_events import (
-    ResultPayload,
-)
+from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultFailure,
     GetConfigCategoryResultSuccess,
     GetConfigPathRequest,
     GetConfigPathResultSuccess,
+    GetConfigSchemaRequest,
+    GetConfigSchemaResultFailure,
+    GetConfigSchemaResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultFailure,
     GetConfigValueResultSuccess,
@@ -84,6 +86,9 @@ class ConfigManager:
             event_manager.assign_manager_to_request_type(GetConfigValueRequest, self.on_handle_get_config_value_request)
             event_manager.assign_manager_to_request_type(SetConfigValueRequest, self.on_handle_set_config_value_request)
             event_manager.assign_manager_to_request_type(GetConfigPathRequest, self.on_handle_get_config_path_request)
+            event_manager.assign_manager_to_request_type(
+                GetConfigSchemaRequest, self.on_handle_get_config_schema_request
+            )
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
 
             event_manager.add_listener_to_app_event(
@@ -193,6 +198,9 @@ class ConfigManager:
         if self.env_config:
             merged_config = merge_dicts(merged_config, self.env_config)
             logger.debug("Merged config from environment variables: %s", list(self.env_config.keys()))
+
+        # Re-assign workspace path in case env var overrides it
+        self.workspace_path = merged_config["workspace_directory"]
 
         # Validate the full config against the Settings model.
         try:
@@ -411,6 +419,39 @@ class ConfigManager:
     def on_handle_get_config_path_request(self, request: GetConfigPathRequest) -> ResultPayload:  # noqa: ARG002
         result_details = "Successfully returned the config path."
         return GetConfigPathResultSuccess(config_path=str(USER_CONFIG_PATH), result_details=result_details)
+
+    def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
+        """Handle request to get the configuration schema with current values and library settings.
+
+        This method returns a clean structure with three main components:
+        1. base_schema: Core settings schema from Pydantic Settings model with categories
+        2. library_schemas: Library-specific schemas from definition files (preserves enums)
+        3. current_values: All current configuration values from merged config
+
+        The approach separates concerns for frontend flexibility and simplicity.
+        Library settings with explicit schemas (including enums) are preserved, while
+        libraries without schemas get simple object types.
+        """
+        try:
+            # Get base settings schema and current values
+            base_schema = Settings.model_json_schema()
+            current_values = self.merged_config.copy()
+
+            # Get library schemas
+            library_schemas = LibraryRegistry.get_all_library_schemas()
+
+            # Return clean structure
+            schema_with_defaults = {
+                "base_schema": base_schema,
+                "library_schemas": library_schemas,
+                "current_values": current_values,
+            }
+
+            result_details = "Successfully returned the configuration schema with default values and library settings."
+            return GetConfigSchemaResultSuccess(schema=schema_with_defaults, result_details=result_details)
+        except Exception as e:
+            result_details = f"Failed to generate configuration schema: {e}"
+            return GetConfigSchemaResultFailure(result_details=result_details)
 
     def on_handle_reset_config_request(self, request: ResetConfigRequest) -> ResultPayload:  # noqa: ARG002
         try:

@@ -11,6 +11,7 @@ import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact, validate_url
 from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
@@ -354,7 +355,7 @@ class BaseVideoProcessor(ControlNode, ABC):
             self._validate_url_safety(input_url)
 
             # Get FFmpeg paths
-            ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+            _ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
 
             # Detect input video properties for frame rate handling
             input_frame_rate, _, _ = self._detect_video_properties(input_url, ffprobe_path)
@@ -440,29 +441,8 @@ class BaseVideoProcessor(ControlNode, ABC):
 
     def _generate_filename(self, suffix: str = "", extension: str = "mp4") -> str:
         """Generate a meaningful filename based on workflow and node information."""
-        from datetime import UTC, datetime
-
-        # Get workflow and node context
-        workflow_name = "unknown_workflow"
-        node_name = self.name
-
-        # Try to get workflow name from context
-        try:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            context_manager = GriptapeNodes.ContextManager()
-            workflow_name = context_manager.get_current_workflow_name()
-        except Exception as e:
-            self.append_value_to_parameter("logs", f"Warning: Error getting workflow name: {e}\n")
-
-        # Clean up names for filename use
-        workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
-        node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
-
-        # Get current timestamp for cache busting
-        timestamp = int(datetime.now(UTC).timestamp())
-
-        # Create filename with meaningful structure and timestamp as query parameter
-        filename = f"{workflow_name}_{node_name}{suffix}.{extension}?t={timestamp}"
-
-        return filename
+        return generate_filename(
+            node_name=self.name,
+            suffix=suffix,
+            extension=extension,
+        )

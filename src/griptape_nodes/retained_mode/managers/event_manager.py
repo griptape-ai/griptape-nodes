@@ -294,5 +294,11 @@ class EventManager:
         app_event_type = type(app_event)
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
-            for listener_callback in listener_set:
-                await call_function(listener_callback, app_event)
+
+            await asyncio.gather(
+                *[
+                    asyncio.create_task(call_function(listener_callback, app_event))
+                    for listener_callback in listener_set
+                ],
+                return_exceptions=True,
+            )

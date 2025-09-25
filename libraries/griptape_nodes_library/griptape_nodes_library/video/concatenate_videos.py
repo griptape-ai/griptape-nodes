@@ -470,7 +470,7 @@ class ConcatenateVideos(BaseVideoProcessor):
                 raise ValueError(error_msg)
 
         # Detect properties from first video for frame rate handling
-        ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+        _ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
         first_video_url = str(temp_files[0]) if temp_files else ""
         input_frame_rate, _, _ = self._detect_video_properties(first_video_url, ffprobe_path)
 

@@ -8,10 +8,7 @@ import pytest_asyncio
 from dotenv import load_dotenv
 
 # Signal the server to shutdown gracefully using the API module function
-from griptape_nodes.app.api import start_static_server
-from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -59,6 +56,13 @@ def griptape_nodes() -> GriptapeNodes:
     return GriptapeNodes()
 
 
+@pytest_asyncio.fixture(scope="session")
+async def workflow_executor() -> AsyncGenerator[LocalWorkflowExecutor, Any]:
+    """Create and manage a single LocalWorkflowExecutor for all tests."""
+    async with LocalWorkflowExecutor() as executor:
+        yield executor
+
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[None, Any]:
     """Set up libraries for testing and restore original state afterwards."""
@@ -75,7 +79,6 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=test_libraries,
     )
-    await griptape_nodes.EventManager().broadcast_app_event(AppInitializationComplete())
 
     yield  # Run all tests
 
@@ -84,19 +87,6 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=original_libraries,
     )
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def api_server() -> AsyncGenerator[None, None]:
-    """Start the API server in a separate thread that can be gracefully shutdown."""
-    import threading
-
-    static_dir = _build_static_dir()
-
-    server_thread = threading.Thread(target=lambda: start_static_server(static_dir), daemon=True)
-    server_thread.start()
-
-    yield
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +107,6 @@ def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> Generator[Non
 
 @pytest.mark.parametrize("workflow_path", get_workflows())
 @pytest.mark.asyncio
-async def test_workflow_runs(workflow_path: str) -> None:
+async def test_workflow_runs(workflow_path: str, workflow_executor: LocalWorkflowExecutor) -> None:
     """Simple test to check if the workflow runs without errors."""
-    runner = LocalWorkflowExecutor()
-    await runner.arun(workflow_name="main", flow_input={}, workflow_path=workflow_path)
+    await workflow_executor.arun(workflow_name="main", flow_input={}, workflow_path=workflow_path)

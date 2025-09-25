@@ -102,7 +102,7 @@ class ObjectManager:
             details += " WARNING: Originally requested the name '{request.requested_name}', but that was taken."
             log_level = logging.WARNING
         if log_level == logging.WARNING:
-            result_details = ResultDetails(message=details, level="WARNING")
+            result_details = ResultDetails(message=details, level=logging.WARNING)
         else:
             result_details = details
         return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)

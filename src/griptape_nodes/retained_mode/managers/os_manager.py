@@ -1,4 +1,5 @@
 import base64
+import logging
 import mimetypes
 import os
 import shutil
@@ -11,6 +12,7 @@ from typing import Any
 from binaryornot.check import is_binary
 from rich.console import Console
 
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
@@ -30,8 +32,16 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileResultFailure,
     RenameFileResultSuccess,
 )
+from griptape_nodes.retained_mode.events.resource_events import (
+    CreateResourceInstanceRequest,
+    CreateResourceInstanceResultSuccess,
+    RegisterResourceTypeRequest,
+    RegisterResourceTypeResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
+from griptape_nodes.retained_mode.managers.resource_types.os_resource import OSResourceType
 
 console = Console()
 
@@ -72,6 +82,9 @@ class OSManager:
             event_manager.assign_manager_to_request_type(
                 request_type=RenameFileRequest, callback=self.on_rename_file_request
             )
+
+            # Register for app initialization event to setup system resources
+            event_manager.add_listener_to_app_event(AppInitializationComplete, self.on_app_initialization_complete)
 
     def _get_workspace_path(self) -> Path:
         """Get the workspace path from config."""
@@ -373,7 +386,7 @@ class OSManager:
                     try:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
-                        is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        _is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
                         mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
@@ -516,15 +529,14 @@ class OSManager:
 
         # Check if file is already in the static files directory
         config_manager = GriptapeNodes.ConfigManager()
-        static_files_directory = config_manager.get_config_value("static_files_directory", default="staticfiles")
-        static_dir = config_manager.workspace_path / static_files_directory
+        static_dir = config_manager.workspace_path
 
         try:
             # Check if file is within the static files directory
             file_relative_to_static = file_path.relative_to(static_dir)
             # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/static/{file_relative_to_static}"
-            msg = f"Image already in static directory, returning URL: {static_url}"
+            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+            msg = f"Image already in workspace directory, returning URL: {static_url}"
             logger.debug(msg)
         except ValueError:
             # File is not in static directory, create small preview
@@ -767,7 +779,7 @@ class OSManager:
             if file_path.exists():
                 msg = f"Path already exists: {file_path}"
                 return CreateFileResultSuccess(
-                    created_path=str(file_path), result_details=ResultDetails(message=msg, level="WARNING")
+                    created_path=str(file_path), result_details=ResultDetails(message=msg, level=logging.WARNING)
                 )
 
             # Create parent directories if needed
@@ -836,10 +848,115 @@ class OSManager:
             return RenameFileResultSuccess(
                 old_path=str(old_path),
                 new_path=str(new_path),
-                result_details=ResultDetails(message=details, level="INFO"),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         except Exception as e:
             msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
             logger.error(msg)
             return RenameFileResultFailure(result_details=msg)
+
+    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        """Handle app initialization complete event by registering system resources."""
+        self._register_system_resources()
+
+    # NEW Resource Management Methods
+    def _register_system_resources(self) -> None:
+        """Register OS and CPU resource types with ResourceManager and create system instances."""
+        self._attempt_generate_os_resources()
+        self._attempt_generate_cpu_resources()
+
+    def _attempt_generate_os_resources(self) -> None:
+        """Register OS resource type and create system OS instance if successful."""
+        # Register OS resource type
+        os_resource_type = OSResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=os_resource_type)
+        result = GriptapeNodes.handle_request(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register OS resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered OS resource type")
+        # Registration successful, now create instance
+        self._create_system_os_instance()
+
+    def _attempt_generate_cpu_resources(self) -> None:
+        """Register CPU resource type and create system CPU instance if successful."""
+        # Register CPU resource type
+        cpu_resource_type = CPUResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=cpu_resource_type)
+        result = GriptapeNodes.handle_request(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register CPU resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered CPU resource type")
+        # Registration successful, now create instance
+        self._create_system_cpu_instance()
+
+    def _create_system_os_instance(self) -> None:
+        """Create system OS instance."""
+        os_capabilities = {
+            "platform": self._get_platform_name(),
+            "arch": self._get_architecture(),
+            "version": self._get_platform_version(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="OSResourceType", capabilities=os_capabilities
+        )
+        result = GriptapeNodes.handle_request(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error(
+                "Attempted to create system OS resource instance. Failed due to resource instance creation failure"
+            )
+            return
+
+        logger.debug("Successfully created system OS instance: %s", result.instance_id)
+
+    def _create_system_cpu_instance(self) -> None:
+        """Create system CPU instance."""
+        cpu_capabilities = {
+            "cores": os.cpu_count() or 1,
+            "architecture": self._get_architecture(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="CPUResourceType", capabilities=cpu_capabilities
+        )
+        result = GriptapeNodes.handle_request(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error(
+                "Attempted to create system CPU resource instance. Failed due to resource instance creation failure"
+            )
+            return
+
+        logger.debug("Successfully created system CPU instance: %s", result.instance_id)
+
+    def _get_platform_name(self) -> str:
+        """Get platform name using existing sys.platform detection."""
+        if self.is_windows():
+            return "windows"
+        if self.is_mac():
+            return "darwin"
+        if self.is_linux():
+            return "linux"
+        return sys.platform
+
+    def _get_architecture(self) -> str:
+        """Get system architecture."""
+        try:
+            return os.uname().machine.lower()
+        except AttributeError:
+            # Windows doesn't have os.uname(), fallback to environment variable
+            return os.environ.get("PROCESSOR_ARCHITECTURE", "unknown").lower()
+
+    def _get_platform_version(self) -> str:
+        """Get platform version."""
+        try:
+            return os.uname().release
+        except AttributeError:
+            # Windows doesn't have os.uname(), return basic platform info
+            return sys.platform

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -75,6 +75,10 @@ class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @PayloadRegistry.register
 class AppInitializationComplete(AppPayload):
     """Application initialization completed successfully. All subsystems ready."""
+
+    libraries_to_register: list[str] = field(default_factory=list)
+    workflows_to_register: list[str] = field(default_factory=list)
+    models_to_download: list[str] = field(default_factory=list)
 
 
 @dataclass

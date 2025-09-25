@@ -3,10 +3,8 @@ import os
 import platform
 import sys
 
-import diffusers  # type: ignore[reportMissingImports]
-import psutil  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -25,36 +23,57 @@ def human_readable_memory_footprint(model: torch.nn.Module) -> str:
     return to_human_readable_size(model.get_memory_footprint())  # type: ignore[reportAttributeAccessIssue]
 
 
-def get_bytes_by_component(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
+def get_model_memory(model: torch.nn.Module | None) -> int:
+    """Calculate accurate memory footprint by examining all parameters and buffers."""
+    if model is None:
+        return 0
+
+    total_bytes = 0
+
+    # Calculate parameter memory
+    for param in model.parameters():
+        total_bytes += param.numel() * param.element_size()
+
+    # Calculate buffer memory (batch norm stats, etc.)
+    for buffer in model.buffers():
+        total_bytes += buffer.numel() * buffer.element_size()
+
+    return total_bytes
+
+
+def get_bytes_by_component(pipe: DiffusionPipeline, component_names: list[str]) -> dict[str, int]:
     """Get bytes by component for a DiffusionPipeline."""
     bytes_by_component = {}
     for name in component_names:
         if hasattr(pipe, name):
             component = getattr(pipe, name)
-            if hasattr(component, "get_memory_footprint"):
-                bytes_by_component[name] = component.get_memory_footprint()
-            else:
-                logger.warning("Component %s does not have get_memory_footprint method", name)
-                bytes_by_component[name] = None
+            bytes_by_component[name] = get_model_memory(component)
         else:
             logger.warning("Pipeline does not have component %s", name)
             bytes_by_component[name] = None
     return bytes_by_component
 
 
-def get_total_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> int:
+def get_total_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> int:
     """Get total memory footprint of a DiffusionPipeline."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
     total_bytes = sum(bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None)
     return total_bytes
 
 
-def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component_names: list[str]) -> None:
-    """Print pipeline memory footprint."""
+def get_max_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> int:
+    """Get max memory footprint of a DiffusionPipeline."""
     bytes_by_component = get_bytes_by_component(pipe, component_names)
-    component_bytes = [bytes_by_component[name] for name in component_names]
+    max_bytes = max((bytes_ for bytes_ in bytes_by_component.values() if bytes_ is not None), default=0)
+    return max_bytes
+
+
+def print_pipeline_memory_footprint(pipe: DiffusionPipeline, component_names: list[str]) -> None:
+    """Print pipeline memory footprint by measuring actual tensor sizes."""
+    bytes_by_component = get_bytes_by_component(pipe, component_names)
+    component_bytes = [bytes_by_component[name] for name in component_names if bytes_by_component[name] is not None]
     total_bytes = sum(component_bytes)
-    max_bytes = max(component_bytes)
+    max_bytes = max(component_bytes, default=0)
 
     for name, bytes_ in bytes_by_component.items():
         if bytes_ is None:
@@ -64,19 +83,6 @@ def print_pipeline_memory_footprint(pipe: diffusers.DiffusionPipeline, component
     logger.info("Total: %s", to_human_readable_size(total_bytes))
     logger.info("Max: %s", to_human_readable_size(max_bytes))
     logger.info("")
-
-
-def print_flux_pipeline_memory_footprint(pipe: diffusers.FluxPipeline | diffusers.FluxImg2ImgPipeline) -> None:
-    """Print pipeline memory footprint."""
-    print_pipeline_memory_footprint(
-        pipe,
-        [
-            "transformer",
-            "text_encoder",
-            "text_encoder_2",
-            "vae",
-        ],
-    )
 
 
 def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR0911 PLR0912
@@ -151,6 +157,17 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
     return torch.device("cpu")
 
 
+def get_free_cuda_memory() -> int:
+    """Get free memory on the current CUDA device."""
+    if not torch.cuda.is_available():
+        return 0
+
+    device = torch.device("cuda")
+    total_memory = torch.cuda.get_device_properties(device).total_memory
+    free_memory = total_memory - torch.cuda.memory_allocated(device)
+    return free_memory
+
+
 def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0911
     """Decide whether to enable attention slicing based on the device and platform."""
     system = platform.system()
@@ -161,7 +178,7 @@ def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0
             logger.info("macOS detected with device %s, not MPS — enabling attention slicing.", device.type)
             return True
         # Check system RAM
-        total_ram_gb = psutil.virtual_memory().total / 1e9
+        total_ram_gb = torch.mps.recommended_max_memory() - torch.mps.current_allocated_memory()
         if total_ram_gb < 64:  # noqa: PLR2004
             logger.info("macOS detected with MPS device and %.1f GB RAM — enabling attention slicing.", total_ram_gb)
             return True
@@ -174,11 +191,11 @@ def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0
         return True
 
     if device.type == "cuda":
-        total_mem = torch.cuda.get_device_properties(device).total_memory
+        total_mem = get_free_cuda_memory()
         if total_mem < 8 * 1024**3:  # 8 GB
-            logger.info("CUDA device has %.1f GB memory, enabling attention slicing.", total_mem / 1e9)
+            logger.info("CUDA device has %s memory, enabling attention slicing.", to_human_readable_size(total_mem))
             return True
-        logger.info("CUDA device has %.1f GB memory, attention slicing not needed.", total_mem / 1e9)
+        logger.info("CUDA device has %s memory, attention slicing not needed.", to_human_readable_size(total_mem))
         return False
 
     # Unknown device

@@ -11,7 +11,7 @@ class AddParameterButton(Trait):
 
     def __init__(self) -> None:
         super().__init__(element_id="AddParameterButton")
-        self.add_child(Button(button_type="AddParameter"))
+        self.add_child(Button(label="AddParameter"))
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:

@@ -133,7 +133,9 @@ class SyncManager:
                 return StartSyncAllCloudWorkflowsResultSuccess(
                     sync_directory=str(sync_dir),
                     total_workflows=0,
-                    result_details=ResultDetails(message="No workflow files found in cloud storage.", level="INFO"),
+                    result_details=ResultDetails(
+                        message="No workflow files found in cloud storage.", level=logging.INFO
+                    ),
                 )
 
             # Start background sync with unique ID
@@ -162,8 +164,15 @@ class SyncManager:
         try:
             # Check if cloud storage is configured before attempting sync
             self._get_cloud_storage_driver()
-            # Start file watching after successful sync
-            self._start_file_watching()
+
+            # Check if file watching is enabled before starting it
+            enable_file_watching = self._config_manager.get_config_value("enable_workspace_file_watching", default=True)
+            if enable_file_watching:
+                # Start file watching after successful sync
+                self._start_file_watching()
+                logger.debug("File watching enabled - started watching synced workflows directory")
+            else:
+                logger.debug("File watching disabled - skipping file watching startup")
 
             logger.info("App initialization complete - starting automatic cloud workflow sync")
 
@@ -209,7 +218,10 @@ class SyncManager:
             msg = "Cloud storage api_key not configured. Set GT_CLOUD_API_KEY secret."
             raise RuntimeError(msg)
 
+        workspace_directory = Path(self._config_manager.get_config_value("workspace_directory"))
+
         return GriptapeCloudStorageDriver(
+            workspace_directory,
             bucket_id=bucket_id,
             base_url=base_url,
             api_key=api_key,
@@ -232,7 +244,7 @@ class SyncManager:
             sync_dir = self._sync_dir
 
             # Download file content from cloud
-            file_content = storage_driver.download_file(filename)
+            file_content = storage_driver.download_file(Path(filename))
 
             # Write to local sync directory
             local_file_path = sync_dir / filename
@@ -283,7 +295,7 @@ class SyncManager:
 
             # Upload to cloud storage using the upload_file method
             filename = file_path.name
-            storage_driver.upload_file(filename, file_content)
+            storage_driver.upload_file(Path(filename), file_content)
 
             logger.info("Successfully uploaded workflow file to cloud: %s", filename)
 
@@ -301,7 +313,7 @@ class SyncManager:
             filename = file_path.name
 
             # Use the storage driver's delete method
-            storage_driver.delete_file(filename)
+            storage_driver.delete_file(Path(filename))
             logger.info("Successfully deleted workflow file from cloud: %s", filename)
 
         except Exception as e:
@@ -388,7 +400,7 @@ class SyncManager:
         """
         try:
             # Download file content
-            file_content = storage_driver.download_file(file_name)
+            file_content = storage_driver.download_file(Path(file_name))
 
             # Extract just the filename (remove any directory prefixes)
             local_filename = Path(file_name).name
@@ -444,7 +456,7 @@ class SyncManager:
 
             # Collect results as they complete
             for future in future_to_filename:
-                filename, success, error = future.result()
+                filename, success, _error = future.result()
                 if success:
                     synced_workflows.append(filename)
                 else:

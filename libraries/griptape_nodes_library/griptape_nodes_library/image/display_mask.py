@@ -5,11 +5,12 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     extract_channel_from_image,
     load_pil_from_url,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -119,8 +120,14 @@ class DisplayMask(DataNode):
         # Extract the specified channel as mask
         mask = extract_channel_from_image(image_pil, channel, "image")
 
-        # Save output mask and create URL artifact
-        output_artifact = save_pil_image_to_static_file(mask)
+        # Save output mask and create URL artifact with proper filename
+        # Generate a meaningful filename
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_display_mask",
+            extension="png",
+        )
+        output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
         output_param_name = self._get_output_parameter_name()
         self.set_parameter_value(output_param_name, output_artifact)
         self.publish_update_to_parameter(output_param_name, output_artifact)

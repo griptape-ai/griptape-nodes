@@ -18,8 +18,8 @@
             "name": "Python Debugger: Run Griptape Nodes App",
             "type": "debugpy",
             "request": "launch",
-            "python": ".venv/bin/python",
-            "module": "src.griptape_nodes.__init__",
+            "python": "${command:python.interpreterPath}",
+            "module": "src.griptape_nodes.__main__",
             "console": "integratedTerminal",
             "args": [
                 "--no-update"
