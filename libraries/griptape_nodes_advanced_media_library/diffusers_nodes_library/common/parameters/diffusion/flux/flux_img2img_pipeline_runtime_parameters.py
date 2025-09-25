@@ -62,7 +62,7 @@ class FluxImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.add_parameter(
             Parameter(
                 name="strength",
-                default_value=1.0,
+                default_value=0.3,
                 type="float",
                 tooltip="Indicates extent to transform the reference image.",
             )
