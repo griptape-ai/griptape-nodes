@@ -19,6 +19,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DiffusionPipelineRuntimeNode(ControlNode):
     def __init__(self, **kwargs) -> None:
+        self._initializing = True
         super().__init__(**kwargs)
         self.did_pipeline_change = False
         self.pipe_params = DiffusionPipelineParameters(self)
@@ -29,6 +30,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
+        self._initializing = False
 
     def before_value_set(self, parameter: Parameter, value: Any) -> Any:
         if parameter.name == "pipeline":
@@ -54,6 +56,22 @@ class DiffusionPipelineRuntimeNode(ControlNode):
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
+
+    def add_parameter(self, parameter: Parameter) -> None:
+        """Add a parameter to the node.
+
+        During initialization, parameters are added normally.
+        After initialization (dynamic mode), parameters are marked as user-defined
+        for serialization and duplicates are prevented.
+        """
+        if self._initializing:
+            super().add_parameter(parameter)
+            return
+
+        # Dynamic mode: prevent duplicates and mark as user-defined
+        if parameter.name not in self.parameters:
+            parameter.user_defined = True
+            super().add_parameter(parameter)
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()
