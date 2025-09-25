@@ -571,9 +571,6 @@ If no title is provided, just use "Segment X:" format.
         detected_format: str,
     ) -> None:
         """Performs the synchronous video splitting operation."""
-        # First clear the parameter list
-        self._clear_list()
-
         try:
             self.append_value_to_parameter("logs", f"Splitting video into {len(segments)} segments\n")
 
@@ -624,6 +621,10 @@ If no title is provided, just use "Segment X:" format.
 
     def process(self) -> AsyncResult[None]:
         """Executes the main logic of the node asynchronously."""
+        # Clear the parameter list
+        self._clear_list()
+
+        # Get the video and timecodes
         video = self.parameter_values.get("video")
         timecodes = self.parameter_values.get("timecodes", "")
 
