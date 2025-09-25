@@ -50,6 +50,8 @@ T = TypeVar("T")
 
 AsyncResult = Generator[Callable[[], T], T]
 
+LOCAL_EXECUTION = "Local Execution"
+
 
 class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
@@ -57,6 +59,23 @@ class NodeResolutionState(StrEnum):
     UNRESOLVED = auto()
     RESOLVING = auto()
     RESOLVED = auto()
+
+
+def get_library_names_with_publish_handlers() -> list[str]:
+    """Get names of all registered libraries that have PublishWorkflowRequest handlers."""
+    from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+    library_manager = GriptapeNodes.LibraryManager()
+    event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
+
+    # Always include "local" as the first option
+    library_names = [LOCAL_EXECUTION]
+
+    # Add all registered library names that can handle PublishWorkflowRequest
+    library_names.extend(sorted(event_handlers.keys()))
+
+    return library_names
 
 
 class BaseNode(ABC):
@@ -104,6 +123,16 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self.set_entry_control_parameter(None)
+        self.execution_environment = Parameter(
+            name="execution_environment",
+            tooltip="Environment that the node should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
+            ui_options={"hide": True},
+        )
+        self.add_parameter(self.execution_environment)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
