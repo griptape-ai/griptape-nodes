@@ -1263,6 +1263,7 @@ class WorkflowManager:
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
             workflow_shape=workflow_shape,
+            file_path=str(file_path),
         )
         save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
@@ -1297,8 +1298,13 @@ class WorkflowManager:
     ) -> ResultPayload:
         """Save a workflow file from serialized flow commands without registry overhead."""
         # Determine file path
-        relative_file_path = f"{request.file_name}.py"
-        file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+        if request.file_path:
+            # Use provided file path
+            file_path = Path(request.file_path)
+        else:
+            # Default to workspace path
+            relative_file_path = f"{request.file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date

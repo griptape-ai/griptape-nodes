@@ -654,12 +654,14 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
         execution_flow_name: Optional flow name to use for execution code (defaults to file_name if not provided)
         branched_from: Optional branched from information to preserve workflow lineage
         workflow_shape: Optional workflow shape defining inputs and outputs for external callers
+        file_path: Optional specific file path to use (defaults to workspace path if not provided)
 
     Results: SaveWorkflowFileFromSerializedFlowResultSuccess (with file path) | SaveWorkflowFileFromSerializedFlowResultFailure (save error)
     """
 
     serialized_flow_commands: "SerializedFlowCommands"
     file_name: str
+    file_path: str | None = None
     creation_date: datetime | None = None
     image_path: str | None = None
     execution_flow_name: str | None = None
