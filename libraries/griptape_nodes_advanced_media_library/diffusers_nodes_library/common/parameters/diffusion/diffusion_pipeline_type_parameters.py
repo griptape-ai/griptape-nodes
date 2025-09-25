@@ -38,7 +38,6 @@ class DiffusionPipelineTypeParameters(ABC):
                 tooltip="Type of diffusion pipeline to build",
             )
         )
-        self.pipeline_type_pipeline_params.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("pipeline_type")
