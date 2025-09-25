@@ -36,23 +36,6 @@ class NodeExecutor:
         if library_name in self._advanced_libraries:
             del self._advanced_libraries[library_name]
 
-    async def execute_method(self, method_name: str, library_name: str | None = None, *args: Any, **kwargs: Any) -> Any:
-        """Execute a method by name with given arguments."""
-        if library_name and library_name in self._advanced_libraries:
-            advanced_library = self._advanced_libraries[library_name]
-            if hasattr(advanced_library, method_name):
-                method = getattr(advanced_library, method_name)
-                if callable(method):
-                    logger.debug("Executing method '%s' from library '%s'", method_name, library_name)
-                    if asyncio.iscoroutinefunction(method):
-                        return await method(*args, **kwargs)
-                    return method(*args, **kwargs)
-            msg = f"Method '{method_name}' not found in library '{library_name}'"
-            raise KeyError(msg)
-
-        msg = f"No library specified or library '{library_name}' not found"
-        raise KeyError(msg)
-
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler | None:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         if library_name in self._advanced_libraries:
@@ -70,7 +53,6 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        #TODO: Use some type of config base to determine if a node should use a handler here, and grouping.
         execution_type = node.get_parameter_value(node.execution_environment.name)
         if execution_type != LOCAL_EXECUTION:
             try:
@@ -86,45 +68,50 @@ class NodeExecutor:
             workflow_handler = self.get_workflow_handler(library_name)
             if workflow_handler is not None:
                 # Call the library's workflow handler
-                # TODO: Call the publishworkflow handler with the workflow file given.
-                start_node_type = library.get_nodes_by_base_type(StartNode)[0]
-                end_node_type = library.get_nodes_by_base_type(EndNode)[0]
-                sanitized_name = "".join(c for c in node.name if c.isalnum())
+                start_node_type = library.get_nodes_by_base_type(StartNode)
+                if len(start_node_type) > 0:
+                    start_node_type = start_node_type[0]
+                else:
+                    start_node_type = "StartFlow"
+                end_node_type = library.get_nodes_by_base_type(EndNode)
+                # Uses the libraries start and end node types if they exist.
+                if len(end_node_type) > 0:
+                    end_node_type = end_node_type[0]
+                else:
+                    end_node_type = "EndFlow"
+                # Get a name for the output parameter prefix - attached to node name because node names are unique.
+                # We may have to have multiple prefixes if we end up having multiple nodes attached to one EndFlow.
+                sanitized_name = node.name.replace(" ", "_")
                 output_parameter_prefix = f"{sanitized_name}_packaged_node_"
-                if False:
-                    request = PackageNodeAsSerializedFlowRequest(
-                        node_name= node.name,
-                        start_node_type=start_node_type,
-                        end_node_type=end_node_type,
-                        start_end_specific_library_name=library_name,
-                        entry_control_parameter_name=None,
-                        output_parameter_prefix=output_parameter_prefix
-                    )
-                    # now we package the flow into a serialized flow commands. 
-                    package_result = GriptapeNodes.handle_request(request)
-                    if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
-                        msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
-                        raise ValueError(msg)
-                    file_name = f"{node.name}_{library_name}_packaged_flow"
-                    workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
-                    workflow_result = GriptapeNodes.handle_request(workflow_file_request)
-                    if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-                        msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
-                        raise ValueError(msg)
-                    # TODO: What is the workflow metadata for?
-                    publish_request = PublishWorkflowRequest(workflow_name=workflow_result.file_path, publisher_name=library_name, execute_on_publish=True, published_workflow_file_name=workflow_result.file_path)
-                    publish_result = await workflow_handler.handler(publish_request)
+                request = PackageNodeAsSerializedFlowRequest(
+                    node_name= node.name,
+                    start_node_type=start_node_type,
+                    end_node_type=end_node_type,
+                    start_end_specific_library_name=library_name,
+                    # Provide the entry control parameter name if it exists.
+                    entry_control_parameter_name=node._entry_control_parameter.name if node._entry_control_parameter is not None else None,
+                    output_parameter_prefix=output_parameter_prefix
+                )
+                # now we package the flow into a serialized flow commands.
+                package_result = GriptapeNodes.handle_request(request)
+                if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
+                    msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
+                    raise ValueError(msg)
+                file_name = f"{node.name}_{library_name}_packaged_flow"
+                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
+                workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+                if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+                    msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+                    raise ValueError(msg)
+                #TODO: Call Zach's PublishWorkflowRequest executor, running the workflow_rest.file_path in memory!
 
-                    #TODO: HEre i call the packaging 
+                #TODO: Call Zach's Subprocess Execute exector, which runs the created workflow file from the PublishWorkflowRequest.
 
-                    # Here I call the subprocess executor 
-                    # get my output hell yeah.
-                    my_subprocess_result = subprocess_executor.output
+                my_subprocess_result = subprocess_executor.output
                 # {end_node_name: parameter_output_values dict}
-                my_subprocess_result = {"EndNode":{"Agent_packaged_node_output":"THIS IS A TEST AND NOW IT'S DONE", "Agent_packaged_node_prompt": "WOAH WE HAVE A PROMPT TOO"}}
                 # For now, we know we have one end node, I believe.
                 parameter_output_values = {k: v for result_dict in my_subprocess_result.values() for k, v in result_dict.items()}
-
+                #TODO: How do we handle pickled values?
                 # Remove the output_parameter_prefix and set values on BaseNode
                 for param_name, param_value in parameter_output_values.items():
                     if param_name.startswith(output_parameter_prefix):
@@ -140,6 +127,7 @@ class NodeExecutor:
                 return
         # Fallback to default node processing
         await node.aprocess()
+        return
 
     def clear(self) -> None:
         self._advanced_libraries = {}
