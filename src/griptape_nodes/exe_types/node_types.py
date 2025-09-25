@@ -1397,7 +1397,7 @@ class EndNode(BaseNode):
                 self.parameter_output_values[param.name] = value
         next_control_output = self.get_next_control_output()
         # Update which control parameter to flag as the output value.
-        if next_control_output:
+        if next_control_output is not None:
             self.parameter_output_values[next_control_output.name] = 1
 
 
