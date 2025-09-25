@@ -134,6 +134,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowShapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -172,6 +173,7 @@ class PackagingStartNodeResult(NamedTuple):
 
     start_node_commands: SerializedNodeCommands
     start_to_package_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
+    input_shape_data: WorkflowShapeNodes
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -179,6 +181,7 @@ class PackagingEndNodeResult(NamedTuple):
 
     end_node_commands: SerializedNodeCommands
     package_to_end_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
+    output_shape_data: WorkflowShapeNodes
 
 
 class FlowManager:
@@ -1139,10 +1142,16 @@ class FlowManager:
             request=request,
         )
 
+        # Step 9: Build WorkflowShape from collected parameter shape data
+        workflow_shape = GriptapeNodes.WorkflowManager().build_workflow_shape_from_parameter_info(
+            input_node_params=start_node_result.input_shape_data, output_node_params=end_node_result.output_shape_data
+        )
+
         # Return success result
         return PackageNodeAsSerializedFlowResultSuccess(
             result_details=f'Successfully packaged node "{package_node_info.package_node.name}" from flow "{package_node_info.package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
             serialized_flow_commands=packaged_flow,
+            workflow_shape=workflow_shape,
         )
 
     def _validate_package_node_and_flow(  # noqa: PLR0911
@@ -1344,6 +1353,7 @@ class FlowManager:
         # Create parameter modification commands and connection mappings for the start node based on incoming DATA connections
         start_node_parameter_commands = []
         start_to_package_data_connections = []
+        input_shape_data: WorkflowShapeNodes = {}
 
         for incoming_conn in incoming_data_connections:
             # Parameter name: use the package node's parameter name
@@ -1361,6 +1371,15 @@ class FlowManager:
             if not source_param:
                 details = f"Attempted to package node '{package_node.name}'. Failed because source parameter '{incoming_conn.source_parameter_name}' on node '{incoming_conn.source_node_name}' from incoming connection could not be found."
                 return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+
+            # Extract parameter shape info for workflow shape (inputs from external sources)
+            param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
+                source_param, include_control_params=True
+            )
+            if param_shape_info is not None:
+                if start_node_name not in input_shape_data:
+                    input_shape_data[start_node_name] = {}
+                input_shape_data[start_node_name][param_name] = param_shape_info
 
             # Create parameter command for start node
             add_param_request = AddParameterToNodeRequest(
@@ -1395,6 +1414,7 @@ class FlowManager:
         return PackagingStartNodeResult(
             start_node_commands=start_node_commands,
             start_to_package_data_connections=start_to_package_data_connections,
+            input_shape_data=input_shape_data,
         )
 
     def _create_end_node_commands(
@@ -1429,6 +1449,7 @@ class FlowManager:
         # Note: PROPERTY-only parameters are guaranteed to have OUTPUT mode after serialization
         end_node_parameter_commands = []
         package_to_end_data_connections = []
+        output_shape_data: WorkflowShapeNodes = {}
 
         for package_param in package_node.parameters:
             # Only ignore parameters that have ONLY INPUT mode (no OUTPUT or PROPERTY)
@@ -1441,6 +1462,15 @@ class FlowManager:
 
             # Create prefixed parameter name for end node to avoid collisions
             end_param_name = f"{request.output_parameter_prefix}{package_param.name}"
+
+            # Extract parameter shape info for workflow shape (outputs to external consumers)
+            param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
+                package_param, include_control_params=True
+            )
+            if param_shape_info is not None:
+                if end_node_name not in output_shape_data:
+                    output_shape_data[end_node_name] = {}
+                output_shape_data[end_node_name][end_param_name] = param_shape_info
 
             # Create parameter command for end node
             add_param_request = AddParameterToNodeRequest(
@@ -1474,6 +1504,7 @@ class FlowManager:
         return PackagingEndNodeResult(
             end_node_commands=end_node_commands,
             package_to_end_data_connections=package_to_end_data_connections,
+            output_shape_data=output_shape_data,
         )
 
     def _create_start_node_control_connection(
