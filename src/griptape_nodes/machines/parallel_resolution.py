@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.execution_events import (
     CurrentControlNodeEvent,
     CurrentDataNodeEvent,
+    InvolvedNodesEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
@@ -184,19 +185,22 @@ class ExecuteDagState(State):
         context: ParallelResolutionContext, node: BaseNode, network_name: str, flow_manager: FlowManager
     ) -> bool:
         """Check if control flow processing should be skipped."""
+        # Get network once to avoid duplicate lookups
+        if context.dag_builder is None:
+            msg = "DAG builder is not initialized"
+            raise ValueError(msg)
+        network = context.dag_builder.graphs.get(network_name, None)
+        if network is None:
+            msg = f"Network {network_name} not found in DAG builder"
+            raise ValueError(msg)
         if flow_manager.global_single_node_resolution:
+            # Clean up nodes from emptied graphs in single node resolution mode
+            if len(network) == 0 and context.dag_builder is not None:
+                context.dag_builder.cleanup_empty_graph_nodes(network_name)
+                ExecuteDagState._emit_involved_nodes_update(context)
             return True
 
-        if context.dag_builder is not None:
-            network = context.dag_builder.graphs.get(network_name, None)
-            if network is not None and len(network) > 0:
-                return True
-
-        if node.stop_flow:
-            node.stop_flow = False
-            return True
-
-        return False
+        return bool(len(network) > 0 or node.stop_flow)
 
     @staticmethod
     def _process_next_control_node(
@@ -228,6 +232,17 @@ class ExecuteDagState(State):
                     )
                 )
             ExecuteDagState._add_and_queue_nodes(context, next_node, network_name)
+
+    @staticmethod
+    def _emit_involved_nodes_update(context: ParallelResolutionContext) -> None:
+        """Emit update of involved nodes based on current DAG state."""
+        if context.dag_builder is not None:
+            involved_nodes = list(context.node_to_reference.keys())
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
+            )
 
     @staticmethod
     def _add_and_queue_nodes(context: ParallelResolutionContext, next_node: BaseNode, network_name: str) -> None:

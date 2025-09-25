@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, Exec
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
+    InvolvedNodesEvent,
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -252,12 +253,21 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             current_nodes = await self._process_nodes_for_dag(start_node)
         else:
             current_nodes = [start_node]
+            # For control flow/sequential: emit all nodes in flow as involved
         self._context.current_nodes = current_nodes
         # Set entry control parameter for initial node (None for workflow start)
         for node in current_nodes:
             node.set_entry_control_parameter(None)
         # Set up to debug
         self._context.paused = debug_mode
+        flow_manager = GriptapeNodes.FlowManager()
+        flow = flow_manager.get_flow_by_name(self._context.flow_name)
+        involved_nodes = list(flow.nodes.keys())
+        GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(
+                wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+            )
+        )
         await self.start(ResolveNodeState)  # Begins the flow
 
     async def update(self) -> None:
