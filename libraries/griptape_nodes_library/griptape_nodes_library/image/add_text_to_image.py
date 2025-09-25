@@ -108,6 +108,67 @@ class AddTextToImage(SuccessFailureNode):
             result_details_placeholder="Details on the text rendering will be presented here.",
         )
 
+    def process(self) -> None:
+        # Reset execution state and set failure defaults
+        self._clear_execution_status()
+        self._set_failure_output_values()
+
+        # Get parameter values
+        width = self.get_parameter_value("width")
+        height = self.get_parameter_value("height")
+        background_color = self.get_parameter_value("background_color")
+        text = self.get_parameter_value("text")
+        text_color = self.get_parameter_value("text_color")
+
+        # Validation failures - early returns
+        try:
+            self._validate_parameters(width, height, background_color, text_color, text)
+        except ValueError as validation_error:
+            error_details = f"Parameter validation failed: {validation_error}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"AddTextToImage '{self.name}': {error_details}")
+            self._handle_failure_exception(validation_error)
+            return
+
+        # Color parsing failures
+        try:
+            bg_rgba = parse_color_to_rgba(background_color)
+            text_rgba = parse_color_to_rgba(text_color)
+        except Exception as color_error:
+            error_details = f"Color parsing failed: {color_error}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"AddTextToImage '{self.name}': {error_details}")
+            self._handle_failure_exception(color_error)
+            return
+
+        # Image creation failures
+        try:
+            image = self._create_image_with_text(width, height, bg_rgba, text_rgba, text)
+        except Exception as image_error:
+            error_details = f"Image creation failed: {image_error}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"AddTextToImage '{self.name}': {error_details}")
+            self._handle_failure_exception(image_error)
+            return
+
+        # Image upload failures
+        try:
+            image_artifact = self._upload_image_to_static_storage(image)
+        except Exception as upload_error:
+            error_details = f"Failed to upload image: {upload_error}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"AddTextToImage '{self.name}': {error_details}")
+            self._handle_failure_exception(upload_error)
+            return
+
+        # Success path - all validations and processing completed successfully
+        self._set_success_output_values(width, height, background_color, text_color, text)
+        self.parameter_output_values["image"] = image_artifact
+
+        success_details = self._get_success_message(width, height, text)
+        self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+        logger.info(f"AddTextToImage '{self.name}': {success_details}")
+
     def _validate_parameters(self, width: int, height: int, background_color: str, text_color: str, text: str) -> None:
         """Validate input parameters and raise ValueError if invalid."""
         if not isinstance(width, int) or width <= 0:
@@ -195,67 +256,6 @@ class AddTextToImage(SuccessFailureNode):
         self.parameter_output_values["text_color"] = ""
         self.parameter_output_values["text"] = ""
         self.parameter_output_values["image"] = None
-
-    def process(self) -> None:
-        # Reset execution state and set failure defaults
-        self._clear_execution_status()
-        self._set_failure_output_values()
-
-        # Get parameter values
-        width = self.get_parameter_value("width")
-        height = self.get_parameter_value("height")
-        background_color = self.get_parameter_value("background_color")
-        text = self.get_parameter_value("text")
-        text_color = self.get_parameter_value("text_color")
-
-        # Validation failures - early returns
-        try:
-            self._validate_parameters(width, height, background_color, text_color, text)
-        except ValueError as validation_error:
-            error_details = f"Parameter validation failed: {validation_error}"
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"AddTextToImage '{self.name}': {error_details}")
-            self._handle_failure_exception(validation_error)
-            return
-
-        # Color parsing failures
-        try:
-            bg_rgba = parse_color_to_rgba(background_color)
-            text_rgba = parse_color_to_rgba(text_color)
-        except Exception as color_error:
-            error_details = f"Color parsing failed: {color_error}"
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"AddTextToImage '{self.name}': {error_details}")
-            self._handle_failure_exception(color_error)
-            return
-
-        # Image creation failures
-        try:
-            image = self._create_image_with_text(width, height, bg_rgba, text_rgba, text)
-        except Exception as image_error:
-            error_details = f"Image creation failed: {image_error}"
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"AddTextToImage '{self.name}': {error_details}")
-            self._handle_failure_exception(image_error)
-            return
-
-        # Image upload failures
-        try:
-            image_artifact = self._upload_image_to_static_storage(image)
-        except Exception as upload_error:
-            error_details = f"Failed to upload image: {upload_error}"
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"AddTextToImage '{self.name}': {error_details}")
-            self._handle_failure_exception(upload_error)
-            return
-
-        # Success path - all validations and processing completed successfully
-        self._set_success_output_values(width, height, background_color, text_color, text)
-        self.parameter_output_values["image"] = image_artifact
-
-        success_details = self._get_success_message(width, height, text)
-        self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
-        logger.info(f"AddTextToImage '{self.name}': {success_details}")
 
     def _upload_image_to_static_storage(self, image: Image.Image) -> ImageUrlArtifact:
         """Upload PIL Image to static storage and return ImageUrlArtifact."""
