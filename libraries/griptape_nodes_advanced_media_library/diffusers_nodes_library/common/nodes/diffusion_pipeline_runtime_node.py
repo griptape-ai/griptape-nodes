@@ -99,26 +99,4 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         ):
             self.loras_params.configure_loras(pipe)
 
-        num_inference_steps = self.pipe_params.runtime_parameters.get_num_inference_steps()
-
-        def callback_on_step_end(
-            pipe: DiffusionPipeline,
-            i: int,
-            _t: Any,
-            callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.pipe_params.runtime_parameters.publish_output_image_preview_latents(
-                    pipe, callback_kwargs["latents"]
-                )
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
-
-        self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
-        output_image_pil = pipe(  # type: ignore[reportCallIssue]
-            **self.pipe_params.runtime_parameters.get_pipe_kwargs(),
-            output_type="pil",
-            callback_on_step_end=callback_on_step_end,
-        ).images[0]
-        self.pipe_params.runtime_parameters.publish_output_image(output_image_pil)
-        self.log_params.append_to_logs("Done.\n")
+        self.pipe_params.runtime_parameters.process_pipeline(pipe)

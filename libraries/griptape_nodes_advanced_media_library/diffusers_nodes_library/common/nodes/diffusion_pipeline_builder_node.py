@@ -65,7 +65,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
             config_data[f"opt_{key}"] = value
 
         return (
-            self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_class.__name__
+            self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_name
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )

@@ -16,6 +16,9 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipel
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipeline_runtime_parameters import (
     FluxKontextPipelineRuntimeParameters,
 )
+from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
+    FluxUpscalePipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
 )
@@ -53,6 +56,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxKontextPipelineRuntimeParameters(self._node)
             case "FluxImg2ImgPipeline":
                 self._runtime_parameters = FluxImg2ImgPipelineRuntimeParameters(self._node)
+            case "FluxUpscalePipeline":
+                self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline class: {pipeline_class}"
                 logger.error(msg)
