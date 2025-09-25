@@ -16,8 +16,8 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.color_utils import NAMED_COLORS, parse_color_to_rgba
+from griptape_nodes.traits.color_picker import ColorPicker
+from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.file_utils import generate_filename
 
 # Constants
@@ -29,9 +29,6 @@ class AddTextToImage(SuccessFailureNode):
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
-
-        # Get list of named colors for dropdown options
-        color_options = list(NAMED_COLORS.keys())
 
         # Image dimensions parameters
         self.add_parameter(
@@ -59,10 +56,10 @@ class AddTextToImage(SuccessFailureNode):
             Parameter(
                 name="background_color",
                 type="str",
-                default_value="navy",
+                default_value="#000080",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                tooltip="Background color of the image",
-                traits={Options(choices=color_options)},
+                tooltip="Background color of the image (hex format)",
+                traits={ColorPicker(format="hex")},
             )
         )
 
@@ -83,10 +80,10 @@ class AddTextToImage(SuccessFailureNode):
             Parameter(
                 name="text_color",
                 type="str",
-                default_value="cyan",
+                default_value="#00FFFF",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                tooltip="Color of the text",
-                traits={Options(choices=color_options)},
+                tooltip="Color of the text (hex format)",
+                traits={ColorPicker(format="hex")},
             )
         )
 
@@ -135,7 +132,7 @@ class AddTextToImage(SuccessFailureNode):
 
         # Validation failures - early returns
         try:
-            self._validate_parameters(width, height, background_color, text_color, font_size)
+            self._validate_parameters(width, height, font_size)
         except ValueError as validation_error:
             error_details = f"Parameter validation failed: {validation_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -181,9 +178,7 @@ class AddTextToImage(SuccessFailureNode):
         self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
         logger.info(f"AddTextToImage '{self.name}': {success_details}")
 
-    def _validate_parameters(
-        self, width: int, height: int, background_color: str, text_color: str, font_size: int
-    ) -> None:
+    def _validate_parameters(self, width: int, height: int, font_size: int) -> None:
         """Validate input parameters and raise ValueError if invalid."""
         if width <= 0:
             msg = f"Width must be a positive integer, got: {width}"
@@ -193,13 +188,7 @@ class AddTextToImage(SuccessFailureNode):
             msg = f"Height must be a positive integer, got: {height}"
             raise ValueError(msg)
 
-        if background_color not in NAMED_COLORS:
-            msg = f"Invalid background color: {background_color}"
-            raise ValueError(msg)
-
-        if text_color not in NAMED_COLORS:
-            msg = f"Invalid text color: {text_color}"
-            raise ValueError(msg)
+        # Color validation is handled by ColorPicker trait
 
         if font_size <= 0:
             msg = f"Font size must be a positive integer, got: {font_size}"
