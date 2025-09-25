@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import sys
+import tempfile
+import threading
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Self
+
+import anyio
+from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+
+from griptape_nodes.app.app import _create_websocket_connection, _send_subscribe_command
+from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor import LocalSessionWorkflowExecutor
+from griptape_nodes.drivers.storage import StorageBackend
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent
+from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+logger = logging.getLogger(__name__)
+
+
+class SubprocessWorkflowExecutorError(Exception):
+    """Exception raised during subprocess workflow execution."""
+
+
+class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor):
+    def __init__(self, workflow_path: str) -> None:
+        self._workflow_path = workflow_path
+        self._process: asyncio.subprocess.Process | None = None
+        self._is_running = False
+        # Generate a unique session ID for this execution
+        self._session_id = uuid.uuid4().hex
+        self._websocket_thread: threading.Thread | None = None
+        self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
+        self._websocket_event_loop_ready = threading.Event()
+        self._event_handlers: dict[str, list] = {}
+        self._shutdown_event: asyncio.Event | None = None
+
+    async def __aenter__(self) -> Self:
+        """Async context manager entry: start WebSocket connection."""
+        logger.info("Starting WebSocket listener for session %s", self._session_id)
+        await self._start_websocket_listener()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Async context manager exit: stop WebSocket connection."""
+        logger.info("Stopping WebSocket listener for session %s", self._session_id)
+        self._stop_websocket_listener()
+
+    async def arun(
+        self,
+        workflow_name: str,  # noqa: ARG002
+        flow_input: Any,
+        storage_backend: StorageBackend = StorageBackend.LOCAL,
+        **kwargs: Any,  # noqa: ARG002
+    ) -> None:
+        """Execute a workflow in a subprocess and wait for completion."""
+        script_path = Path(__file__).parent / "utils" / "subprocess_script.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_workflow_path = Path(tmpdir) / "workflow.py"
+            tmp_script_path = Path(tmpdir) / "subprocess_script.py"
+
+            try:
+                async with (
+                    await anyio.open_file(self._workflow_path, "rb") as src,
+                    await anyio.open_file(tmp_workflow_path, "wb") as dst,
+                ):
+                    await dst.write(await src.read())
+
+                async with (
+                    await anyio.open_file(script_path, "rb") as src,
+                    await anyio.open_file(tmp_script_path, "wb") as dst,
+                ):
+                    await dst.write(await src.read())
+            except Exception as e:
+                msg = f"Failed to copy workflow or script to temp directory: {e}"
+                logger.exception(msg)
+                raise SubprocessWorkflowExecutorError(msg) from e
+
+            args = [
+                "--json-input",
+                json.dumps(flow_input),
+                "--session-id",
+                self._session_id,
+                "--storage-backend",
+                storage_backend.value,
+                "--workflow-path",
+                str(tmp_workflow_path),
+            ]
+            await self.execute_python_script(
+                script_path=tmp_script_path,
+                args=args,
+                cwd=Path(tmpdir),
+            )
+
+    async def execute_python_script(
+        self, script_path: Path, args: list[str] | None = None, cwd: Path | None = None
+    ) -> None:
+        """Execute a Python script in a subprocess and wait for completion.
+
+        Args:
+            script_path: Path to the Python script to execute
+            args: Additional command line arguments
+            cwd: Working directory for the subprocess
+        """
+        if self.is_running():
+            logger.warning("Another subprocess is already running. Terminating it first.")
+            await self.terminate()
+
+        args = args or []
+        command = [sys.executable, str(script_path), *args]
+
+        try:
+            logger.info("Starting subprocess: %s", " ".join(command))
+            logger.info("Working directory: %s", cwd)
+
+            self._process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            self._is_running = True
+            logger.info("Subprocess started with PID: %s", self._process.pid)
+
+            stdout_bytes, stderr_bytes = await self._process.communicate()
+            returncode = self._process.returncode
+            stdout = stdout_bytes.decode() if stdout_bytes else ""
+            stderr = stderr_bytes.decode() if stderr_bytes else ""
+
+            # Log all output regardless of return code
+            if stdout:
+                logger.info("Subprocess stdout: %s", stdout)
+            if stderr:
+                logger.info("Subprocess stderr: %s", stderr)
+
+            if returncode == 0:
+                logger.info("Subprocess completed successfully with return code: %d", returncode)
+            else:
+                logger.error("Subprocess failed with return code: %d", returncode)
+                msg = f"Subprocess failed with return code: {returncode}"
+                raise RuntimeError(msg)  # noqa: TRY301
+
+        except Exception as e:
+            msg = "Error running subprocess"
+            logger.exception(msg)
+            raise SubprocessWorkflowExecutorError(msg) from e
+        finally:
+            self._is_running = False
+            self._process = None
+
+    def is_running(self) -> bool:
+        """Check if a subprocess is currently running."""
+        return self._is_running
+
+    async def terminate(self) -> bool:
+        """Terminate the running subprocess.
+
+        Returns:
+            True if successfully terminated, False otherwise
+        """
+        if not self.is_running() or not self._process:
+            return True
+
+        try:
+            logger.info("Terminating subprocess...")
+            self._process.terminate()
+
+            # Wait for graceful termination with timeout using context manager
+            try:
+                async with asyncio.timeout(5.0):
+                    await self._process.wait()
+                logger.info("Subprocess terminated gracefully")
+                return True  # noqa: TRY300
+            except TimeoutError:
+                logger.warning("Subprocess did not terminate gracefully, force killing...")
+                self._process.kill()
+                await self._process.wait()
+                logger.info("Subprocess force killed")
+                return True
+
+        except Exception as e:
+            logger.error("Error terminating subprocess: %s", e)
+            return False
+        finally:
+            self._is_running = False
+            self._process = None
+
+    def get_status(self) -> dict[str, Any]:
+        """Get current status information."""
+        return {
+            "is_running": self.is_running(),
+            "has_process": self._process is not None,
+            "process_pid": self._process.pid if self._process else None,
+        }
+
+    async def _start_websocket_listener(self) -> None:
+        """Start WebSocket connection to listen for events from the subprocess."""
+        logger.info("Starting WebSocket listener for session %s", self._session_id)
+        api_key = self._get_api_key()
+        if api_key is None:
+            logger.warning("No API key found, WebSocket listener will not be started")
+            return
+
+        logger.info("API key found, starting WebSocket listener thread")
+        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, args=(api_key,), daemon=True)
+        self._websocket_thread.start()
+
+        if self._websocket_event_loop_ready.wait(timeout=10):
+            logger.info("WebSocket listener thread ready")
+        else:
+            logger.error("Timeout waiting for WebSocket listener thread to start")
+
+    def _stop_websocket_listener(self) -> None:
+        """Stop the WebSocket listener thread."""
+        if self._websocket_thread is None or not self._websocket_thread.is_alive():
+            return
+
+        logger.info("Stopping WebSocket listener thread")
+        self._websocket_event_loop_ready.clear()
+
+        # Signal shutdown to the websocket tasks
+        if self._websocket_event_loop and self._websocket_event_loop.is_running() and self._shutdown_event:
+
+            def signal_shutdown() -> None:
+                if self._shutdown_event:
+                    self._shutdown_event.set()
+
+            self._websocket_event_loop.call_soon_threadsafe(signal_shutdown)
+
+        # Wait for thread to finish
+        self._websocket_thread.join(timeout=5.0)
+        if self._websocket_thread.is_alive():
+            logger.warning("WebSocket listener thread did not stop gracefully")
+        else:
+            logger.info("WebSocket listener thread stopped successfully")
+
+    def _start_websocket_thread(self, api_key: str) -> None:
+        """Run WebSocket tasks in a separate thread with its own async loop."""
+        try:
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            self._websocket_event_loop = loop
+            asyncio.set_event_loop(loop)
+
+            # Create shutdown event
+            self._shutdown_event = asyncio.Event()
+
+            # Signal that websocket_event_loop is ready
+            self._websocket_event_loop_ready.set()
+            logger.info("WebSocket listener thread started and ready")
+
+            # Run the async WebSocket listener
+            loop.run_until_complete(self._run_websocket_listener(api_key))
+        except Exception as e:
+            logger.error("WebSocket listener thread error: %s", e)
+        finally:
+            self._websocket_event_loop = None
+            self._websocket_event_loop_ready.clear()
+            self._shutdown_event = None
+            logger.info("WebSocket listener thread ended")
+
+    async def _run_websocket_listener(self, api_key: str) -> None:
+        """Run WebSocket listener - establish connection and handle incoming messages."""
+        logger.info("Creating WebSocket connection stream for listening")
+        connection_stream = _create_websocket_connection(api_key)
+
+        async for ws_connection in connection_stream:
+            logger.info("WebSocket connection established for session %s", self._session_id)
+            try:
+                # Listen for incoming messages
+                await self._listen_for_messages(ws_connection)
+
+            except (ConnectionClosed, ConnectionClosedError):
+                logger.info("WebSocket connection closed, reconnecting...")
+                continue
+            except asyncio.CancelledError:
+                logger.info("WebSocket listener task cancelled, shutting down")
+                break
+            except Exception:
+                logger.exception("WebSocket listener failed")
+                await asyncio.sleep(2.0)
+                continue
+
+            # Check if shutdown was requested
+            if self._shutdown_event and self._shutdown_event.is_set():
+                logger.info("Shutdown requested, ending WebSocket listener connection loop")
+                break
+
+        logger.info("WebSocket listener connection loop ended")
+
+    async def _listen_for_messages(self, ws_connection: Any) -> None:
+        """Listen for incoming WebSocket messages from the subprocess."""
+        logger.info("Starting to listen for WebSocket messages")
+
+        # Subscribe to the session topic to receive messages
+        topic = f"sessions/{self._session_id}/response"
+
+        try:
+            await _send_subscribe_command(
+                ws_connection=ws_connection,
+                topic=topic,
+            )
+            async for message in ws_connection:
+                if self._shutdown_event and self._shutdown_event.is_set():
+                    logger.info("Shutdown requested, ending message listener")
+                    break
+
+                try:
+                    data = json.loads(message)
+                    logger.debug("Received WebSocket message: %s", data.get("type"))
+                    await self._process_event(data)
+
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse WebSocket message: %s", message)
+                except Exception:
+                    logger.exception("Error processing WebSocket message")
+
+        except Exception as e:
+            logger.error("Error in WebSocket message listener: %s", e)
+            raise
+
+    async def _process_event(self, event: dict) -> None:
+        """Process events received from the subprocess via WebSocket."""
+        payload = event.get("payload", {})
+        event_type = payload.get("event_type", "")
+        payload_type_name = payload.get("payload_type", "")
+        payload_type = PayloadRegistry.get_type(payload_type_name)
+
+        # Focusing on ExecutionEvent types for the workflow executor
+        if event_type != "ExecutionEvent":
+            logger.debug("Ignoring non-ExecutionEvent type: %s", event_type)
+            return
+
+        if payload_type is None:
+            logger.warning("Unknown payload type: %s", payload_type_name)
+            return
+
+        ex_event = ExecutionEvent.from_dict(data=payload, payload_type=payload_type)
+
+        if isinstance(ex_event.payload, ControlFlowResolvedEvent):
+            logger.info("Workflow execution completed successfully")
+            self.output = {ex_event.payload.end_node_name: ex_event.payload.parameter_output_values}

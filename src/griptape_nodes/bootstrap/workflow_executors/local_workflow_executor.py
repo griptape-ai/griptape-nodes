@@ -149,6 +149,45 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
         return False, None
 
+    async def aprepare_workflow_for_run(
+        self,
+        workflow_name: str,
+        flow_input: Any,
+        storage_backend: StorageBackend | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Prepares a local workflow for execution.
+
+        This method sets up the environment for executing a workflow, including
+        initializing event listeners, registering libraries, loading the user-defined
+        workflow, and preparing the specified workflow for execution.
+        Parameters:
+            workflow_name: The name of the workflow to prepare.
+            flow_input: Input data for the flow, typically a dictionary.
+            storage_backend: The storage backend to use for the workflow execution.
+
+        Returns:
+            str: The name of the prepared flow.
+        """
+        if storage_backend is not None:
+            msg = "The storage_backend parameter is deprecated. Pass `storage_backend` to the constructor instead."
+            raise ValueError(msg)
+
+        logger.info("Executing workflow: %s", workflow_name)
+        GriptapeNodes.EventManager().initialize_queue()
+
+        # Load workflow from file if workflow_path is provided
+        workflow_path = kwargs.get("workflow_path")
+        if workflow_path:
+            await self._load_workflow_from_path(workflow_path)
+
+        # Load the flow
+        flow_name = self._load_flow_for_workflow()
+        # Now let's set the input to the flow
+        await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+
+        return flow_name
+
     async def arun(
         self,
         workflow_name: str,
@@ -169,22 +208,12 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         Returns:
             None
         """
-        if storage_backend is not None:
-            msg = "The storage_backend parameter is deprecated. Pass `storage_backend` to the constructor instead."
-            raise ValueError(msg)
-
-        logger.info("Executing workflow: %s", workflow_name)
-        GriptapeNodes.EventManager().initialize_queue()
-
-        # Load workflow from file if workflow_path is provided
-        workflow_path = kwargs.get("workflow_path")
-        if workflow_path:
-            await self._load_workflow_from_path(workflow_path)
-
-        # Load the flow
-        flow_name = self._load_flow_for_workflow()
-        # Now let's set the input to the flow
-        await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+        flow_name = await self.aprepare_workflow_for_run(
+            workflow_name=workflow_name,
+            flow_input=flow_input,
+            storage_backend=storage_backend,
+            **kwargs,
+        )
 
         # Now send the run command to actually execute it
         start_flow_request = StartFlowRequest(flow_name=flow_name)
