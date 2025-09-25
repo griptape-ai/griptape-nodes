@@ -124,6 +124,10 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
+# Type aliases for workflow shape building
+ParameterShapeInfo = dict[str, Any]  # Parameter metadata dict from _convert_parameter_to_minimal_dict
+NodeParameterMap = dict[str, ParameterShapeInfo]  # {param_name: param_info}
+WorkflowShapeNodes = dict[str, NodeParameterMap]  # {node_name: {param_name: param_info}}
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -1263,6 +1267,7 @@ class WorkflowManager:
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
             workflow_shape=workflow_shape,
+            file_path=str(file_path),
         )
         save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
@@ -1297,8 +1302,13 @@ class WorkflowManager:
     ) -> ResultPayload:
         """Save a workflow file from serialized flow commands without registry overhead."""
         # Determine file path
-        relative_file_path = f"{request.file_name}.py"
-        file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+        if request.file_path:
+            # Use provided file path
+            file_path = Path(request.file_path)
+        else:
+            # Default to workspace path
+            relative_file_path = f"{request.file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         # Use provided creation date or default to current time
         creation_date = request.creation_date
@@ -3150,17 +3160,12 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                # Excluding list types as the individual parameters are exposed in the workflow shape.
-                # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
-                if param.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not param.type.startswith("list"):
+                param_info = self.extract_parameter_shape_info(param, include_control_params=False)
+                if param_info is not None:
                     if node.name in workflow_shape[workflow_shape_type]:
-                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = (
-                            self._convert_parameter_to_minimal_dict(param)
-                        )
+                        cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = param_info
                     else:
-                        workflow_shape[workflow_shape_type][node.name] = {
-                            param.name: self._convert_parameter_to_minimal_dict(param)
-                        }
+                        workflow_shape[workflow_shape_type][node.name] = {param.name: param_info}
         return workflow_shape
 
     def extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
@@ -3210,6 +3215,50 @@ class WorkflowManager:
         )
 
         return workflow_shape
+
+    def extract_parameter_shape_info(
+        self, parameter: Parameter, *, include_control_params: bool = False
+    ) -> ParameterShapeInfo | None:
+        """Extract shape information from a parameter for workflow shape building.
+
+        Expose only the parameters that are relevant for workflow input and output.
+
+        Args:
+            parameter: The parameter to extract shape info from
+            include_control_params: Whether to include control type parameters (default: False)
+
+        Returns:
+            Parameter info dict if relevant for workflow shape, None if should be excluded
+        """
+        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
+        # Always exclude list types until container type handling is implemented
+        if parameter.type.startswith("list"):
+            logger.warning(
+                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
+                parameter.name,
+                parameter.type,
+            )
+            return None
+
+        # Conditionally exclude control types
+        if not include_control_params and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+            return None
+
+        return self._convert_parameter_to_minimal_dict(parameter)
+
+    def build_workflow_shape_from_parameter_info(
+        self, input_node_params: WorkflowShapeNodes, output_node_params: WorkflowShapeNodes
+    ) -> WorkflowShape:
+        """Build a WorkflowShape from collected parameter information.
+
+        Args:
+            input_node_params: Mapping of input node names to their parameter info
+            output_node_params: Mapping of output node names to their parameter info
+
+        Returns:
+            WorkflowShape object with inputs and outputs
+        """
+        return WorkflowShape(inputs=input_node_params, outputs=output_node_params)
 
     async def on_publish_workflow_request(self, request: PublishWorkflowRequest) -> ResultPayload:
         try:

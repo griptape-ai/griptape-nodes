@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+from griptape_nodes.node_library.workflow_registry import WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -424,9 +425,11 @@ class PackageNodeAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPa
 
     Args:
         serialized_flow_commands: The complete serialized flow with StartFlow, target node, and EndFlow
+        workflow_shape: The workflow shape defining inputs and outputs for external callers
     """
 
     serialized_flow_commands: SerializedFlowCommands
+    workflow_shape: WorkflowShape
 
 
 @dataclass
