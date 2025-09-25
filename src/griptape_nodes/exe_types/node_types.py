@@ -50,6 +50,8 @@ T = TypeVar("T")
 
 AsyncResult = Generator[Callable[[], T], T]
 
+LOCAL_EXECUTION = "Local Execution"
+
 
 class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
@@ -59,7 +61,7 @@ class NodeResolutionState(StrEnum):
     RESOLVED = auto()
 
 
-def get_library_names() -> list[str]:
+def get_library_names_with_publish_handlers() -> list[str]:
     """Get names of all registered libraries that have PublishWorkflowRequest handlers."""
     from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -68,7 +70,7 @@ def get_library_names() -> list[str]:
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
     # Always include "local" as the first option
-    library_names = ["local"]
+    library_names = [LOCAL_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -126,8 +128,8 @@ class BaseNode(ABC):
             tooltip="Environment that the node should execute in",
             type=ParameterTypeBuiltin.STR,
             allowed_modes={ParameterMode.PROPERTY},
-            default_value="local",
-            traits={Options(choices=get_library_names())},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
             ui_options={"hide": True},
         )
         self.add_parameter(self.execution_environment)
