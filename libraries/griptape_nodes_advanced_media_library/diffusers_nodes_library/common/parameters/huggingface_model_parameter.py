@@ -67,6 +67,10 @@ class HuggingFaceModelParameter(ABC):
             )
         )
 
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name(self._parameter_name)
+        self._node.remove_parameter_element_by_name(f"huggingface_repo_parameter_message_{self._parameter_name}")
+
     def get_choices(self) -> list[str]:
         return list(map(self._repo_revision_to_key, self._repo_revisions))
 
