@@ -59,7 +59,7 @@ class AddTextToImage(SuccessFailureNode):
             Parameter(
                 name="background_color",
                 type="str",
-                default_value="white",
+                default_value="navy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Background color of the image",
                 traits={Options(choices=color_options)},
@@ -83,10 +83,21 @@ class AddTextToImage(SuccessFailureNode):
             Parameter(
                 name="text_color",
                 type="str",
-                default_value="black",
+                default_value="cyan",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Color of the text",
                 traits={Options(choices=color_options)},
+            )
+        )
+
+        # Font size parameter
+        self.add_parameter(
+            Parameter(
+                name="font_size",
+                type="int",
+                default_value=36,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                tooltip="Font size in points",
             )
         )
 
@@ -119,10 +130,11 @@ class AddTextToImage(SuccessFailureNode):
         background_color = self.get_parameter_value("background_color")
         text = self.get_parameter_value("text")
         text_color = self.get_parameter_value("text_color")
+        font_size = self.get_parameter_value("font_size")
 
         # Validation failures - early returns
         try:
-            self._validate_parameters(width, height, background_color, text_color, text)
+            self._validate_parameters(width, height, background_color, text_color, font_size)
         except ValueError as validation_error:
             error_details = f"Parameter validation failed: {validation_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -143,7 +155,7 @@ class AddTextToImage(SuccessFailureNode):
 
         # Image creation failures
         try:
-            image = self._create_image_with_text(width, height, bg_rgba, text_rgba, text)
+            image = self._create_image_with_text(width, height, bg_rgba, text_rgba, text, font_size)
         except Exception as image_error:
             error_details = f"Image creation failed: {image_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -162,20 +174,21 @@ class AddTextToImage(SuccessFailureNode):
             return
 
         # Success path - all validations and processing completed successfully
-        self._set_success_output_values(width, height, background_color, text_color, text)
-        self.parameter_output_values["image"] = image_artifact
+        self._set_success_output_values(width, height, background_color, text_color, text, font_size, image_artifact)
 
         success_details = self._get_success_message(width, height, text)
         self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
         logger.info(f"AddTextToImage '{self.name}': {success_details}")
 
-    def _validate_parameters(self, width: int, height: int, background_color: str, text_color: str, text: str) -> None:
+    def _validate_parameters(
+        self, width: int, height: int, background_color: str, text_color: str, font_size: int
+    ) -> None:
         """Validate input parameters and raise ValueError if invalid."""
-        if not isinstance(width, int) or width <= 0:
+        if width <= 0:
             msg = f"Width must be a positive integer, got: {width}"
             raise ValueError(msg)
 
-        if not isinstance(height, int) or height <= 0:
+        if height <= 0:
             msg = f"Height must be a positive integer, got: {height}"
             raise ValueError(msg)
 
@@ -187,47 +200,50 @@ class AddTextToImage(SuccessFailureNode):
             msg = f"Invalid text color: {text_color}"
             raise ValueError(msg)
 
-        if not text or not text.strip():
-            msg = "Text cannot be empty"
+        if font_size <= 0:
+            msg = f"Font size must be a positive integer, got: {font_size}"
             raise ValueError(msg)
 
-    def _create_image_with_text(
+    def _create_image_with_text(  # noqa: PLR0913
         self,
         width: int,
         height: int,
         bg_rgba: tuple[int, int, int, int],
         text_rgba: tuple[int, int, int, int],
         text: str,
+        font_size: int,
     ) -> Image.Image:
         """Create image with text and return PIL Image."""
         # Create image with background color
         image = Image.new("RGB", (width, height), bg_rgba[:3])
         draw = ImageDraw.Draw(image)
 
-        # Load font
+        # Load font with specified size
         try:
-            font = ImageFont.load_default()
+            font = ImageFont.load_default(size=font_size)
         except Exception as font_error:
             msg = f"Failed to load font: {font_error}"
             raise RuntimeError(msg) from font_error
 
-        # Get text positioning
-        try:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            x = (width - text_width) // 2
-            y = (height - text_height) // 2
-        except Exception as text_error:
-            msg = f"Failed to calculate text positioning: {text_error}"
-            raise RuntimeError(msg) from text_error
+        # Draw text if not empty
+        if text.strip():
+            # Get text positioning
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                x = (width - text_width) // 2
+                y = (height - text_height) // 2
+            except Exception as text_error:
+                msg = f"Failed to calculate text positioning: {text_error}"
+                raise RuntimeError(msg) from text_error
 
-        # Draw text
-        try:
-            draw.text((x, y), text, fill=text_rgba[:3], font=font)
-        except Exception as draw_error:
-            msg = f"Failed to draw text: {draw_error}"
-            raise RuntimeError(msg) from draw_error
+            # Draw text
+            try:
+                draw.text((x, y), text, fill=text_rgba[:3], font=font)
+            except Exception as draw_error:
+                msg = f"Failed to draw text: {draw_error}"
+                raise RuntimeError(msg) from draw_error
 
         return image
 
@@ -238,8 +254,15 @@ class AddTextToImage(SuccessFailureNode):
             text_preview += "..."
         return f"Successfully created {width}x{height} image with text: '{text_preview}'"
 
-    def _set_success_output_values(
-        self, width: int, height: int, background_color: str, text_color: str, text: str
+    def _set_success_output_values(  # noqa: PLR0913
+        self,
+        width: int,
+        height: int,
+        background_color: str,
+        text_color: str,
+        text: str,
+        font_size: int,
+        image_artifact: ImageUrlArtifact,
     ) -> None:
         """Set output parameter values on success."""
         self.parameter_output_values["width"] = width
@@ -247,6 +270,8 @@ class AddTextToImage(SuccessFailureNode):
         self.parameter_output_values["background_color"] = background_color
         self.parameter_output_values["text_color"] = text_color
         self.parameter_output_values["text"] = text
+        self.parameter_output_values["font_size"] = font_size
+        self.parameter_output_values["image"] = image_artifact
 
     def _set_failure_output_values(self) -> None:
         """Set output parameter values to defaults on failure."""
@@ -255,6 +280,7 @@ class AddTextToImage(SuccessFailureNode):
         self.parameter_output_values["background_color"] = ""
         self.parameter_output_values["text_color"] = ""
         self.parameter_output_values["text"] = ""
+        self.parameter_output_values["font_size"] = 0
         self.parameter_output_values["image"] = None
 
     def _upload_image_to_static_storage(self, image: Image.Image) -> ImageUrlArtifact:
