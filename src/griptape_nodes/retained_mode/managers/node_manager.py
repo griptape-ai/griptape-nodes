@@ -337,6 +337,8 @@ class NodeManager:
         obj_mgr.add_object_by_name(node.name, node)
         self._name_to_parent_flow_name[node.name] = parent_flow_name
 
+        node.after_init()
+
         # We don't want to start in a resolving state, bump it back to unresolved.
         state = request.resolution
         if state == NodeResolutionState.RESOLVING:
