@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from griptape_nodes.exe_types.node_types import StartNode, EndNode
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import PackageNodeAsSerializedFlowRequest, PackageNodeAsSerializedFlowResultSuccess
-from griptape_nodes.retained_mode.managers.library_manager import RegisteredEventHandler
+from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest, SaveWorkflowFileFromSerializedFlowRequest, SaveWorkflowFileFromSerializedFlowResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -52,7 +52,7 @@ class NodeExecutor:
         msg = f"No library specified or library '{library_name}' not found"
         raise KeyError(msg)
 
-    def get_workflow_handler(self, library_name: str) -> RegisteredEventHandler | None:
+    def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler | None:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         if library_name in self._advanced_libraries:
 
@@ -101,7 +101,8 @@ class NodeExecutor:
                 if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
                     msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
-                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(serialized_flow_commands=package_result.serialized_flow_commands)
+                file_name = f"{node.name}_{library_name}_packaged_flow"
+                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
                 workflow_result = GriptapeNodes.handle_request(workflow_file_request)
                 if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
                     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"

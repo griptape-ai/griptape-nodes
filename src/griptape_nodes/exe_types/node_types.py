@@ -105,7 +105,7 @@ class BaseNode(ABC):
         self._tracked_parameters = []
         self.set_entry_control_parameter(None)
         self.execution_environment = Parameter(
-            name="Execution Environment",
+            name="execution_environment",
             tooltip="Environment that the node should execute in",
             type=ParameterTypeBuiltin.STR,
             allowed_modes={ParameterMode.PROPERTY},

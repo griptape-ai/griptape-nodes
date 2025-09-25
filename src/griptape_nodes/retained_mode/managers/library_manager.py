@@ -23,7 +23,6 @@ from rich.table import Table
 from rich.text import Text
 from xdg_base_dirs import xdg_data_home
 
-from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
