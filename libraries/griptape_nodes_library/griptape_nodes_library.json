@@ -1284,6 +1284,17 @@
       }
     },
     {
+      "class_name": "AddTextToImage",
+      "file_path": "griptape_nodes_library/image/add_text_to_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Create an image with text rendered on it",
+        "display_name": "Add Text to Image",
+        "group": "create",
+        "icon": "Type"
+      }
+    },
+    {
       "class_name": "InvertMask",
       "file_path": "griptape_nodes_library/image/invert_mask.py",
       "metadata": {
