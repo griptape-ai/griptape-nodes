@@ -38,8 +38,6 @@ class DiffusionPipelineParameters:
                 type="Pipeline Config",
                 tooltip="🤗 Diffusion Pipeline",
                 allowed_modes={ParameterMode.INPUT},
-                # Pipeline objects cannot be serialized as they contain complex runtime state
-                serializable=False,
             )
         )
 

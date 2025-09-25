@@ -61,8 +61,6 @@ class DiffusionPipelineBuilderParameters:
                 tooltip="Built and cached pipeline configuration",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"display_name": "pipeline"},
-                # This will be a complex object that cannot serialize and could contain private keys; it needs to be assigned at runtime.
-                serializable=False,
             )
         )
 
