@@ -27,6 +27,7 @@ logger = logging.getLogger("griptape_nodes")
 
 class NodeExecutor:
     """Simple singleton executor that draws methods from libraries and executes them dynamically."""
+
     advanced_libraries: dict[str, AdvancedNodeLibrary]
 
     def __init__(self) -> None:
@@ -38,14 +39,13 @@ class NodeExecutor:
         if advanced_library is not None:
             self._advanced_libraries[library_name] = advanced_library
 
-    def unload_library(self, library_name:str) -> None:
+    def unload_library(self, library_name: str) -> None:
         if library_name in self._advanced_libraries:
             del self._advanced_libraries[library_name]
 
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler | None:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         if library_name in self._advanced_libraries:
-
             library_manager = GriptapeNodes.LibraryManager()
             registered_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
             if library_name in registered_handlers:
@@ -90,13 +90,15 @@ class NodeExecutor:
                 sanitized_name = node.name.replace(" ", "_")
                 output_parameter_prefix = f"{sanitized_name}_packaged_node_"
                 request = PackageNodeAsSerializedFlowRequest(
-                    node_name= node.name,
+                    node_name=node.name,
                     start_node_type=start_node_type,
                     end_node_type=end_node_type,
                     start_end_specific_library_name=library_name,
                     # Provide the entry control parameter name if it exists.
-                    entry_control_parameter_name=node._entry_control_parameter.name if node._entry_control_parameter is not None else None,
-                    output_parameter_prefix=output_parameter_prefix
+                    entry_control_parameter_name=node._entry_control_parameter.name
+                    if node._entry_control_parameter is not None
+                    else None,
+                    output_parameter_prefix=output_parameter_prefix,
                 )
                 # now we package the flow into a serialized flow commands.
                 package_result = GriptapeNodes.handle_request(request)
@@ -104,24 +106,28 @@ class NodeExecutor:
                     msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
                 file_name = f"{node.name}_{library_name}_packaged_flow"
-                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(file_name=file_name,serialized_flow_commands=package_result.serialized_flow_commands)
+                workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+                    file_name=file_name, serialized_flow_commands=package_result.serialized_flow_commands
+                )
                 workflow_result = GriptapeNodes.handle_request(workflow_file_request)
                 if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
                     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
-                #TODO: Call Zach's PublishWorkflowRequest executor, running the workflow_rest.file_path in memory!
+                # TODO: Call Zach's PublishWorkflowRequest executor, running the workflow_rest.file_path in memory!
 
-                #TODO: Call Zach's Subprocess Execute exector, which runs the created workflow file from the PublishWorkflowRequest.
+                # TODO: Call Zach's Subprocess Execute exector, which runs the created workflow file from the PublishWorkflowRequest.
 
                 my_subprocess_result = subprocess_executor.output
                 # {end_node_name: parameter_output_values dict}
                 # For now, we know we have one end node, I believe.
-                parameter_output_values = {k: v for result_dict in my_subprocess_result.values() for k, v in result_dict.items()}
-                #TODO: How do we handle pickled values?
+                parameter_output_values = {
+                    k: v for result_dict in my_subprocess_result.values() for k, v in result_dict.items()
+                }
+                # TODO: How do we handle pickled values?
                 # Remove the output_parameter_prefix and set values on BaseNode
                 for param_name, param_value in parameter_output_values.items():
                     if param_name.startswith(output_parameter_prefix):
-                        clean_param_name = param_name[len(output_parameter_prefix):]
+                        clean_param_name = param_name[len(output_parameter_prefix) :]
                         # Set this value for certain hacks
                         parameter = node.get_parameter_by_name(clean_param_name)
                         if parameter is not None:

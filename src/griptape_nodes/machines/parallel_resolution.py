@@ -168,14 +168,17 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
-    def get_next_control_output_for_non_local_execution(node:BaseNode) -> Parameter | None:
+    def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)
-            if parameter is not None and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE and value==CONTROL_OUTPUT_PARAMETER:
+            if (
+                parameter is not None
+                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
+                and value == CONTROL_OUTPUT_PARAMETER
+            ):
                 # This is the parameter
                 return parameter
         return None
-
 
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
