@@ -225,12 +225,10 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     Args:
         control_node: Name of the current control node (if any)
         resolving_node: Name of the node currently being resolved (if any)
-        involved_nodes: Names of nodes that are queued to be executed or have been executed in the current run.
     """
 
     control_nodes: list[str] | None
     resolving_node: list[str] | None
-    involved_nodes: list[str] | None
 
 
 @dataclass
@@ -346,6 +344,18 @@ class NodeStartProcessEvent(ExecutionPayload):
 @PayloadRegistry.register
 class NodeFinishProcessEvent(ExecutionPayload):
     node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InvolvedNodesEvent(ExecutionPayload):
+    """Event indicating which nodes are involved in the current execution.
+
+    For parallel resolution: Dynamic list based on DAG builder state
+    For control flow/sequential: All nodes when started, empty when complete
+    """
+
+    involved_nodes: list[str]
 
 
 @dataclass

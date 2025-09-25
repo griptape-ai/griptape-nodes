@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.exe_types.node_types import StartNode, EndNode
+from griptape_nodes.exe_types.node_types import StartNode, EndNode, LOCAL_EXECUTION
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import PackageNodeAsSerializedFlowRequest, PackageNodeAsSerializedFlowResultSuccess
 from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -71,7 +71,7 @@ class NodeExecutor:
         """
         #TODO: Use some type of config base to determine if a node should use a handler here, and grouping.
         execution_type = node.get_parameter_value(node.execution_environment.name)
-        if execution_type != "local":
+        if execution_type != LOCAL_EXECUTION:
             try:
                 # Get the node's library name
                 library = LibraryRegistry.get_library(name=execution_type)
