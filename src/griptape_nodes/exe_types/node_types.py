@@ -1390,6 +1390,16 @@ class EndNode(BaseNode):
 
         self.status_component.set_execution_result(was_successful=was_successful, result_details=details)
 
+        # Update all values to use the output value
+        for param in self.parameters:
+            if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                value = self.get_parameter_value(param.name)
+                self.parameter_output_values[param.name] = value
+        next_control_output = self.get_next_control_output()
+        # Update which control parameter to flag as the output value.
+        if next_control_output is not None:
+            self.parameter_output_values[next_control_output.name] = 1
+
 
 class StartLoopNode(BaseNode):
     end_node: EndLoopNode | None = None
