@@ -22,3 +22,11 @@ class HuggingFaceRepoFileParameter(HuggingFaceModelParameter):
 
     def get_download_commands(self) -> list[str]:
         return [f'huggingface-cli download "{repo}" "{file}"' for (repo, file) in self._repo_files]
+
+    def get_repo_filename(self) -> str:
+        repo_id, _ = self.get_repo_revision()
+        for repo, file in self._repo_files:
+            if repo == repo_id:
+                return file
+        msg = f"File not found for repository {repo_id}"
+        raise ValueError(msg)

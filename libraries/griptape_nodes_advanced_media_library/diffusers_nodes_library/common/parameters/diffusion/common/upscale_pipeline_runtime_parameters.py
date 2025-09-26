@@ -2,7 +2,7 @@ import logging
 from abc import ABC
 from typing import Any
 
-import diffusers  # type: ignore[reportMissingImports]
+import PIL.Image
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image, Resampling
@@ -34,7 +34,10 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         super().__init__(node)
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
             self._node,
-            repo_files=[("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth")],
+            repo_files=[
+                ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth"),
+                ("lokCX/4x-Ultrasharp", "4x-Ultrasharp.pth"),
+            ],
             parameter_name="upscale_model",
         )
 
@@ -159,9 +162,17 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             )
         )
 
-        # Hide width and height parameters as they will be derived from input image
-        self._node.hide_parameter_by_name("width")
-        self._node.hide_parameter_by_name("height")
+    def add_input_parameters(self) -> None:
+        self._add_input_parameters()
+        self._node.add_parameter(
+            Parameter(
+                name="num_inference_steps",
+                default_value=4,
+                type="int",
+                tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality image at the expense of slower inference.",
+            )
+        )
+        self._seed_parameter.add_input_parameters()
 
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prompt")
@@ -177,6 +188,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.remove_parameter_element_by_name("scale")
         self._node.remove_parameter_element_by_name("resample_strategy")
         self._upscale_model_repo_parameter.remove_input_parameters()
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("num_inference_steps")
+        self._seed_parameter.remove_input_parameters()
+        self._remove_input_parameters()
 
     def get_image_pil(self) -> Image:
         input_image_artifact = self._node.get_parameter_value("image")
@@ -200,25 +216,69 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
         return errors or None
 
+    def get_width(self) -> int:
+        input_image_pil = self.get_image_pil()
+        return input_image_pil.width
+
+    def get_height(self) -> int:
+        input_image_pil = self.get_image_pil()
+        return input_image_pil.height
+
+    def publish_output_image_preview_placeholder(self) -> None:
+        input_image_pil = self.get_image_pil()
+        width, height = input_image_pil.size
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+        self._node.publish_update_to_parameter(
+            "output_image",
+            pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
+        )
+
+    def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
+        tile_size = self.tile_size
+        latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
+        latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
+        image = pipe.vae.decode(latents, return_dict=False)[0]
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
+        return pipe.image_processor.postprocess(image, output_type="pil")[0]
+
+    @property
+    def tile_size(self) -> int:
+        max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
+        input_image_pil = self.get_image_pil()
+        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
+        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
+        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
+        if tile_size % 16 != 0:
+            new_tile_size = next_multiple_ge(tile_size, 16)
+            self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
+            )
+            tile_size = new_tile_size
+        return tile_size
+
     def _process_upscale(self, input_image_pil: Image) -> Image:
-        max_tile_size = self._node.get_parameter_value("max_tile_size")
         tile_overlap = self._node.get_parameter_value("tile_overlap")
         tile_strategy = self._node.get_parameter_value("tile_strategy")
 
-        output_scale = 4  # THIS IS SPECIFIC TO 4x-ClearRealityV1
-
-        # Adjust tile size so that it is not much bigger than the input image.
-        largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
-        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+        output_scale = 4
 
         with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
-            # TODO: Make filename configurable - https://github.com/griptape-ai/griptape-nodes/issues/2365
-            pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename="4x-ClearRealityV1.pth")
+            filename = self._upscale_model_repo_parameter.get_repo_filename()
+            pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename=filename)
 
         tiling_image_processor = TilingImageProcessor(
             pipe=pipe,
-            tile_size=tile_size,
+            tile_size=self.tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
         )
@@ -273,7 +333,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
     def _process_img2img(self, pipe: DiffusionPipeline, input_image_pil: Image) -> Image:
         self.preprocess()
-        max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
         tile_overlap = int(self._node.get_parameter_value("tile_overlap"))
         tile_strategy = str(self._node.get_parameter_value("tile_strategy"))
         strength = float(self._node.get_parameter_value("strength"))
@@ -282,26 +341,13 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         # if that setting is enabled.
         check_cleanup_intermediates_directory()
 
-        # Adjust tile size so that it is not much bigger than the input image.
-        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
-        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
-        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
-        tile_size = min(largest_reasonable_tile_size, max_tile_size)
-
-        if tile_size % 16 != 0:
-            new_tile_size = next_multiple_ge(tile_size, 16)
-            self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
-                f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
-            )
-            tile_size = new_tile_size
-
         if strength == 0:
             return input_image_pil
 
         num_inference_steps = self.get_num_inference_steps()
 
         def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
-            def callback_on_step_end(pipe: diffusers.DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
+            def callback_on_step_end(pipe: DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
                 if i < num_inference_steps - 1:
                     # Generate a preview image if this is not yet the last step.
                     # That would be redundant, since the pipeline automatically
@@ -312,11 +358,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     check_cleanup_intermediates_directory()
 
                     latents = callback_kwargs["latents"]
-                    latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
-                    latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
-                    image = pipe.vae.decode(latents, return_dict=False)[0]
-                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
-                    intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+                    intermediate_pil_image = self.latents_to_image_pil(pipe, latents)
 
                     # HERE -> need to update the tile by calling something in the tile processor.
                     preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
@@ -351,7 +393,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         tiling_image_processor = TilingImageProcessor(
             pipe=wrapped_pipe,
-            tile_size=tile_size,
+            tile_size=self.tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
         )
@@ -379,9 +421,12 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         return output_image_pil
 
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
+        self._node.log_params.append_to_logs("Starting...\n")  # type: ignore[reportAttributeAccessIssue]
         input_image_pil = self.get_image_pil()
         upscaled_image_pil = self._process_upscale(input_image_pil)
+        self._node.log_params.append_to_logs("Initial upscaling complete...\n")  # type: ignore[reportAttributeAccessIssue]
         rescaled_image_pil = self._process_rescale(upscaled_image_pil)
+        self._node.log_params.append_to_logs("Rescaling complete...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = self._process_img2img(pipe, rescaled_image_pil)
 
         self.publish_output_image(output_image_pil)
