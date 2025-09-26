@@ -1,10 +1,6 @@
 import logging
 from typing import Any
 
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
-    FluxUpscalePipelineRuntimeParameters,
-)
-
 from diffusers_nodes_library.common.parameters.diffusion.allegro.allegro_pipeline_runtime_parameters import (
     AllegroPipelineRuntimeParameters,
 )
@@ -43,6 +39,9 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipel
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
+    FluxUpscalePipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_img2img_pipeline_runtime_parameters import (
     QwenImg2ImgPipelineRuntimeParameters,

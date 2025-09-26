@@ -1,14 +1,13 @@
 import logging
 
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
-    DiffusionPipelineTypePipelineParameters,
-)
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_pipeline_type_wuerstchen_pipeline_parameters import (
-    WuerstchenPipelineTypeWuerstchenPipelineParameters,
-)
-
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+    DiffusionPipelineTypePipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_pipeline_type_wuerstchen_pipeline_parameters import (
+    WuerstchenPipelineTypeWuerstchenPipelineParameters,
 )
 from griptape_nodes.exe_types.node_types import BaseNode
 

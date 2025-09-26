@@ -1,23 +1,22 @@
 import logging
 
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
-    DiffusionPipelineTypePipelineParameters,
-)
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_image_to_video_pipeline_parameters import (
-    WanPipelineTypeWanImageToVideoPipelineParameters,
-)
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_pipeline_parameters import (
-    WanPipelineTypeWanPipelineParameters,
-)
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_vace_pipeline_parameters import (
-    WanPipelineTypeWanVACEPipelineParameters,
-)
-from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_video_to_video_pipeline_parameters import (
-    WanPipelineTypeWanVideoToVideoPipelineParameters,
-)
-
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+    DiffusionPipelineTypePipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_image_to_video_pipeline_parameters import (
+    WanPipelineTypeWanImageToVideoPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_pipeline_parameters import (
+    WanPipelineTypeWanPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_vace_pipeline_parameters import (
+    WanPipelineTypeWanVACEPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_wan_video_to_video_pipeline_parameters import (
+    WanPipelineTypeWanVideoToVideoPipelineParameters,
 )
 from griptape_nodes.exe_types.node_types import BaseNode
 
