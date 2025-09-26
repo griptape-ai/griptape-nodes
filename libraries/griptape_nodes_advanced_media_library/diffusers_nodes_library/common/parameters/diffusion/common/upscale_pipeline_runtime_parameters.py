@@ -3,9 +3,9 @@ from abc import ABC
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
+import PIL.Image
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-import PIL.Image
 from PIL.Image import Image, Resampling
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
@@ -160,7 +160,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             )
         )
 
-    
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
         self._node.add_parameter(
@@ -214,7 +213,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
         return errors or None
-    
+
     def get_width(self) -> int:
         input_image_pil = self.get_image_pil()
         return input_image_pil.width
