@@ -35,8 +35,7 @@ class MCPToolNode(BaseTool):
         # Create the tool
         tool = MCPTool(connection=connection, off_prompt=off_prompt)
 
-        # Do this because CJ said
-        # Also, because it manually triggers post_init - but it's jucky. YMMV.
+        # Do this because it manually triggers post_init - but it's jucky. YMMV.
         await tool._init_activities()
 
         # logger.info(f"MCPToolNode created tool: {tool.to_dict(types_overrides={'connection': dict})}")
