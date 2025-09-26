@@ -1,4 +1,8 @@
 import logging
+import torch  # type: ignore[reportMissingImports]
+from typing import Any
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
+from PIL.Image import Image
 
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -60,3 +64,22 @@ class QwenPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
         }
+    
+    def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
+        width = int(self._node.parameter_values["width"])
+        height = int(self._node.parameter_values["height"])
+        # Qwen uses special latents unpacking - https://github.com/huggingface/diffusers/blob/v0.35.1/src/diffusers/pipelines/qwenimage/pipeline_qwenimage.py#L708
+        latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
+        latents_mean = (
+            torch.tensor(pipe.vae.config.latents_mean)
+            .view(1, pipe.vae.config.z_dim, 1, 1, 1)
+            .to(latents.device, latents.dtype)
+        )
+        latents_std = 1.0 / torch.tensor(pipe.vae.config.latents_std).view(1, pipe.vae.config.z_dim, 1, 1, 1).to(
+            latents.device, latents.dtype
+        )
+        latents = latents / latents_std + latents_mean
+        image = pipe.vae.decode(latents, return_dict=False)[0][:, :, 0]
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
+        intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+        return intermediate_pil_image
