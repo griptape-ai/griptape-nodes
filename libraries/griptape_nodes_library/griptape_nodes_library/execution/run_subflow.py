@@ -8,12 +8,17 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-
-# WorkflowMetadata will be imported when needed for proper typing
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     CreateFlowResultSuccess,
     DeleteFlowRequest,
+)
+
+# WorkflowMetadata will be imported when needed for proper typing
+from griptape_nodes.retained_mode.events.node_events import (
+    GetFlowForNodeRequest,
+    GetFlowForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -24,8 +29,8 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     ListAllWorkflowsRequest,
     ListAllWorkflowsResultSuccess,
-    RunWorkflowFromRegistryRequest,
-    RunWorkflowFromRegistryResultSuccess,
+    RunWorkflowWithCurrentStateRequest,
+    RunWorkflowWithCurrentStateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -120,17 +125,47 @@ class RunSubflow(SuccessFailureNode):
         """
         workflows = {}
 
-        try:
-            # Use the proper event system to list workflows
-            list_request = ListAllWorkflowsRequest()
-            list_result = GriptapeNodes.handle_request(list_request)
+        # Use the proper event system to list workflows
+        list_request = ListAllWorkflowsRequest()
+        list_result = GriptapeNodes.handle_request(list_request)
 
-            if not isinstance(list_result, ListAllWorkflowsResultSuccess):
-                msg = f"Failed to list workflows: {list_result.result_details}"
-                raise RuntimeError(msg)  # noqa: TRY301, TRY004
+        if not isinstance(list_result, ListAllWorkflowsResultSuccess):
+            msg = f"Failed to list workflows: {list_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
 
-            # Extract workflows from the successful result
-            all_workflows = list_result.workflows
+        # Extract workflows from the successful result
+        all_workflows = list_result.workflows
+
+        for workflow_name, workflow_metadata_dict in all_workflows.items():
+            try:
+                # Assess workflow fitness
+                problems = self._assess_workflow_fitness(workflow_metadata_dict)
+
+                # Create a mock WorkflowMetadata object from the dictionary
+                # This is a temporary approach until the event system returns proper objects
+                mock_metadata = type("WorkflowMetadata", (), workflow_metadata_dict)()
+
+                workflows[workflow_name] = WorkflowInfo(
+                    name=workflow_name,
+                    metadata=mock_metadata,
+                    problems=problems,
+                )
+
+            except Exception as e:
+                logger.error("Failed to process workflow '%s': %s", workflow_name, e)
+                # Create a workflow with a processing error
+                problems = [
+                    WorkflowProblem(
+                        issue=f"Failed to process workflow metadata: {e}",
+                        remedy="Check workflow metadata format and try reloading workflows",
+                    )
+                ]
+                mock_metadata = type("WorkflowMetadata", (), {"name": workflow_name})()
+                workflows[workflow_name] = WorkflowInfo(
+                    name=workflow_name,
+                    metadata=mock_metadata,
+                    problems=problems,
+                )
 
             for workflow_name, workflow_metadata_dict in all_workflows.items():
                 try:
@@ -162,11 +197,6 @@ class RunSubflow(SuccessFailureNode):
                         metadata=mock_metadata,
                         problems=problems,
                     )
-
-        except Exception as e:
-            logger.error("Failed to discover workflows via event system: %s", e)
-            msg = f"Cannot discover workflows: {e}"
-            raise RuntimeError(msg) from e
 
         return workflows
 
@@ -521,8 +551,8 @@ class RunSubflow(SuccessFailureNode):
                 was_successful=False, result_details=f"Failed to execute workflow '{clean_workflow_name}': {e!s}"
             )
 
-    def _execute_workflow(self, workflow_name: str, workflow_info: WorkflowInfo) -> None:  # noqa: C901
-        """Execute the selected workflow with temporary flow management.
+    def _execute_workflow(self, workflow_name: str, workflow_info: WorkflowInfo) -> None:
+        """Execute the selected workflow using the registry.
 
         Args:
             workflow_name: Name of the workflow to execute
@@ -531,85 +561,85 @@ class RunSubflow(SuccessFailureNode):
         Raises:
             RuntimeError: If workflow execution fails
         """
-        temp_flow_name = None
-        execution_error = None
+        # Get our current flow name to establish proper context
+        get_flow_request = GetFlowForNodeRequest(node_name=self.name)
+        flow_result = GriptapeNodes.handle_request(get_flow_request)
 
-        try:
-            # Step 1: Create temporary flow for subworkflow execution
+        if not isinstance(flow_result, GetFlowForNodeResultSuccess):
+            msg = f"Failed to find flow for node '{self.name}': {flow_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        current_flow_name = flow_result.flow_name
+
+        # Create a temporary child flow for the subworkflow execution
+        temp_flow_name = f"RunSubflow_{workflow_name}_{self.name}"
+        create_flow_request = CreateFlowRequest(
+            parent_flow_name=current_flow_name,
+            flow_name=temp_flow_name,
+            set_as_new_context=False,
+            metadata={"created_by": "RunSubflow", "source_workflow": workflow_name},
+        )
+        create_result = GriptapeNodes.handle_request(create_flow_request)
+
+        if not isinstance(create_result, CreateFlowResultSuccess):
+            msg = f"Failed to create temporary flow: {create_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        # Execute the workflow within the temporary flow context
+        with GriptapeNodes.ContextManager().flow(temp_flow_name):
             try:
-                temp_flow_name = f"RunSubflow_{workflow_name}_{self.name}"
-                create_flow_request = CreateFlowRequest(
-                    parent_flow_name=None,
-                    flow_name=temp_flow_name,
-                    set_as_new_context=False,
-                    metadata={"created_by": "RunSubflow", "source_workflow": workflow_name},
-                )
-                create_result = GriptapeNodes.handle_request(create_flow_request)
+                # Step 1: Prepare input mapping from our parameters to workflow inputs
+                try:
+                    workflow_input = self._build_workflow_input(workflow_info.metadata)
+                    logger.info("Built workflow input with %d entries", len(workflow_input))
+                except Exception as e:
+                    msg = f"Failed to build workflow input: {e}"
+                    raise RuntimeError(msg) from e
 
-                if not isinstance(create_result, CreateFlowResultSuccess):
-                    msg = f"Failed to create temporary flow: {create_result.result_details}"
-                    raise RuntimeError(msg)  # noqa: TRY301, TRY004
-            except Exception as e:
-                msg = f"Flow creation failed: {e}"
-                raise RuntimeError(msg) from e
+                # Step 2: Execute the workflow using RunWorkflowWithCurrentStateRequest
+                # Get workflow from registry to get the proper file path
+                try:
+                    workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+                    workflow_file_path = workflow.file_path
+                    logger.debug("Found workflow file path: %s", workflow_file_path)
+                except KeyError as e:
+                    msg = f"Failed to get workflow '{workflow_name}' from registry: {e}"
+                    raise RuntimeError(msg) from e
 
-            # Step 2: Prepare input mapping from our parameters to workflow inputs
-            try:
-                workflow_input = self._build_workflow_input(workflow_info.metadata)
-                logger.info("Built workflow input with %d entries", len(workflow_input))
-            except Exception as e:
-                msg = f"Failed to build workflow input: {e}"
-                raise RuntimeError(msg) from e
-
-            # Step 3: Execute the workflow using RunWorkflowFromRegistryRequest
-            try:
-                run_request = RunWorkflowFromRegistryRequest(
-                    workflow_name=workflow_name,
-                    run_with_clean_slate=False,  # Allow access to current context
-                )
+                run_request = RunWorkflowWithCurrentStateRequest(file_path=workflow_file_path)
 
                 # TODO: We need to figure out how to pass the input parameters to the workflow
-                # The RunWorkflowFromRegistryRequest doesn't seem to have input parameter support
+                # RunWorkflowWithCurrentStateRequest preserves state but may not support input parameters
                 # This may require a different approach or request type
 
                 run_result = GriptapeNodes.handle_request(run_request)
 
-                if not isinstance(run_result, RunWorkflowFromRegistryResultSuccess):
+                if not isinstance(run_result, RunWorkflowWithCurrentStateResultSuccess):
                     msg = f"Workflow execution failed: {run_result.result_details}"
                     raise RuntimeError(msg)  # noqa: TRY301, TRY004
 
-                # Step 4: Extract output values and populate our output parameters
+                # Step 3: Extract output values and populate our output parameters
                 self._extract_workflow_outputs(run_result, workflow_info.metadata)
 
+                # Success path
+                self._set_status_results(
+                    was_successful=True, result_details=f"Successfully executed workflow '{workflow_name}'"
+                )
+
             except Exception as e:
-                msg = f"Workflow execution process failed: {e}"
-                raise RuntimeError(msg) from e
-
-        except Exception as e:
-            execution_error = e
-            self._set_status_results(was_successful=False, result_details=f"Error during workflow execution: {e!s}")
-        else:
-            # Success path - only reached if no exceptions occurred
-            self._set_status_results(
-                was_successful=True, result_details=f"Successfully executed workflow '{workflow_name}'"
-            )
-
-        finally:
-            # Step 5: Always cleanup the temporary flow
-            if temp_flow_name:
-                try:
-                    delete_request = DeleteFlowRequest(flow_name=temp_flow_name)
-                    delete_result = GriptapeNodes.handle_request(delete_request)
-                    if not delete_result.succeeded():
-                        logger.warning(
-                            "Failed to cleanup temporary flow '%s': %s", temp_flow_name, delete_result.result_details
-                        )
-                except Exception as cleanup_error:
-                    logger.warning("Error during flow cleanup: %s", cleanup_error)
-
-        # Re-raise execution error after cleanup
-        if execution_error:
-            raise execution_error
+                logger.error("Failed to execute workflow '%s': %s", workflow_name, e)
+                self._set_status_results(was_successful=False, result_details=f"Error during workflow execution: {e!s}")
+                raise
+            finally:
+                # Always clean up the temporary flow (cascades to all children)
+                delete_request = DeleteFlowRequest(flow_name=temp_flow_name)
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if delete_result.succeeded():
+                    logger.debug("Successfully deleted temporary flow '%s'", temp_flow_name)
+                else:
+                    logger.warning(
+                        "Failed to delete temporary flow '%s': %s", temp_flow_name, delete_result.result_details
+                    )
 
     def _build_workflow_input(self, workflow_metadata: Any) -> dict:
         """Build input dictionary from our parameters for workflow execution.
