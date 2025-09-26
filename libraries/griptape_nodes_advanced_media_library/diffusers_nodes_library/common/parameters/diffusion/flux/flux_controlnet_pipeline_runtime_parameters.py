@@ -26,6 +26,7 @@ CONTROL_MODES = {
     "gray": 5,
 }
 
+
 class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
