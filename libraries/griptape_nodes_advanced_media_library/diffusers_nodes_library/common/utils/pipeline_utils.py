@@ -249,6 +249,30 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
         pipe.to(device)
 
 
+def _is_flux_pipeline(pipe: DiffusionPipeline) -> bool:
+    """Check if pipeline is a Flux-based pipeline that can use Flux-specific optimizations."""
+    flux_pipeline_names = [
+        "FluxPipeline",
+        "FluxImg2ImgPipeline",
+        "FluxFillPipeline",
+        "FluxInpaintPipeline",
+    ]
+    return any(name in pipe.__class__.__name__ for name in flux_pipeline_names)
+
+
+def _optimize_flux_pipeline(pipe: DiffusionPipeline) -> None:
+    """Apply Flux-specific optimizations using the proven fast optimization strategy."""
+    try:
+        from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
+
+        logger.info("Applying Flux-specific optimizations for faster performance")
+        safe_optimize_flux_pipeline(pipe)
+    except ImportError:
+        logger.warning("Flux-specific optimizations not available, falling back to generic optimization")
+        device = get_best_device()
+        _automatic_optimize_diffusion_pipeline(pipe, device)
+
+
 def optimize_diffusion_pipeline(  # noqa: PLR0913
     pipe: DiffusionPipeline,
     *,
@@ -260,20 +284,25 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
     quantization_mode: str = "None",
 ) -> None:
     """Optimize pipeline performance and memory."""
-    device = get_best_device()
-
-    if memory_optimization_strategy == "Automatic":
-        _automatic_optimize_diffusion_pipeline(pipe, device)
+    # Use Flux-specific optimizations for Flux pipelines when using automatic strategy
+    if memory_optimization_strategy == "Automatic" and _is_flux_pipeline(pipe):
+        _optimize_flux_pipeline(pipe)
     else:
-        _manual_optimize_diffusion_pipeline(
-            pipe=pipe,
-            device=device,
-            attention_slicing=attention_slicing,
-            vae_slicing=vae_slicing,
-            transformer_layerwise_casting=transformer_layerwise_casting,
-            cpu_offload_strategy=cpu_offload_strategy,
-            quantization_mode=quantization_mode,
-        )
+        # Use generic optimization for non-Flux pipelines or manual strategy
+        device = get_best_device()
+
+        if memory_optimization_strategy == "Automatic":
+            _automatic_optimize_diffusion_pipeline(pipe, device)
+        else:
+            _manual_optimize_diffusion_pipeline(
+                pipe=pipe,
+                device=device,
+                attention_slicing=attention_slicing,
+                vae_slicing=vae_slicing,
+                transformer_layerwise_casting=transformer_layerwise_casting,
+                cpu_offload_strategy=cpu_offload_strategy,
+                quantization_mode=quantization_mode,
+            )
 
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
