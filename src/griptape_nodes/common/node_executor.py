@@ -3,13 +3,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
-import os
-from typing import TYPE_CHECKING, final
 
-from anyio import Path
-from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
-from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
-
+from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
+from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, EndNode, StartNode
@@ -95,8 +91,9 @@ class NodeExecutor:
                     end_node_type = "EndFlow"
                 # Get a name for the output parameter prefix - attached to node name because node names are unique.
                 # We may have to have multiple prefixes if we end up having multiple nodes attached to one EndFlow.
-                sanitized_name = node.name.replace(" ", "_")
-                output_parameter_prefix = f"{sanitized_name}_packaged_node_"
+                sanitized_node_name = node.name.replace(" ", "_")
+                output_parameter_prefix = f"{sanitized_node_name}_packaged_node_"
+                sanitized_library_name = library_name.replace(" ", "_")
                 request = PackageNodeAsSerializedFlowRequest(
                     node_name=node.name,
                     start_node_type=start_node_type,
@@ -113,7 +110,7 @@ class NodeExecutor:
                 if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
                     msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
-                file_name = f"{node.name}_{library_name}_packaged_flow"
+                file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
                 workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
                     file_name=file_name, serialized_flow_commands=package_result.serialized_flow_commands
                 )
@@ -121,21 +118,23 @@ class NodeExecutor:
                 if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
                     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
-                # TODO: Call Zach's PublishWorkflowRequest executor, running the workflow_rest.file_path in memory!
-                local_workflow_publisher = LocalWorkflowPublisher()
-                final_workflow_path = f"{workflow_result.file_path}_published"
+                local_workflow_publisher = SubprocessWorkflowPublisher()
+                # Remove .py extension from the original file path and add _published
+                published_filename = f"{Path(workflow_result.file_path).stem}_published"
+                published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
+                # Get the full path where the published workflow will be saved
                 await local_workflow_publisher.arun(
-                    workflow_name="hehehe", workflow_path=workflow_result.file_path, publisher_name=library_name, published_workflow_file_name=final_workflow_path
+                    workflow_name="TestDeadlineCloud", workflow_path=workflow_result.file_path, publisher_name=library_name, published_workflow_file_name=published_filename
                 )
-
-                # TODO: Call Zach's Subprocess Execute exector, which runs the created workflow file from the PublishWorkflowRequest.
-                if not Path(final_workflow_path).exists():
-                    msg = f"Published workflow file does not exist at path: {final_workflow_path}"
+                if not Path(published_workflow_filename).exists():
+                    msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
                     raise FileNotFoundError(msg)
-                # Run the subprocess.
-                subprocess_executor = SubprocessWorkflowExecutor(workflow_path=final_workflow_path)
+                #Run the subprocess.
+                from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
+                subprocess_executor = SubprocessWorkflowExecutor(workflow_path=published_workflow_filename)
                 #TODO: How do I determine storage backend?
-                await subprocess_executor.arun(workflow_name="hehe", flow_input={}, storage_backend=StorageBackend.LOCAL)
+                async with subprocess_executor as executor:
+                    await executor.arun(workflow_name="TestDeadlineCloud", flow_input={}, storage_backend=StorageBackend.LOCAL)
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
                 if my_subprocess_result is None:
