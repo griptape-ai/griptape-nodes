@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import threading
 from collections import defaultdict
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
@@ -43,6 +44,10 @@ class EventManager:
         self._flush_in_queue: bool = False
         # Event queue for publishing events
         self._event_queue: asyncio.Queue | None = None
+        # Keep track of which thread the event loop runs on
+        self._loop_thread_id: int | None = None
+        # Keep a reference to the event loop for thread-safe operations
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -62,15 +67,28 @@ class EventManager:
         """
         if queue is not None:
             self._event_queue = queue
+            # Track which thread the event loop is running on and store loop reference
+            try:
+                self._event_loop = asyncio.get_running_loop()
+                self._loop_thread_id = threading.get_ident()
+            except RuntimeError:
+                self._event_loop = None
+                self._loop_thread_id = None
         else:
             try:
                 self._event_queue = asyncio.Queue()
+                self._event_loop = asyncio.get_running_loop()
+                self._loop_thread_id = threading.get_ident()
             except RuntimeError:
                 # Defer queue creation until we're in an event loop
                 self._event_queue = None
+                self._event_loop = None
+                self._loop_thread_id = None
 
     def put_event(self, event: Any) -> None:
         """Put event into async queue from sync context (non-blocking).
+
+        Automatically detects if we're in a different thread and uses thread-safe operations.
 
         Args:
             event: The event to publish to the queue
@@ -78,7 +96,19 @@ class EventManager:
         if self._event_queue is None:
             return
 
-        self._event_queue.put_nowait(event)
+        # Check if we need thread-safe operation
+        current_thread_id = threading.get_ident()
+
+        if (
+            self._loop_thread_id is not None
+            and current_thread_id != self._loop_thread_id
+            and self._event_loop is not None
+        ):
+            # We're in a different thread from the event loop, use thread-safe method
+            self._event_loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
+        else:
+            # We're on the same thread as the event loop or no loop thread tracked, use direct method
+            self._event_queue.put_nowait(event)
 
     async def aput_event(self, event: Any) -> None:
         """Put event into async queue from async context.
@@ -90,18 +120,6 @@ class EventManager:
             return
 
         await self._event_queue.put(event)
-
-    def put_event_threadsafe(self, loop: Any, event: Any) -> None:
-        """Put event into async queue from sync context in a thread-safe manner.
-
-        Args:
-            loop: The asyncio event loop to use for thread-safe operation
-            event: The event to publish to the queue
-        """
-        if self._event_queue is None:
-            return
-
-        loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
 
     def assign_manager_to_request_type(
         self,
