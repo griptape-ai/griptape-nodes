@@ -1,6 +1,10 @@
 import logging
 from typing import Any
 
+from griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
+    FluxUpscalePipelineRuntimeParameters,
+)
+
 from diffusers_nodes_library.common.parameters.diffusion.allegro.allegro_pipeline_runtime_parameters import (
     AllegroPipelineRuntimeParameters,
 )
@@ -78,9 +82,6 @@ from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_c
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
-    FluxUpscalePipelineRuntimeParameters,
-)
 
 logger = logging.getLogger("diffusers_nodes_library")
 
