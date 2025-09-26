@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -126,4 +127,4 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         ):
             self.loras_params.configure_loras(pipe)
 
-        self.pipe_params.runtime_parameters.process_pipeline(pipe)
+        await asyncio.to_thread(self.pipe_params.runtime_parameters.process_pipeline, pipe)
