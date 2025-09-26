@@ -35,7 +35,10 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         super().__init__(node)
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
             self._node,
-            repo_files=[("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth")],
+            repo_files=[
+                ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth"),
+                ("lokCX/4x-Ultrasharp", "4x-Ultrasharp.pth"),
+            ],
             parameter_name="upscale_model",
         )
 
@@ -252,8 +255,8 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
-            # TODO: Make filename configurable - https://github.com/griptape-ai/griptape-nodes/issues/2365
-            pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename="4x-ClearRealityV1.pth")
+            filename = self._upscale_model_repo_parameter.get_repo_filename()
+            pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename=filename)
 
         tiling_image_processor = TilingImageProcessor(
             pipe=pipe,
