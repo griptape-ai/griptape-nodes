@@ -131,11 +131,11 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = Audioldm2PipelineRuntimeParameters(self._node)
             case "Cosmos2TextToImagePipeline":
                 self._runtime_parameters = Cosmos2TextToImagePipelineRuntimeParameters(self._node)
-            case "QwenPipeline":
+            case "QwenImagePipeline":
                 self._runtime_parameters = QwenPipelineRuntimeParameters(self._node)
-            case "QwenImg2ImgPipeline":
+            case "QwenImageImg2ImgPipeline":
                 self._runtime_parameters = QwenImg2ImgPipelineRuntimeParameters(self._node)
-            case "QwenUpscalePipeline":
+            case "QwenImageUpscalePipeline":
                 self._runtime_parameters = QwenUpscalePipelineRuntimeParameters(self._node)
             case "StableDiffusionPipeline":
                 self._runtime_parameters = StableDiffusionPipelineRuntimeParameters(self._node)

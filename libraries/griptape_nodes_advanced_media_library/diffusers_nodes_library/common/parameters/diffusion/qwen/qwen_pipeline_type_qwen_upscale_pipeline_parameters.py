@@ -10,4 +10,4 @@ class QwenPipelineTypeQwenUpscalePipelineParameters(QwenPipelineTypeQwenImg2ImgP
 
     @property
     def pipeline_name(self) -> str:
-        return "QwenUpscalePipeline"
+        return "QwenImageUpscalePipeline"

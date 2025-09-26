@@ -28,18 +28,18 @@ class QwenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_types(self) -> list[str]:
         return [
-            "QwenPipeline",
-            "QwenImg2ImgPipeline",
-            "QwenUpscalePipeline",
+            "QwenImagePipeline",
+            "QwenImageImg2ImgPipeline",
+            "QwenImageUpscalePipeline",
         ]
 
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
         match pipeline_type:
-            case "QwenPipeline":
+            case "QwenImagePipeline":
                 self._pipeline_type_pipeline_params = QwenPipelineTypeQwenPipelineParameters(self._node)
-            case "QwenImg2ImgPipeline":
+            case "QwenImageImg2ImgPipeline":
                 self._pipeline_type_pipeline_params = QwenPipelineTypeQwenImg2ImgPipelineParameters(self._node)
-            case "QwenUpscalePipeline":
+            case "QwenImageUpscalePipeline":
                 self._pipeline_type_pipeline_params = QwenPipelineTypeQwenUpscalePipelineParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline type: {pipeline_type}"

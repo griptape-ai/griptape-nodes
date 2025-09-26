@@ -50,7 +50,7 @@ class QwenPipelineTypeQwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelin
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.QwenImg2ImgPipeline
+        return diffusers.QwenImageImg2ImgPipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -64,7 +64,7 @@ class QwenPipelineTypeQwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelin
 
         return errors or None
 
-    def build_pipeline(self) -> diffusers.QwenImg2ImgPipeline:
+    def build_pipeline(self) -> diffusers.QwenImageImg2ImgPipeline:
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
         text_encoder_repo_id, text_encoder_revision = self._text_encoder_repo_parameter.get_repo_revision()
 
@@ -75,7 +75,7 @@ class QwenPipelineTypeQwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelin
             local_files_only=True,
         )
 
-        return diffusers.QwenImg2ImgPipeline.from_pretrained(
+        return diffusers.QwenImageImg2ImgPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             text_encoder=text_encoder,
