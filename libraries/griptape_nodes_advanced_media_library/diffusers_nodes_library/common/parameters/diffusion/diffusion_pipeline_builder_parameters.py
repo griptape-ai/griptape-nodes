@@ -16,6 +16,9 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_parameters import (
     FluxPipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_parameters import (
+    QwenPipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.stable_diffusion_pipeline_type_parameters import (
     StableDiffusionPipelineTypeParameters,
 )
@@ -72,6 +75,8 @@ class DiffusionPipelineBuilderParameters:
                 self._pipeline_type_parameters = AmusedPipelineTypeParameters(self._node)
             case "AudioLDM":
                 self._pipeline_type_parameters = AudioldmPipelineTypeParameters(self._node)
+            case "Qwen":
+                self._pipeline_type_parameters = QwenPipelineTypeParameters(self._node)
             case "Stable Diffusion":
                 self._pipeline_type_parameters = StableDiffusionPipelineTypeParameters(self._node)
             case "WAN":
