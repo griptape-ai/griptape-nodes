@@ -125,13 +125,10 @@ async def astart_app() -> None:
     # Initialize event queue in main thread
     griptape_nodes.EventManager().initialize_queue()
 
-    # Get main loop reference
-    main_loop = asyncio.get_running_loop()
-
     try:
         # Start WebSocket tasks in daemon thread
         threading.Thread(
-            target=_start_websocket_connection, args=(api_key, main_loop), daemon=True, name="websocket-tasks"
+            target=_start_websocket_connection, args=(api_key,), daemon=True, name="websocket-tasks"
         ).start()
 
         # Run event processing on main thread
