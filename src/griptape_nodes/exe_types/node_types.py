@@ -61,6 +61,7 @@ class ImportDependency(NamedTuple):
         module: The module name to import
         class_name: Optional class name to import from the module. If None, imports the entire module.
     """
+
     module: str
     class_name: str | None = None
 
@@ -78,6 +79,7 @@ class NodeDependencies:
         static_files: Optional set of static file names that this node depends on
         imports: Optional set of Python imports that this node requires
     """
+
     referenced_workflows: set[str] | None = None
     static_files: set[str] | None = None
     imports: set[ImportDependency] | None = None
