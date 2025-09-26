@@ -5,8 +5,9 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -51,6 +52,35 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+
+
+class ImportDependency(NamedTuple):
+    """Import dependency specification for a node.
+
+    Attributes:
+        module: The module name to import
+        class_name: Optional class name to import from the module. If None, imports the entire module.
+    """
+    module: str
+    class_name: str | None = None
+
+
+@dataclass
+class NodeDependencies:
+    """Dependencies that a node has on external resources.
+
+    This class provides a way for nodes to declare their dependencies on workflows,
+    static files, and Python imports. This information can be used by the system
+    for workflow packaging, dependency resolution, and deployment planning.
+
+    Attributes:
+        referenced_workflows: Optional set of workflow names that this node references
+        static_files: Optional set of static file names that this node depends on
+        imports: Optional set of Python imports that this node requires
+    """
+    referenced_workflows: set[str] | None = None
+    static_files: set[str] | None = None
+    imports: set[ImportDependency] | None = None
 
 
 class NodeResolutionState(StrEnum):
@@ -847,6 +877,35 @@ class BaseNode(ABC):
             current = next_param
         # Then clear the reference to the first spotlight parameter
         self.current_spotlight_parameter = None
+
+    def get_node_dependencies(self) -> NodeDependencies | None:
+        """Return the dependencies that this node has on external resources.
+
+        This method should be overridden by nodes that have dependencies on:
+        - Referenced workflows: Other workflows that this node calls or references
+        - Static files: Files that this node reads from or requires for operation
+        - Python imports: Modules or classes that this node imports beyond standard dependencies
+
+        This information can be used by the system for workflow packaging, dependency
+        resolution, deployment planning, and ensuring all required resources are available.
+
+        Returns:
+            NodeDependencies object containing the node's dependencies, or None if the node
+            has no external dependencies beyond the standard framework dependencies.
+
+        Example:
+            def get_node_dependencies(self) -> NodeDependencies | None:
+                return NodeDependencies(
+                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
+                    static_files={"config.json", "model_weights.pkl"},
+                    imports={
+                        ImportDependency("numpy"),
+                        ImportDependency("sklearn.linear_model", "LinearRegression"),
+                        ImportDependency("custom_module", "SpecialProcessor")
+                    }
+                )
+        """
+        return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
