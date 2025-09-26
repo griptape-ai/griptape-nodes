@@ -12,13 +12,14 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineRuntimeNode(ControlNode):
     def __init__(self, **kwargs) -> None:
+        self._initializing = True
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
@@ -28,16 +29,42 @@ class DiffusionPipelineRuntimeNode(ControlNode):
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
+        self._initializing = False
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_runtime_parameters = parameter.name == "pipeline"
-        if reset_runtime_parameters:
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            return
+
+        did_pipeline_change = False
+        # Handle pipeline change detection before setting the value
+        if parameter.name == "pipeline":
+            current_pipeline = self.get_parameter_value("pipeline")
+            did_pipeline_change = current_pipeline != value
+
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
+        if did_pipeline_change:
             self.pipe_params.runtime_parameters.remove_input_parameters()
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
         self.pipe_params.after_value_set(parameter, value)
 
-        if reset_runtime_parameters:
+        if did_pipeline_change:
             sorted_parameters = ["pipeline"]
             sorted_parameters.extend(
                 [param.name for param in self.parameters if param.name not in ["pipeline", "loras", "logs"]]
@@ -46,6 +73,22 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
+
+    def add_parameter(self, parameter: Parameter) -> None:
+        """Add a parameter to the node.
+
+        During initialization, parameters are added normally.
+        After initialization (dynamic mode), parameters are marked as user-defined
+        for serialization and duplicates are prevented.
+        """
+        if self._initializing:
+            super().add_parameter(parameter)
+            return
+
+        # Dynamic mode: prevent duplicates and mark as user-defined
+        if not self.does_name_exist(parameter.name):
+            parameter.user_defined = True
+            super().add_parameter(parameter)
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()
@@ -58,6 +101,16 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache"
             raise RuntimeError(error_msg)
         return pipeline
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        if target_parameter.name == "pipeline":
+            self.pipe_params.runtime_parameters.remove_input_parameters()
+            self.pipe_params.runtime_parameters.remove_output_parameters()
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.pipe_params.runtime_parameters.validate_before_node_run()
@@ -73,26 +126,4 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         ):
             self.loras_params.configure_loras(pipe)
 
-        num_inference_steps = self.pipe_params.runtime_parameters.get_num_inference_steps()
-
-        def callback_on_step_end(
-            pipe: DiffusionPipeline,
-            i: int,
-            _t: Any,
-            callback_kwargs: dict,
-        ) -> dict:
-            if i < num_inference_steps - 1:
-                self.pipe_params.runtime_parameters.publish_output_image_preview_latents(
-                    pipe, callback_kwargs["latents"]
-                )
-                self.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
-            return {}
-
-        self.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
-        output_image_pil = pipe(  # type: ignore[reportCallIssue]
-            **self.pipe_params.runtime_parameters.get_pipe_kwargs(),
-            output_type="pil",
-            callback_on_step_end=callback_on_step_end,
-        ).images[0]
-        self.pipe_params.runtime_parameters.publish_output_image(output_image_pil)
-        self.log_params.append_to_logs("Done.\n")
+        self.pipe_params.runtime_parameters.process_pipeline(pipe)

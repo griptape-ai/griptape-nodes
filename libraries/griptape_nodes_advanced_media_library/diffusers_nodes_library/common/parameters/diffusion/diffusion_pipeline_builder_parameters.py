@@ -1,13 +1,33 @@
 import logging
 from typing import Any
 
+from diffusers_nodes_library.common.parameters.diffusion.allegro.allegro_pipeline_type_parameters import (
+    AllegroPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_parameters import (
+    AmusedPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.audioldm.audioldm_pipeline_type_parameters import (
+    AudioldmPipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_parameters import (
     FluxPipelineTypeParameters,
 )
-from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_parameters import (
+    QwenPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.stable_diffusion_pipeline_type_parameters import (
+    StableDiffusionPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_type_parameters import (
+    WanPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_pipeline_type_parameters import (
+    WuerstchenPipelineTypeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
@@ -17,22 +37,30 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DiffusionPipelineBuilderParameters:
     def __init__(self, node: BaseNode):
-        self.provider_choices = ["Flux"]
+        self.provider_choices = [
+            "Flux",
+            "Allegro",
+            "Amused",
+            "AudioLDM",
+            "Qwen",
+            "Stable Diffusion",
+            "WAN",
+            "Wuerstchen",
+        ]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
+        self.did_provider_change = False
         self.set_pipeline_type_parameters(self.provider_choices[0])
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
                 name="provider",
-                default_value=self.provider_choices[0],
                 type="str",
                 traits={Options(choices=self.provider_choices)},
                 tooltip="AI model provider",
             )
         )
-        self._pipeline_type_parameters.add_input_parameters()
 
     def add_output_parameters(self) -> None:
         self._node.add_parameter(
@@ -43,8 +71,6 @@ class DiffusionPipelineBuilderParameters:
                 tooltip="Built and cached pipeline configuration",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"display_name": "pipeline"},
-                # This will be a complex object that cannot serialize and could contain private keys; it needs to be assigned at runtime.
-                serializable=False,
             )
         )
 
@@ -52,37 +78,43 @@ class DiffusionPipelineBuilderParameters:
         match provider:
             case "Flux":
                 self._pipeline_type_parameters = FluxPipelineTypeParameters(self._node)
+            case "Allegro":
+                self._pipeline_type_parameters = AllegroPipelineTypeParameters(self._node)
+            case "Amused":
+                self._pipeline_type_parameters = AmusedPipelineTypeParameters(self._node)
+            case "AudioLDM":
+                self._pipeline_type_parameters = AudioldmPipelineTypeParameters(self._node)
+            case "Qwen":
+                self._pipeline_type_parameters = QwenPipelineTypeParameters(self._node)
+            case "Stable Diffusion":
+                self._pipeline_type_parameters = StableDiffusionPipelineTypeParameters(self._node)
+            case "WAN":
+                self._pipeline_type_parameters = WanPipelineTypeParameters(self._node)
+            case "Wuerstchen":
+                self._pipeline_type_parameters = WuerstchenPipelineTypeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline provider: {provider}"
                 logger.error(msg)
                 raise ValueError(msg)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_provider = parameter.name == "provider" and self.get_provider() != value
-        if reset_provider:
-            self.pipeline_type_parameters.remove_input_parameters()
-            self.set_pipeline_type_parameters(value)
-            self.pipeline_type_parameters.add_input_parameters()
+    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "provider":
+            current_provider = self._node.get_parameter_value("provider")
+            self.did_provider_change = current_provider != value
+        self.pipeline_type_parameters.before_value_set(parameter, value)
 
-            sorted_parameters = ["provider"]
-            sorted_parameters.extend(
-                [
-                    param.name
-                    for param in self._node.parameters
-                    if param.name
-                    not in [
-                        "provider",
-                        *HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(),
-                        "pipeline",
-                        "logs",
-                    ]
-                ]
-            )
-            sorted_parameters.extend(
-                [*HuggingFacePipelineParameter.get_hf_pipeline_parameter_names(), "pipeline", "logs"]
-            )
-            self._node.reorder_elements(sorted_parameters)
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "provider" and self.did_provider_change:
+            self.regenerate_pipeline_type_parameters_for_provider(value)
         self.pipeline_type_parameters.after_value_set(parameter, value)
+
+    def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
+        self.pipeline_type_parameters.remove_input_parameters()
+        self.set_pipeline_type_parameters(provider)
+        self.pipeline_type_parameters.add_input_parameters()
+
+        first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
+        self._node.set_parameter_value("pipeline_type", first_pipeline_type)
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:
