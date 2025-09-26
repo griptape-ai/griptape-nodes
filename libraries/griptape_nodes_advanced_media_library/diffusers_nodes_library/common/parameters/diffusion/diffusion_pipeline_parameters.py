@@ -1,6 +1,27 @@
 import logging
 from typing import Any
 
+from diffusers_nodes_library.common.parameters.diffusion.allegro.allegro_pipeline_runtime_parameters import (
+    AllegroPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_img2img_pipeline_runtime_parameters import (
+    AmusedImg2ImgPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_inpaint_pipeline_runtime_parameters import (
+    AmusedInpaintPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_runtime_parameters import (
+    AmusedPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.audioldm.audioldm_pipeline_runtime_parameters import (
+    AudioldmPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.audioldm2.audioldm2_pipeline_runtime_parameters import (
+    Audioldm2PipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.cosmos.cosmos_2_text_to_image_pipeline_runtime_parameters import (
+    Cosmos2TextToImagePipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
 )
@@ -18,6 +39,33 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipel
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.stable_diffusion_pipeline_runtime_parameters import (
+    StableDiffusionPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion_3.stable_diffusion_3_pipeline_runtime_parameters import (
+    StableDiffusion3PipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion_ae.stable_diffusion_ae_pipeline_runtime_parameters import (
+    StableDiffusionAttendAndExcitePipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion_diffedit.stable_diffusion_diffedit_pipeline_runtime_parameters import (
+    StableDiffusionDiffEditPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_image_to_video_pipeline_runtime_parameters import (
+    WanImageToVideoPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_pipeline_runtime_parameters import (
+    WanPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_vace_pipeline_runtime_parameters import (
+    WanVacePipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wan.wan_video_to_video_pipeline_runtime_parameters import (
+    WanVideoToVideoPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_combined_pipeline_runtime_parameters import (
+    WuerstchenCombinedPipelineRuntimeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -58,6 +106,38 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxImg2ImgPipelineRuntimeParameters(self._node)
             case "FluxUpscalePipeline":
                 self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
+            case "AllegroPipeline":
+                self._runtime_parameters = AllegroPipelineRuntimeParameters(self._node)
+            case "AmusedPipeline":
+                self._runtime_parameters = AmusedPipelineRuntimeParameters(self._node)
+            case "AmusedImg2ImgPipeline":
+                self._runtime_parameters = AmusedImg2ImgPipelineRuntimeParameters(self._node)
+            case "AmusedInpaintPipeline":
+                self._runtime_parameters = AmusedInpaintPipelineRuntimeParameters(self._node)
+            case "AudioLDMPipeline":
+                self._runtime_parameters = AudioldmPipelineRuntimeParameters(self._node)
+            case "AudioLDM2Pipeline":
+                self._runtime_parameters = Audioldm2PipelineRuntimeParameters(self._node)
+            case "Cosmos2TextToImagePipeline":
+                self._runtime_parameters = Cosmos2TextToImagePipelineRuntimeParameters(self._node)
+            case "StableDiffusionPipeline":
+                self._runtime_parameters = StableDiffusionPipelineRuntimeParameters(self._node)
+            case "StableDiffusion3Pipeline":
+                self._runtime_parameters = StableDiffusion3PipelineRuntimeParameters(self._node)
+            case "StableDiffusionAttendAndExcitePipeline":
+                self._runtime_parameters = StableDiffusionAttendAndExcitePipelineRuntimeParameters(self._node)
+            case "StableDiffusionDiffEditPipeline":
+                self._runtime_parameters = StableDiffusionDiffEditPipelineRuntimeParameters(self._node)
+            case "WanPipeline":
+                self._runtime_parameters = WanPipelineRuntimeParameters(self._node)
+            case "WanVacePipeline":
+                self._runtime_parameters = WanVacePipelineRuntimeParameters(self._node)
+            case "WanImageToVideoPipeline":
+                self._runtime_parameters = WanImageToVideoPipelineRuntimeParameters(self._node)
+            case "WanVideoToVideoPipeline":
+                self._runtime_parameters = WanVideoToVideoPipelineRuntimeParameters(self._node)
+            case "WuerstchenCombinedPipeline":
+                self._runtime_parameters = WuerstchenCombinedPipelineRuntimeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline class: {pipeline_class}"
                 logger.error(msg)
