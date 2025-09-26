@@ -52,8 +52,8 @@ class DiffusionPipelineTypeParameters(ABC):
             self.regenerate_elements_for_pipeline_type(value)
 
     def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
-        self.set_pipeline_type_pipeline_params(pipeline_type)
         self.pipeline_type_pipeline_params.remove_input_parameters()
+        self.set_pipeline_type_pipeline_params(pipeline_type)
         self.pipeline_type_pipeline_params.add_input_parameters()
 
         # Get all current element names
