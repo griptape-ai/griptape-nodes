@@ -1,6 +1,11 @@
+from typing import Any
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
+from PIL.Image import Image
+
 from diffusers_nodes_library.common.parameters.diffusion.common.upscale_pipeline_runtime_parameters import (
     UpscalePipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.qwen.common import qwen_latents_to_image_pil
 from griptape_nodes.exe_types.node_types import BaseNode
 
 
@@ -22,3 +27,7 @@ class QwenUpscalePipelineRuntimeParameters(UpscalePipelineRuntimeParameters):
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
+    
+    def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
+        tile_size = self.tile_size
+        return qwen_latents_to_image_pil(self, pipe, latents, tile_size, tile_size)

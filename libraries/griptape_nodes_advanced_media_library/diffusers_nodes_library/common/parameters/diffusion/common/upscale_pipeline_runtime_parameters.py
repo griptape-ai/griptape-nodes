@@ -2,7 +2,6 @@ import logging
 from abc import ABC
 from typing import Any
 
-import diffusers  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 import PIL.Image
@@ -242,6 +241,31 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
         )
 
+    def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
+        tile_size = self.tile_size
+        latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
+        latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
+        image = pipe.vae.decode(latents, return_dict=False)[0]
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
+        return pipe.image_processor.postprocess(image, output_type="pil")[0]
+    
+    @property
+    def tile_size(self) -> int:
+        max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
+        input_image_pil = self.get_image_pil()
+        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
+        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
+        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
+        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+
+        if tile_size % 16 != 0:
+            new_tile_size = next_multiple_ge(tile_size, 16)
+            self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
+            )
+            tile_size = new_tile_size
+        return tile_size
+
     def _process_upscale(self, input_image_pil: Image) -> Image:
         max_tile_size = self._node.get_parameter_value("max_tile_size")
         tile_overlap = self._node.get_parameter_value("tile_overlap")
@@ -260,7 +284,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         tiling_image_processor = TilingImageProcessor(
             pipe=pipe,
-            tile_size=tile_size,
+            tile_size=self.tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
         )
@@ -324,26 +348,13 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         # if that setting is enabled.
         check_cleanup_intermediates_directory()
 
-        # Adjust tile size so that it is not much bigger than the input image.
-        largest_reasonable_tile_width = next_multiple_ge(input_image_pil.width, 16)
-        largest_reasonable_tile_height = next_multiple_ge(input_image_pil.height, 16)
-        largest_reasonable_tile_size = max(largest_reasonable_tile_height, largest_reasonable_tile_width)
-        tile_size = min(largest_reasonable_tile_size, max_tile_size)
-
-        if tile_size % 16 != 0:
-            new_tile_size = next_multiple_ge(tile_size, 16)
-            self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
-                f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
-            )
-            tile_size = new_tile_size
-
         if strength == 0:
             return input_image_pil
 
         num_inference_steps = self.get_num_inference_steps()
 
         def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
-            def callback_on_step_end(pipe: diffusers.DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
+            def callback_on_step_end(pipe: DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
                 if i < num_inference_steps - 1:
                     # Generate a preview image if this is not yet the last step.
                     # That would be redundant, since the pipeline automatically
@@ -354,11 +365,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     check_cleanup_intermediates_directory()
 
                     latents = callback_kwargs["latents"]
-                    latents = pipe._unpack_latents(latents, tile_size, tile_size, pipe.vae_scale_factor)
-                    latents = (latents / pipe.vae.config.scaling_factor) + pipe.vae.config.shift_factor
-                    image = pipe.vae.decode(latents, return_dict=False)[0]
-                    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
-                    intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
+                    intermediate_pil_image = self.latents_to_image_pil(pipe, latents)
 
                     # HERE -> need to update the tile by calling something in the tile processor.
                     preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
@@ -393,7 +400,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         tiling_image_processor = TilingImageProcessor(
             pipe=wrapped_pipe,
-            tile_size=tile_size,
+            tile_size=self.tile_size,
             tile_overlap=tile_overlap,
             tile_strategy=tile_strategy,
         )
