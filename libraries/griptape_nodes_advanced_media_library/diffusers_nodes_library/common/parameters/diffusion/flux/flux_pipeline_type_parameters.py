@@ -19,11 +19,11 @@ from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.com
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_kontext_pipeline_parameters import (
     FluxPipelineTypeFluxKontextPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_upscale_pipeline_parameters import (
-    FluxPipelineTypeFluxUpscalePipelineParameters,
-)
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_pipeline_parameters import (
     FluxPipelineTypeFluxPipelineParameters,
+)
+from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_upscale_pipeline_parameters import (
+    FluxPipelineTypeFluxUpscalePipelineParameters,
 )
 
 logger = logging.getLogger("diffusers_nodes_library")

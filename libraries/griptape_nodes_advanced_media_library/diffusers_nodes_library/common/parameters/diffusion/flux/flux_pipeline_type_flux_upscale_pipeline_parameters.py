@@ -3,6 +3,7 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type
 )
 from griptape_nodes.exe_types.node_types import BaseNode
 
+
 class FluxPipelineTypeFluxUpscalePipelineParameters(FluxPipelineTypeFluxImg2ImgPipelineParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)

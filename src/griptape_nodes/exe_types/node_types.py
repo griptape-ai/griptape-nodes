@@ -272,7 +272,7 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
-    def after_initial_value_set(self, parameter: Parameter, value: Any):
+    def after_initial_value_set(self, parameter: Parameter, value: Any) -> None:
         """Callback AFTER a Parameter's value was set during initial setup."""
 
     def after_value_set(

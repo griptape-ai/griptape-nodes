@@ -1,17 +1,8 @@
-from abc import ABC
 import logging
+from abc import ABC
 from typing import Any
+
 import diffusers  # type: ignore[reportMissingImports]
-
-from griptape.artifacts import ImageUrlArtifact
-from PIL.Image import Image, Resampling
-from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
-    image_artifact_to_pil,
-    pil_to_image_artifact,
-)
-from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
-from utils.image_utils import load_image_from_url_artifact
-
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
@@ -21,10 +12,19 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runt
 )
 from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
+from griptape.artifacts import ImageUrlArtifact
+from PIL.Image import Image, Resampling
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
+from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
+from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
+from utils.image_utils import load_image_from_url_artifact
+
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
-from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -33,11 +33,9 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
         super().__init__(node)
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
-            self._node, 
-            repo_files=[
-                ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth")
-            ],
-            parameter_name="upscale_model"
+            self._node,
+            repo_files=[("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth")],
+            parameter_name="upscale_model",
         )
 
     def _add_input_parameters(self) -> None:
@@ -179,7 +177,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.remove_parameter_element_by_name("scale")
         self._node.remove_parameter_element_by_name("resample_strategy")
         self._upscale_model_repo_parameter.remove_input_parameters()
-        
+
     def get_image_pil(self) -> Image:
         input_image_artifact = self._node.get_parameter_value("image")
         if isinstance(input_image_artifact, ImageUrlArtifact):
@@ -197,11 +195,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
-    
+
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
         return errors or None
-    
+
     def _process_upscale(self, input_image_pil: Image) -> Image:
         max_tile_size = self._node.get_parameter_value("max_tile_size")
         tile_overlap = self._node.get_parameter_value("tile_overlap")
@@ -244,7 +242,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
         return output_image_pil
 
-
     def _process_rescale(self, input_image_pil: Image) -> Image:
         scale = float(self._node.get_parameter_value("scale"))
         resample_strategy = str(self._node.get_parameter_value("resample_strategy"))
@@ -274,8 +271,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         return output_image_pil
 
-    
-    def _process_img2img(self, pipe: DiffusionPipeline, input_image_pil: Image) -> Image:  # noqa: PLR0915
+    def _process_img2img(self, pipe: DiffusionPipeline, input_image_pil: Image) -> Image:
         self.preprocess()
         max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
         tile_overlap = int(self._node.get_parameter_value("tile_overlap"))
@@ -305,9 +301,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         num_inference_steps = self.get_num_inference_steps()
 
         def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
-            def callback_on_step_end(
-                pipe: diffusers.DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict
-            ) -> dict:
+            def callback_on_step_end(pipe: diffusers.DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
                 if i < num_inference_steps - 1:
                     # Generate a preview image if this is not yet the last step.
                     # That would be redundant, since the pipeline automatically
@@ -333,7 +327,9 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                         ),
                     )
                     self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")
-                    self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
+                    self._node.log_params.append_to_logs(
+                        f"Starting inference step {i + 2} of {num_inference_steps}...\n"
+                    )
                 return {}
 
             img2img_kwargs = self.get_pipe_kwargs()
@@ -382,7 +378,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
         return output_image_pil
 
-    
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
         input_image_pil = self.get_image_pil()
         upscaled_image_pil = self._process_upscale(input_image_pil)

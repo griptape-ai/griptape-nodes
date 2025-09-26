@@ -28,7 +28,7 @@ class DiffusionPipelineTypePipelineParameters(ABC):
     @abstractmethod
     def pipeline_class(self) -> type[diffusers.DiffusionPipeline]:
         raise NotImplementedError
-    
+
     @property
     def pipeline_name(self) -> str:
         return self.pipeline_class.__name__

@@ -16,14 +16,14 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_img2img_pipel
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipeline_runtime_parameters import (
     FluxKontextPipelineRuntimeParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
-    FluxUpscalePipelineRuntimeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
+    FluxUpscalePipelineRuntimeParameters,
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 

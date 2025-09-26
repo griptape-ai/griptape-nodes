@@ -92,9 +92,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
             callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
-                self.publish_output_image_preview_latents(
-                    pipe, callback_kwargs["latents"]
-                )
+                self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
                 self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
             return {}
 
