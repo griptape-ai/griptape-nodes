@@ -1,4 +1,5 @@
 from typing import Any
+
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 
@@ -27,7 +28,7 @@ class QwenUpscalePipelineRuntimeParameters(UpscalePipelineRuntimeParameters):
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
-    
+
     def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
         tile_size = self.tile_size
-        return qwen_latents_to_image_pil(self, pipe, latents, tile_size, tile_size)
+        return qwen_latents_to_image_pil(pipe, latents, tile_size, tile_size)

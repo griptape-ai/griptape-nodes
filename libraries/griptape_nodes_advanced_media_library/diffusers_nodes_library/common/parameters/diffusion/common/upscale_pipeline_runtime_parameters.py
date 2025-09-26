@@ -2,9 +2,9 @@ import logging
 from abc import ABC
 from typing import Any
 
+import PIL.Image
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-import PIL.Image
 from PIL.Image import Image, Resampling
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
@@ -162,7 +162,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             )
         )
 
-    
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
         self._node.add_parameter(
@@ -216,7 +215,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
         return errors or None
-    
+
     def get_width(self) -> int:
         input_image_pil = self.get_image_pil()
         return input_image_pil.width
@@ -248,7 +247,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         image = pipe.vae.decode(latents, return_dict=False)[0]
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
         return pipe.image_processor.postprocess(image, output_type="pil")[0]
-    
+
     @property
     def tile_size(self) -> int:
         max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
@@ -267,15 +266,10 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         return tile_size
 
     def _process_upscale(self, input_image_pil: Image) -> Image:
-        max_tile_size = self._node.get_parameter_value("max_tile_size")
         tile_overlap = self._node.get_parameter_value("tile_overlap")
         tile_strategy = self._node.get_parameter_value("tile_strategy")
 
-        output_scale = 4  # THIS IS SPECIFIC TO 4x-ClearRealityV1
-
-        # Adjust tile size so that it is not much bigger than the input image.
-        largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
-        tile_size = min(largest_reasonable_tile_size, max_tile_size)
+        output_scale = 4
 
         with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
@@ -339,7 +333,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
     def _process_img2img(self, pipe: DiffusionPipeline, input_image_pil: Image) -> Image:
         self.preprocess()
-        max_tile_size = int(self._node.get_parameter_value("max_tile_size"))
         tile_overlap = int(self._node.get_parameter_value("tile_overlap"))
         tile_strategy = str(self._node.get_parameter_value("tile_strategy"))
         strength = float(self._node.get_parameter_value("strength"))

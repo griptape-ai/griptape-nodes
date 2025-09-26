@@ -67,4 +67,4 @@ class QwenPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         }
 
     def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
-        return qwen_latents_to_image_pil(self, pipe, latents, self.get_height(), self.get_width())
+        return qwen_latents_to_image_pil(pipe, latents, self.get_height(), self.get_width())
