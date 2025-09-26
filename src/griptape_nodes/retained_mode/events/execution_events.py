@@ -229,6 +229,7 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 
     control_nodes: list[str] | None
     resolving_node: list[str] | None
+    involved_nodes: list[str] | None
 
 
 @dataclass
