@@ -92,7 +92,7 @@ class DiffusionPipelineParameters:
             )
         )
 
-    def set_runtime_parameters(self, pipeline_class: str) -> None:
+    def set_runtime_parameters(self, pipeline_class: str) -> None:  # noqa: C901 PLR0912
         match pipeline_class:
             case "FluxPipeline":
                 self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)

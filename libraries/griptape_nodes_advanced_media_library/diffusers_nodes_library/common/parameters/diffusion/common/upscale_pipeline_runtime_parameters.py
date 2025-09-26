@@ -4,14 +4,6 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.misc.tiling_image_processor import (
-    TilingImageProcessor,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
-    DiffusionPipelineRuntimeParameters,
-)
-from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
-from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image, Resampling
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
@@ -22,6 +14,14 @@ from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[report
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
+from diffusers_nodes_library.common.misc.tiling_image_processor import (
+    TilingImageProcessor,  # type: ignore[reportMissingImports]
+)
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runtime_parameters import (
+    DiffusionPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
+from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
@@ -211,9 +211,9 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         largest_reasonable_tile_size = max(input_image_pil.height, input_image_pil.width)
         tile_size = min(largest_reasonable_tile_size, max_tile_size)
 
-        with self._node.log_params.append_profile_to_logs("Loading model metadata"):
+        with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
-            # TODO: Make filename configurable
+            # TODO: Make filename configurable - https://github.com/griptape-ai/griptape-nodes/issues/2365
             pipe = SpandrelPipeline.from_hf_file(repo_id=repo, revision=revision, filename="4x-ClearRealityV1.pth")
 
         tiling_image_processor = TilingImageProcessor(
@@ -230,16 +230,16 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     "output_image",
                     pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
                 )
-                self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
-                self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
+                self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
 
-        self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")
+        self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             output_scale=output_scale,
             callback_on_tile_end=callback_on_tile_end,
         )
-        self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
+        self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
         return output_image_pil
 
     def _process_rescale(self, input_image_pil: Image) -> Image:
@@ -290,7 +290,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         if tile_size % 16 != 0:
             new_tile_size = next_multiple_ge(tile_size, 16)
-            self._node.log_params.append_to_logs(
+            self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                 f"max_tile_size({tile_size}) not multiple of 16, rounding up to {new_tile_size}.\n"
             )
             tile_size = new_tile_size
@@ -326,8 +326,8 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                             preview_image_with_partial_tile, directory_path=get_intermediates_directory_path()
                         ),
                     )
-                    self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")
-                    self._node.log_params.append_to_logs(
+                    self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+                    self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                         f"Starting inference step {i + 2} of {num_inference_steps}...\n"
                     )
                 return {}
@@ -367,15 +367,15 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     "output_image",
                     pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
                 )
-                self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")
-                self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")
+                self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
 
-        self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")
+        self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             callback_on_tile_end=callback_on_tile_end,
         )
-        self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
+        self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
         return output_image_pil
 
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
@@ -385,4 +385,4 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         output_image_pil = self._process_img2img(pipe, rescaled_image_pil)
 
         self.publish_output_image(output_image_pil)
-        self._node.log_params.append_to_logs("Done.\n")
+        self._node.log_params.append_to_logs("Done.\n")  # type: ignore[reportAttributeAccessIssue]

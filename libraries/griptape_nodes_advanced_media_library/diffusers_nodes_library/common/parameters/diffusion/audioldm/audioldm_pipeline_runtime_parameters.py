@@ -134,10 +134,10 @@ class AudioldmPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         ) -> dict:
             if i < num_inference_steps - 1:
                 self.publish_output_audio_preview(pipe, callback_kwargs["latents"])
-                self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")
+                self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
             return {}
 
-        self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")
+        self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
         result = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),
             callback_on_step_end=callback_on_step_end,
@@ -146,7 +146,7 @@ class AudioldmPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         # AudioLDM returns audio data directly
         audio_data = result.audios[0] if hasattr(result, "audios") else result
         self.publish_output_audio(audio_data)
-        self._node.log_params.append_to_logs("Done.\n")
+        self._node.log_params.append_to_logs("Done.\n")  # type: ignore[reportAttributeAccessIssue]
 
     def _audio_data_to_artifact(self, audio_data: Any) -> Any:
         """Convert audio data to audio artifact."""

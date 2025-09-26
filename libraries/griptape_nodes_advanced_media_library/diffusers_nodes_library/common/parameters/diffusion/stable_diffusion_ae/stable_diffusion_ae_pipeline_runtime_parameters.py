@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 
@@ -90,10 +89,6 @@ class StableDiffusionAttendAndExcitePipelineRuntimeParameters(DiffusionPipelineR
             "guidance_scale": float(self._node.get_parameter_value("guidance_scale")),
             "max_iter_to_alter": int(self._node.get_parameter_value("max_iter_to_alter")),
         }
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        super().after_value_set(parameter, value)
-        self._huggingface_repo_parameter.after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
