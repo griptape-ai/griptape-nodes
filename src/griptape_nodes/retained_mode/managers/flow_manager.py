@@ -15,7 +15,14 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
+from griptape_nodes.exe_types.node_types import (
+    LOCAL_EXECUTION,
+    BaseNode,
+    ErrorProxyNode,
+    NodeResolutionState,
+    StartLoopNode,
+    StartNode,
+)
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
@@ -1090,6 +1097,10 @@ class FlowManager:
         # Step 4: Serialize the package node
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        node = package_node_info.package_node
+        # Set to LOCAL_EXECUTION before packaging to prevent recursive loop.
+        previous_value = node.get_parameter_value("execution_environment")
+        node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
         serialized_package_result = self._serialize_package_node(
             node_name=package_node_info.package_node.name,
             package_node=package_node_info.package_node,
@@ -1097,6 +1108,7 @@ class FlowManager:
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
+            node.set_parameter_value("execution_environment", previous_value)
             return serialized_package_result
 
         # Step 5: Create start node commands and data connections
@@ -1110,6 +1122,7 @@ class FlowManager:
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
         if isinstance(start_node_result, PackageNodeAsSerializedFlowResultFailure):
+            node.set_parameter_value("execution_environment", previous_value)
             return start_node_result
 
         # Step 6: Create end node commands and data connections
@@ -1120,6 +1133,7 @@ class FlowManager:
             library_version=library_version,
         )
         if isinstance(end_node_result, PackageNodeAsSerializedFlowResultFailure):
+            node.set_parameter_value("execution_environment", previous_value)
             return end_node_result
 
         # Step 7a: Create start node control flow connection
@@ -1130,6 +1144,7 @@ class FlowManager:
             package_node=package_node_info.package_node,
         )
         if isinstance(start_control_connection_result, PackageNodeAsSerializedFlowResultFailure):
+            node.set_parameter_value("execution_environment", previous_value)
             return start_control_connection_result
 
         start_control_connections = [start_control_connection_result]
@@ -1152,7 +1167,8 @@ class FlowManager:
         workflow_shape = GriptapeNodes.WorkflowManager().build_workflow_shape_from_parameter_info(
             input_node_params=start_node_result.input_shape_data, output_node_params=end_node_result.output_shape_data
         )
-
+        # set back to previous value now
+        node.set_parameter_value("execution_environment", previous_value)
         # Return success result
         return PackageNodeAsSerializedFlowResultSuccess(
             result_details=f'Successfully packaged node "{package_node_info.package_node.name}" from flow "{package_node_info.package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
