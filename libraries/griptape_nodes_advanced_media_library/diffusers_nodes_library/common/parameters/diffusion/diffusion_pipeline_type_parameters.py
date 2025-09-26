@@ -32,7 +32,6 @@ class DiffusionPipelineTypeParameters(ABC):
         self._node.add_parameter(
             Parameter(
                 name="pipeline_type",
-                default_value=self.pipeline_types[0],
                 type="str",
                 traits={Options(choices=self.pipeline_types)},
                 tooltip="Type of diffusion pipeline to build",
@@ -50,33 +49,36 @@ class DiffusionPipelineTypeParameters(ABC):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "pipeline_type" and self.did_pipeline_type_change:
-            self.set_pipeline_type_pipeline_params(value)
-            self.pipeline_type_pipeline_params.remove_input_parameters()
-            self.pipeline_type_pipeline_params.add_input_parameters()
+            self.regenerate_elements_for_pipeline_type(value)
 
-            # Get all current element names
-            all_element_names = [element.name for element in self._node.root_ui_element.children]
+    def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
+        self.set_pipeline_type_pipeline_params(pipeline_type)
+        self.pipeline_type_pipeline_params.remove_input_parameters()
+        self.pipeline_type_pipeline_params.add_input_parameters()
 
-            # Start with required positioning
-            sorted_parameters = ["provider", "pipeline_type"]
+        # Get all current element names
+        all_element_names = [element.name for element in self._node.root_ui_element.children]
 
-            # Add all other parameters that aren't already positioned or at the end
-            hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
-            end_params = {*hf_param_names, "pipeline", "logs"}
-            positioned_params = {"provider", "pipeline_type"}
+        # Start with required positioning
+        sorted_parameters = ["provider", "pipeline_type"]
 
-            sorted_parameters.extend(
-                [
-                    param_name
-                    for param_name in all_element_names
-                    if param_name not in positioned_params and param_name not in end_params
-                ]
-            )
+        # Add all other parameters that aren't already positioned or at the end
+        hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
+        end_params = {*hf_param_names, "pipeline", "logs"}
+        positioned_params = {"provider", "pipeline_type"}
 
-            # Add end parameters
-            sorted_parameters.extend([*hf_param_names, "pipeline", "logs"])
+        sorted_parameters.extend(
+            [
+                param_name
+                for param_name in all_element_names
+                if param_name not in positioned_params and param_name not in end_params
+            ]
+        )
 
-            self._node.reorder_elements(sorted_parameters)
+        # Add end parameters
+        sorted_parameters.extend([*hf_param_names, "pipeline", "logs"])
+
+        self._node.reorder_elements(sorted_parameters)
 
     @property
     @abstractmethod

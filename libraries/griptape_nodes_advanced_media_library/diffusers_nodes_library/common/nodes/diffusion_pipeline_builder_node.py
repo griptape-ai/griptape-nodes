@@ -24,19 +24,20 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self._initializing = True
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
-        self.params.add_input_parameters()
-
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
+        self.log_params = LogParameter(self)
+
+        self.params.add_input_parameters()
         self.huggingface_pipeline_params.add_input_parameters()
 
         self.params.add_output_parameters()
-
-        self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
+
         self._initializing = False
 
     def after_init(self) -> None:
-        self.set_config_hash()
+        # self.params.regenerate_pipeline_type_parameters_for_provider(self.params.provider_choices[0])
+        # self.set_config_hash()
         return super().after_init()
 
     def set_config_hash(self) -> None:
@@ -45,7 +46,6 @@ class DiffusionPipelineBuilderNode(ControlNode):
         GriptapeNodes.handle_request(
             SetParameterValueRequest(parameter_name="pipeline", value=config_hash, node_name=self.name)
         )
-        self.parameter_output_values["pipeline"] = config_hash
 
     @property
     def optimization_kwargs(self) -> dict[str, Any]:
@@ -82,13 +82,18 @@ class DiffusionPipelineBuilderNode(ControlNode):
             return
 
         # Dynamic mode: prevent duplicates and mark as user-defined
-        if parameter.name not in self.parameters:
+        if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
             super().add_parameter(parameter)
 
     def before_value_set(self, parameter: Parameter, value: Any) -> None:
         self.params.before_value_set(parameter, value)
         return super().before_value_set(parameter, value)
+
+    def after_initial_value_set(self, parameter: Parameter, value: Any) -> None:
+        # After_value_set is not called during initial value setting because of potential performance issues.
+        # We don't have any performance issues during initial setup, so we can call after_value_set here.
+        self.after_value_set(parameter, value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.params.after_value_set(parameter, value)

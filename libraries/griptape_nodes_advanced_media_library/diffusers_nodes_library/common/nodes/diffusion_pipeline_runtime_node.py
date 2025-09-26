@@ -12,7 +12,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -37,6 +37,11 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             current_pipeline = self.get_parameter_value("pipeline")
             self.did_pipeline_change = current_pipeline != value
         return super().before_value_set(parameter, value)
+
+    def after_initial_value_set(self, parameter: Parameter, value: Any) -> None:
+        # After_value_set is not called during initial value setting because of potential performance issues.
+        # We don't have any performance issues during initial setup, so we can call after_value_set here.
+        self.after_value_set(parameter, value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         reset_runtime_parameters = parameter.name == "pipeline" and self.did_pipeline_change
@@ -69,7 +74,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             return
 
         # Dynamic mode: prevent duplicates and mark as user-defined
-        if parameter.name not in self.parameters:
+        if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
             super().add_parameter(parameter)
 
@@ -84,6 +89,16 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache"
             raise RuntimeError(error_msg)
         return pipeline
+
+    def after_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
+    ) -> None:
+        if target_parameter.name == "pipeline":
+            self.pipe_params.runtime_parameters.remove_input_parameters()
+            self.pipe_params.runtime_parameters.remove_output_parameters()
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.pipe_params.runtime_parameters.validate_before_node_run()

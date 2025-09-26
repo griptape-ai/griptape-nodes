@@ -272,6 +272,9 @@ class BaseNode(ABC):
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
 
+    def after_initial_value_set(self, parameter: Parameter, value: Any):
+        """Callback AFTER a Parameter's value was set during initial setup."""
+
     def after_value_set(
         self,
         parameter: Parameter,  # noqa: ARG002
@@ -674,6 +677,7 @@ class BaseNode(ABC):
                 self._emit_parameter_lifecycle_event(parameter)
         else:
             self.parameter_values[param_name] = candidate_value
+            self.after_initial_value_set(parameter, self.parameter_values[param_name])
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container

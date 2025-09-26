@@ -44,13 +44,11 @@ class DiffusionPipelineBuilderParameters:
         self._node.add_parameter(
             Parameter(
                 name="provider",
-                default_value=self.provider_choices[0],
                 type="str",
                 traits={Options(choices=self.provider_choices)},
                 tooltip="AI model provider",
             )
         )
-        self._pipeline_type_parameters.add_input_parameters()
 
     def add_output_parameters(self) -> None:
         self._node.add_parameter(
@@ -93,11 +91,17 @@ class DiffusionPipelineBuilderParameters:
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "provider" and self.did_provider_change:
-            self.pipeline_type_parameters.remove_input_parameters()
-            self.set_pipeline_type_parameters(value)
-            self.pipeline_type_parameters.add_input_parameters()
-            self._node.set_parameter_value("pipeline_type", self.pipeline_type_parameters.pipeline_types[0])
+            self.regenerate_pipeline_type_parameters_for_provider(value)
         self.pipeline_type_parameters.after_value_set(parameter, value)
+
+    def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
+        self.pipeline_type_parameters.remove_input_parameters()
+        self.set_pipeline_type_parameters(provider)
+        self.pipeline_type_parameters.add_input_parameters()
+
+        first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
+        self._node.set_parameter_value("pipeline_type", first_pipeline_type)
+        # self.pipeline_type_parameters.regenerate_elements_for_pipeline_type(first_pipeline_type)
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:

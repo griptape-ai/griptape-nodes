@@ -58,6 +58,7 @@ class HuggingFaceModelParameter(ABC):
                 default_value=choices[0] if choices else None,
                 input_types=["str"],
                 type="str",
+                ui_options={"display_name": self._parameter_name},
                 traits={
                     Options(
                         choices=choices,
