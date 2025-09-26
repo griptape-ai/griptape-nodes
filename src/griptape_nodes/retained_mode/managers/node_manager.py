@@ -2083,11 +2083,13 @@ class NodeManager:
             # Ensure we always have a NodeDependencies object, even if empty
             node_dependencies = NodeDependencies()
 
+        # Add the library dependency to the node dependencies
+        node_dependencies.libraries.add(library_details)
+
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
-            node_library_details=library_details,
             node_dependencies=node_dependencies,
             lock_node_command=lock_command,
         )

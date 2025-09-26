@@ -1379,14 +1379,14 @@ class WorkflowManager:
 
         # Create the Workflow Metadata header
         workflows_referenced = None
-        if serialized_flow_commands.referenced_workflows:
-            workflows_referenced = list(serialized_flow_commands.referenced_workflows)
+        if serialized_flow_commands.node_dependencies.referenced_workflows:
+            workflows_referenced = list(serialized_flow_commands.node_dependencies.referenced_workflows)
 
         return WorkflowMetadata(
             name=str(file_name),
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
-            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
+            node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),

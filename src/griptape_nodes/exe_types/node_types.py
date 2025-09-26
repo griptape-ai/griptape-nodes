@@ -99,30 +99,6 @@ class NodeDependencies:
         self.imports.update(other.imports)
         self.libraries.update(other.libraries)
 
-    def aggregate_from(self, other: "NodeDependencies") -> None:
-        """Aggregate dependencies from another NodeDependencies object into this one.
-
-        Args:
-            other: The NodeDependencies object to aggregate from
-        """
-        # Aggregate referenced workflows
-        if other.referenced_workflows:
-            if self.referenced_workflows is None:
-                self.referenced_workflows = set()
-            self.referenced_workflows.update(other.referenced_workflows)
-
-        # Aggregate static files
-        if other.static_files:
-            if self.static_files is None:
-                self.static_files = set()
-            self.static_files.update(other.static_files)
-
-        # Aggregate imports
-        if other.imports:
-            if self.imports is None:
-                self.imports = set()
-            self.imports.update(other.imports)
-
 
 class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""

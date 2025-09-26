@@ -1440,11 +1440,13 @@ class FlowManager:
             start_to_package_data_connections.append(start_to_package_connection)
 
         # Build complete SerializedNodeCommands for start node
+        start_node_dependencies = NodeDependencies()
+        start_node_dependencies.libraries.add(start_node_library_details)
+
         start_node_commands = SerializedNodeCommands(
             create_node_command=start_create_node_command,
             element_modification_commands=start_node_parameter_commands,
-            node_library_details=start_node_library_details,
-            node_dependencies=NodeDependencies(),  # Artificial start node has no dependencies
+            node_dependencies=start_node_dependencies,
             node_uuid=start_node_uuid,
         )
 
@@ -1532,11 +1534,13 @@ class FlowManager:
             package_to_end_data_connections.append(package_to_end_connection)
 
         # Build complete SerializedNodeCommands for end node
+        end_node_dependencies = NodeDependencies()
+        end_node_dependencies.libraries.add(end_node_library_details)
+
         end_node_commands = SerializedNodeCommands(
             create_node_command=end_create_node_command,
             element_modification_commands=end_node_parameter_commands,
-            node_library_details=end_node_library_details,
-            node_dependencies=NodeDependencies(),  # Artificial end node has no dependencies
+            node_dependencies=end_node_dependencies,
             node_uuid=end_node_uuid,
         )
 
@@ -1615,18 +1619,6 @@ class FlowManager:
                 serialized_package_result.serialized_node_commands.lock_node_command
             )
 
-        # Collect all libraries used
-        end_node_library_details = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
-            library_version=library_version,
-        )
-
-        node_libraries_used = {
-            serialized_package_result.serialized_node_commands.node_library_details,
-            start_node_result.start_node_commands.node_library_details,
-            end_node_library_details,
-        }
-
         # Include all three nodes in the flow
         all_serialized_nodes = [
             start_node_result.start_node_commands,
@@ -1651,9 +1643,15 @@ class FlowManager:
         # Aggregate dependencies from the packaged nodes
         packaged_dependencies = self._aggregate_flow_dependencies(all_serialized_nodes, [])
 
+        # Add the start/end specific library dependency
+        start_end_library_dependency = LibraryNameAndVersion(
+            library_name=request.start_end_specific_library_name,
+            library_version=library_version,
+        )
+        packaged_dependencies.libraries.add(start_end_library_dependency)
+
         # Build the complete SerializedFlowCommands
         return SerializedFlowCommands(
-            node_libraries_used=node_libraries_used,
             flow_initialization_command=create_packaged_flow_request,
             serialized_node_commands=all_serialized_nodes,
             serialized_connections=all_connections,
@@ -1918,7 +1916,9 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
 
-    def _aggregate_flow_dependencies(self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]) -> NodeDependencies:
+    def _aggregate_flow_dependencies(
+        self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]
+    ) -> NodeDependencies:
         """Aggregate dependencies from nodes and sub-flows into a single NodeDependencies object.
 
         Args:
@@ -1961,9 +1961,6 @@ class FlowManager:
                     f"Attempted to serialize Flow '{flow_name}' to commands, but no Flow with that name could be found."
                 )
                 return SerializeFlowToCommandsResultFailure(result_details=details)
-
-        # Track all node libraries that were in use by these Nodes
-        node_libraries_in_use = set()
 
         # Track all parameter values that were in use by these Nodes (maps UUID to Parameter value)
         unique_parameter_uuid_to_values = {}
@@ -2027,7 +2024,6 @@ class FlowManager:
                     node_name_to_uuid[node_name] = serialized_node.node_uuid
 
                     serialized_node_commands.append(serialized_node)
-                    node_libraries_in_use.add(serialized_node.node_library_details)
                     # Get the list of set value commands for THIS node.
                     set_value_commands_list = serialize_node_result.set_parameter_value_commands
                     if serialize_node_result.serialized_node_commands.lock_node_command is not None:
@@ -2082,7 +2078,6 @@ class FlowManager:
                     )
 
                     serialized_flow = SerializedFlowCommands(
-                        node_libraries_used=set(),
                         flow_initialization_command=import_command,
                         serialized_node_commands=[],
                         serialized_connections=[],
@@ -2104,9 +2099,6 @@ class FlowManager:
                         serialized_flow = child_flow_result.serialized_flow_commands
                         sub_flow_commands.append(serialized_flow)
 
-                        # Merge in all child flow library details.
-                        node_libraries_in_use.union(serialized_flow.node_libraries_used)
-
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
@@ -2118,7 +2110,6 @@ class FlowManager:
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
-            node_libraries_used=node_libraries_in_use,
             node_dependencies=aggregated_dependencies,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
