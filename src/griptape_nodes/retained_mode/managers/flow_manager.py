@@ -1107,6 +1107,7 @@ class FlowManager:
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
+        # Now that we've serialized the value as LOCAL_EXECUTION, we need to restore it to whatever it was before
         package_node.set_parameter_value("execution_environment", previous_value)
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
             return serialized_package_result
