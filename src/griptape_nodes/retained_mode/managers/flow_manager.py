@@ -2475,7 +2475,7 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str]|None]:
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
         if not self.check_for_existing_running_flow():
             return None, None, None
         if self._global_control_flow_machine is None:
@@ -2486,7 +2486,9 @@ class FlowManager:
             if control_flow_context.current_nodes is not None
             else None
         )
-        if self._global_single_node_resolution and isinstance(control_flow_context.resolution_machine, ParallelResolutionMachine):
+        if self._global_single_node_resolution and isinstance(
+            control_flow_context.resolution_machine, ParallelResolutionMachine
+        ):
             involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
         else:
             involved_nodes = list(flow.nodes.keys())
