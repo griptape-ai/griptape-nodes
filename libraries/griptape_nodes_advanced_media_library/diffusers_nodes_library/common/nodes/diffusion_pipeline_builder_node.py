@@ -81,21 +81,32 @@ class DiffusionPipelineBuilderNode(ControlNode):
             parameter.user_defined = True
             super().add_parameter(parameter)
 
-    def before_value_set(self, parameter: Parameter, value: Any) -> None:
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            return
         self.params.before_value_set(parameter, value)
-        return super().before_value_set(parameter, value)
 
-    def after_initial_value_set(self, parameter: Parameter, value: Any) -> None:
-        # After_value_set is not called during initial value setting because of potential performance issues.
-        # We don't have any performance issues during initial setup, so we can call after_value_set here.
-        self.after_value_set(parameter, value)
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
         self.params.after_value_set(parameter, value)
         self.huggingface_pipeline_params.after_value_set(parameter, value)
         if parameter.name != "pipeline":
             self.set_config_hash()
-        return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()

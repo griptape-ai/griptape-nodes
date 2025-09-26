@@ -21,7 +21,6 @@ class DiffusionPipelineRuntimeNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         self._initializing = True
         super().__init__(**kwargs)
-        self.did_pipeline_change = False
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
 
@@ -32,26 +31,40 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.log_params.add_output_parameters()
         self._initializing = False
 
-    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            return
+
+        did_pipeline_change = False
+        # Handle pipeline change detection before setting the value
         if parameter.name == "pipeline":
             current_pipeline = self.get_parameter_value("pipeline")
-            self.did_pipeline_change = current_pipeline != value
-        return super().before_value_set(parameter, value)
+            did_pipeline_change = current_pipeline != value
 
-    def after_initial_value_set(self, parameter: Parameter, value: Any) -> None:
-        # After_value_set is not called during initial value setting because of potential performance issues.
-        # We don't have any performance issues during initial setup, so we can call after_value_set here.
-        self.after_value_set(parameter, value)
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        reset_runtime_parameters = parameter.name == "pipeline" and self.did_pipeline_change
-        if reset_runtime_parameters:
+        if did_pipeline_change:
             self.pipe_params.runtime_parameters.remove_input_parameters()
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
         self.pipe_params.after_value_set(parameter, value)
 
-        if reset_runtime_parameters:
+        if did_pipeline_change:
             sorted_parameters = ["pipeline"]
             sorted_parameters.extend(
                 [param.name for param in self.parameters if param.name not in ["pipeline", "loras", "logs"]]
@@ -60,7 +73,6 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
-        return super().after_value_set(parameter, value)
 
     def add_parameter(self, parameter: Parameter) -> None:
         """Add a parameter to the node.
