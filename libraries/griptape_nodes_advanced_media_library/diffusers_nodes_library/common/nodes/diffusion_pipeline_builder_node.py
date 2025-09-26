@@ -35,11 +35,6 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         self._initializing = False
 
-    def after_init(self) -> None:
-        # self.params.regenerate_pipeline_type_parameters_for_provider(self.params.provider_choices[0])
-        # self.set_config_hash()
-        return super().after_init()
-
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
         self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")

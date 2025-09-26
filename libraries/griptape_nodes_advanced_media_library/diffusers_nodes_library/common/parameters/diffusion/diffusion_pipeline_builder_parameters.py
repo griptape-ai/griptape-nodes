@@ -101,7 +101,6 @@ class DiffusionPipelineBuilderParameters:
 
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
         self._node.set_parameter_value("pipeline_type", first_pipeline_type)
-        # self.pipeline_type_parameters.regenerate_elements_for_pipeline_type(first_pipeline_type)
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:
