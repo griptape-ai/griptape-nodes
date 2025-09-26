@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, final
 
+from anyio import Path
+from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
+from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
+
+from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, EndNode, StartNode
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
@@ -114,10 +122,25 @@ class NodeExecutor:
                     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
                     raise ValueError(msg)
                 # TODO: Call Zach's PublishWorkflowRequest executor, running the workflow_rest.file_path in memory!
+                local_workflow_publisher = LocalWorkflowPublisher()
+                final_workflow_path = f"{workflow_result.file_path}_published"
+                await local_workflow_publisher.arun(
+                    workflow_name="hehehe", workflow_path=workflow_result.file_path, publisher_name=library_name, published_workflow_file_name=final_workflow_path
+                )
 
                 # TODO: Call Zach's Subprocess Execute exector, which runs the created workflow file from the PublishWorkflowRequest.
-
+                if not Path(final_workflow_path).exists():
+                    msg = f"Published workflow file does not exist at path: {final_workflow_path}"
+                    raise FileNotFoundError(msg)
+                # Run the subprocess.
+                subprocess_executor = SubprocessWorkflowExecutor(workflow_path=final_workflow_path)
+                #TODO: How do I determine storage backend?
+                await subprocess_executor.arun(workflow_name="hehe", flow_input={}, storage_backend=StorageBackend.LOCAL)
                 my_subprocess_result = subprocess_executor.output
+                # Error handle for this
+                if my_subprocess_result is None:
+                    msg = "Subprocess result is None."
+                    raise ValueError(msg)
                 # {end_node_name: parameter_output_values dict}
                 # For now, we know we have one end node, I believe.
                 parameter_output_values = {

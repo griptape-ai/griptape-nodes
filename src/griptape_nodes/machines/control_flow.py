@@ -218,6 +218,7 @@ class CompleteState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
         # Broadcast completion events for any remaining current nodes
+        #TODO: pickle!
         for current_node in context.current_nodes:
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
