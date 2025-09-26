@@ -19,6 +19,7 @@ from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     BaseNode,
     ErrorProxyNode,
+    NodeDependencies,
     NodeResolutionState,
     StartLoopNode,
     StartNode,
@@ -1443,6 +1444,7 @@ class FlowManager:
             create_node_command=start_create_node_command,
             element_modification_commands=start_node_parameter_commands,
             node_library_details=start_node_library_details,
+            node_dependencies=NodeDependencies(),  # Artificial start node has no dependencies
             node_uuid=start_node_uuid,
         )
 
@@ -1534,6 +1536,7 @@ class FlowManager:
             create_node_command=end_create_node_command,
             element_modification_commands=end_node_parameter_commands,
             node_library_details=end_node_library_details,
+            node_dependencies=NodeDependencies(),  # Artificial end node has no dependencies
             node_uuid=end_node_uuid,
         )
 
@@ -1645,6 +1648,9 @@ class FlowManager:
             metadata=packaged_flow_metadata,
         )
 
+        # Aggregate dependencies from the packaged nodes
+        packaged_dependencies = self._aggregate_flow_dependencies(all_serialized_nodes, [])
+
         # Build the complete SerializedFlowCommands
         return SerializedFlowCommands(
             node_libraries_used=node_libraries_used,
@@ -1658,7 +1664,7 @@ class FlowManager:
             },
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
-            referenced_workflows=set(),
+            node_dependencies=packaged_dependencies,
         )
 
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
@@ -1912,6 +1918,29 @@ class FlowManager:
 
         return ListFlowsInCurrentContextResultSuccess(flow_names=ret_list, result_details=details)
 
+    def _aggregate_flow_dependencies(self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]) -> NodeDependencies:
+        """Aggregate dependencies from nodes and sub-flows into a single NodeDependencies object.
+
+        Args:
+            serialized_node_commands: List of serialized node commands to aggregate from
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            NodeDependencies object with all dependencies merged
+        """
+        # Start with empty dependencies and aggregate into it
+        aggregated_deps = NodeDependencies()
+
+        # Aggregate dependencies from all nodes
+        for node_cmd in serialized_node_commands:
+            aggregated_deps.aggregate_from(node_cmd.node_dependencies)
+
+        # Aggregate dependencies from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            aggregated_deps.aggregate_from(sub_flow_cmd.node_dependencies)
+
+        return aggregated_deps
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -1936,9 +1965,6 @@ class FlowManager:
         # Track all node libraries that were in use by these Nodes
         node_libraries_in_use = set()
 
-        # Track all referenced workflows used by this flow and its sub-flows
-        referenced_workflows_in_use = set()
-
         # Track all parameter values that were in use by these Nodes (maps UUID to Parameter value)
         unique_parameter_uuid_to_values = {}
         # And track how values map into that map.
@@ -1954,7 +1980,6 @@ class FlowManager:
                         workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                         imported_flow_metadata=flow.metadata,
                     )
-                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
                     # Always set set_as_new_context=False during serialization - let the workflow manager
                     # that loads this serialized flow decide whether to push it to context or not
@@ -2051,6 +2076,11 @@ class FlowManager:
                         imported_flow_metadata=flow.metadata,
                     )
 
+                    # Create NodeDependencies with just the referenced workflow
+                    sub_flow_dependencies = NodeDependencies(
+                        referenced_workflows={referenced_workflow_name}  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                    )
+
                     serialized_flow = SerializedFlowCommands(
                         node_libraries_used=set(),
                         flow_initialization_command=import_command,
@@ -2058,13 +2088,11 @@ class FlowManager:
                         serialized_connections=[],
                         unique_parameter_uuid_to_values={},
                         set_parameter_value_commands={},
+                        set_lock_commands_per_node={},
                         sub_flows_commands=[],
-                        referenced_workflows={referenced_workflow_name},  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
+                        node_dependencies=sub_flow_dependencies,
                     )
                     sub_flow_commands.append(serialized_flow)
-
-                    # Add this referenced workflow to our accumulation
-                    referenced_workflows_in_use.add(referenced_workflow_name)  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
                 else:
                     # For standalone sub-flows, use the existing recursive serialization
                     with GriptapeNodes.ContextManager().flow(flow=flow):
@@ -2079,8 +2107,8 @@ class FlowManager:
                         # Merge in all child flow library details.
                         node_libraries_in_use.union(serialized_flow.node_libraries_used)
 
-                        # Merge in all child flow referenced workflows.
-                        referenced_workflows_in_use.union(serialized_flow.referenced_workflows)
+        # Aggregate all dependencies from nodes and sub-flows
+        aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
@@ -2091,7 +2119,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_libraries_used=node_libraries_in_use,
-            referenced_workflows=referenced_workflows_in_use,
+            node_dependencies=aggregated_dependencies,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)

@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     EndLoopNode,
     ErrorProxyNode,
+    NodeDependencies,
     NodeResolutionState,
     StartLoopNode,
 )
@@ -2075,11 +2076,19 @@ class NodeManager:
             lock_command = SetLockNodeStateRequest(node_name=None, lock=True)
         else:
             lock_command = None
+
+        # Collect node dependencies
+        node_dependencies = node.get_node_dependencies()
+        if node_dependencies is None:
+            # Ensure we always have a NodeDependencies object, even if empty
+            node_dependencies = NodeDependencies()
+
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
             create_node_command=create_node_request,
             element_modification_commands=element_modification_commands,
             node_library_details=library_details,
+            node_dependencies=node_dependencies,
             lock_node_command=lock_command,
         )
         details = f"Successfully serialized node '{node_name}' into commands."
