@@ -177,7 +177,9 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
         try:
             # Emit initialization event only for the first connection
             if not initialized:
-                griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppInitializationComplete()))
+                griptape_nodes.EventManager().put_event_threadsafe(
+                    main_loop, AppEvent(payload=app_events.AppInitializationComplete())
+                )
                 initialized = True
 
             # Emit connection established event for every connection
