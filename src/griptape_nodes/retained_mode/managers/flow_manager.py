@@ -16,7 +16,14 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode, NodeResolutionState, StartLoopNode, StartNode
+from griptape_nodes.exe_types.node_types import (
+    LOCAL_EXECUTION,
+    BaseNode,
+    ErrorProxyNode,
+    NodeResolutionState,
+    StartLoopNode,
+    StartNode,
+)
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
@@ -1097,15 +1104,20 @@ class FlowManager:
         # Step 4: Serialize the package node
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        package_node = package_node_info.package_node
+        # Set to LOCAL_EXECUTION before packaging to prevent recursive loop.
+        previous_value = package_node.get_parameter_value("execution_environment")
+        package_node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
         serialized_package_result = self._serialize_package_node(
             node_name=package_node_info.package_node.name,
             package_node=package_node_info.package_node,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
         )
+        # Now that we've serialized the value as LOCAL_EXECUTION, we need to restore it to whatever it was before
+        package_node.set_parameter_value("execution_environment", previous_value)
         if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
             return serialized_package_result
-
         # Step 5: Create start node commands and data connections
         start_node_result = self._create_start_node_commands(
             request=request,
@@ -1159,7 +1171,6 @@ class FlowManager:
         workflow_shape = GriptapeNodes.WorkflowManager().build_workflow_shape_from_parameter_info(
             input_node_params=start_node_result.input_shape_data, output_node_params=end_node_result.output_shape_data
         )
-
         # Return success result
         return PackageNodeAsSerializedFlowResultSuccess(
             result_details=f'Successfully packaged node "{package_node_info.package_node.name}" from flow "{package_node_info.package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
@@ -2288,6 +2299,9 @@ class FlowManager:
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
         )
 
@@ -2407,11 +2421,9 @@ class FlowManager:
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
-                GriptapeNodes.EventManager().put_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[]))
-                    )
-                )
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+            )
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
