@@ -37,7 +37,16 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 class DiffusionPipelineBuilderParameters:
     def __init__(self, node: BaseNode):
-        self.provider_choices = ["Flux", "Allegro", "Amused", "AudioLDM", "Qwen", "Stable Diffusion", "WAN", "Wuerstchen"]
+        self.provider_choices = [
+            "Flux",
+            "Allegro",
+            "Amused",
+            "AudioLDM",
+            "Qwen",
+            "Stable Diffusion",
+            "WAN",
+            "Wuerstchen",
+        ]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
         self.did_provider_change = False

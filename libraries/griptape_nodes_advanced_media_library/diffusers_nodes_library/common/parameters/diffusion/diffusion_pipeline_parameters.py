@@ -40,11 +40,11 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.flux_kontext_pipel
 from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_runtime_parameters import (
     FluxPipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_runtime_parameters import (
-    QwenPipelineRuntimeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_img2img_pipeline_runtime_parameters import (
     QwenImg2ImgPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_runtime_parameters import (
+    QwenPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_upscale_pipeline_runtime_parameters import (
     QwenUpscalePipelineRuntimeParameters,
@@ -81,8 +81,6 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_upscale_pipeline_runtime_parameters import (
     FluxUpscalePipelineRuntimeParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_img2_img_pipeline_parameters import QwenPipelineTypeQwenImg2ImgPipelineParameters
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_upscale_pipeline_parameters import QwenPipelineTypeQwenUpscalePipelineParameters
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -103,7 +101,7 @@ class DiffusionPipelineParameters:
             )
         )
 
-    def set_runtime_parameters(self, pipeline_class: str) -> None:  # noqa: C901 PLR0912
+    def set_runtime_parameters(self, pipeline_class: str) -> None:  # noqa: C901 PLR0912 PLR0915
         match pipeline_class:
             case "FluxPipeline":
                 self._runtime_parameters = FluxPipelineRuntimeParameters(self._node)

@@ -1,6 +1,7 @@
 import logging
-import torch  # type: ignore[reportMissingImports]
 from typing import Any
+
+import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 
@@ -64,7 +65,7 @@ class QwenPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
         }
-    
+
     def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
         width = int(self._node.parameter_values["width"])
         height = int(self._node.parameter_values["height"])

@@ -1,6 +1,7 @@
 import logging
-import torch  # type: ignore[reportMissingImports]
 from typing import Any
+
+import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
