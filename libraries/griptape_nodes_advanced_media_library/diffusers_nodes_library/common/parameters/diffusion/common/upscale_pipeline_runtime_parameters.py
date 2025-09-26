@@ -5,6 +5,7 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
+import PIL.Image
 from PIL.Image import Image, Resampling
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
@@ -159,9 +160,18 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             )
         )
 
-        # Hide width and height parameters as they will be derived from input image
-        self._node.hide_parameter_by_name("width")
-        self._node.hide_parameter_by_name("height")
+    
+    def add_input_parameters(self) -> None:
+        self._add_input_parameters()
+        self._node.add_parameter(
+            Parameter(
+                name="num_inference_steps",
+                default_value=4,
+                type="int",
+                tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality image at the expense of slower inference.",
+            )
+        )
+        self._seed_parameter.add_input_parameters()
 
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prompt")
@@ -177,6 +187,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.remove_parameter_element_by_name("scale")
         self._node.remove_parameter_element_by_name("resample_strategy")
         self._upscale_model_repo_parameter.remove_input_parameters()
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("num_inference_steps")
+        self._seed_parameter.remove_input_parameters()
+        self._remove_input_parameters()
 
     def get_image_pil(self) -> Image:
         input_image_artifact = self._node.get_parameter_value("image")
@@ -199,6 +214,30 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
         return errors or None
+    
+    def get_width(self) -> int:
+        input_image_pil = self.get_image_pil()
+        return input_image_pil.width
+
+    def get_height(self) -> int:
+        input_image_pil = self.get_image_pil()
+        return input_image_pil.height
+
+    def publish_output_image_preview_placeholder(self) -> None:
+        input_image_pil = self.get_image_pil()
+        width, height = input_image_pil.size
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
+
+        # Check to ensure there's enough space in the intermediates directory
+        # if that setting is enabled.
+        check_cleanup_intermediates_directory()
+
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+        self._node.publish_update_to_parameter(
+            "output_image",
+            pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path()),
+        )
 
     def _process_upscale(self, input_image_pil: Image) -> Image:
         max_tile_size = self._node.get_parameter_value("max_tile_size")
