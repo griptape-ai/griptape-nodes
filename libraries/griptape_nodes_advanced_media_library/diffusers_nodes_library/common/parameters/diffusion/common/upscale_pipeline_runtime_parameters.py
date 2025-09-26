@@ -421,9 +421,12 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         return output_image_pil
 
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
+        self._node.log_params.append_to_logs("Starting...\n")  # type: ignore[reportAttributeAccessIssue]
         input_image_pil = self.get_image_pil()
         upscaled_image_pil = self._process_upscale(input_image_pil)
+        self._node.log_params.append_to_logs("Initial upscaling complete...\n")  # type: ignore[reportAttributeAccessIssue]
         rescaled_image_pil = self._process_rescale(upscaled_image_pil)
+        self._node.log_params.append_to_logs("Rescaling complete...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = self._process_img2img(pipe, rescaled_image_pil)
 
         self.publish_output_image(output_image_pil)
