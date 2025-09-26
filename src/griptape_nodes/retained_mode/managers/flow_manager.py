@@ -2281,6 +2281,9 @@ class FlowManager:
         logger.debug("Cancelling flow run")
 
         GriptapeNodes.EventManager().put_event(
+            ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
+        GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=ControlFlowCancelledEvent()))
         )
 
@@ -2400,11 +2403,9 @@ class FlowManager:
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
-                GriptapeNodes.EventManager().put_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[]))
-                    )
-                )
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+            )
 
     async def single_execution_step(self, flow: ControlFlow, change_debug_mode: bool) -> None:  # noqa: FBT001
         # do a granular step
