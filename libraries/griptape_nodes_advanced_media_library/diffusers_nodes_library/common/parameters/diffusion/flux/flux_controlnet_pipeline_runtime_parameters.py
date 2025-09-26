@@ -14,9 +14,17 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_runt
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+CONTROL_MODES = {
+    "canny": 0,
+    "tile": 1,
+    "depth": 2,
+    "blur": 3,
+    "gray": 5,
+}
 
 class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
@@ -74,9 +82,14 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
         self._node.add_parameter(
             Parameter(
                 name="control_mode",
-                default_value=0,
-                input_types=["int"],
-                type="int",
+                default_value=next(iter(CONTROL_MODES.keys())),
+                input_types=["str"],
+                type="str",
+                traits={
+                    Options(
+                        choices=list(CONTROL_MODES.keys()),
+                    )
+                },
                 tooltip="The control mode.",
             )
         )
@@ -139,7 +152,7 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
             "control_image": self.get_control_image_pil(),
             "controlnet_conditioning_scale": self._node.get_parameter_value("controlnet_conditioning_scale"),
             "control_guidance_end": self._node.get_parameter_value("control_guidance_end"),
-            "control_mode": self._node.get_parameter_value("control_mode"),
+            "control_mode": CONTROL_MODES[self._node.get_parameter_value("control_mode")],
         }
 
     def get_control_image_pil(self) -> Image:
