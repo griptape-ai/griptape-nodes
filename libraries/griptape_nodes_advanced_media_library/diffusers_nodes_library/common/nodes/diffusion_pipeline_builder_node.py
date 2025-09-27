@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_builder_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.builder_parameters import (
     DiffusionPipelineBuilderParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter

@@ -4,7 +4,7 @@ from typing import Any
 
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.pipeline_parameters import (
     DiffusionPipelineParameters,
 )  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
