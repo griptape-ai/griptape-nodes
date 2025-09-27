@@ -1,8 +1,24 @@
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes_library.files.providers.validation_result import ProviderValidationResult
+
+
+class ArtifactParameterDetails(NamedTuple):
+    """Details for configuring the artifact parameter."""
+
+    # List of input types the parameter accepts (e.g., ["ImageUrlArtifact"])
+    input_types: list[str]
+
+    # Primary type for the parameter (e.g., "ImageUrlArtifact")
+    type: str
+
+    # Output type the parameter produces (e.g., "ImageUrlArtifact")
+    output_type: str
+
+    # Display name in the UI (e.g., "Image")
+    display_name: str
 
 
 class ArtifactLoadProvider(ABC):
@@ -12,6 +28,26 @@ class ArtifactLoadProvider(ABC):
     (image, video, audio, text) with their own additional parameters and
     validation logic.
     """
+
+    def __init__(
+        self,
+        artifact: Any = None,
+        internal_url: str = "",
+        path: str = "",
+    ) -> None:
+        """Initialize provider with artifact and related information.
+
+        Args:
+            artifact: The loaded file artifact (ImageUrlArtifact, etc.)
+            internal_url: Internal serving URL for the file
+            path: User-friendly display path
+        """
+        # Current artifact being worked with
+        self.artifact = artifact
+        # Internal serving URL for the artifact
+        self.internal_url = internal_url
+        # User-friendly path for display
+        self.path = path
 
     @property
     @abstractmethod
@@ -39,25 +75,15 @@ class ArtifactLoadProvider(ABC):
         """Default extension to use when generating filenames (e.g., 'png')."""
 
     @abstractmethod
-    def can_handle_file(self, file_path: Path) -> bool:
-        """Check if this provider can handle the given file path.
-
-        Args:
-            file_path: Path to the file to check
-
-        Returns:
-            True if this provider can handle the file, False otherwise
-        """
+    def get_artifact_parameter_details(self) -> ArtifactParameterDetails:
+        """Get complete artifact parameter configuration details."""
 
     @abstractmethod
-    def can_handle_url(self, url: str) -> bool:
-        """Check if this provider can handle content from the given URL.
-
-        Args:
-            url: URL to check
+    def get_artifact_ui_options(self) -> dict[str, Any]:
+        """Get provider-specific UI options for the artifact parameter.
 
         Returns:
-            True if this provider can handle the URL content, False otherwise
+            Dictionary of UI options for the artifact parameter
         """
 
     @abstractmethod
@@ -69,71 +95,29 @@ class ArtifactLoadProvider(ABC):
         """
 
     @abstractmethod
-    def create_artifact_from_dict(self, artifact_dict: dict[str, Any]) -> Any:
-        """Convert a dictionary to the appropriate artifact type.
+    def validate_from_path(self, path_input: str, current_parameter_values: dict[str, Any]) -> ProviderValidationResult:
+        """Validate and process a path input into a complete file loading result.
 
         Args:
-            artifact_dict: Dictionary containing artifact data
+            path_input: User-provided path string (file path or URL)
+            current_parameter_values: Current values of all node parameters (for context)
 
         Returns:
-            Artifact object of the appropriate type
+            ProviderValidationResult with artifact, internal_url, path, and dynamic parameter updates on success,
+            or error_messages on failure
         """
 
     @abstractmethod
-    def create_artifact_from_url(self, url: str) -> Any:
-        """Create an artifact from a URL.
+    def validate_from_artifact(
+        self, artifact_input: Any, current_parameter_values: dict[str, Any]
+    ) -> ProviderValidationResult:
+        """Validate and process an artifact input into a complete file loading result.
 
         Args:
-            url: URL to create artifact from
+            artifact_input: Artifact from another node or direct input
+            current_parameter_values: Current values of all node parameters (for context)
 
         Returns:
-            Artifact object of the appropriate type
+            ProviderValidationResult with artifact, internal_url, path, and dynamic parameter updates on success,
+            or error_messages on failure
         """
-
-    @abstractmethod
-    def validate_artifact_loadable(self, artifact: Any) -> None:
-        """Validate that the artifact can actually be loaded/processed.
-
-        Args:
-            artifact: The artifact to validate
-
-        Raises:
-            RuntimeError: If the artifact cannot be loaded
-        """
-
-    @abstractmethod
-    def extract_url_from_artifact(self, artifact_value: Any) -> str | None:
-        """Extract URL from an artifact parameter value.
-
-        Args:
-            artifact_value: The artifact value (dict, artifact object, or string)
-
-        Returns:
-            The extracted URL or None if no value is present
-        """
-
-    @abstractmethod
-    def process_additional_parameters(self, node: Any, artifact: Any) -> None:
-        """Process provider-specific parameters after artifact is loaded.
-
-        This is called after the main artifact is loaded and allows providers
-        to update their additional parameters (e.g., extract mask for images).
-
-        Args:
-            node: The LoadFile node instance
-            artifact: The loaded artifact
-        """
-
-    def get_priority_score(self, _file_path: Path) -> int:
-        """Get priority score for handling this file (higher = more preferred).
-
-        Used for disambiguation when multiple providers can handle the same file.
-        Default implementation returns 0 (neutral priority).
-
-        Args:
-            _file_path: Path to the file (unused in base implementation)
-
-        Returns:
-            Priority score (higher numbers indicate higher priority)
-        """
-        return 0
