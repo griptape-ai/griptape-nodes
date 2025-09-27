@@ -89,14 +89,12 @@ class FluxPipelineTypeFluxKontextPipelineParameters(DiffusionPipelineTypePipelin
             pretrained_model_name_or_path=text_encoder_repo_id,
             revision=text_encoder_revision,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
 
         text_encoder_2 = transformers.T5EncoderModel.from_pretrained(
             pretrained_model_name_or_path=text_encoder_2_repo_id,
             revision=text_encoder_2_revision,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
 
         return diffusers.FluxKontextPipeline.from_pretrained(
@@ -105,5 +103,4 @@ class FluxPipelineTypeFluxKontextPipelineParameters(DiffusionPipelineTypePipelin
             text_encoder=text_encoder,
             text_encoder_2=text_encoder_2,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
