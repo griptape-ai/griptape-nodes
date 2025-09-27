@@ -1379,14 +1379,14 @@ class WorkflowManager:
 
         # Create the Workflow Metadata header
         workflows_referenced = None
-        if serialized_flow_commands.referenced_workflows:
-            workflows_referenced = list(serialized_flow_commands.referenced_workflows)
+        if serialized_flow_commands.node_dependencies.referenced_workflows:
+            workflows_referenced = list(serialized_flow_commands.node_dependencies.referenced_workflows)
 
         return WorkflowMetadata(
             name=str(file_name),
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
-            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
+            node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
@@ -1395,7 +1395,7 @@ class WorkflowManager:
             image=image_path,
         )
 
-    def _generate_workflow_file_content(  # noqa: PLR0912, C901
+    def _generate_workflow_file_content(  # noqa: PLR0912, PLR0915, C901
         self,
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
@@ -1409,6 +1409,13 @@ class WorkflowManager:
 
         import_recorder = ImportRecorder()
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
+
+        # Add imports from node dependencies
+        for import_dep in serialized_flow_commands.node_dependencies.imports:
+            if import_dep.class_name:
+                import_recorder.add_from_import(import_dep.module, import_dep.class_name)
+            else:
+                import_recorder.add_import(import_dep.module)
 
         ast_container = ASTContainer()
 

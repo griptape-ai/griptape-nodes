@@ -5,7 +5,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
@@ -44,6 +44,7 @@ from griptape_nodes.traits.options import Options
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -71,18 +72,32 @@ class NodeDependencies:
     """Dependencies that a node has on external resources.
 
     This class provides a way for nodes to declare their dependencies on workflows,
-    static files, and Python imports. This information can be used by the system
+    static files, Python imports, and libraries. This information can be used by the system
     for workflow packaging, dependency resolution, and deployment planning.
 
     Attributes:
-        referenced_workflows: Optional set of workflow names that this node references
-        static_files: Optional set of static file names that this node depends on
-        imports: Optional set of Python imports that this node requires
+        referenced_workflows: Set of workflow names that this node references
+        static_files: Set of static file names that this node depends on
+        imports: Set of Python imports that this node requires
+        libraries: Set of library names and versions that this node uses
     """
 
-    referenced_workflows: set[str] | None = None
-    static_files: set[str] | None = None
-    imports: set[ImportDependency] | None = None
+    referenced_workflows: set[str] = field(default_factory=set)
+    static_files: set[str] = field(default_factory=set)
+    imports: set[ImportDependency] = field(default_factory=set)
+    libraries: set[LibraryNameAndVersion] = field(default_factory=set)
+
+    def aggregate_from(self, other: NodeDependencies) -> None:
+        """Aggregate dependencies from another NodeDependencies object into this one.
+
+        Args:
+            other: The NodeDependencies object to aggregate from
+        """
+        # Aggregate all dependency types - no None checks needed since we use default_factory=set
+        self.referenced_workflows.update(other.referenced_workflows)
+        self.static_files.update(other.static_files)
+        self.imports.update(other.imports)
+        self.libraries.update(other.libraries)
 
 
 class NodeResolutionState(StrEnum):
