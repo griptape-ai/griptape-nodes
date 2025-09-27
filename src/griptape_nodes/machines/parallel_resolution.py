@@ -51,6 +51,7 @@ class ParallelResolutionContext:
     async_semaphore: asyncio.Semaphore
     task_to_node: dict[asyncio.Task, DagNode]
     dag_builder: DagBuilder | None
+    last_resolved_node: BaseNode | None  # Track the last node that was resolved
 
     def __init__(
         self, flow_name: str, max_nodes_in_parallel: int | None = None, dag_builder: DagBuilder | None = None
@@ -60,6 +61,7 @@ class ParallelResolutionContext:
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
         self.dag_builder = dag_builder
+        self.last_resolved_node = None
 
         # Initialize execution fields
         max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
@@ -94,6 +96,7 @@ class ParallelResolutionContext:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
             self.task_to_node.clear()
+            self.last_resolved_node = None
 
         # Clear DAG builder state to allow re-adding nodes on subsequent runs
         if self.dag_builder:
@@ -116,6 +119,8 @@ class ExecuteDagState(State):
 
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
+        # Track this as the last resolved node
+        context.last_resolved_node = current_node
         # Serialization can be slow so only do it if the user wants debug details.
         if logger.level <= logging.DEBUG:
             logger.debug(
@@ -593,3 +598,7 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
+
+    def get_last_resolved_node(self) -> BaseNode | None:
+        """Get the last node that was resolved in the DAG execution."""
+        return self._context.last_resolved_node

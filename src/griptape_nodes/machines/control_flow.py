@@ -152,7 +152,11 @@ class ResolveNodeState(State):
         await context.resolution_machine.resolve_node(current_node)
 
         if context.resolution_machine.is_complete():
+            # Get the last resolved node from the DAG and set it as current
             if isinstance(context.resolution_machine, ParallelResolutionMachine):
+                last_resolved_node = context.resolution_machine.get_last_resolved_node()
+                if last_resolved_node:
+                    context.current_nodes = [last_resolved_node]
                 return CompleteState
             return NextNodeState
         return None

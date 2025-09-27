@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import pickle
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
@@ -140,7 +141,6 @@ class NodeExecutor:
                 if my_subprocess_result is None:
                     msg = "Subprocess result is None."
                     raise ValueError(msg)
-                # {end_node_name: result_dict}
                 # For now, we know we have one end node, I believe.
                 # Extract parameter output values and deserialize pickled values if present
                 parameter_output_values = {}
@@ -155,7 +155,7 @@ class NodeExecutor:
                             for param_name, param_value in param_output_vals.items():
                                 if param_value in unique_uuid_to_values:
                                     # This is a UUID reference, replace with actual pickled value
-                                    parameter_output_values[param_name] = unique_uuid_to_values[param_value]
+                                    parameter_output_values[param_name] = pickle.loads(unique_uuid_to_values[param_value])
                                 else:
                                     # This is either a direct value or None (for non-serializable values)
                                     parameter_output_values[param_name] = param_value
