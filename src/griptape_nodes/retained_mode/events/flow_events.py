@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+from griptape_nodes.exe_types.node_types import NodeDependencies
 from griptape_nodes.node_library.workflow_registry import WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -186,8 +186,6 @@ class SerializedFlowCommands:
     Useful for save/load, copy/paste, etc.
 
     Attributes:
-        node_libraries_used (set[LibraryNameAndVersion]): Set of libraries and versions used by the nodes,
-            including those in child flows.
         flow_initialization_command (CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None): Command to initialize the flow that contains all of this.
             Can be CreateFlowRequest for standalone flows, ImportWorkflowAsReferencedSubFlowRequest for referenced workflows,
             or None to deserialize into whatever Flow is in the Current Context.
@@ -200,8 +198,9 @@ class SerializedFlowCommands:
         set_parameter_value_commands (dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]): List of commands
             to set parameter values, keyed by node UUID, during deserialization.
         sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
-        referenced_workflows (set[str]): Set of workflow file paths that are referenced by this flow and its sub-flows.
-            Used for validation before deserialization to ensure all referenced workflows are available.
+        node_dependencies (NodeDependencies): Aggregated dependencies from all nodes in this flow and its sub-flows.
+            Includes referenced workflows, static files, Python imports, and libraries. Used for workflow packaging,
+            dependency resolution, and deployment planning.
     """
 
     @dataclass
@@ -222,7 +221,6 @@ class SerializedFlowCommands:
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
-    node_libraries_used: set[LibraryNameAndVersion]
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
     serialized_connections: list[IndirectConnectionSerialization]
@@ -232,7 +230,7 @@ class SerializedFlowCommands:
     ]
     set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
     sub_flows_commands: list["SerializedFlowCommands"]
-    referenced_workflows: set[str]
+    node_dependencies: NodeDependencies
 
 
 @dataclass
