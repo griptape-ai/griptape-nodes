@@ -162,6 +162,10 @@ class DiffusionPipelineParameters:
         if parameter.name != "pipeline":
             return
 
+        if value is None:
+            logger.warning("Value was None, ignoring...")
+            return
+
         pipeline_class = value.split("-", 1)[0]
         self.set_runtime_parameters(pipeline_class)
 
