@@ -2408,6 +2408,7 @@ class FlowManager:
             try:
                 await resolution_machine.resolve_node(node)
             except Exception as e:
+                logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
                     self.cancel_flow_run()
                     raise RuntimeError(e) from e
