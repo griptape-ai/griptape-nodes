@@ -149,6 +149,14 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
                 logger.exception(msg)
                 is_flow_finished = True
                 error = e
+                # The StartFlowRequest is sent asynchronously to enable real-time event emission via WebSocket.
+                # The main while loop below then waits for events from the queue. However, if StartFlowRequest fails
+                # immediately, then no events are ever added to the queue, causing the loop to hang indefinitely
+                # on event_queue.get(). This fix adds a dummy event to wake up the loop in failure cases.
+                event_queue = GriptapeNodes.EventManager().event_queue
+                queue_event_task = asyncio.create_task(event_queue.put(None))
+                background_tasks.add(queue_event_task)
+                queue_event_task.add_done_callback(background_tasks.discard)
 
         start_flow_task.add_done_callback(_handle_start_flow_result)
 
@@ -165,6 +173,12 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         while not is_flow_finished:
             try:
                 event = await event_queue.get()
+
+                # Handle the dummy wake up event (None)
+                if event is None:
+                    event_queue.task_done()
+                    continue
+
                 logger.debug("Processing event: %s", type(event).__name__)
 
                 if isinstance(event, EventRequest):
