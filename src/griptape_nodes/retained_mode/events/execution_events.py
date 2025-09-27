@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -9,6 +9,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 # Requests and Results TO/FROM USER! These begin requests - and are not fully Execution Events.
@@ -302,6 +303,8 @@ class ParameterSpotlightEvent(ExecutionPayload):
 class ControlFlowResolvedEvent(ExecutionPayload):
     end_node_name: str
     parameter_output_values: dict
+    # Optional field for pickled parameter values - when present, parameter_output_values contains UUID references
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None = field(default=None)
 
 
 @dataclass

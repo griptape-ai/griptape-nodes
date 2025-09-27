@@ -140,12 +140,31 @@ class NodeExecutor:
                 if my_subprocess_result is None:
                     msg = "Subprocess result is None."
                     raise ValueError(msg)
-                # {end_node_name: parameter_output_values dict}
+                # {end_node_name: result_dict}
                 # For now, we know we have one end node, I believe.
-                parameter_output_values = {
-                    k: v for result_dict in my_subprocess_result.values() for k, v in result_dict.items()
-                }
-                # TODO: How do we handle pickled values?
+                # Extract parameter output values and deserialize pickled values if present
+                parameter_output_values = {}
+                for end_node_name, result_dict in my_subprocess_result.items():
+                    # Handle new structure with pickled values
+                    if isinstance(result_dict, dict) and "parameter_output_values" in result_dict:
+                        param_output_vals = result_dict["parameter_output_values"]
+                        unique_uuid_to_values = result_dict.get("unique_parameter_uuid_to_values")
+
+                        # Deserialize UUID references back to actual values
+                        if unique_uuid_to_values:
+                            for param_name, param_value in param_output_vals.items():
+                                if param_value in unique_uuid_to_values:
+                                    # This is a UUID reference, replace with actual pickled value
+                                    parameter_output_values[param_name] = unique_uuid_to_values[param_value]
+                                else:
+                                    # This is either a direct value or None (for non-serializable values)
+                                    parameter_output_values[param_name] = param_value
+                        else:
+                            # No pickled values, use parameter output values directly
+                            parameter_output_values.update(param_output_vals)
+                    else:
+                        # Backward compatibility: old structure (flat dictionary)
+                        parameter_output_values.update(result_dict)
                 # Remove the output_parameter_prefix and set values on BaseNode
                 for param_name, param_value in parameter_output_values.items():
                     if param_name.startswith(output_parameter_prefix):

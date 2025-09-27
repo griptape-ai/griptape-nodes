@@ -218,14 +218,20 @@ class CompleteState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
         # Broadcast completion events for any remaining current nodes
-        #TODO: pickle!
         for current_node in context.current_nodes:
+            # Use pickle-based serialization for complex parameter output values
+            from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+            parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
+                current_node, use_pickling=True
+            )
+
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(
                         payload=ControlFlowResolvedEvent(
                             end_node_name=current_node.name,
-                            parameter_output_values=TypeValidator.safe_serialize(current_node.parameter_output_values),
+                            parameter_output_values=parameter_output_values,
+                            unique_parameter_uuid_to_values=unique_uuid_to_values,
                         )
                     )
                 )
