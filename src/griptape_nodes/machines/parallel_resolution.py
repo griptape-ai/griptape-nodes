@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterType, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import CONTROL_OUTPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -51,6 +51,7 @@ class ParallelResolutionContext:
     async_semaphore: asyncio.Semaphore
     task_to_node: dict[asyncio.Task, DagNode]
     dag_builder: DagBuilder | None
+    last_resolved_node: BaseNode | None  # Track the last node that was resolved
 
     def __init__(
         self, flow_name: str, max_nodes_in_parallel: int | None = None, dag_builder: DagBuilder | None = None
@@ -60,6 +61,7 @@ class ParallelResolutionContext:
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
         self.dag_builder = dag_builder
+        self.last_resolved_node = None
 
         # Initialize execution fields
         max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
@@ -94,6 +96,7 @@ class ParallelResolutionContext:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
             self.task_to_node.clear()
+            self.last_resolved_node = None
 
         # Clear DAG builder state to allow re-adding nodes on subsequent runs
         if self.dag_builder:
@@ -116,6 +119,8 @@ class ExecuteDagState(State):
 
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
+        # Track this as the last resolved node
+        context.last_resolved_node = current_node
         # Serialization can be slow so only do it if the user wants debug details.
         if logger.level <= logging.DEBUG:
             logger.debug(
@@ -168,6 +173,19 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
+    def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
+        for param_name, value in node.parameter_output_values.items():
+            parameter = node.get_parameter_by_name(param_name)
+            if (
+                parameter is not None
+                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
+                and value == CONTROL_OUTPUT_PARAMETER
+            ):
+                # This is the parameter
+                return parameter
+        return None
+
+    @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
         flow_manager = GriptapeNodes.FlowManager()
@@ -175,8 +193,10 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
-
-        next_output = node.get_next_control_output()
+        if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
+            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
+        else:
+            next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 
@@ -382,7 +402,10 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
-            await current_node.node_reference.aprocess()
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            executor = GriptapeNodes.FlowManager().node_executor
+            await executor.execute(current_node.node_reference)
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
@@ -575,3 +598,7 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
+
+    def get_last_resolved_node(self) -> BaseNode | None:
+        """Get the last node that was resolved in the DAG execution."""
+        return self._context.last_resolved_node

@@ -2562,6 +2562,62 @@ class NodeManager:
                 commands.append(output_command)
         return commands if commands else None
 
+    @staticmethod
+    def serialize_parameter_output_values(node: BaseNode, use_pickling: bool = False) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
+        """Serialize parameter output values with optional pickling for complex objects.
+
+        Args:
+            node: The node whose parameter output values should be serialized
+            use_pickling: If True, use pickle-based serialization; if False, use TypeValidator.safe_serialize
+
+        Returns:
+            Tuple of (parameter_output_values, unique_parameter_uuid_to_values)
+            - parameter_output_values: Either raw values or UUID references if pickling was used
+            - unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+        """
+        if not node.parameter_output_values:
+            return {}, None
+
+        if not use_pickling:
+            # Use simple serialization
+            # TypeValidator is already imported at the top of this file
+            simple_values = TypeValidator.safe_serialize(node.parameter_output_values)
+            return simple_values, None
+
+        # Use pickle-based serialization
+        unique_parameter_uuid_to_values = {}
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        uuid_referenced_values = {}
+
+        for param_name, param_value in node.parameter_output_values.items():
+            # Create a dummy parameter for the serialization logic
+            dummy_param = Parameter(
+                name=param_name,
+                tooltip="Dummy parameter for output value serialization",
+                type=ParameterTypeBuiltin.STR,  # Type doesn't matter for output values
+                serializable=True,  # Assume output values should be serializable
+            )
+
+            # Use existing _handle_value_hashing logic
+            uuid_command = NodeManager._handle_value_hashing(
+                value=param_value,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                parameter=dummy_param,
+                parameter_name=param_name,
+                node_name=node.name,
+                is_output=True,
+            )
+
+            if uuid_command is not None:
+                # Value was successfully pickled, store UUID reference
+                uuid_referenced_values[param_name] = uuid_command.unique_value_uuid
+            else:
+                # Value couldn't be pickled, store None
+                uuid_referenced_values[param_name] = None
+
+        return uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+
     def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
 

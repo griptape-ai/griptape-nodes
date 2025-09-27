@@ -251,4 +251,9 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
         if isinstance(ex_event.payload, ControlFlowResolvedEvent):
             logger.info("Workflow execution completed successfully")
-            self.output = {ex_event.payload.end_node_name: ex_event.payload.parameter_output_values}
+            # Store both parameter output values and unique UUID values for deserialization
+            result = {
+                "parameter_output_values": ex_event.payload.parameter_output_values,
+                "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values
+            }
+            self.output = {ex_event.payload.end_node_name: result}
