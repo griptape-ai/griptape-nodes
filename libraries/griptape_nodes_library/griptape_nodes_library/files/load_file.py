@@ -1,7 +1,14 @@
 import contextlib
+import importlib
+import inspect
+import pkgutil
 import time
+import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -16,10 +23,8 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
-
-from .path_utils import PathUtils
-from .providers import ProviderRegistry
-from .providers.artifact_load_provider import ArtifactLoadProvider
+from griptape_nodes_library.files.path_utils import PathUtils
+from griptape_nodes_library.files.providers.artifact_load_provider import ArtifactLoadProvider
 
 
 class LoadFile(SuccessFailureNode):
@@ -31,7 +36,13 @@ class LoadFile(SuccessFailureNode):
     """
 
     def __init__(self, **kwargs) -> None:
-        self._initializing = True
+        # Initialize attributes that might be accessed early during parent class initialization
+        self._core_parameters: list[Parameter] = []  # Core parameters owned by this class (populated automatically during init)
+        self._dynamic_parameters: list[Parameter] = []  # Provider-specific parameters added dynamically (tracked for removal)
+        self._current_provider: ArtifactLoadProvider | None = None  # Currently active provider instance for file processing
+        self._sync_lock: str | None = None  # Prevents infinite loops during three-way parameter synchronization
+        self._creating_core_parameters = True  # Flag to control whether add_parameter adds to core list or dynamic list
+
         super().__init__(**kwargs)
 
         # Core parameters - owned by the class
@@ -50,7 +61,8 @@ class LoadFile(SuccessFailureNode):
             default_value="",
             tooltip="Internal URL for file access",
             ui_options={"hide": True},
-            allowed_modes={ParameterMode.OUTPUT},
+            allowed_modes={ParameterMode.PROPERTY},
+            settable=False,
         )
 
         self.artifact_parameter = Parameter(
@@ -63,8 +75,8 @@ class LoadFile(SuccessFailureNode):
             ui_options={"expander": True},
         )
 
-        # Provider selection parameter
-        provider_choices = ["Automatic Detection", "Image"]  # Start with image only
+        # Provider selection parameter - dynamically populated
+        provider_choices = self._get_provider_choices()
         self.provider_parameter = Parameter(
             name="provider_type",
             type="str",
@@ -75,15 +87,12 @@ class LoadFile(SuccessFailureNode):
         self.provider_parameter.add_trait(Options(choices=provider_choices))
 
         # Add core parameters
+        self.add_parameter(self.provider_parameter)
         self.add_parameter(self.path_parameter)
         self.add_parameter(self.internal_url_parameter)
         self.add_parameter(self.artifact_parameter)
-        self.add_parameter(self.provider_parameter)
 
-        # Provider management
-        self._current_provider: ArtifactLoadProvider | None = None
-        self._dynamic_parameters: list[Parameter] = []  # Track dynamic parameters
-        self._sync_lock: str | None = None  # Prevents infinite sync loops
+        # Provider management attributes already initialized above
 
         # Add status parameters using the helper method
         self._create_status_parameters(
@@ -91,15 +100,16 @@ class LoadFile(SuccessFailureNode):
             result_details_placeholder="Details on the load attempt will be presented here.",
         )
 
-        self._initializing = False
+        self._creating_core_parameters = False
 
     def add_parameter(self, parameter: Parameter) -> None:
         """Add a parameter to the node.
 
-        During initialization, parameters are added normally.
+        During core parameter creation, parameters are added to the core parameters list.
         After initialization (dynamic mode), parameters are tracked for removal.
         """
-        if self._initializing:
+        if self._creating_core_parameters:
+            self._core_parameters.append(parameter)
             super().add_parameter(parameter)
             return
 
@@ -139,19 +149,26 @@ class LoadFile(SuccessFailureNode):
             return
 
         # Only handle our core parameters
-        if parameter.name not in [self.path_parameter.name, self.artifact_parameter.name, self.provider_parameter.name]:
+        if parameter not in self._core_parameters:
             return
 
         # Acquire sync lock
         self._sync_lock = parameter.name
 
         try:
-            if parameter.name == self.path_parameter.name:
-                self._handle_path_change(value)
-            elif parameter.name == self.artifact_parameter.name:
-                self._handle_artifact_change(value)
-            elif parameter.name == self.provider_parameter.name:
-                self._handle_provider_change(value)
+            match parameter.name:
+                case self.path_parameter.name:
+                    self._handle_path_change(value)
+                case self.artifact_parameter.name:
+                    self._handle_artifact_change(value)
+                case self.provider_parameter.name:
+                    self._handle_provider_change(value)
+                case self.internal_url_parameter.name:
+                    # Internal URL is read-only, should not be changed externally
+                    pass
+                case _:
+                    # This should never happen due to core parameter check above
+                    self._raise_unexpected_parameter_error(parameter.name)
         except Exception as e:
             logger.error(
                 f"Attempted to sync parameter '{parameter.name}' with value '{value}' in LoadFile '{self.name}'. "
@@ -159,6 +176,8 @@ class LoadFile(SuccessFailureNode):
             )
             # Reset to safe state on error
             self._reset_parameters_to_safe_state()
+            # Re-raise as fatal error
+            raise
         finally:
             # Always clear the sync lock
             self._sync_lock = None
@@ -168,41 +187,107 @@ class LoadFile(SuccessFailureNode):
         path_str = PathUtils.normalize_path_input(path_value)
 
         if not path_str:
-            # Empty path - reset everything
-            self._sync_parameter(self.artifact_parameter.name, None)
-            self._sync_parameter(self.internal_url_parameter.name, "")
-            self._clear_provider_specific_parameters()
+            self._reset_path_parameters()
             return
 
+        internal_url = self._process_path_to_url(path_str)
+        if internal_url is None:
+            self._reset_path_parameters()
+            return
+
+        provider = self._determine_provider_for_path(path_str)
+        if provider is None:
+            self._reset_path_parameters()
+            return
+
+        self._create_artifact_from_provider(provider, internal_url)
+
+    def _reset_path_parameters(self) -> None:
+        """Reset path-related parameters to empty state."""
+        self._sync_parameter(self.artifact_parameter.name, None)
+        self._sync_parameter(self.internal_url_parameter.name, "")
+        self._clear_provider_specific_parameters()
+
+    def _process_path_to_url(self, path_str: str) -> str | None:
+        """Process path string to internal URL."""
         try:
             if PathUtils.is_url(path_str):
-                # Handle URL
-                internal_url = self._process_url(path_str)
+                return self._process_url(path_str)
+
+            file_path = PathUtils.to_path_object(path_str)
+            if file_path is None:
+                self._raise_path_error(f"Invalid path format: {path_str}")
+                return None  # This line will never be reached due to exception above
+            return self._process_file_path(file_path)
+        except (ValueError, OSError) as e:
+            logger.warning(f"Attempted to process path '{path_str}' in LoadFile '{self.name}'. Failed due to {e}")
+            return None
+
+    def _determine_provider_for_path(self, path_str: str) -> ArtifactLoadProvider | None:
+        """Determine which provider to use for the given path."""
+        current_provider_type = self.get_parameter_value(self.provider_parameter.name)
+
+        if current_provider_type == "Automatic Detection":
+            return self._auto_detect_provider_for_path(path_str)
+
+        return self._get_explicit_provider(current_provider_type)
+
+    def _auto_detect_provider_for_path(self, path_str: str) -> ArtifactLoadProvider | None:
+        """Auto-detect provider based on path."""
+        try:
+            if PathUtils.is_url(path_str):
                 provider = self._auto_detect_provider_for_url(path_str)
             else:
-                # Handle file path
                 file_path = PathUtils.to_path_object(path_str)
                 if file_path is None:
-                    msg = f"Invalid path format: {path_str}"
-                    raise ValueError(msg)  # noqa: TRY301
-
-                internal_url = self._process_file_path(file_path)
+                    self._raise_path_error(f"Invalid path format: {path_str}")
+                    return None  # This line will never be reached due to exception above
                 provider = self._auto_detect_provider_for_file(file_path)
 
             if provider is None:
-                msg = f"No provider found for path: {path_str}"
-                raise ValueError(msg)  # noqa: TRY301
+                self._raise_path_error(f"No provider found for path: {path_str}")
+                return None  # This line will never be reached due to exception above
 
             self._switch_to_provider(provider)
+        except ValueError as e:
+            logger.warning(
+                f"Attempted to auto-detect provider for path '{path_str}' in LoadFile '{self.name}'. Failed due to {e}"
+            )
+            return None
+        else:
+            return provider
+
+    def _get_explicit_provider(self, provider_type: str) -> ArtifactLoadProvider | None:
+        """Get explicitly selected provider."""
+        provider = self._current_provider
+        if provider is None:
+            provider = self._get_provider_by_name(provider_type)
+            if provider is None:
+                self._raise_path_error(f"Selected provider '{provider_type}' not found")
+                return None  # This line will never be reached due to exception above
+            self._switch_to_provider(provider)
+        return provider
+
+    def _create_artifact_from_provider(self, provider: ArtifactLoadProvider, internal_url: str) -> None:
+        """Create artifact using provider and sync parameters."""
+        try:
             artifact = provider.create_artifact_from_url(internal_url)
             self._sync_parameter(self.artifact_parameter.name, artifact)
             self._sync_parameter(self.internal_url_parameter.name, internal_url)
-
         except Exception as e:
-            logger.warning(f"Attempted to process path '{path_str}' in LoadFile '{self.name}'. Failed due to {e}")
-            # Clear on failure
-            self._sync_parameter(self.artifact_parameter.name, None)
-            self._sync_parameter(self.internal_url_parameter.name, "")
+            logger.warning(
+                f"Attempted to create artifact from URL '{internal_url}' in LoadFile '{self.name}'. Failed due to {e}"
+            )
+            self._reset_path_parameters()
+
+    def _raise_path_error(self, message: str) -> None:
+        """Raise a ValueError for path processing errors."""
+        raise ValueError(message)
+
+    def _raise_unexpected_parameter_error(self, parameter_name: str) -> None:
+        """Raise a RuntimeError for unexpected parameter in sync."""
+        msg = f"Unexpected parameter '{parameter_name}' in LoadFile parameter sync"
+        raise RuntimeError(msg)
 
     def _handle_artifact_change(self, artifact_value: Any) -> None:
         """Handle changes to the artifact parameter."""
@@ -241,7 +326,7 @@ class LoadFile(SuccessFailureNode):
             return
 
         # Switch to specific provider
-        provider = ProviderRegistry.get_provider_by_name(provider_value)
+        provider = self._get_provider_by_name(provider_value)
         if provider is None:
             logger.warning(
                 f"Attempted to switch to provider '{provider_value}' in LoadFile '{self.name}'. "
@@ -323,17 +408,17 @@ class LoadFile(SuccessFailureNode):
 
     def _auto_detect_provider_for_file(self, file_path: Path) -> ArtifactLoadProvider | None:
         """Auto-detect provider for a file path."""
-        return ProviderRegistry.auto_detect_provider(file_path=file_path)
+        return self._auto_detect_provider(file_path=file_path)
 
     def _auto_detect_provider_for_url(self, url: str) -> ArtifactLoadProvider | None:
         """Auto-detect provider for a URL."""
-        return ProviderRegistry.auto_detect_provider(url=url)
+        return self._auto_detect_provider(url=url)
 
     def _detect_provider_for_artifact(self, artifact: Any) -> ArtifactLoadProvider | None:
         """Detect provider based on artifact type."""
         # Simple detection based on type name
         artifact_type = type(artifact).__name__
-        for provider in ProviderRegistry.get_all_providers():
+        for provider in self._get_all_providers():
             if provider.artifact_type == artifact_type:
                 return provider
         return None
@@ -414,8 +499,6 @@ class LoadFile(SuccessFailureNode):
             msg = f"Attempted to read file '{file_path}' for upload in LoadFile '{self.name}'. Failed due to {e}"
             raise RuntimeError(msg) from e
 
-        import httpx
-
         try:
             response = httpx.request(
                 upload_result.method,
@@ -458,11 +541,6 @@ class LoadFile(SuccessFailureNode):
 
     def _download_and_upload_url(self, url: str) -> str:
         """Download from URL and upload to static storage."""
-        import uuid
-        from urllib.parse import urlparse
-
-        import httpx
-
         # Download from URL
         try:
             response = httpx.get(url, timeout=90)
@@ -557,8 +635,6 @@ class LoadFile(SuccessFailureNode):
 
     def _extract_display_path_from_url(self, internal_url: str) -> str:
         """Extract a display-friendly path from an internal URL."""
-        from urllib.parse import urlparse
-
         parsed = urlparse(internal_url)
 
         if "uploads/" in parsed.path:
@@ -576,6 +652,118 @@ class LoadFile(SuccessFailureNode):
             return parsed.path.removeprefix("/workspace/")
 
         return internal_url
+
+    def _get_all_providers(self) -> list[ArtifactLoadProvider]:
+        """Get all available provider instances by discovering subclasses.
+
+        Returns:
+            List of all discovered provider instances
+        """
+        provider_classes = self._discover_provider_classes()
+        instances = []
+
+        for provider_class in provider_classes:
+            try:
+                instance = provider_class()
+                instances.append(instance)
+            except Exception as e:
+                logger.warning("Failed to instantiate provider %s: %s", provider_class.__name__, e)
+
+        return instances
+
+    def _get_provider_by_name(self, provider_name: str) -> ArtifactLoadProvider | None:
+        """Get a provider by name.
+
+        Args:
+            provider_name: Name of the provider to find
+
+        Returns:
+            Provider instance or None if not found
+        """
+        for provider in self._get_all_providers():
+            if provider.provider_name == provider_name:
+                return provider
+        return None
+
+    def _auto_detect_provider(
+        self, file_path: Path | None = None, url: str | None = None
+    ) -> ArtifactLoadProvider | None:
+        """Automatically detect the best provider for a file path or URL.
+
+        Args:
+            file_path: Path to check (mutually exclusive with url)
+            url: URL to check (mutually exclusive with file_path)
+
+        Returns:
+            Best matching provider or None if no provider can handle the input
+        """
+        if file_path is None and url is None:
+            return None
+
+        if file_path is not None and url is not None:
+            msg = "Cannot specify both file_path and url"
+            raise ValueError(msg)
+
+        candidates = []
+
+        for provider in self._get_all_providers():
+            if file_path is not None:
+                if provider.can_handle_file(file_path):
+                    priority = provider.get_priority_score(file_path)
+                    candidates.append((provider, priority))
+            elif url is not None and provider.can_handle_url(url):
+                candidates.append((provider, 0))  # URLs don't have priority scoring yet
+
+        if not candidates:
+            return None
+
+        # Sort by priority (highest first) and return the best candidate
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return candidates[0][0]
+
+    def _get_provider_choices(self) -> list[str]:
+        """Get available provider choices for the UI.
+
+        Returns:
+            List of provider names including "Automatic Detection"
+        """
+        choices = ["Automatic Detection"]
+        choices.extend(provider.provider_name for provider in self._get_all_providers())
+        return choices
+
+    def _discover_provider_classes(self) -> list[type[ArtifactLoadProvider]]:
+        """Discover all ArtifactLoadProvider subclasses dynamically.
+
+        Returns:
+            List of concrete provider classes
+        """
+        # Import all modules in the providers package to ensure classes are loaded
+        self._import_provider_modules()
+
+        # Get all subclasses of ArtifactLoadProvider
+        return [
+            subclass
+            for subclass in ArtifactLoadProvider.__subclasses__()
+            if not inspect.isabstract(subclass)  # Only include concrete classes (not abstract)
+        ]
+
+    def _import_provider_modules(self) -> None:
+        """Import all modules in the providers package to load classes."""
+        try:
+            import griptape_nodes_library.files.providers as providers_package
+
+            package_path = providers_package.__path__
+
+            # Walk through all modules in the providers package
+            for _importer, modname, _ispkg in pkgutil.walk_packages(
+                package_path, prefix="griptape_nodes_library.files.providers."
+            ):
+                try:
+                    importlib.import_module(modname)
+                except ImportError as e:
+                    logger.debug("Could not import provider module %s: %s", modname, e)
+        except Exception as e:
+            logger.warning("Failed to import provider modules: %s", e)
 
     def _sync_parameter(self, param_name: str, value: Any) -> None:
         """Safely sync a parameter value during sync operations."""
