@@ -2594,7 +2594,13 @@ class NodeManager:
 
         if not use_pickling:
             # Use simple serialization - collect all parameter values
-            param_values = {param.name: node.get_parameter_value(param.name) for param in node.parameters}
+            param_values = {}
+            for param in node.parameters:
+                # Check parameter_output_values first, then fall back to get_parameter_value
+                if param.name in node.parameter_output_values:
+                    param_values[param.name] = node.parameter_output_values[param.name]
+                else:
+                    param_values[param.name] = node.get_parameter_value(param.name)
             simple_values = TypeValidator.safe_serialize(param_values)
             return simple_values, None
 
@@ -2605,7 +2611,11 @@ class NodeManager:
 
         for parameter in node.parameters:
             param_name = parameter.name
-            param_value = node.get_parameter_value(param_name)
+            # Check parameter_output_values first, then fall back to get_parameter_value
+            if param_name in node.parameter_output_values:
+                param_value = node.parameter_output_values[param_name]
+            else:
+                param_value = node.get_parameter_value(param_name)
             # Inline the _handle_value_hashing logic without creating fake parameters
             try:
                 hash(param_value)

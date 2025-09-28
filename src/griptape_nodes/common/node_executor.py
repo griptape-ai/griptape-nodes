@@ -143,9 +143,7 @@ class NodeExecutor:
                 subprocess_executor = SubprocessWorkflowExecutor(workflow_path=published_workflow_filename)
                 # TODO: How do I determine storage backend?
                 async with subprocess_executor as executor:
-                    await executor.arun(
-                        workflow_name=file_name, flow_input={}, storage_backend=StorageBackend.LOCAL
-                    )
+                    await executor.arun(workflow_name=file_name, flow_input={}, storage_backend=StorageBackend.LOCAL)
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
                 if my_subprocess_result is None:
