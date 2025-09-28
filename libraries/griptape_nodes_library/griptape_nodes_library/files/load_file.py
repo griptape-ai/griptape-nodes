@@ -18,6 +18,11 @@ class LoadFile(SuccessFailureNode):
         self._current_provider: ArtifactLoadProvider | None = None
         # Dynamic parameters added by current provider
         self._dynamic_parameters: list[Parameter] = []
+        # Prevents infinite loops during atomic parameter synchronization
+        # When a core parameter changes, we atomically update all related parameters (path, artifact, dynamic params)
+        # This lock holds the name of the parameter that triggered the sync to prevent cascading change handlers
+        # Example: user sets the path parameter → lock="path", the path gets updated, then updates the artifact and internal URL without causing separate set_parameter_value calls for each of them
+        self._triggering_parameter_lock: str | None = None
 
         super().__init__(**kwargs)
 
@@ -82,13 +87,24 @@ class LoadFile(SuccessFailureNode):
         if initial_setup:
             return
 
-        # Handle parameter changes
-        if param_name == self.provider_parameter.name:
-            self._handle_provider_change(value)
-        elif param_name == self.path_parameter.name:
-            self._handle_path_change(value)
-        elif param_name == self.artifact_parameter.name:
-            self._handle_artifact_change(value)
+        # Skip if we're already in a sync operation to prevent infinite loops
+        if self._triggering_parameter_lock is not None:
+            return
+
+        # Acquire lock - this parameter is triggering the atomic sync
+        self._triggering_parameter_lock = param_name
+
+        try:
+            # Handle parameter changes
+            if param_name == self.provider_parameter.name:
+                self._handle_provider_change(value)
+            elif param_name == self.path_parameter.name:
+                self._handle_path_change(value)
+            elif param_name == self.artifact_parameter.name:
+                self._handle_artifact_change(value)
+        finally:
+            # Always clear the triggering parameter lock
+            self._triggering_parameter_lock = None
 
     def _handle_provider_change(self, provider_value: str) -> None:
         """Switch between automatic detection and specific provider."""
@@ -267,9 +283,7 @@ class LoadFile(SuccessFailureNode):
                 param = self.get_parameter_by_name(param_name)
                 if param is None:
                     msg = f"Provider attempted to update non-existent parameter '{param_name}' - provider/node state inconsistency"
-                    raise RuntimeError(
-                        msg
-                    )
+                    raise RuntimeError(msg)
                 self.set_parameter_value(param_name, value)
                 self.publish_update_to_parameter(param_name, value)
 
