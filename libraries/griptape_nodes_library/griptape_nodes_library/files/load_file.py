@@ -1,13 +1,11 @@
-import importlib
-import inspect
-import pkgutil
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.files.path_utils import PathUtils
 from griptape_nodes_library.files.providers.artifact_load_provider import ArtifactLoadProvider
-from griptape_nodes_library.files.providers.validation_result import ProviderValidationResult
+from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
 
 
 class LoadFile(SuccessFailureNode):
@@ -16,9 +14,9 @@ class LoadFile(SuccessFailureNode):
     AUTOMATIC_DETECTION = "Automatic Detection"
 
     def __init__(self, **kwargs) -> None:
-        # Provider instance - this does all the heavy lifting
+        # Current provider instance
         self._current_provider: ArtifactLoadProvider | None = None
-        # Dynamic parameters added by current provider (for cleanup)
+        # Dynamic parameters added by current provider
         self._dynamic_parameters: list[Parameter] = []
 
         super().__init__(**kwargs)
@@ -93,59 +91,67 @@ class LoadFile(SuccessFailureNode):
             self._handle_artifact_change(value)
 
     def _handle_provider_change(self, provider_value: str) -> None:
-        """Handle provider type changes - create new provider instance and configure."""
+        """Switch between automatic detection and specific provider."""
         if provider_value == LoadFile.AUTOMATIC_DETECTION:
             self._switch_to_automatic_detection()
         else:
             self._switch_to_specific_provider(provider_value)
 
     def _handle_path_change(self, path_value: Any) -> None:
-        """Handle path changes - validate with current provider."""
+        """Load file from path, detecting provider if needed."""
         if not path_value:
             self._reset_all_parameters()
             return
 
+        # If no current provider, try automatic detection
         if not self._current_provider:
-            self._set_status_results(was_successful=False, result_details="No provider available for validation")
+            candidate_providers = self._get_candidate_providers_for_path_input(path_value)
+            if candidate_providers:
+                self._try_providers_for_path_input(candidate_providers=candidate_providers, path_input=path_value)
+            else:
+                self._set_status_results(
+                    was_successful=False, result_details="No suitable provider found for this file type"
+                )
             return
 
-        try:
-            current_values = self._get_current_parameter_values()
-            result = self._current_provider.validate_from_path(str(path_value), current_values)
-            self._apply_validation_result(result)
-        except Exception as e:
-            self._set_status_results(was_successful=False, result_details=f"Path validation failed: {e}")
+        # Use current provider
+        self._load_path_with_current_provider(path_input=path_value)
 
     def _handle_artifact_change(self, artifact_value: Any) -> None:
-        """Handle artifact changes - validate with current provider."""
+        """Process artifact input, detecting provider if needed."""
         if artifact_value is None:
             self._reset_all_parameters()
             return
 
+        # If no current provider, try automatic detection
         if not self._current_provider:
-            self._set_status_results(was_successful=False, result_details="No provider available for validation")
+            candidate_providers = self._get_candidate_providers_for_artifact_input(artifact_value)
+            if candidate_providers:
+                self._try_providers_for_artifact_input(
+                    candidate_providers=candidate_providers, artifact_input=artifact_value
+                )
+            else:
+                self._set_status_results(
+                    was_successful=False, result_details="No suitable provider found for this artifact type"
+                )
             return
 
-        try:
-            current_values = self._get_current_parameter_values()
-            result = self._current_provider.validate_from_artifact(artifact_value, current_values)
-            self._apply_validation_result(result)
-        except Exception as e:
-            self._set_status_results(was_successful=False, result_details=f"Artifact validation failed: {e}")
+        # Use current provider
+        self._load_artifact_with_current_provider(artifact_input=artifact_value)
 
     def _switch_to_automatic_detection(self) -> None:
-        """Switch to automatic detection mode."""
+        """Enable automatic provider detection for all input types."""
         # Configure artifact to accept all types
         self.artifact_parameter.type = ParameterTypeBuiltin.ALL.value
         self.artifact_parameter.output_type = ParameterTypeBuiltin.ALL.value
         self.artifact_parameter.input_types = [ParameterTypeBuiltin.ALL.value]
         self.artifact_parameter.ui_options["display_name"] = "File"
 
-        # Remove current provider and its parameters
+        # Remove current provider
         self._clear_current_provider()
 
     def _switch_to_specific_provider(self, provider_name: str) -> None:
-        """Switch to a specific provider by name."""
+        """Configure node to use a specific provider."""
         provider_instance = self._create_provider_instance(provider_name)
         if not provider_instance:
             self._set_status_results(was_successful=False, result_details=f"Provider '{provider_name}' not found")
@@ -153,35 +159,127 @@ class LoadFile(SuccessFailureNode):
 
         self._set_current_provider(provider_instance)
 
-    def _apply_validation_result(self, result: ProviderValidationResult) -> None:
-        """Apply validation result - either update all parameters or show errors."""
-        if result.is_success:
-            # Atomic update of all parameters
-            self.artifact_parameter.default_value = result.artifact
-            self.path_parameter.default_value = result.path
+        # Process existing inputs with the new provider
+        current_path = self.path_parameter.default_value
+        current_artifact = self.artifact_parameter.default_value
 
-            # Update current provider with the new artifact state
-            if self._current_provider:
-                self._current_provider.artifact = result.artifact
-                self._current_provider.internal_url = result.internal_url
-                self._current_provider.path = result.path
+        if current_path:
+            self._load_path_with_current_provider(path_input=current_path)
+        elif current_artifact:
+            self._load_artifact_with_current_provider(artifact_input=current_artifact)
 
-            # Apply dynamic parameter updates
+    def _get_candidate_providers_for_path_input(self, path_input: str) -> list[ArtifactLoadProvider]:
+        """Find providers capable of loading from this path."""
+        candidates = []
+        providers = self._get_all_providers()
+
+        for provider in providers:
+            if PathUtils.is_url(path_input):
+                if provider.can_handle_url(path_input):
+                    candidates.append(provider)
+            elif provider.can_handle_path(path_input):
+                candidates.append(provider)
+
+        return candidates
+
+    def _get_candidate_providers_for_artifact_input(self, artifact_input: Any) -> list[ArtifactLoadProvider]:
+        """Find providers capable of processing this artifact."""
+        candidates = []
+        providers = self._get_all_providers()
+
+        for provider in providers:
+            if provider.can_handle_artifact(artifact_input):
+                candidates.append(provider)  # noqa: PERF401
+
+        return candidates
+
+    def _try_providers_for_path_input(
+        self, *, candidate_providers: list[ArtifactLoadProvider], path_input: str
+    ) -> None:
+        """Attempt loading with each provider until success."""
+        current_values = self._get_current_parameter_values()
+
+        for provider in candidate_providers:
+            result = provider.attempt_load_from_path(path_input, current_values)
+            if result.was_successful:
+                # Success! Set this provider as current and apply the result
+                self._set_current_provider(provider)
+                self._apply_validation_result(result)
+                return
+
+        # All providers failed
+        self._set_status_results(
+            was_successful=False, result_details="No provider could successfully process this path input"
+        )
+
+    def _try_providers_for_artifact_input(
+        self, *, candidate_providers: list[ArtifactLoadProvider], artifact_input: Any
+    ) -> None:
+        """Attempt processing with each provider until success."""
+        current_values = self._get_current_parameter_values()
+
+        for provider in candidate_providers:
+            result = provider.attempt_load_from_artifact(artifact_input, current_values)
+            if result.was_successful:
+                # Success! Set this provider as current and apply the result
+                self._set_current_provider(provider)
+                self._apply_validation_result(result)
+                return
+
+        # All providers failed
+        self._set_status_results(
+            was_successful=False, result_details="No provider could successfully process this artifact input"
+        )
+
+    def _load_path_with_current_provider(self, *, path_input: str) -> None:
+        """Process path input using the configured provider."""
+        if not self._current_provider:
+            return
+
+        current_values = self._get_current_parameter_values()
+        if PathUtils.is_url(path_input):
+            result = self._current_provider.attempt_load_from_url(path_input, current_values)
+        else:
+            result = self._current_provider.attempt_load_from_path(path_input, current_values)
+        self._apply_validation_result(result)
+
+    def _load_artifact_with_current_provider(self, *, artifact_input: Any) -> None:
+        """Process artifact input using the configured provider."""
+        if not self._current_provider:
+            return
+
+        current_values = self._get_current_parameter_values()
+        result = self._current_provider.attempt_load_from_artifact(artifact_input, current_values)
+        self._apply_validation_result(result)
+
+    def _apply_validation_result(self, result: Any) -> None:
+        """Update node parameters from provider result."""
+        if result.was_successful:
+            # Update parameters with proper notifications
+            self.set_parameter_value(self.artifact_parameter.name, result.artifact)
+            self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
+
+            self.set_parameter_value(self.path_parameter.name, result.path)
+            self.publish_update_to_parameter(self.path_parameter.name, result.path)
+
+            # Apply dynamic parameter updates with proper notifications
             for param_name, value in result.dynamic_parameter_updates.items():
                 param = self.get_parameter_by_name(param_name)
                 if param is None:
-                    msg = f"Dynamic parameter '{param_name}' not found in LoadFile '{self.name}'"
-                    raise RuntimeError(msg)
-                param.default_value = value
+                    msg = f"Provider attempted to update non-existent parameter '{param_name}' - provider/node state inconsistency"
+                    raise RuntimeError(
+                        msg
+                    )
+                self.set_parameter_value(param_name, value)
+                self.publish_update_to_parameter(param_name, value)
 
-            self._set_status_results(was_successful=True, result_details="File loaded successfully")
+            self._set_status_results(was_successful=True, result_details=result.result_details)
         else:
-            # Show all error messages
-            error_text = "; ".join(result.error_messages)
-            self._set_status_results(was_successful=False, result_details=error_text)
+            # Use result details directly
+            self._set_status_results(was_successful=False, result_details=result.result_details)
 
     def _set_current_provider(self, provider: ArtifactLoadProvider) -> None:
-        """Set current provider and configure artifact parameter."""
+        """Install provider and configure its dynamic parameters."""
         # Remove old provider parameters
         self._clear_current_provider()
 
@@ -202,20 +300,21 @@ class LoadFile(SuccessFailureNode):
             self._dynamic_parameters.append(param)
 
     def _clear_current_provider(self) -> None:
-        """Clear current provider and remove its dynamic parameters."""
+        """Remove current provider and clean up dynamic parameters."""
         # Remove dynamic parameters
         for param in self._dynamic_parameters[:]:
             try:
                 self.remove_parameter_element_by_name(param.name)
                 self._dynamic_parameters.remove(param)
             except KeyError as e:
-                msg = f"Failed to remove dynamic parameter '{param.name}' from LoadFile '{self.name}'"
+                # This indicates inconsistent internal state - should not happen
+                msg = f"Dynamic parameter '{param.name}' not found during cleanup - internal state inconsistency"
                 raise RuntimeError(msg) from e
 
         self._current_provider = None
 
     def _reset_all_parameters(self) -> None:
-        """Reset all file-related parameters."""
+        """Clear file inputs and dynamic parameter values."""
         self.artifact_parameter.default_value = None
         self.path_parameter.default_value = ""
 
@@ -224,45 +323,30 @@ class LoadFile(SuccessFailureNode):
             param.default_value = None
 
     def _get_current_parameter_values(self) -> dict[str, Any]:
-        """Get current values of all parameters for provider context."""
+        """Collect parameter values for provider processing."""
         values = {}
         for param in self.parameters:
             values[param.name] = param.default_value
         return values
 
     def _get_provider_choices(self) -> list[str]:
-        """Get available provider choices."""
+        """Build list of selectable provider names."""
         choices = [LoadFile.AUTOMATIC_DETECTION]
-        providers = self._discover_all_providers()
+        providers = self._get_all_providers()
         choices.extend(provider.provider_name for provider in providers)
         return choices
 
     def _create_provider_instance(self, provider_name: str) -> ArtifactLoadProvider | None:
-        """Create provider instance by name."""
-        providers = self._discover_all_providers()
+        """Instantiate provider matching the given name."""
+        providers = self._get_all_providers()
         for provider in providers:
             if provider.provider_name == provider_name:
                 return provider
         return None
 
-    def _discover_all_providers(self) -> list[ArtifactLoadProvider]:
-        """Discover all available provider instances."""
-        provider_classes = self._discover_provider_classes()
-        return [provider_class() for provider_class in provider_classes]
-
-    def _discover_provider_classes(self) -> list[type[ArtifactLoadProvider]]:
-        """Discover provider classes using subclass inspection."""
-        self._import_provider_modules()
-        return [subclass for subclass in ArtifactLoadProvider.__subclasses__() if not inspect.isabstract(subclass)]
-
-    def _import_provider_modules(self) -> None:
-        """Import all provider modules to ensure classes are registered."""
-        provider_package = "griptape_nodes_library.files.providers"
-        try:
-            package = importlib.import_module(provider_package)
-
-            for _, module_name, _ in pkgutil.walk_packages(package.__path__, f"{provider_package}."):
-                importlib.import_module(module_name)
-        except ImportError as e:
-            msg = f"Failed to import provider modules from '{provider_package}': {e}"
-            raise RuntimeError(msg) from e
+    def _get_all_providers(self) -> list[ArtifactLoadProvider]:
+        """Create instances of all supported providers."""
+        # Explicit provider list - add new providers here
+        return [
+            ImageLoadProvider(node=self, path_parameter=self.path_parameter),
+        ]
