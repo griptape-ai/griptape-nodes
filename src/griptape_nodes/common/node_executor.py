@@ -113,7 +113,7 @@ class NodeExecutor:
                     raise ValueError(msg)
                 file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
                 workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
-                    file_name=file_name, serialized_flow_commands=package_result.serialized_flow_commands
+                    file_name=file_name, serialized_flow_commands=package_result.serialized_flow_commands, workflow_shape=package_result.workflow_shape
                 )
                 workflow_result = GriptapeNodes.handle_request(workflow_file_request)
                 if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
