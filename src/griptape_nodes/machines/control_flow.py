@@ -235,7 +235,7 @@ class CompleteState(State):
                         payload=ControlFlowResolvedEvent(
                             end_node_name=current_node.name,
                             parameter_output_values=parameter_output_values,
-                            unique_parameter_uuid_to_values=unique_uuid_to_values,
+                            unique_parameter_uuid_to_values=unique_uuid_to_values if unique_uuid_to_values else None,
                         )
                     )
                 )

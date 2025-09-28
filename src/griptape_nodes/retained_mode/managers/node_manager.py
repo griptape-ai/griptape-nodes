@@ -2584,36 +2584,55 @@ class NodeManager:
             simple_values = TypeValidator.safe_serialize(node.parameter_output_values)
             return simple_values, None
 
-        # Use pickle-based serialization
+        # Use pickle-based serialization - inline the _handle_value_hashing logic
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
         uuid_referenced_values = {}
 
         for param_name, param_value in node.parameter_output_values.items():
-            # Create a dummy parameter for the serialization logic
-            dummy_param = Parameter(
-                name=param_name,
-                tooltip="Dummy parameter for output value serialization",
-                type=ParameterTypeBuiltin.STR,  # Type doesn't matter for output values
-                serializable=True,  # Assume output values should be serializable
-            )
+            # Inline the _handle_value_hashing logic without creating fake parameters
+            try:
+                hash(param_value)
+                value_id = param_value
+            except TypeError:
+                # Couldn't get a hash. Use the object's ID
+                value_id = id(param_value)
 
-            # Use existing _handle_value_hashing logic
-            uuid_command = NodeManager._handle_value_hashing(
-                value=param_value,
-                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-                parameter=dummy_param,
-                parameter_name=param_name,
-                node_name=node.name,
-                is_output=True,
-            )
+            tracker_status = serialized_parameter_value_tracker.get_tracker_state(value_id)
+            unique_uuid = None
 
-            if uuid_command is not None:
-                # Value was successfully pickled, store UUID reference
-                uuid_referenced_values[param_name] = uuid_command.unique_value_uuid
+            match tracker_status:
+                case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
+                    # We have a match on this value. We're all good.
+                    unique_uuid = serialized_parameter_value_tracker.get_uuid_for_value_hash(value_id)
+                case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
+                    # This value is not serializable. Store None.
+                    uuid_referenced_values[param_name] = None
+                    continue
+                case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
+                    # This value is new for us.
+                    # Check if we can serialize it using the proper workflow pickling method
+                    try:
+                        # Use the workflow manager's patching and pickling method
+                        workflow_manager = GriptapeNodes.WorkflowManager()
+                        pickled_bytes = workflow_manager._patch_and_pickle_object(param_value)
+                    except Exception:
+                        # Not serializable; don't waste time on future attempts.
+                        serialized_parameter_value_tracker.add_as_not_serializable(value_id)
+                        # Store None.
+                        uuid_referenced_values[param_name] = None
+                        continue
+
+                    # The value should be serialized. Add it to the map of uniques.
+                    unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+                    # Store the pickled bytes directly instead of deepcopying the object
+                    unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
+                    serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
+
+            # Store the UUID reference for this parameter
+            if unique_uuid is not None:
+                uuid_referenced_values[param_name] = unique_uuid
             else:
-                # Value couldn't be pickled, store None
                 uuid_referenced_values[param_name] = None
 
         return uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None

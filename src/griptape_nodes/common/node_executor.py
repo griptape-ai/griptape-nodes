@@ -144,6 +144,8 @@ class NodeExecutor:
                 # For now, we know we have one end node, I believe.
                 # Extract parameter output values and deserialize pickled values if present
                 parameter_output_values = {}
+                logger.info("Received result from subprocess: %s", subprocess_executor)
+                logger.info("Output is: %s", my_subprocess_result)
                 for end_node_name, result_dict in my_subprocess_result.items():
                     # Handle new structure with pickled values
                     if isinstance(result_dict, dict) and "parameter_output_values" in result_dict:
@@ -154,8 +156,14 @@ class NodeExecutor:
                         if unique_uuid_to_values:
                             for param_name, param_value in param_output_vals.items():
                                 if param_value in unique_uuid_to_values:
-                                    # This is a UUID reference, replace with actual pickled value
-                                    parameter_output_values[param_name] = pickle.loads(unique_uuid_to_values[param_value])
+                                    # This is a UUID reference, get the stored value
+                                    stored_value = unique_uuid_to_values[param_value]
+                                    if isinstance(stored_value, bytes):
+                                        # This is pickled bytes, unpickle it
+                                        parameter_output_values[param_name] = pickle.loads(stored_value)
+                                    else:
+                                        # This is a direct value (fallback case when pickling failed)
+                                        parameter_output_values[param_name] = stored_value
                                 else:
                                     # This is either a direct value or None (for non-serializable values)
                                     parameter_output_values[param_name] = param_value
