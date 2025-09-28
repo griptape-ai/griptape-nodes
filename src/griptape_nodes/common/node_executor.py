@@ -127,7 +127,7 @@ class NodeExecutor:
                 )
                 # Get the full path where the published workflow will be saved
                 await local_workflow_publisher.arun(
-                    workflow_name="TestFlow",
+                    workflow_name=file_name,
                     workflow_path=workflow_result.file_path,
                     publisher_name=library_name,
                     published_workflow_file_name=published_filename,
@@ -144,7 +144,7 @@ class NodeExecutor:
                 # TODO: How do I determine storage backend?
                 async with subprocess_executor as executor:
                     await executor.arun(
-                        workflow_name="TestFlow", flow_input={}, storage_backend=StorageBackend.LOCAL
+                        workflow_name=file_name, flow_input={}, storage_backend=StorageBackend.LOCAL
                     )
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
@@ -243,6 +243,9 @@ class NodeExecutor:
                         clean_param_name = param_name[len(output_parameter_prefix) :]
                         # Set this value for certain hacks
                         parameter = node.get_parameter_by_name(clean_param_name)
+                        if parameter == node.execution_environment:
+                            # Don't set this, it'll be set to Local.
+                            continue
                         if parameter is not None:
                             # Don't run set_parameter_value on control parameters
                             if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:

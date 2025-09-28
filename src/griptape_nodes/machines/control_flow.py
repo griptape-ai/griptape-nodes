@@ -5,8 +5,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
+from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -83,7 +83,10 @@ class ControlFlowContext:
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             else:
                 # Get next control output for this node
-                next_output = current_node.get_next_control_output()
+                if current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION:
+                    next_output = self.get_next_control_output_for_non_local_execution(current_node)
+                else:
+                    next_output = current_node.get_next_control_output()
                 if next_output is not None:
                     node_connection = (
                         GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
@@ -99,6 +102,18 @@ class ControlFlowContext:
                 next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
 
         return next_nodes
+
+    def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
+        for param_name, value in node.parameter_output_values.items():
+            parameter = node.get_parameter_by_name(param_name)
+            if (
+                parameter is not None
+                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
+                and value == CONTROL_INPUT_PARAMETER
+            ):
+                # This is the parameter
+                return parameter
+        return None
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.current_nodes is not None:

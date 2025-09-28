@@ -888,7 +888,7 @@ class NodeManager:
                 has_non_control_types = True
         if request.input_types is not None:
             for test_type in request.input_types:
-                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
+                if test_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                     has_control_type = True
                 else:
                     has_non_control_types = True

@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterType, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_OUTPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -179,7 +179,7 @@ class ExecuteDagState(State):
             if (
                 parameter is not None
                 and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
-                and value == CONTROL_OUTPUT_PARAMETER
+                and value == CONTROL_INPUT_PARAMETER
             ):
                 # This is the parameter
                 return parameter
@@ -233,8 +233,9 @@ class ExecuteDagState(State):
         """Process the next control node in the flow."""
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
         if node_connection is not None:
-            next_node, _ = node_connection
-
+            next_node, next_parameter = node_connection
+            # Set entry control parameter
+            next_node.set_entry_control_parameter(next_parameter)
             # Prepare next node for execution
             if not next_node.lock:
                 next_node.make_node_unresolved(

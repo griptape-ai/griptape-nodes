@@ -53,7 +53,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
-CONTROL_OUTPUT_PARAMETER = "Control Output Selection"
+CONTROL_INPUT_PARAMETER = "Control Output Selection"
 
 
 class ImportDependency(NamedTuple):
@@ -1501,10 +1501,10 @@ class EndNode(BaseNode):
             if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 value = self.get_parameter_value(param.name)
                 self.parameter_output_values[param.name] = value
-        next_control_output = self.get_next_control_output()
+        entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
-        if next_control_output is not None:
-            self.parameter_output_values[next_control_output.name] = CONTROL_OUTPUT_PARAMETER
+        if entry_parameter is not None:
+            self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
 class StartLoopNode(BaseNode):
