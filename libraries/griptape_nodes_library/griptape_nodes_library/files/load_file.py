@@ -37,8 +37,8 @@ class LoadFile(SuccessFailureNode):
 
         self.artifact_parameter = Parameter(
             name="artifact",
-            input_types=[ParameterTypeBuiltin.ALL.value],
-            type=ParameterTypeBuiltin.ALL.value,
+            input_types=[ParameterTypeBuiltin.ANY.value],
+            type=ParameterTypeBuiltin.ANY.value,
             output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
             tooltip="The loaded file artifact",
@@ -157,10 +157,10 @@ class LoadFile(SuccessFailureNode):
 
     def _switch_to_automatic_detection(self) -> None:
         """Enable automatic provider detection for all input types."""
-        # Configure artifact to accept all types
-        self.artifact_parameter.type = ParameterTypeBuiltin.ALL.value
+        # Configure artifact for maximum flexibility
+        self.artifact_parameter.type = ParameterTypeBuiltin.ANY.value
         self.artifact_parameter.output_type = ParameterTypeBuiltin.ALL.value
-        self.artifact_parameter.input_types = [ParameterTypeBuiltin.ALL.value]
+        self.artifact_parameter.input_types = [ParameterTypeBuiltin.ANY.value]
         self.artifact_parameter.ui_options["display_name"] = "File"
 
         # Remove current provider
