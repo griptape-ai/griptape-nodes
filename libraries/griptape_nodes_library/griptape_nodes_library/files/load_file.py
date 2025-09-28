@@ -22,15 +22,6 @@ class LoadFile(SuccessFailureNode):
         super().__init__(**kwargs)
 
         # Core parameters
-        self.provider_parameter = Parameter(
-            name="provider_type",
-            type="str",
-            default_value=LoadFile.AUTOMATIC_DETECTION,
-            tooltip="File type provider to use for loading",
-            ui_options={"display_name": "Provider Type"},
-        )
-        self.provider_parameter.add_trait(Options(choices=self._get_provider_choices()))
-
         self.path_parameter = Parameter(
             name="path",
             type="str",
@@ -48,6 +39,15 @@ class LoadFile(SuccessFailureNode):
             tooltip="The loaded file artifact",
             ui_options={"expander": True, "display_name": "File"},
         )
+
+        self.provider_parameter = Parameter(
+            name="provider_type",
+            type="str",
+            default_value=LoadFile.AUTOMATIC_DETECTION,
+            tooltip="File type provider to use for loading",
+            ui_options={"display_name": "Provider Type"},
+        )
+        self.provider_parameter.add_trait(Options(choices=self._get_provider_choices()))
 
         self.add_parameter(self.provider_parameter)
         self.add_parameter(self.path_parameter)
