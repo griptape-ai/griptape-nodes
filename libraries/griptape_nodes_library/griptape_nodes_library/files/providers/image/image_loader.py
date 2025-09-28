@@ -329,27 +329,38 @@ class ImageLoadProvider(ArtifactLoadProvider):
         file_path = Path(path_str)
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
+        # If path is relative, treat it as relative to workspace
+        if not file_path.is_absolute():
+            file_path = workspace_path / file_path
+
         # Check if file is inside workspace
         try:
-            # If this succeeds, file is inside workspace - get proper download URL
             resolved_file_path = file_path.resolve()
             relative_path = resolved_file_path.relative_to(workspace_path.resolve())
-
-            # Use new workspace file download request (bypasses static files directory logic)
-            download_request = CreateWorkspaceFileDownloadUrlRequest(file_name=relative_path.as_posix())
-            download_result = GriptapeNodes.handle_request(download_request)
-
-            if isinstance(download_result, CreateWorkspaceFileDownloadUrlResultFailure):
-                msg = f"Failed to create workspace file download URL: {download_result.error}"
-                raise TypeError(msg)
-
-            success_result = cast("CreateWorkspaceFileDownloadUrlResultSuccess", download_result)
-            internal_url = success_result.url
-            return PathProcessResult(internal_url=internal_url, saved_path=str(resolved_file_path))
+            # File is inside workspace
+            return self._process_path_in_workspace(resolved_file_path, relative_path)
         except ValueError:
-            # File is outside workspace - copy it to workspace uploads directory
-            copy_result = self._copy_file_to_workspace(file_path=file_path)
-            return PathProcessResult(internal_url=copy_result.saved_path, saved_path=copy_result.saved_path)
+            # File is outside workspace
+            return self._process_path_outside_of_workspace(file_path)
+
+    def _process_path_in_workspace(self, resolved_file_path: Path, relative_path: Path) -> PathProcessResult:
+        """Process file that's inside the workspace."""
+        # Use workspace file download request (bypasses static files directory logic, since we could be loading from anywhere in the workspace)
+        download_request = CreateWorkspaceFileDownloadUrlRequest(file_name=relative_path.as_posix())
+        download_result = GriptapeNodes.handle_request(download_request)
+
+        if isinstance(download_result, CreateWorkspaceFileDownloadUrlResultFailure):
+            msg = f"Failed to create workspace file download URL: {download_result.error}"
+            raise TypeError(msg)
+
+        success_result = cast("CreateWorkspaceFileDownloadUrlResultSuccess", download_result)
+        internal_url = success_result.url
+        return PathProcessResult(internal_url=internal_url, saved_path=str(resolved_file_path))
+
+    def _process_path_outside_of_workspace(self, file_path: Path) -> PathProcessResult:
+        """Process file that's outside the workspace by copying it."""
+        copy_result = self._copy_file_to_workspace(file_path=file_path)
+        return PathProcessResult(internal_url=copy_result.saved_path, saved_path=copy_result.saved_path)
 
     def _copy_file_to_workspace(self, *, file_path: Path) -> FileDownloadResult:
         """Copy file from outside workspace to workspace uploads directory."""
