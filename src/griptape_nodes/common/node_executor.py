@@ -141,9 +141,9 @@ class NodeExecutor:
                 )
 
                 subprocess_executor = SubprocessWorkflowExecutor(workflow_path=published_workflow_filename)
-                # TODO: How do I determine storage backend?
+                storage_backend = GriptapeNodes.ConfigManager().get_config_value("storage_backend")
                 async with subprocess_executor as executor:
-                    await executor.arun(workflow_name=file_name, flow_input={}, storage_backend=StorageBackend.LOCAL)
+                    await executor.arun(workflow_name=file_name, flow_input={}, storage_backend=storage_backend)
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
                 if my_subprocess_result is None:
@@ -152,8 +152,6 @@ class NodeExecutor:
                 # For now, we know we have one end node, I believe.
                 # Extract parameter output values and deserialize pickled values if present
                 parameter_output_values = {}
-                logger.info("Received result from subprocess: %s", subprocess_executor)
-                logger.info("Output is: %s", my_subprocess_result)
                 for result_dict in my_subprocess_result.values():
                     # Handle new structure with pickled values
                     if isinstance(result_dict, dict) and "parameter_output_values" in result_dict:
@@ -162,52 +160,24 @@ class NodeExecutor:
 
                         # Deserialize UUID references back to actual values
                         if unique_uuid_to_values:
-                            logger.info("Found unique_uuid_to_values with %d entries", len(unique_uuid_to_values))
                             for param_name, param_value in param_output_vals.items():
-                                logger.info(
-                                    "Processing parameter '%s' with value type %s: %s",
-                                    param_name,
-                                    type(param_value),
-                                    param_value,
-                                )
                                 if param_value in unique_uuid_to_values:
                                     # This is a UUID reference, get the stored value
                                     stored_value = unique_uuid_to_values[param_value]
-                                    logger.info(
-                                        "Found UUID reference for '%s', stored value type: %s, value: %s",
-                                        param_name,
-                                        type(stored_value),
-                                        stored_value,
-                                    )
+
                                     # Since all stored values will be string representations due to JSON serialization,
                                     # always use ast.literal_eval to convert back to bytes then unpickle
                                     if isinstance(stored_value, str):
-                                        logger.info(
-                                            "Converting string-represented bytes for parameter '%s': %s",
-                                            param_name,
-                                            stored_value,
-                                        )
                                         try:
                                             # Use ast.literal_eval to safely convert string representation to bytes
                                             actual_bytes = ast.literal_eval(stored_value)
-                                            logger.info(
-                                                "ast.literal_eval result type: %s, length: %d",
-                                                type(actual_bytes),
-                                                len(actual_bytes) if isinstance(actual_bytes, bytes) else 0,
-                                            )
+
                                             if isinstance(actual_bytes, bytes):
                                                 parameter_output_values[param_name] = pickle.loads(actual_bytes)
-                                                logger.info(
-                                                    "Successfully unpickled parameter '%s', result type: %s",
-                                                    param_name,
-                                                    type(parameter_output_values[param_name]),
-                                                )
+
                                             else:
                                                 # Fallback: treat as direct value
-                                                logger.warning(
-                                                    "ast.literal_eval did not return bytes for parameter '%s', using direct value",
-                                                    param_name,
-                                                )
+
                                                 parameter_output_values[param_name] = stored_value
                                         except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
                                             logger.warning(
@@ -219,15 +189,11 @@ class NodeExecutor:
                                             parameter_output_values[param_name] = stored_value
                                     else:
                                         # Fallback for non-string values (shouldn't happen with JSON serialization)
-                                        logger.info(
-                                            "Using direct value for parameter '%s' (type: %s)",
-                                            param_name,
-                                            type(stored_value),
-                                        )
+
                                         parameter_output_values[param_name] = stored_value
                                 else:
                                     # This is either a direct value or None (for non-serializable values)
-                                    logger.info("Using direct parameter value for '%s' (no UUID reference)", param_name)
+
                                     parameter_output_values[param_name] = param_value
                         else:
                             # No pickled values, use parameter output values directly
@@ -250,6 +216,28 @@ class NodeExecutor:
                                 node.set_parameter_value(clean_param_name, param_value)
                             # Set this value for output values. Include if a control parameter has an output value, because it signals the path to take.
                             node.parameter_output_values[clean_param_name] = param_value
+
+                # Cleanup: Remove the workflow files using DeleteWorkflowRequest
+                from griptape_nodes.retained_mode.events.workflow_events import DeleteWorkflowRequest
+
+                # Remove the original workflow file
+                delete_request = DeleteWorkflowRequest(name=file_name)
+                delete_result = GriptapeNodes.handle_request(delete_request)
+                if hasattr(delete_result, "result_details"):
+                    logger.info(
+                        "Cleanup result for original workflow '%s': %s", file_name, delete_result.result_details
+                    )
+
+                # Remove the published workflow file using DeleteWorkflowRequest
+                published_delete_request = DeleteWorkflowRequest(name=published_filename)
+                published_delete_result = GriptapeNodes.handle_request(published_delete_request)
+                if hasattr(published_delete_result, "result_details"):
+                    logger.info(
+                        "Cleanup result for published workflow '%s': %s",
+                        published_filename,
+                        published_delete_result.result_details,
+                    )
+
                 return
         # Fallback to default node processing
         await node.aprocess()
