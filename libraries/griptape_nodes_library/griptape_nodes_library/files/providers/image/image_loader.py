@@ -143,7 +143,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         if not PathUtils.is_url(url_input):
             return False
 
-        # Use proper content-type detection like artifact_path_tethering
+        # Use proper content-type detection
         # For now, check URL path extension as fallback
         try:
             url_path = Path(url_input).suffix.lower()
@@ -262,8 +262,13 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 result_details=f"Cannot extract URL from artifact of type: {type(normalized_artifact).__name__}",
             )
 
-        # Use original artifact input as display path to avoid alteration
-        display_path = str(artifact_input) if artifact_input else url
+        # Extract URL for display path with robust error handling
+        try:
+            display_path = self._extract_url_from_artifact_for_display(artifact_input) or url
+        except ValueError as e:
+            return ArtifactLoadProviderValidationResult(
+                was_successful=False, result_details=f"Invalid artifact format: {e}"
+            )
 
         # Process dynamic parameters (mask extraction)
         dynamic_updates = self._finalize_result_with_dynamic_updates(
@@ -278,6 +283,41 @@ class ImageLoadProvider(ArtifactLoadProvider):
             dynamic_parameter_updates=dynamic_updates,
             result_details=f"Image artifact processed successfully from {display_path}",
         )
+
+    def _extract_url_from_artifact_for_display(self, artifact_value: Any) -> str:
+        """Extract URL from artifact value for display purposes.
+
+        Handles dict, ImageUrlArtifact, and str formats with robust error handling.
+
+        Returns:
+            The extracted URL string
+
+        Raises:
+            ValueError: If the artifact value type is not supported
+        """
+        if not artifact_value:
+            return ""
+
+        match artifact_value:
+            # Handle dictionary format (most common from UI)
+            case dict():
+                url = artifact_value.get("value")
+            # Handle ImageUrlArtifact objects
+            case ImageUrlArtifact():
+                url = artifact_value.value
+            # Handle raw strings
+            case str():
+                url = artifact_value
+            case _:
+                # Generate error message for unsupported types
+                expected_types = "dict, ImageUrlArtifact, or str"
+                error_msg = (
+                    f"Unsupported artifact value type: {type(artifact_value).__name__}. Expected: {expected_types}"
+                )
+                raise ValueError(error_msg)
+
+        # Return empty string if no URL found (safer than None for display)
+        return url or ""
 
     def _process_path_to_internal_url(self, path_str: str) -> PathProcessResult:
         """Process file path for serving: use relative path if in workspace, otherwise copy to workspace."""
