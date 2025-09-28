@@ -2577,13 +2577,13 @@ class NodeManager:
             - parameter_output_values: Either raw values or UUID references if pickling was used
             - unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
         """
-        if not node.parameter_output_values:
+        if not node.parameters:
             return {}, None
 
         if not use_pickling:
-            # Use simple serialization
-            # TypeValidator is already imported at the top of this file
-            simple_values = TypeValidator.safe_serialize(node.parameter_output_values)
+            # Use simple serialization - collect all parameter values
+            param_values = {param.name: node.get_parameter_value(param.name) for param in node.parameters}
+            simple_values = TypeValidator.safe_serialize(param_values)
             return simple_values, None
 
         # Use pickle-based serialization - inline the _handle_value_hashing logic
@@ -2591,7 +2591,9 @@ class NodeManager:
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
         uuid_referenced_values = {}
 
-        for param_name, param_value in node.parameter_output_values.items():
+        for parameter in node.parameters:
+            param_name = parameter.name
+            param_value = node.get_parameter_value(param_name)
             # Inline the _handle_value_hashing logic without creating fake parameters
             try:
                 hash(param_value)

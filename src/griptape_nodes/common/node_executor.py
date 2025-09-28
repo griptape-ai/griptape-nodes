@@ -164,27 +164,65 @@ class NodeExecutor:
 
                         # Deserialize UUID references back to actual values
                         if unique_uuid_to_values:
+                            logger.info("Found unique_uuid_to_values with %d entries", len(unique_uuid_to_values))
                             for param_name, param_value in param_output_vals.items():
+                                logger.info(
+                                    "Processing parameter '%s' with value type %s: %s",
+                                    param_name,
+                                    type(param_value),
+                                    param_value,
+                                )
                                 if param_value in unique_uuid_to_values:
                                     # This is a UUID reference, get the stored value
                                     stored_value = unique_uuid_to_values[param_value]
+                                    logger.info(
+                                        "Found UUID reference for '%s', stored value type: %s, value: %s",
+                                        param_name,
+                                        type(stored_value),
+                                        stored_value,
+                                    )
                                     if isinstance(stored_value, bytes):
                                         # This is pickled bytes, unpickle it
+                                        logger.info("Unpickling bytes for parameter '%s'", param_name)
                                         parameter_output_values[param_name] = pickle.loads(stored_value)
+                                        logger.info(
+                                            "Successfully unpickled parameter '%s', result type: %s",
+                                            param_name,
+                                            type(parameter_output_values[param_name]),
+                                        )
                                     elif (
                                         isinstance(stored_value, str)
                                         and stored_value.startswith("b'")
                                         and stored_value.endswith("'")
                                     ):
                                         # This is a string representation of bytes that went through JSON serialization
+                                        logger.info(
+                                            "Converting string-represented bytes for parameter '%s': %s",
+                                            param_name,
+                                            stored_value,
+                                        )
                                         # Convert string representation back to bytes and unpickle
                                         try:
                                             # Use ast.literal_eval to safely convert string representation to bytes
                                             actual_bytes = ast.literal_eval(stored_value)
+                                            logger.info(
+                                                "ast.literal_eval result type: %s, length: %d",
+                                                type(actual_bytes),
+                                                len(actual_bytes) if isinstance(actual_bytes, bytes) else 0,
+                                            )
                                             if isinstance(actual_bytes, bytes):
                                                 parameter_output_values[param_name] = pickle.loads(actual_bytes)
+                                                logger.info(
+                                                    "Successfully unpickled string-represented bytes for parameter '%s', result type: %s",
+                                                    param_name,
+                                                    type(parameter_output_values[param_name]),
+                                                )
                                             else:
                                                 # Fallback: treat as direct value
+                                                logger.warning(
+                                                    "ast.literal_eval did not return bytes for parameter '%s', using direct value",
+                                                    param_name,
+                                                )
                                                 parameter_output_values[param_name] = stored_value
                                         except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
                                             logger.warning(
@@ -196,9 +234,15 @@ class NodeExecutor:
                                             parameter_output_values[param_name] = stored_value
                                     else:
                                         # This is a direct value (fallback case when pickling failed)
+                                        logger.info(
+                                            "Using direct value for parameter '%s' (type: %s)",
+                                            param_name,
+                                            type(stored_value),
+                                        )
                                         parameter_output_values[param_name] = stored_value
                                 else:
                                     # This is either a direct value or None (for non-serializable values)
+                                    logger.info("Using direct parameter value for '%s' (no UUID reference)", param_name)
                                     parameter_output_values[param_name] = param_value
                         else:
                             # No pickled values, use parameter output values directly
