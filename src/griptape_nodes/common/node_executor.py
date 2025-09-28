@@ -127,7 +127,7 @@ class NodeExecutor:
                 )
                 # Get the full path where the published workflow will be saved
                 await local_workflow_publisher.arun(
-                    workflow_name="KateTestDoesItWork",
+                    workflow_name=file_name,
                     workflow_path=workflow_result.file_path,
                     publisher_name=library_name,
                     published_workflow_file_name=published_filename,
@@ -148,7 +148,7 @@ class NodeExecutor:
                 except ValueError:
                     storage_backend = StorageBackend.LOCAL
                 async with subprocess_executor as executor:
-                    await executor.arun(workflow_name="KateTestDoesItWork", flow_input={}, storage_backend=storage_backend)
+                    await executor.arun(workflow_name=file_name, flow_input={}, storage_backend=storage_backend)
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
                 if my_subprocess_result is None:
