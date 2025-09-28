@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import BaseNode, NodeDependencies, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
@@ -135,6 +135,14 @@ class LoadImage(SuccessFailureNode):
             self._extract_mask_if_possible()
 
         return super().after_value_set(parameter, value)
+
+    def get_node_dependencies(self) -> NodeDependencies | None:
+        # Get parameter values
+        path_value = self.get_parameter_value("path")
+
+        if path_value is not None:
+            return NodeDependencies(static_files={path_value})
+        return None
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
