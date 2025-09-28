@@ -141,7 +141,12 @@ class NodeExecutor:
                 )
 
                 subprocess_executor = SubprocessWorkflowExecutor(workflow_path=published_workflow_filename)
-                storage_backend = GriptapeNodes.ConfigManager().get_config_value("storage_backend")
+                storage_backend_str = GriptapeNodes.ConfigManager().get_config_value("storage_backend")
+                # Convert string to StorageBackend enum
+                try:
+                    storage_backend = StorageBackend(storage_backend_str)
+                except ValueError:
+                    storage_backend = StorageBackend.LOCAL
                 async with subprocess_executor as executor:
                     await executor.arun(workflow_name=file_name, flow_input={}, storage_backend=storage_backend)
                 my_subprocess_result = subprocess_executor.output
