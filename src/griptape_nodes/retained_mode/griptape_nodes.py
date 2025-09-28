@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
@@ -150,6 +151,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
     _engine_identity_manager: EngineIdentityManager
+    _mcp_manager: MCPManager
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
 
@@ -164,6 +166,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+        from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
         from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
@@ -212,6 +215,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
             self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
+            self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
 
             # Assign handlers now that these are created.
@@ -373,6 +377,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def SessionManager(cls) -> SessionManager:
         return GriptapeNodes.get_instance()._session_manager
+
+    @classmethod
+    def MCPManager(cls) -> MCPManager:
+        return GriptapeNodes.get_instance()._mcp_manager
 
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
