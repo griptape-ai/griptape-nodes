@@ -21,6 +21,9 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
+    CreateWorkspaceFileDownloadUrlRequest,
+    CreateWorkspaceFileDownloadUrlResultFailure,
+    CreateWorkspaceFileDownloadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -87,6 +90,9 @@ class StaticFilesManager:
             )
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
+            )
+            event_manager.assign_manager_to_request_type(
+                CreateWorkspaceFileDownloadUrlRequest, self.on_handle_create_workspace_file_download_url_request
             )
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
@@ -173,6 +179,34 @@ class StaticFilesManager:
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url, result_details="Successfully created static file download URL"
+        )
+
+    def on_handle_create_workspace_file_download_url_request(
+        self,
+        request: CreateWorkspaceFileDownloadUrlRequest,
+    ) -> CreateWorkspaceFileDownloadUrlResultSuccess | CreateWorkspaceFileDownloadUrlResultFailure:
+        """Handle the request to create a download URL for a workspace file.
+
+        Args:
+            request: The request object containing the file path relative to workspace.
+
+        Returns:
+            A result object indicating success or failure.
+        """
+        file_name = request.file_name
+
+        # Use relative path for storage driver (it serves from workspace root)
+        relative_file_path = Path(file_name)
+
+        try:
+            url = self.storage_driver.create_signed_download_url(relative_file_path)
+        except ValueError as e:
+            msg = f"Failed to create download URL for workspace file {file_name}: {e}"
+            logger.error(msg)
+            return CreateWorkspaceFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        return CreateWorkspaceFileDownloadUrlResultSuccess(
+            url=url, result_details="Successfully created workspace file download URL"
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:

@@ -1,13 +1,18 @@
 import logging
 import time
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple, cast
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.static_file_events import (
+    CreateWorkspaceFileDownloadUrlRequest,
+    CreateWorkspaceFileDownloadUrlResultFailure,
+    CreateWorkspaceFileDownloadUrlResultSuccess,
+)
 from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadata, LoadWorkflowMetadataResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -326,9 +331,21 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
         # Check if file is inside workspace
         try:
-            # If this succeeds, file is inside workspace - use full path for mask extraction
-            file_path.resolve().relative_to(workspace_path.resolve())
-            return PathProcessResult(internal_url=str(file_path), saved_path=None)
+            # If this succeeds, file is inside workspace - get proper download URL
+            resolved_file_path = file_path.resolve()
+            relative_path = resolved_file_path.relative_to(workspace_path.resolve())
+
+            # Use new workspace file download request (bypasses static files directory logic)
+            download_request = CreateWorkspaceFileDownloadUrlRequest(file_name=relative_path.as_posix())
+            download_result = GriptapeNodes.handle_request(download_request)
+
+            if isinstance(download_result, CreateWorkspaceFileDownloadUrlResultFailure):
+                msg = f"Failed to create workspace file download URL: {download_result.error}"
+                raise TypeError(msg)
+
+            success_result = cast("CreateWorkspaceFileDownloadUrlResultSuccess", download_result)
+            internal_url = success_result.url
+            return PathProcessResult(internal_url=internal_url, saved_path=str(resolved_file_path))
         except ValueError:
             # File is outside workspace - copy it to workspace uploads directory
             copy_result = self._copy_file_to_workspace(file_path=file_path)
