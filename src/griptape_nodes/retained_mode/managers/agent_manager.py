@@ -135,7 +135,61 @@ class AgentManager:
             "transport": "streamable_http",
             "url": f"http://localhost:{GTN_MCP_SERVER_PORT}/mcp/",
         }
-        return MCPTool(connection=connection)
+        return MCPTool(connection=connection, name="mcpGriptapeNodes")
+
+    def _create_additional_mcp_tools(self, server_names: list[str]) -> list[MCPTool]:
+        """Create MCP tools for additional servers specified in the request."""
+        additional_tools = []
+
+        try:
+            app = GriptapeNodes()
+            mcp_manager = app.MCPManager()
+
+            # Get enabled MCP servers
+            from griptape_nodes.retained_mode.events.mcp_events import GetEnabledMCPServersRequest
+
+            enabled_request = GetEnabledMCPServersRequest()
+            enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+
+            if hasattr(enabled_result, "servers"):
+                for server_name in server_names:
+                    if server_name in enabled_result.servers:
+                        server_config = enabled_result.servers[server_name]
+                        connection = self._create_connection_from_mcp_config(server_config)
+                        tool = MCPTool(connection=connection, name=f"mcp{server_name.title()}")  # type: ignore[arg-type]
+                        additional_tools.append(tool)
+                    else:
+                        msg = f"Additional MCP server '{server_name}' not found or not enabled"
+                        logger.warning(msg)
+
+        except Exception as e:
+            msg = f"Failed to create additional MCP tools: {e}"
+            logger.error(msg)
+
+        return additional_tools
+
+    def _create_connection_from_mcp_config(self, server_config: dict) -> dict:
+        """Create connection dictionary from MCP server configuration."""
+        transport = server_config.get("transport", "stdio")
+
+        # Define field mappings for each transport type
+        field_mappings = {
+            "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
+            "sse": ["url", "headers", "timeout", "sse_read_timeout"],
+            "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
+            "websocket": ["url"],
+        }
+
+        # Start with transport
+        connection = {"transport": transport}
+
+        # Map relevant fields based on transport type
+        fields_to_map = field_mappings.get(transport, field_mappings["stdio"])
+        for field in fields_to_map:
+            if field in server_config and server_config[field] is not None:
+                connection[field] = server_config[field]
+
+        return connection
 
     async def on_handle_run_agent_request(self, request: RunAgentRequest) -> ResultPayload:
         if self.prompt_driver is None:
@@ -147,7 +201,7 @@ class AgentManager:
         await asyncio.to_thread(self._on_handle_run_agent_request, request)
         return RunAgentResultStarted(result_details="Agent execution started successfully.")
 
-    def _create_agent(self) -> Agent:
+    def _create_agent(self, additional_mcp_servers: list[str] | None = None) -> Agent:
         output_schema = Schema(
             {
                 "generated_image_urls": [str],
@@ -160,6 +214,11 @@ class AgentManager:
             tools.append(self.image_tool)
         if self.mcp_tool is not None:
             tools.append(self.mcp_tool)
+
+        # Add additional MCP servers if specified
+        if additional_mcp_servers:
+            additional_tools = self._create_additional_mcp_tools(additional_mcp_servers)
+            tools.extend(additional_tools)
 
         return Agent(
             prompt_driver=self.prompt_driver,
@@ -185,7 +244,7 @@ class AgentManager:
                 for url_artifact in request.url_artifacts
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
-            agent = self._create_agent()
+            agent = self._create_agent(additional_mcp_servers=request.additional_mcp_servers)
             *events, last_event = agent.run_stream([request.input, *artifacts])
             full_result = ""
             last_conversation_output = ""

@@ -1780,7 +1780,7 @@
       "class_name": "MCPTaskNode",
       "file_path": "griptape_nodes_library/tasks/mcp_task.py",
       "metadata": {
-        "category": "agents/tools",
+        "category": "agents",
         "description": "Give an agent the ability to use an MCP tool",
         "display_name": "MCP Task",
         "icon": "bolt",

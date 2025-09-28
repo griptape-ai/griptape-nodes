@@ -22,11 +22,11 @@ class DiscoverMCPServerCapabilitiesRequest(RequestPayload):
     """Discover capabilities from a running MCP server.
 
     Args:
-        server_id: The MCP server to discover capabilities from
+        name: The MCP server to discover capabilities from
         timeout: Maximum time to wait for server response (seconds)
     """
 
-    server_id: str
+    name: str
     timeout: int = 30
 
 
@@ -34,8 +34,8 @@ class DiscoverMCPServerCapabilitiesRequest(RequestPayload):
 @PayloadRegistry.register
 class DiscoverMCPServerCapabilitiesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """MCP server capabilities discovered successfully."""
-    
-    server_id: str
+
+    name: str
     capabilities: list[str]
     detailed_tools: list[dict[str, Any]] | None = None
     server_info: dict[str, Any] | None = None
@@ -79,10 +79,10 @@ class GetMCPServerRequest(RequestPayload):
     """Get configuration for a specific MCP server.
 
     Args:
-        server_id: The unique identifier for the MCP server
+        name: The unique identifier for the MCP server
     """
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -105,24 +105,46 @@ class CreateMCPServerRequest(RequestPayload):
     """Create a new MCP server configuration.
 
     Args:
-        server_id: Unique identifier for the server
-        name: Display name for the server
-        command: Command to start the server
-        args: Arguments to pass to the command
-        env: Environment variables for the server
+        name: Unique identifier for the server
+        transport: Transport type (stdio, sse, streamable_http, websocket)
+        command: Command to start the server (required for stdio)
+        args: Arguments to pass to the command (stdio)
+        env: Environment variables for the server (stdio)
+        cwd: Working directory for the server (stdio)
+        encoding: Text encoding for stdio communication
+        encoding_error_handler: Encoding error handler for stdio
+        url: URL for HTTP-based connections (sse, streamable_http, websocket)
+        headers: HTTP headers for HTTP-based connections
+        timeout: HTTP timeout in seconds
+        sse_read_timeout: SSE read timeout in seconds
+        terminate_on_close: Whether to terminate session on close (streamable_http)
         description: Optional description of the server
         capabilities: List of server capabilities
         enabled: Whether the server is enabled by default
     """
 
-    server_id: str
     name: str
-    command: str
-    args: list[str] = None
-    env: dict[str, str] = None
-    description: str | None = None
-    capabilities: list[str] = None
+    transport: str = "stdio"
     enabled: bool = True
+
+    # StdioConnection fields
+    command: str | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+    cwd: str | None = None
+    encoding: str = "utf-8"
+    encoding_error_handler: str = "strict"
+
+    # HTTP-based connection fields
+    url: str | None = None
+    headers: dict[str, str] | None = None
+    timeout: float | None = None
+    sse_read_timeout: float | None = None
+    terminate_on_close: bool = True
+
+    # Common fields
+    description: str | None = None
+    capabilities: list[str] | None = None
 
 
 @dataclass
@@ -130,7 +152,7 @@ class CreateMCPServerRequest(RequestPayload):
 class CreateMCPServerResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """MCP server created successfully."""
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -145,20 +167,45 @@ class UpdateMCPServerRequest(RequestPayload):
     """Update an existing MCP server configuration.
 
     Args:
-        server_id: The unique identifier for the MCP server
-        name: Updated display name for the server
-        command: Updated command to start the server
-        args: Updated arguments to pass to the command
-        env: Updated environment variables for the server
+        name: The unique identifier for the MCP server
+        new_name: Updated display name for the server
+        transport: Updated transport type (stdio, sse, streamable_http, websocket)
+        command: Updated command to start the server (stdio)
+        args: Updated arguments to pass to the command (stdio)
+        env: Updated environment variables for the server (stdio)
+        cwd: Updated working directory for the server (stdio)
+        encoding: Updated text encoding for stdio communication
+        encoding_error_handler: Updated encoding error handler for stdio
+        url: Updated URL for HTTP-based connections (sse, streamable_http, websocket)
+        headers: Updated HTTP headers for HTTP-based connections
+        timeout: Updated HTTP timeout in seconds
+        sse_read_timeout: Updated SSE read timeout in seconds
+        terminate_on_close: Updated terminate on close setting (streamable_http)
         description: Updated description of the server
         capabilities: Updated list of server capabilities
     """
 
-    server_id: str
-    name: str | None = None
+    name: str
+    new_name: str | None = None
+    transport: str | None = None
+    enabled: bool | None = None
+
+    # StdioConnection fields
     command: str | None = None
     args: list[str] | None = None
     env: dict[str, str] | None = None
+    cwd: str | None = None
+    encoding: str | None = None
+    encoding_error_handler: str | None = None
+
+    # HTTP-based connection fields
+    url: str | None = None
+    headers: dict[str, str] | None = None
+    timeout: float | None = None
+    sse_read_timeout: float | None = None
+    terminate_on_close: bool | None = None
+
+    # Common fields
     description: str | None = None
     capabilities: list[str] | None = None
 
@@ -168,7 +215,7 @@ class UpdateMCPServerRequest(RequestPayload):
 class UpdateMCPServerResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """MCP server updated successfully."""
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -183,10 +230,10 @@ class DeleteMCPServerRequest(RequestPayload):
     """Delete an MCP server configuration.
 
     Args:
-        server_id: The unique identifier for the MCP server to delete
+        name: The unique identifier for the MCP server to delete
     """
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -194,7 +241,7 @@ class DeleteMCPServerRequest(RequestPayload):
 class DeleteMCPServerResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """MCP server deleted successfully."""
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -209,10 +256,10 @@ class EnableMCPServerRequest(RequestPayload):
     """Enable an MCP server.
 
     Args:
-        server_id: The unique identifier for the MCP server to enable
+        name: The unique identifier for the MCP server to enable
     """
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -220,7 +267,7 @@ class EnableMCPServerRequest(RequestPayload):
 class EnableMCPServerResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """MCP server enabled successfully."""
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -235,10 +282,10 @@ class DisableMCPServerRequest(RequestPayload):
     """Disable an MCP server.
 
     Args:
-        server_id: The unique identifier for the MCP server to disable
+        name: The unique identifier for the MCP server to disable
     """
 
-    server_id: str
+    name: str
 
 
 @dataclass
@@ -246,7 +293,7 @@ class DisableMCPServerRequest(RequestPayload):
 class DisableMCPServerResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """MCP server disabled successfully."""
 
-    server_id: str
+    name: str
 
 
 @dataclass

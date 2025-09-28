@@ -91,14 +91,40 @@ class MCPManager:
 
     def _update_server_fields(self, server_config: MCPServerConfig, request: UpdateMCPServerRequest) -> None:
         """Update server configuration fields from request."""
-        if request.name is not None:
-            server_config.name = request.name
+        if request.new_name is not None:
+            server_config.name = request.new_name
+        if request.transport is not None:
+            server_config.transport = request.transport
+        if request.enabled is not None:
+            server_config.enabled = request.enabled
+
+        # StdioConnection fields
         if request.command is not None:
             server_config.command = request.command
         if request.args is not None:
             server_config.args = request.args
         if request.env is not None:
             server_config.env = request.env
+        if request.cwd is not None:
+            server_config.cwd = request.cwd
+        if request.encoding is not None:
+            server_config.encoding = request.encoding
+        if request.encoding_error_handler is not None:
+            server_config.encoding_error_handler = request.encoding_error_handler
+
+        # HTTP-based connection fields
+        if request.url is not None:
+            server_config.url = request.url
+        if request.headers is not None:
+            server_config.headers = request.headers
+        if request.timeout is not None:
+            server_config.timeout = request.timeout
+        if request.sse_read_timeout is not None:
+            server_config.sse_read_timeout = request.sse_read_timeout
+        if request.terminate_on_close is not None:
+            server_config.terminate_on_close = request.terminate_on_close
+
+        # Common fields
         if request.description is not None:
             server_config.description = request.description
         if request.capabilities is not None:
@@ -112,10 +138,10 @@ class MCPManager:
             servers = self._get_mcp_servers()
 
             if request.include_disabled:
-                servers_dict = {server.server_id: server.model_dump() for server in servers}
+                servers_dict = {server.name: server.model_dump() for server in servers}
             else:
                 enabled_servers = [server for server in servers if server.enabled]
-                servers_dict = {server.server_id: server.model_dump() for server in enabled_servers}
+                servers_dict = {server.name: server.model_dump() for server in enabled_servers}
 
             return ListMCPServersResultSuccess(
                 servers=servers_dict, result_details=f"Successfully listed {len(servers_dict)} MCP servers"
@@ -134,22 +160,22 @@ class MCPManager:
             # Find server by server_id
             server_config = None
             for server in servers:
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     server_config = server
                     break
 
             if server_config is None:
                 return GetMCPServerResultFailure(
-                    result_details=f"Failed to get MCP server '{request.server_id}' - not found"
+                    result_details=f"Failed to get MCP server '{request.name}' - not found"
                 )
 
             return GetMCPServerResultSuccess(
                 server_config=server_config.model_dump(),
-                result_details=f"Successfully retrieved MCP server '{request.server_id}'",
+                result_details=f"Successfully retrieved MCP server '{request.name}'",
             )
         except Exception as e:
-            logger.error("Failed to get MCP server '%s': %s", request.server_id, e)
-            return GetMCPServerResultFailure(result_details=f"Failed to get MCP server '{request.server_id}': {e}")
+            logger.error("Failed to get MCP server '%s': %s", request.name, e)
+            return GetMCPServerResultFailure(result_details=f"Failed to get MCP server '{request.name}': {e}")
 
     def on_create_mcp_server_request(
         self, request: CreateMCPServerRequest
@@ -160,19 +186,30 @@ class MCPManager:
 
             # Check if server already exists
             for server in servers:
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     return CreateMCPServerResultFailure(
-                        result_details=f"Failed to create MCP server '{request.server_id}' - already exists"
+                        result_details=f"Failed to create MCP server '{request.name}' - already exists"
                     )
 
             # Create new server configuration
             server_config = MCPServerConfig(
-                server_id=request.server_id,
                 name=request.name,
                 enabled=request.enabled,
+                transport=request.transport,
+                # StdioConnection fields
                 command=request.command,
                 args=request.args or [],
                 env=request.env or {},
+                cwd=request.cwd,
+                encoding=request.encoding,
+                encoding_error_handler=request.encoding_error_handler,
+                # HTTP-based connection fields
+                url=request.url,
+                headers=request.headers,
+                timeout=request.timeout,
+                sse_read_timeout=request.sse_read_timeout,
+                terminate_on_close=request.terminate_on_close,
+                # Common fields
                 description=request.description,
                 capabilities=request.capabilities or [],
             )
@@ -181,13 +218,11 @@ class MCPManager:
             self._save_mcp_servers(servers)
 
             return CreateMCPServerResultSuccess(
-                server_id=request.server_id, result_details=f"Successfully created MCP server '{request.server_id}'"
+                name=request.name, result_details=f"Successfully created MCP server '{request.name}'"
             )
         except Exception as e:
-            logger.error("Failed to create MCP server '%s': %s", request.server_id, e)
-            return CreateMCPServerResultFailure(
-                result_details=f"Failed to create MCP server '{request.server_id}': {e}"
-            )
+            logger.error("Failed to create MCP server '%s': %s", request.name, e)
+            return CreateMCPServerResultFailure(result_details=f"Failed to create MCP server '{request.name}': {e}")
 
     def on_update_mcp_server_request(
         self, request: UpdateMCPServerRequest
@@ -199,13 +234,13 @@ class MCPManager:
             # Find server by server_id
             server_config = None
             for server in servers:
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     server_config = server
                     break
 
             if server_config is None:
                 return UpdateMCPServerResultFailure(
-                    result_details=f"Failed to update MCP server '{request.server_id}' - not found"
+                    result_details=f"Failed to update MCP server '{request.name}' - not found"
                 )
 
             # Update only provided fields
@@ -214,13 +249,11 @@ class MCPManager:
             self._save_mcp_servers(servers)
 
             return UpdateMCPServerResultSuccess(
-                server_id=request.server_id, result_details=f"Successfully updated MCP server '{request.server_id}'"
+                name=request.name, result_details=f"Successfully updated MCP server '{request.name}'"
             )
         except Exception as e:
-            logger.error("Failed to update MCP server '%s': %s", request.server_id, e)
-            return UpdateMCPServerResultFailure(
-                result_details=f"Failed to update MCP server '{request.server_id}': {e}"
-            )
+            logger.error("Failed to update MCP server '%s': %s", request.name, e)
+            return UpdateMCPServerResultFailure(result_details=f"Failed to update MCP server '{request.name}': {e}")
 
     def on_delete_mcp_server_request(
         self, request: DeleteMCPServerRequest
@@ -232,26 +265,24 @@ class MCPManager:
             # Find and remove server by server_id
             server_found = False
             for i, server in enumerate(servers):
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     servers.pop(i)
                     server_found = True
                     break
 
             if not server_found:
                 return DeleteMCPServerResultFailure(
-                    result_details=f"Failed to delete MCP server '{request.server_id}' - not found"
+                    result_details=f"Failed to delete MCP server '{request.name}' - not found"
                 )
 
             self._save_mcp_servers(servers)
 
             return DeleteMCPServerResultSuccess(
-                server_id=request.server_id, result_details=f"Successfully deleted MCP server '{request.server_id}'"
+                name=request.name, result_details=f"Successfully deleted MCP server '{request.name}'"
             )
         except Exception as e:
-            logger.error("Failed to delete MCP server '%s': %s", request.server_id, e)
-            return DeleteMCPServerResultFailure(
-                result_details=f"Failed to delete MCP server '{request.server_id}': {e}"
-            )
+            logger.error("Failed to delete MCP server '%s': %s", request.name, e)
+            return DeleteMCPServerResultFailure(result_details=f"Failed to delete MCP server '{request.name}': {e}")
 
     def on_enable_mcp_server_request(
         self, request: EnableMCPServerRequest
@@ -263,26 +294,24 @@ class MCPManager:
             # Find server by server_id
             server_config = None
             for server in servers:
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     server_config = server
                     break
 
             if server_config is None:
                 return EnableMCPServerResultFailure(
-                    result_details=f"Failed to enable MCP server '{request.server_id}' - not found"
+                    result_details=f"Failed to enable MCP server '{request.name}' - not found"
                 )
 
             server_config.enabled = True
             self._save_mcp_servers(servers)
 
             return EnableMCPServerResultSuccess(
-                server_id=request.server_id, result_details=f"Successfully enabled MCP server '{request.server_id}'"
+                name=request.name, result_details=f"Successfully enabled MCP server '{request.name}'"
             )
         except Exception as e:
-            logger.error("Failed to enable MCP server '%s': %s", request.server_id, e)
-            return EnableMCPServerResultFailure(
-                result_details=f"Failed to enable MCP server '{request.server_id}': {e}"
-            )
+            logger.error("Failed to enable MCP server '%s': %s", request.name, e)
+            return EnableMCPServerResultFailure(result_details=f"Failed to enable MCP server '{request.name}': {e}")
 
     def on_disable_mcp_server_request(
         self, request: DisableMCPServerRequest
@@ -294,26 +323,24 @@ class MCPManager:
             # Find server by server_id
             server_config = None
             for server in servers:
-                if server.server_id == request.server_id:
+                if server.name == request.name:
                     server_config = server
                     break
 
             if server_config is None:
                 return DisableMCPServerResultFailure(
-                    result_details=f"Failed to disable MCP server '{request.server_id}' - not found"
+                    result_details=f"Failed to disable MCP server '{request.name}' - not found"
                 )
 
             server_config.enabled = False
             self._save_mcp_servers(servers)
 
             return DisableMCPServerResultSuccess(
-                server_id=request.server_id, result_details=f"Successfully disabled MCP server '{request.server_id}'"
+                name=request.name, result_details=f"Successfully disabled MCP server '{request.name}'"
             )
         except Exception as e:
-            logger.error("Failed to disable MCP server '%s': %s", request.server_id, e)
-            return DisableMCPServerResultFailure(
-                result_details=f"Failed to disable MCP server '{request.server_id}': {e}"
-            )
+            logger.error("Failed to disable MCP server '%s': %s", request.name, e)
+            return DisableMCPServerResultFailure(result_details=f"Failed to disable MCP server '{request.name}': {e}")
 
     def on_get_enabled_mcp_servers_request(
         self,
@@ -323,7 +350,7 @@ class MCPManager:
         try:
             servers = self._get_mcp_servers()
             enabled_servers = [server for server in servers if server.enabled]
-            servers_dict = {server.server_id: server.model_dump() for server in enabled_servers}
+            servers_dict = {server.name: server.model_dump() for server in enabled_servers}
 
             return GetEnabledMCPServersResultSuccess(
                 servers=servers_dict, result_details=f"Successfully retrieved {len(servers_dict)} enabled MCP servers"

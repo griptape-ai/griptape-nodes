@@ -60,12 +60,30 @@ class LogLevel(StrEnum):
 class MCPServerConfig(BaseModel):
     """Configuration for a single MCP server."""
 
-    server_id: str = Field(description="Unique identifier for the MCP server")
-    name: str = Field(description="Display name for the MCP server")
+    name: str = Field(description="Unique name/identifier for the MCP server")
     enabled: bool = Field(default=True, description="Whether this MCP server is enabled")
-    command: str = Field(description="Command to start the MCP server")
-    args: list[str] = Field(default_factory=list, description="Arguments to pass to the MCP server command")
-    env: dict[str, str] = Field(default_factory=dict, description="Environment variables for the MCP server")
+    transport: str = Field(default="stdio", description="Transport type: stdio, sse, streamable_http, or websocket")
+
+    # StdioConnection fields
+    command: str | None = Field(default=None, description="Command to start the MCP server (required for stdio)")
+    args: list[str] = Field(default_factory=list, description="Arguments to pass to the MCP server command (stdio)")
+    env: dict[str, str] = Field(default_factory=dict, description="Environment variables for the MCP server (stdio)")
+    cwd: str | None = Field(default=None, description="Working directory for the MCP server (stdio)")
+    encoding: str = Field(default="utf-8", description="Text encoding for stdio communication")
+    encoding_error_handler: str = Field(default="strict", description="Encoding error handler for stdio")
+
+    # HTTP-based connection fields (sse, streamable_http, websocket)
+    url: str | None = Field(
+        default=None, description="URL for HTTP-based connections (sse, streamable_http, websocket)"
+    )
+    headers: dict[str, str] | None = Field(default=None, description="HTTP headers for HTTP-based connections")
+    timeout: float | None = Field(default=None, description="HTTP timeout in seconds")
+    sse_read_timeout: float | None = Field(default=None, description="SSE read timeout in seconds")
+    terminate_on_close: bool = Field(
+        default=True, description="Whether to terminate session on close (streamable_http)"
+    )
+
+    # Common fields
     description: str | None = Field(default=None, description="Optional description of what this MCP server provides")
     capabilities: list[str] = Field(default_factory=list, description="List of capabilities this MCP server provides")
 

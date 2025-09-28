@@ -21,19 +21,18 @@ class MCPTaskNode(SuccessFailureNode):
 
         # Get available MCP servers for the dropdown
         mcp_servers = self._get_available_mcp_servers()
-
+        default_mcp_server = mcp_servers[0] if mcp_servers else None
         self.add_parameter(
             Parameter(
-                name="mcp_server_id",
+                name="mcp_server_name",
                 input_types=["str"],
                 type="str",
-                default_value=None,
+                default_value=default_mcp_server,
                 tooltip="Select an MCP server to use",
                 traits={
                     Options(choices=mcp_servers),
                     Button(
-                        full_width=True,
-                        label="Refresh MCP Servers",
+                        full_width=False,
                         icon="refresh-cw",
                         size="icon",
                         variant="secondary",
@@ -62,17 +61,19 @@ class MCPTaskNode(SuccessFailureNode):
                 ui_options={"multiline": True, "placeholder_text": "Input text to process"},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="output",
-                input_types=["str"],
-                type="str",
-                default_value=None,
-                tooltip="The output of the task",
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"multiline": True, "placeholder_text": "Input text to process"},
-            )
+        self.output = Parameter(
+            name="output",
+            input_types=["str"],
+            type="str",
+            default_value=None,
+            tooltip="The output of the task",
+            allowed_modes={ParameterMode.OUTPUT},
+            ui_options={
+                "multiline": True,
+                "placeholder_text": "Input text to process",
+            },  # TODO: (jason) Make this markdown output to handle images
         )
+        self.add_parameter(self.output)
 
         # Add status parameters using the helper method
         self._create_status_parameters(
@@ -91,12 +92,18 @@ class MCPTaskNode(SuccessFailureNode):
             enabled_request = GetEnabledMCPServersRequest()
             enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
 
+            servers = []
             if hasattr(enabled_result, "servers"):
-                return list(enabled_result.servers.keys())
-            return []
+                servers.extend(enabled_result.servers.keys())
+
+            # Always add the local Griptape Nodes MCP server
+            servers.append("griptape-nodes-local")
+
+            return servers
         except Exception as e:
             logger.warning(f"Failed to get MCP servers: {e}")
-            return []
+            # Still return the local server even if others fail
+            return ["griptape-nodes-local"]
 
     def _reload_mcp_servers(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002
         """Reload MCP servers when the refresh button is clicked."""
@@ -107,62 +114,82 @@ class MCPTaskNode(SuccessFailureNode):
             # Update the parameter's choices using the proper method
             if mcp_servers:
                 # Use _update_option_choices to properly update both trait and UI options
-                self._update_option_choices("mcp_server_id", mcp_servers, mcp_servers[0])
+                self._update_option_choices("mcp_server_name", mcp_servers, mcp_servers[0])
                 logger.info(f"Refreshed MCP servers: {len(mcp_servers)} servers available")
             else:
                 # No servers available - use proper method
-                self._update_option_choices("mcp_server_id", ["No MCP servers available"], "No MCP servers available")
+                self._update_option_choices("mcp_server_name", ["No MCP servers available"], "No MCP servers available")
                 logger.info("No MCP servers available")
 
         except Exception as e:
             logger.error(f"Failed to reload MCP servers: {e}")
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate node parameters before execution."""
+        exceptions = []
+
+        # Get parameter values
+        mcp_server_name = self.get_parameter_value("mcp_server_name")
+        prompt = self.get_parameter_value("prompt")
+
+        # Validate MCP server selection
+        if not mcp_server_name:
+            msg = f"{self.name}: No MCP server selected. Please select an MCP server from the dropdown."
+            exceptions.append(ValueError(msg))
+
+        # Validate prompt
+        if not prompt:
+            msg = f"{self.name}: No prompt provided. Please enter a prompt to process."
+            exceptions.append(ValueError(msg))
+
+        # Validate MCP server exists and is enabled
+        if mcp_server_name:
+            # Special case: local Griptape Nodes MCP server is always available
+            if mcp_server_name == "griptape-nodes-local":
+                pass  # Always valid
+            else:
+                try:
+                    app = GriptapeNodes()
+                    mcp_manager = app.MCPManager()
+
+                    # Get enabled MCP servers
+                    enabled_request = GetEnabledMCPServersRequest()
+                    enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+
+                    if not hasattr(enabled_result, "servers") or mcp_server_name not in enabled_result.servers:
+                        msg = f"{self.name}: MCP server '{mcp_server_name}' not found or not enabled."
+                        exceptions.append(ValueError(msg))
+                except Exception as mcp_error:
+                    msg = f"{self.name}: Failed to get MCP server configuration: {mcp_error}"
+                    exceptions.append(ValueError(msg))
+
+        return exceptions if exceptions else None
+
     async def aprocess(self) -> None:
         # Reset execution state and set failure defaults
         self._clear_execution_status()
         self._set_failure_output_values()
+        self.publish_update_to_parameter("output", "")
 
         # Get parameter values
-        mcp_server_id = self.get_parameter_value("mcp_server_id")
+        mcp_server_name = self.get_parameter_value("mcp_server_name")
         prompt = self.get_parameter_value("prompt")
         off_prompt = self.parameter_values.get("off_prompt", False)
         agent = None
-        prev_tools = None
 
-        # self.agent_input = self.get_parameter_value("agent")
-
-        # Validation failures - early returns
-        if not mcp_server_id:
-            error_details = "No MCP server selected. Please select an MCP server from the dropdown."
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"MCPTaskNode '{self.name}': {error_details}")
-            self._handle_failure_exception(ValueError(error_details))
-            return
-
-        if not prompt:
-            error_details = "No prompt provided. Please enter a prompt to process."
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-            logger.error(f"MCPTaskNode '{self.name}': {error_details}")
-            self._handle_failure_exception(ValueError(error_details))
-            return
-
-        # MCP server validation
+        # Get MCP server configuration (validation already done in validate_before_node_run)
         try:
-            app = GriptapeNodes()
-            mcp_manager = app.MCPManager()
+            if mcp_server_name == "griptape-nodes-local":
+                # Special case: use local Griptape Nodes MCP server
+                server_config = "griptape-nodes-local"
+            else:
+                app = GriptapeNodes()
+                mcp_manager = app.MCPManager()
 
-            # Get enabled MCP servers
-            enabled_request = GetEnabledMCPServersRequest()
-            enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
-
-            if not hasattr(enabled_result, "servers") or mcp_server_id not in enabled_result.servers:
-                error_details = f"MCP server '{mcp_server_id}' not found or not enabled."
-                self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
-                logger.error(f"MCPTaskNode '{self.name}': {error_details}")
-                self._handle_failure_exception(ValueError(error_details))
-                return
-
-            server_config = enabled_result.servers[mcp_server_id]
+                # Get enabled MCP servers
+                enabled_request = GetEnabledMCPServersRequest()
+                enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+                server_config = enabled_result.servers[mcp_server_name]
         except Exception as mcp_error:
             error_details = f"Failed to get MCP server configuration: {mcp_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -172,16 +199,17 @@ class MCPTaskNode(SuccessFailureNode):
 
         # MCP tool creation and execution
         try:
-            # Create MCP connection from server config
-            connection: dict[str, Any] = {  # type: ignore[reportAssignmentType]
-                "transport": "stdio",
-                "command": server_config["command"],
-                "args": server_config["args"],
-                "env": server_config.get("env", {}),
-            }
+            # Create MCP connection from server config based on transport type
+            connection: dict[str, Any] = self._create_connection_from_config(server_config)  # type: ignore[arg-type]
 
-            # Create the tool
-            tool = MCPTool(connection=connection, off_prompt=off_prompt)  # type: ignore[arg-type]
+            # Create the tool with unique name
+            if mcp_server_name == "griptape-nodes-local":
+                tool_name = "mcpGriptapeNodes"
+            else:
+                # Convert server name to valid tool name (letters and numbers only)
+                clean_name = "".join(c for c in mcp_server_name if c.isalnum())
+                tool_name = f"mcp{clean_name.title()}"
+            tool = MCPTool(connection=connection, off_prompt=off_prompt, name=tool_name)  # type: ignore[arg-type]
 
             # Initialize the tool activities
             await tool._init_activities()
@@ -207,7 +235,7 @@ class MCPTaskNode(SuccessFailureNode):
 
             # Success path
             self._set_success_output_values(prompt, result)
-            success_details = f"Successfully executed MCP task with server '{mcp_server_id}'"
+            success_details = f"Successfully executed MCP task with server '{mcp_server_name}'"
             self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
             logger.info(f"MCPTaskNode '{self.name}': {success_details}")
 
@@ -270,8 +298,40 @@ class MCPTaskNode(SuccessFailureNode):
 
         self.parameter_output_values["agent"] = result.to_dict()
 
+    def _create_connection_from_config(self, server_config: dict[str, Any]) -> dict[str, Any]:
+        """Create a connection dictionary from server configuration based on transport type."""
+        # Handle special case for local Griptape Nodes MCP server
+        if isinstance(server_config, str) and server_config == "griptape-nodes-local":
+            import os
+
+            port = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
+            return {
+                "transport": "streamable_http",
+                "url": f"http://localhost:{port}/mcp/",
+            }
+
+        transport = server_config.get("transport", "stdio")
+
+        # Define field mappings for each transport type
+        field_mappings = {
+            "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
+            "sse": ["url", "headers", "timeout", "sse_read_timeout"],
+            "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
+            "websocket": ["url"],
+        }
+
+        # Start with transport
+        connection = {"transport": transport}
+
+        # Map relevant fields based on transport type
+        fields_to_map = field_mappings.get(transport, field_mappings["stdio"])
+        for field in fields_to_map:
+            if field in server_config and server_config[field] is not None:
+                connection[field] = server_config[field]
+
+        return connection
+
     def _set_failure_output_values(self) -> None:
         """Set output parameter values to defaults on failure."""
         self.parameter_output_values["prompt"] = ""
         self.parameter_output_values["output"] = ""
-        # self.parameter_output_values["agent"] = None
