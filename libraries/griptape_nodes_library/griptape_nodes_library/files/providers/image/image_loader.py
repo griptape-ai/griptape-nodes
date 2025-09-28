@@ -106,16 +106,15 @@ class ImageLoadProvider(ArtifactLoadProvider):
             input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
             type="ImageUrlArtifact",
             output_type="ImageUrlArtifact",
-            display_name="Image",
         )
 
     def get_artifact_ui_options(self) -> dict[str, Any]:
         """Get image-specific UI options including mask editing."""
         return {
+            "display_name": "Image",
             "clickable_file_browser": True,
             "expander": True,
             "edit_mask": True,
-            "display_name": "Image or Path to Image",
         }
 
     def get_additional_parameters(self) -> list[Parameter]:
@@ -162,39 +161,27 @@ class ImageLoadProvider(ArtifactLoadProvider):
         self, path_input: str, current_parameter_values: dict[str, Any]
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load and create image artifact from path input."""
-        logger.debug("ImageLoadProvider: Loading from path: %s", path_input)
         path_str = PathUtils.normalize_path_input(path_input)
         if not path_str:
-            logger.debug("ImageLoadProvider: Empty path provided after normalization")
             return ArtifactLoadProviderValidationResult(was_successful=False, result_details="Empty path provided")
 
         try:
             # Process file path for serving (copy to workspace if needed)
-            logger.debug("ImageLoadProvider: Processing path to internal URL")
             path_result = self._process_path_to_internal_url(path_str)
-            logger.debug(
-                "ImageLoadProvider: Path processed - internal_url=%s, saved_path=%s",
-                path_result.internal_url,
-                path_result.saved_path,
-            )
         except FileNotFoundError:
-            logger.debug("ImageLoadProvider: File not found: %s", path_input)
             return ArtifactLoadProviderValidationResult(
                 was_successful=False, result_details=f"File not found: {path_input}"
             )
         except PermissionError:
-            logger.debug("ImageLoadProvider: Permission denied: %s", path_input)
             return ArtifactLoadProviderValidationResult(
                 was_successful=False, result_details=f"Permission denied accessing file: {path_input}"
             )
         except Exception as e:
-            logger.debug("ImageLoadProvider: Path processing failed: %s", e)
             return ArtifactLoadProviderValidationResult(
                 was_successful=False, result_details=f"Image loading failed: {e}"
             )
 
         # Create the image artifact
-        logger.debug("ImageLoadProvider: Creating ImageUrlArtifact with value: %s", path_result.internal_url)
         artifact = ImageUrlArtifact(value=path_result.internal_url)
 
         # Process dynamic parameters (mask extraction)
@@ -358,27 +345,16 @@ class ImageLoadProvider(ArtifactLoadProvider):
         self, *, file_bytes: bytes, original_filename: str, parameter_name: str
     ) -> FileDownloadResult:
         """Unified method for saving bytes to workspace with proper error handling."""
-        logger.debug(
-            "ImageLoadProvider: Saving %d bytes to workspace, original_filename=%s, parameter_name=%s",
-            len(file_bytes),
-            original_filename,
-            parameter_name,
-        )
-
         # Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}
         filename = self._generate_workspace_filename_only(
             original_filename=original_filename, parameter_name=parameter_name
         )
-        logger.debug("ImageLoadProvider: Generated filename: %s", filename)
 
         # Save to workspace uploads directory - StaticFilesManager handles directory resolution
         upload_path = f"uploads/{filename}"
-        logger.debug("ImageLoadProvider: Calling StaticFilesManager.save_static_file with path: %s", upload_path)
         try:
             saved_path = GriptapeNodes.StaticFilesManager().save_static_file(file_bytes, upload_path)
-            logger.debug("ImageLoadProvider: File saved successfully to: %s", saved_path)
         except Exception as e:
-            logger.debug("ImageLoadProvider: Failed to save file: %s", e)
             msg = f"Failed to save file to workspace: {upload_path}"
             raise RuntimeError(msg) from e
 
@@ -468,19 +444,15 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
     def _finalize_result_with_dynamic_updates(self, *, artifact: Any, current_values: dict[str, Any]) -> dict[str, Any]:
         """Process image-specific dynamic parameter updates (mask extraction)."""
-        logger.debug("ImageLoadProvider: Starting mask extraction process")
         updates = {}
 
         mask_channel = current_values.get(self.mask_channel_parameter.name)
-        logger.debug("ImageLoadProvider: Mask channel=%s, artifact=%s", mask_channel, type(artifact).__name__)
         if not mask_channel or not artifact:
-            logger.debug("ImageLoadProvider: No mask channel or artifact, skipping mask extraction")
             return updates
 
         try:
             # Normalize input to ImageUrlArtifact
             if isinstance(artifact, dict):
-                logger.debug("ImageLoadProvider: Normalizing dict artifact to ImageUrlArtifact")
                 artifact = dict_to_image_url_artifact(artifact)
         except Exception as e:
             logger.warning("Failed to normalize artifact for mask extraction: %s", e)
@@ -488,16 +460,12 @@ class ImageLoadProvider(ArtifactLoadProvider):
             return updates
 
         if not isinstance(artifact, ImageUrlArtifact):
-            logger.debug("ImageLoadProvider: Artifact is not ImageUrlArtifact, skipping mask extraction")
             return updates
 
         try:
             # Load and process image
-            logger.debug("ImageLoadProvider: Loading image from URL: %s", artifact.value)
             image_pil = load_pil_from_url(artifact.value)
-            logger.debug("ImageLoadProvider: Extracting '%s' channel from image", mask_channel)
             mask = extract_channel_from_image(image_pil, mask_channel, "image")
-            logger.debug("ImageLoadProvider: Mask extraction successful")
         except Exception as e:
             logger.warning("Failed to extract mask channel '%s': %s", mask_channel, e)
             updates["output_mask"] = None
@@ -508,7 +476,6 @@ class ImageLoadProvider(ArtifactLoadProvider):
             filename = self._generate_workspace_filename_only(
                 original_filename="mask.png", parameter_name=self.output_mask_parameter.name
             )
-            logger.debug("ImageLoadProvider: Saving mask with filename: %s", filename)
             output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
             logger.debug(
                 "ImageLoadProvider: Mask saved successfully as artifact: %s",
@@ -519,5 +486,4 @@ class ImageLoadProvider(ArtifactLoadProvider):
             logger.warning("Failed to save mask: %s", e)
             updates["output_mask"] = None
 
-        logger.debug("ImageLoadProvider: Mask extraction completed, updates=%s", updates)
         return updates

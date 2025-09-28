@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
@@ -6,6 +7,8 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes_library.files.path_utils import PathUtils
 from griptape_nodes_library.files.providers.artifact_load_provider import ArtifactLoadProvider
 from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class LoadFile(SuccessFailureNode):
@@ -42,7 +45,7 @@ class LoadFile(SuccessFailureNode):
             output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
             tooltip="The loaded file artifact",
-            ui_options={"expander": True, "display_name": "File"},
+            ui_options={"expander": True, "display_name": "File Contents"},
         )
 
         self.provider_parameter = Parameter(
@@ -161,7 +164,7 @@ class LoadFile(SuccessFailureNode):
         self.artifact_parameter.type = ParameterTypeBuiltin.ANY.value
         self.artifact_parameter.output_type = ParameterTypeBuiltin.ALL.value
         self.artifact_parameter.input_types = [ParameterTypeBuiltin.ANY.value]
-        self.artifact_parameter.ui_options["display_name"] = "File"
+        self.artifact_parameter.ui_options["display_name"] = "File Contents"
 
         # Remove current provider
         self._clear_current_provider()
@@ -305,8 +308,15 @@ class LoadFile(SuccessFailureNode):
         self.artifact_parameter.type = details.type
         self.artifact_parameter.output_type = details.output_type
         self.artifact_parameter.input_types = details.input_types
-        self.artifact_parameter.ui_options["display_name"] = details.display_name
-        self.artifact_parameter.ui_options.update(provider.get_artifact_ui_options())
+
+        # Update ui_options using the pattern from other nodes - reassign the entire dict
+        ui_options = self.artifact_parameter.ui_options
+
+        provider_ui_options = provider.get_artifact_ui_options()
+        ui_options.update(provider_ui_options)
+
+        # Reassign the entire dict - this is the key step other nodes do
+        self.artifact_parameter.ui_options = ui_options
 
         # Add provider-specific parameters
         for param in provider.get_additional_parameters():

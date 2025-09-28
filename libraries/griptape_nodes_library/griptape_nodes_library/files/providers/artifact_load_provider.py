@@ -63,9 +63,6 @@ class ArtifactParameterDetails(NamedTuple):
     # Output type the parameter produces (e.g., "ImageUrlArtifact")
     output_type: str
 
-    # Display name in the UI (e.g., "Image")
-    display_name: str
-
 
 class ArtifactLoadProvider(ABC):
     """Abstract base class for artifact load providers.
