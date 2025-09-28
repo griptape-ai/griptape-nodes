@@ -127,7 +127,7 @@ class NodeExecutor:
                 )
                 # Get the full path where the published workflow will be saved
                 await local_workflow_publisher.arun(
-                    workflow_name="TestDeadlineCloud",
+                    workflow_name=published_filename,
                     workflow_path=workflow_result.file_path,
                     publisher_name=library_name,
                     published_workflow_file_name=published_filename,
@@ -144,7 +144,7 @@ class NodeExecutor:
                 # TODO: How do I determine storage backend?
                 async with subprocess_executor as executor:
                     await executor.arun(
-                        workflow_name="TestDeadlineCloud", flow_input={}, storage_backend=StorageBackend.LOCAL
+                        workflow_name=published_filename, flow_input={}, storage_backend=StorageBackend.LOCAL
                     )
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
@@ -181,27 +181,14 @@ class NodeExecutor:
                                         type(stored_value),
                                         stored_value,
                                     )
-                                    if isinstance(stored_value, bytes):
-                                        # This is pickled bytes, unpickle it
-                                        logger.info("Unpickling bytes for parameter '%s'", param_name)
-                                        parameter_output_values[param_name] = pickle.loads(stored_value)
-                                        logger.info(
-                                            "Successfully unpickled parameter '%s', result type: %s",
-                                            param_name,
-                                            type(parameter_output_values[param_name]),
-                                        )
-                                    elif (
-                                        isinstance(stored_value, str)
-                                        and stored_value.startswith("b'")
-                                        and stored_value.endswith("'")
-                                    ):
-                                        # This is a string representation of bytes that went through JSON serialization
+                                    # Since all stored values will be string representations due to JSON serialization,
+                                    # always use ast.literal_eval to convert back to bytes then unpickle
+                                    if isinstance(stored_value, str):
                                         logger.info(
                                             "Converting string-represented bytes for parameter '%s': %s",
                                             param_name,
                                             stored_value,
                                         )
-                                        # Convert string representation back to bytes and unpickle
                                         try:
                                             # Use ast.literal_eval to safely convert string representation to bytes
                                             actual_bytes = ast.literal_eval(stored_value)
@@ -213,7 +200,7 @@ class NodeExecutor:
                                             if isinstance(actual_bytes, bytes):
                                                 parameter_output_values[param_name] = pickle.loads(actual_bytes)
                                                 logger.info(
-                                                    "Successfully unpickled string-represented bytes for parameter '%s', result type: %s",
+                                                    "Successfully unpickled parameter '%s', result type: %s",
                                                     param_name,
                                                     type(parameter_output_values[param_name]),
                                                 )
@@ -233,7 +220,7 @@ class NodeExecutor:
                                             # Fallback: treat as direct value
                                             parameter_output_values[param_name] = stored_value
                                     else:
-                                        # This is a direct value (fallback case when pickling failed)
+                                        # Fallback for non-string values (shouldn't happen with JSON serialization)
                                         logger.info(
                                             "Using direct value for parameter '%s' (type: %s)",
                                             param_name,
