@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -225,6 +224,7 @@ class CompleteState(State):
         for current_node in context.current_nodes:
             # Use pickle-based serialization for complex parameter output values
             from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
                 current_node, use_pickling=True
             )

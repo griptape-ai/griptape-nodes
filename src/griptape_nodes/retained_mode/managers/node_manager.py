@@ -2563,7 +2563,9 @@ class NodeManager:
         return commands if commands else None
 
     @staticmethod
-    def serialize_parameter_output_values(node: BaseNode, use_pickling: bool = False) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
+    def serialize_parameter_output_values(
+        node: BaseNode, use_pickling: bool = False
+    ) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Serialize parameter output values with optional pickling for complex objects.
 
         Args:

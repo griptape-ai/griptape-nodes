@@ -254,6 +254,6 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
             # Store both parameter output values and unique UUID values for deserialization
             result = {
                 "parameter_output_values": ex_event.payload.parameter_output_values,
-                "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values
+                "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values,
             }
             self.output = {ex_event.payload.end_node_name: result}

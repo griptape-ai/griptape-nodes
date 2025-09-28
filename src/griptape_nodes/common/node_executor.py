@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import ast
 import logging
-from pathlib import Path
 import pickle
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
@@ -122,20 +122,30 @@ class NodeExecutor:
                 local_workflow_publisher = SubprocessWorkflowPublisher()
                 # Remove .py extension from the original file path and add _published
                 published_filename = f"{Path(workflow_result.file_path).stem}_published"
-                published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
+                published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (
+                    published_filename + ".py"
+                )
                 # Get the full path where the published workflow will be saved
                 await local_workflow_publisher.arun(
-                    workflow_name="TestDeadlineCloud", workflow_path=workflow_result.file_path, publisher_name=library_name, published_workflow_file_name=published_filename
+                    workflow_name="TestDeadlineCloud",
+                    workflow_path=workflow_result.file_path,
+                    publisher_name=library_name,
+                    published_workflow_file_name=published_filename,
                 )
                 if not Path(published_workflow_filename).exists():
                     msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
                     raise FileNotFoundError(msg)
-                #Run the subprocess.
-                from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
+                # Run the subprocess.
+                from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
+                    SubprocessWorkflowExecutor,
+                )
+
                 subprocess_executor = SubprocessWorkflowExecutor(workflow_path=published_workflow_filename)
-                #TODO: How do I determine storage backend?
+                # TODO: How do I determine storage backend?
                 async with subprocess_executor as executor:
-                    await executor.arun(workflow_name="TestDeadlineCloud", flow_input={}, storage_backend=StorageBackend.LOCAL)
+                    await executor.arun(
+                        workflow_name="TestDeadlineCloud", flow_input={}, storage_backend=StorageBackend.LOCAL
+                    )
                 my_subprocess_result = subprocess_executor.output
                 # Error handle for this
                 if my_subprocess_result is None:
@@ -146,7 +156,7 @@ class NodeExecutor:
                 parameter_output_values = {}
                 logger.info("Received result from subprocess: %s", subprocess_executor)
                 logger.info("Output is: %s", my_subprocess_result)
-                for end_node_name, result_dict in my_subprocess_result.items():
+                for result_dict in my_subprocess_result.values():
                     # Handle new structure with pickled values
                     if isinstance(result_dict, dict) and "parameter_output_values" in result_dict:
                         param_output_vals = result_dict["parameter_output_values"]
@@ -161,6 +171,29 @@ class NodeExecutor:
                                     if isinstance(stored_value, bytes):
                                         # This is pickled bytes, unpickle it
                                         parameter_output_values[param_name] = pickle.loads(stored_value)
+                                    elif (
+                                        isinstance(stored_value, str)
+                                        and stored_value.startswith("b'")
+                                        and stored_value.endswith("'")
+                                    ):
+                                        # This is a string representation of bytes that went through JSON serialization
+                                        # Convert string representation back to bytes and unpickle
+                                        try:
+                                            # Use ast.literal_eval to safely convert string representation to bytes
+                                            actual_bytes = ast.literal_eval(stored_value)
+                                            if isinstance(actual_bytes, bytes):
+                                                parameter_output_values[param_name] = pickle.loads(actual_bytes)
+                                            else:
+                                                # Fallback: treat as direct value
+                                                parameter_output_values[param_name] = stored_value
+                                        except (ValueError, SyntaxError, pickle.UnpicklingError) as e:
+                                            logger.warning(
+                                                "Failed to unpickle string-represented bytes for parameter '%s': %s",
+                                                param_name,
+                                                e,
+                                            )
+                                            # Fallback: treat as direct value
+                                            parameter_output_values[param_name] = stored_value
                                     else:
                                         # This is a direct value (fallback case when pickling failed)
                                         parameter_output_values[param_name] = stored_value
