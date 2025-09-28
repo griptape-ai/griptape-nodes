@@ -83,7 +83,13 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._seed_parameter.preprocess()
 
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         num_inference_steps = self.get_num_inference_steps()
+        # Default to False for better performance - preview intermediates slow down inference
+        enable_preview = GriptapeNodes.ConfigManager().get_config_value(
+            "advanced_media_library.enable_image_preview_intermediates", default=False
+        )
 
         def callback_on_step_end(
             pipe: DiffusionPipeline,
@@ -92,7 +98,8 @@ class DiffusionPipelineRuntimeParameters(ABC):
             callback_kwargs: dict,
         ) -> dict:
             if i < num_inference_steps - 1:
-                self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+                if enable_preview:
+                    self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
                 self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
             return {}
 

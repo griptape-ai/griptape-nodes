@@ -110,14 +110,12 @@ class FluxPipelineTypeFluxControlNetPipelineParameters(DiffusionPipelineTypePipe
             pretrained_model_name_or_path=text_encoder_repo_id,
             revision=text_encoder_revision,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
 
         text_encoder_2 = transformers.T5EncoderModel.from_pretrained(
             pretrained_model_name_or_path=text_encoder_2_repo_id,
             revision=text_encoder_2_revision,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
 
         # Load ControlNet model first
@@ -125,7 +123,6 @@ class FluxPipelineTypeFluxControlNetPipelineParameters(DiffusionPipelineTypePipe
             pretrained_model_name_or_path=controlnet_repo_id,
             revision=controlnet_revision,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/2322
@@ -136,5 +133,4 @@ class FluxPipelineTypeFluxControlNetPipelineParameters(DiffusionPipelineTypePipe
             text_encoder_2=text_encoder_2,
             controlnet=controlnet,
             torch_dtype=torch.bfloat16,
-            local_files_only=True,
         )

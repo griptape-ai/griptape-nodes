@@ -3,28 +3,28 @@ import logging
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_control_net_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_control_net_pipeline_parameters import (
     FluxPipelineTypeFluxControlNetPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_fill_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_fill_pipeline_parameters import (
     FluxPipelineTypeFluxFillPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_img2_img_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_img2_img_pipeline_parameters import (
     FluxPipelineTypeFluxImg2ImgPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_kontext_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_kontext_pipeline_parameters import (
     FluxPipelineTypeFluxKontextPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_pipeline_parameters import (
     FluxPipelineTypeFluxPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_upscale_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.flux.flux_pipeline_type_flux_upscale_pipeline_parameters import (
     FluxPipelineTypeFluxUpscalePipelineParameters,
 )
+from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 

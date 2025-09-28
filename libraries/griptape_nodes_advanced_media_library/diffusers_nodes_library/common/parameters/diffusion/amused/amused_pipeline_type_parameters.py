@@ -1,21 +1,21 @@
 import logging
 
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_img2_img_pipeline_parameters import (
+    AmusedPipelineTypeAmusedImg2ImgPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_inpaint_pipeline_parameters import (
+    AmusedPipelineTypeAmusedInpaintPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_pipeline_parameters import (
+    AmusedPipelineTypeAmusedPipelineParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_img2_img_pipeline_parameters import (
-    AmusedPipelineTypeAmusedImg2ImgPipelineParameters,
-)
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_inpaint_pipeline_parameters import (
-    AmusedPipelineTypeAmusedInpaintPipelineParameters,
-)
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.amused.amused_pipeline_type_amused_pipeline_parameters import (
-    AmusedPipelineTypeAmusedPipelineParameters,
-)
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
+from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 

@@ -248,12 +248,6 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
         intermediate_pil_image = pipe.image_processor.postprocess(image, output_type="pil")[0]
         return intermediate_pil_image
 
-    def publish_output_image_preview_latents(self, pipe: Any, latents: Any) -> None:
-        """Override to use custom latents_to_image_pil method."""
-        preview_image_pil = self.latents_to_image_pil(pipe, latents)
-        preview_image_artifact = pil_to_image_artifact(preview_image_pil)
-        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
-
     def publish_output_image(self, image: Image) -> None:
         """Publish the final output image."""
         image_artifact = pil_to_image_artifact(image)

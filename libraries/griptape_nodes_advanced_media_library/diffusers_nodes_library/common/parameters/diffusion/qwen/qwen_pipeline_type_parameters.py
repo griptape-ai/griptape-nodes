@@ -3,19 +3,19 @@ import logging
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_img2_img_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_img2_img_pipeline_parameters import (
     QwenPipelineTypeQwenImg2ImgPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_pipeline_parameters import (
     QwenPipelineTypeQwenPipelineParameters,
 )
-from libraries.griptape_nodes_advanced_media_library.diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_upscale_pipeline_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_pipeline_type_qwen_upscale_pipeline_parameters import (
     QwenPipelineTypeQwenUpscalePipelineParameters,
 )
+from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 

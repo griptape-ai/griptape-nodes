@@ -101,16 +101,3 @@ class AmusedPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         # Convert to PIL image
         intermediate_pil_image = pipe.image_processor.postprocess(output, output_type="pil")[0]
         return intermediate_pil_image
-
-    def publish_output_image_preview_latents(self, pipe: diffusers.AmusedPipeline, latents: torch.Tensor) -> None:
-        """Publish preview image from latents during inference."""
-        preview_image_pil = self.latents_to_image_pil(pipe, latents)
-
-        # Check to ensure there's enough space in the intermediates directory
-        # if that setting is enabled.
-        check_cleanup_intermediates_directory()
-
-        preview_image_artifact = pil_to_image_artifact(
-            preview_image_pil, directory_path=get_intermediates_directory_path()
-        )
-        self._node.publish_update_to_parameter("output_image", preview_image_artifact)
