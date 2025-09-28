@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.files.path_utils import PathUtils
@@ -46,6 +46,7 @@ class LoadFile(SuccessFailureNode):
             default_value=None,
             tooltip="The loaded file artifact",
             ui_options={"expander": True, "display_name": "File Contents"},
+            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
         )
 
         self.provider_parameter = Parameter(
