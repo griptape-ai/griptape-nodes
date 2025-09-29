@@ -1526,6 +1526,9 @@ class EndNode(BaseNode):
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
         else:
             logger.info("End Node %s: No entry_parameter found, no control output will be set", self.name)
+        #add logging for parameter_values and parameter_output_values
+        logger.info("End Node %s: parameter_values = %s", self.name, self.parameter_values)
+        logger.info("End Node %s: parameter_output_values = %s", self.name, self.parameter_output_values)
 
 
 class StartLoopNode(BaseNode):
