@@ -174,30 +174,18 @@ class ExecuteDagState(State):
 
     @staticmethod
     def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
-        logger.info(
-            "Parallel Resolution: Searching for control output in node '%s' parameter_output_values: %s",
-            node.name,
-            list(node.parameter_output_values.keys()),
-        )
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)
-            logger.info(
-                "Parallel Resolution: Checking parameter '%s' - type: %s, value: %s",
-                param_name,
-                parameter.type if parameter else None,
-                value,
-            )
             if (
                 parameter is not None
                 and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value
                 and value == CONTROL_INPUT_PARAMETER
             ):
                 # This is the parameter
-                logger.info(
+                logger.debug(
                     "Parallel Resolution: Found control output parameter '%s' for non-local execution", param_name
                 )
                 return parameter
-        logger.info("Parallel Resolution: No control output found for non-local execution in node '%s'", node.name)
         return None
 
     @staticmethod
@@ -213,10 +201,7 @@ class ExecuteDagState(State):
         else:
             next_output = node.get_next_control_output()
         if next_output is not None:
-            logger.info(f"The node name is {node.name}. the next output is {next_output.name}")
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
-        else:
-            logger.info(f"The node name is {node.name}. the next output is {next_output}")
 
     @staticmethod
     def _should_skip_control_flow(
@@ -249,31 +234,16 @@ class ExecuteDagState(State):
         flow_manager: FlowManager,
     ) -> None:
         """Process the next control node in the flow."""
-        logger.info(
-            "Parallel Resolution: Getting connection for node '%s' with next output '%s'", node.name, next_output.name
-        )
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
         if node_connection is not None:
             next_node, next_parameter = node_connection
-            logger.info(
-                "Parallel Resolution: Found connection from '%s' to '%s' via entry parameter '%s'",
-                node.name,
-                next_node.name,
-                next_parameter.name if next_parameter else None,
-            )
             # Set entry control parameter
-            logger.info(
+            logger.debug(
                 "Parallel Resolution: Setting entry control parameter for node '%s' to '%s'",
                 next_node.name,
                 next_parameter.name if next_parameter else None,
             )
             next_node.set_entry_control_parameter(next_parameter)
-        else:
-            logger.info(
-                "Parallel Resolution: No connection found for node '%s' with next output '%s'",
-                node.name,
-                next_output.name,
-            )
 
         if node_connection is not None:
             next_node, next_parameter = node_connection
