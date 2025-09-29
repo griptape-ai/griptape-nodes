@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 from griptape.artifacts import BaseArtifact
@@ -19,7 +20,9 @@ class MCPTaskNode(SuccessFailureNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        # Cache MCP tools like the agent does
+        # Cache MCP tools to avoid expensive re-initialization
+        # MCPTool creation + _init_activities() takes ~1-2 seconds per tool
+        # This cache persists for the lifetime of this node instance
         self._mcp_tools: dict[str, MCPTool] = {}
 
         # Get available MCP servers for the dropdown
@@ -87,6 +90,7 @@ class MCPTaskNode(SuccessFailureNode):
 
     def _get_available_mcp_servers(self) -> list[str]:
         """Get list of available MCP server IDs for the dropdown."""
+        servers = []
         try:
             app = GriptapeNodes()
             mcp_manager = app.MCPManager()
@@ -95,18 +99,16 @@ class MCPTaskNode(SuccessFailureNode):
             enabled_request = GetEnabledMCPServersRequest()
             enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
 
-            servers = []
             if hasattr(enabled_result, "servers"):
                 servers.extend(enabled_result.servers.keys())
 
             # Note: griptape-nodes-local removed from MCPTaskNode due to circular dependency issues
             # It's still available for the agent, but not for MCPTaskNode
 
-            return servers
         except Exception as e:
             logger.warning(f"Failed to get MCP servers: {e}")
             # Return empty list if no servers available (no griptape-nodes-local for MCPTaskNode)
-            return []
+        return servers
 
     def _reload_mcp_servers(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002
         """Reload MCP servers when the refresh button is clicked."""
@@ -118,14 +120,17 @@ class MCPTaskNode(SuccessFailureNode):
             if mcp_servers:
                 # Use _update_option_choices to properly update both trait and UI options
                 self._update_option_choices("mcp_server_name", mcp_servers, mcp_servers[0])
+                msg = f"{self.name}: Refreshed MCP servers: {len(mcp_servers)} servers available"
                 logger.info(f"Refreshed MCP servers: {len(mcp_servers)} servers available")
             else:
                 # No servers available - use proper method
                 self._update_option_choices("mcp_server_name", ["No MCP servers available"], "No MCP servers available")
-                logger.info("No MCP servers available")
+                msg = f"{self.name}: No MCP servers available"
+                logger.info(msg)
 
         except Exception as e:
-            logger.error(f"Failed to reload MCP servers: {e}")
+            msg = f"{self.name}: Failed to reload MCP servers: {e}"
+            logger.error(msg)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate node parameters before execution."""
@@ -137,7 +142,7 @@ class MCPTaskNode(SuccessFailureNode):
 
         # Validate MCP server selection
         if not mcp_server_name:
-            msg = f"{self.name}: No MCP server selected. Please select an MCP server from the dropdown."
+            msg = f"{self.name}: No MCP server selected. Please select an MCP server from the dropdown."  # noqa: S608 - false sql injection warning by linter
             exceptions.append(ValueError(msg))
 
         # Validate prompt
@@ -165,8 +170,16 @@ class MCPTaskNode(SuccessFailureNode):
         return exceptions if exceptions else None
 
     async def _get_or_create_mcp_tool(self, mcp_server_name: str, server_config: dict[str, Any] | str) -> MCPTool:
-        """Get or create MCP tool, caching it like the agent does."""
+        """Get or create MCP tool, caching it to avoid expensive re-initialization.
+
+        MCPTool creation involves establishing connections to MCP servers and discovering
+        their capabilities, which can take 1-2 seconds per tool. Caching prevents this
+        overhead on subsequent runs within the same node instance.
+        """
         if mcp_server_name not in self._mcp_tools:
+            start_time = time.time()
+            logger.info(f"MCPTaskNode '{self.name}': Creating new MCP tool for '{mcp_server_name}'...")
+
             # Create MCP connection from server config
             connection: dict[str, Any] = self._create_connection_from_config(server_config)  # type: ignore[arg-type]
 
@@ -176,8 +189,22 @@ class MCPTaskNode(SuccessFailureNode):
 
             # Create and initialize the tool (match agent's parameters exactly)
             tool = MCPTool(connection=connection, name=tool_name)  # type: ignore[arg-type]
+
+            # Initialize tool capabilities - this is the expensive operation we're caching
+            init_start = time.time()
             await tool._init_activities()  # Initialize once when created
+            init_time = time.time() - init_start
+
+            total_time = time.time() - start_time
+            logger.debug(
+                f"MCPTaskNode '{self.name}': MCP tool creation took {total_time:.2f}s (init: {init_time:.2f}s)"
+            )
+
+            # Cache the initialized tool for future use
             self._mcp_tools[mcp_server_name] = tool
+        else:
+            # Tool already exists in cache - reuse it to avoid expensive re-initialization
+            logger.debug(f"MCPTaskNode '{self.name}': Using cached MCP tool for '{mcp_server_name}'")
 
         return self._mcp_tools[mcp_server_name]
 
@@ -230,7 +257,11 @@ class MCPTaskNode(SuccessFailureNode):
             agent.add_task(prompt_task)
 
             # Run the process with proper streaming
+            execution_start = time.time()
+            logger.debug(f"MCPTaskNode '{self.name}': Starting agent execution with MCP tool...")
             result = self._process_with_streaming(agent, prompt)
+            execution_time = time.time() - execution_start
+            logger.debug(f"MCPTaskNode '{self.name}': Agent execution completed in {execution_time:.2f}s")
 
             # Success path
             self._set_success_output_values(prompt, result)
