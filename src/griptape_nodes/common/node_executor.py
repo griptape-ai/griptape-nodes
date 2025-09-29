@@ -242,7 +242,7 @@ class NodeExecutor:
                 parameter_output_values[param_name] = self._deserialize_parameter_value(
                     param_name, param_value, unique_uuid_to_values
                 )
-
+        logger.info("Parameter output values: %s", parameter_output_values)
         return parameter_output_values
 
     def _deserialize_parameter_value(self, param_name: str, param_value: Any, unique_uuid_to_values: dict) -> Any:
