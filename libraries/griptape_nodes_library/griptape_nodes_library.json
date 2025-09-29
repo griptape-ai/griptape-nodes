@@ -452,7 +452,7 @@
     },
     {
       "class_name": "ExecutePython",
-      "file_path": "griptape_nodes_library/os/execute_python.py",
+      "file_path": "griptape_nodes_library/engine/execute_python.py",
       "metadata": {
         "category": "engine",
         "description": "Execute Python code with input variables and capture output",
@@ -2017,9 +2017,9 @@
     },
     {
       "class_name": "ListFiles",
-      "file_path": "griptape_nodes_library/os/list_files.py",
+      "file_path": "griptape_nodes_library/engine/list_files.py",
       "metadata": {
-        "category": "os",
+        "category": "engine",
         "description": "List files in a directory with optional pattern matching and recursive search",
         "display_name": "List Files",
         "icon": "FolderOpen"
