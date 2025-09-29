@@ -47,7 +47,6 @@ class FluxLorasParameter:
         loras  = self.get_loras()
 
         if not loras:
-            pipe.disable_lora()
             return
 
         lora_by_name = {
@@ -70,31 +69,13 @@ class FluxLorasParameter:
             state_dict = safetensors.torch.load_file(lora_path)  # type: ignore[reportAttributeAccessIssue]
             pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
-        if loras_to_load and get_best_device(quiet=True) == torch.device("cuda"):
-            # If we loaded any loras, make sure the layers have been casted
-            # to bfloat16. For cuda, we enable the layerwise caching on the
-            # transformer, but this isn't applied to the linear layers added
-            # by the loras. Those are loaded as fp8, and cuda doesn't have
-            # all the right matrix operation kernels for fp8, so we need to
-            # cast to bfloat16. That's fine because there are a lot less lora
-            # weights when compared to the original transformer (so it won't
-            # take up that much space on the device).
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/849
-            logger.info("converting all lora_A and lora_B layers to bfloat16")
-            lora_modules = [
-                module
-                for name, module in pipe.transformer.named_modules()
-                if hasattr(module, "lora_A") or hasattr(module, "lora_B")
-            ]
-
-            logger.info("Converting %d lora related layers to bfloat16", len(lora_modules))
-            for module in lora_modules:
-                module.to(dtype=torch.bfloat16)
-
         # Use them with given weights.
         adapter_names = [v["name"] for v in lora_by_name.values()]
         adapter_weights = [v["weight"] for v in lora_by_name.values()]
         msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
         logger.info(msg)
         pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
-        pipe.enable_lora()
+        
+        logger.info("Fusing lora weights into model for inference.")
+        pipe.fuse_lora(adapter_names=adapter_names, lora_scale=1.0)
+        pipe.unload_lora_weights()
