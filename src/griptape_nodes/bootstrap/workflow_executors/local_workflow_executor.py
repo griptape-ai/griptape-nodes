@@ -104,6 +104,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         for node_name, node in nodes.items():
             if isinstance(node, EndNode):
                 output[node_name] = node.parameter_values
+                # Parameter_output_values should also be included, and should take priority over parameter_values
+                output[node_name].update(node.parameter_output_values)
 
         return output
 

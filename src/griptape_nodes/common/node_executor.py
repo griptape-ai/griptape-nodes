@@ -20,9 +20,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from pathlib import Path
 
 if TYPE_CHECKING:
-    from pathlib import Path
 
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
