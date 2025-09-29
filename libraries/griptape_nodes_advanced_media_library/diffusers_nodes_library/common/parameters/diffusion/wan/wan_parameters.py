@@ -54,8 +54,7 @@ class WanPipelineParameters(DiffusionPipelineTypePipelineParameters):
         )
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
+        self._model_repo_parameter.remove_input_parameters()
         self._node.remove_parameter_element_by_name("width")
         self._node.remove_parameter_element_by_name("height")
 
@@ -92,6 +91,7 @@ class WanPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=repo_id,
             revision=revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:

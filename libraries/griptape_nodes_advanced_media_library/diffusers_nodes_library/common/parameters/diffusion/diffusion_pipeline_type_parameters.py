@@ -60,12 +60,12 @@ class DiffusionPipelineTypeParameters(ABC):
         all_element_names = [element.name for element in self._node.root_ui_element.children]
 
         # Start with required positioning
-        sorted_parameters = ["provider", "pipeline_type"]
+        sorted_parameters = ["pipeline", "provider", "pipeline_type"]
 
         # Add all other parameters that aren't already positioned or at the end
         hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
-        end_params = {*hf_param_names, "pipeline", "logs"}
-        positioned_params = {"provider", "pipeline_type"}
+        end_params = {*hf_param_names, "logs"}
+        positioned_params = {"pipeline", "provider", "pipeline_type"}
 
         sorted_parameters.extend(
             [
@@ -76,7 +76,7 @@ class DiffusionPipelineTypeParameters(ABC):
         )
 
         # Add end parameters
-        sorted_parameters.extend([*hf_param_names, "pipeline", "logs"])
+        sorted_parameters.extend([*hf_param_names, "logs"])
 
         self._node.reorder_elements(sorted_parameters)
 

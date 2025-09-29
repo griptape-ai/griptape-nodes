@@ -30,8 +30,7 @@ class AllegroPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._model_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
+        self._model_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -109,6 +108,7 @@ class AllegroPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
         # Enable VAE tiling for memory efficiency
