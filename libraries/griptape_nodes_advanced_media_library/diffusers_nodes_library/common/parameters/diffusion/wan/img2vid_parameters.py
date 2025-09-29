@@ -107,6 +107,7 @@ class WanImageToVideoPipelineParameters(DiffusionPipelineTypePipelineParameters)
             pretrained_model_name_or_path=repo_id,
             revision=revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
