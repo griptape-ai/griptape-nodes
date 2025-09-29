@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 
 # Runtime imports for ResultDetails since it's used at runtime
 from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
+from griptape_nodes.retained_mode.events.execution_events import StartFlowResultFailure, StartFlowResultSuccess
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     GetTopLevelFlowRequest,
@@ -1379,14 +1380,14 @@ class WorkflowManager:
 
         # Create the Workflow Metadata header
         workflows_referenced = None
-        if serialized_flow_commands.referenced_workflows:
-            workflows_referenced = list(serialized_flow_commands.referenced_workflows)
+        if serialized_flow_commands.node_dependencies.referenced_workflows:
+            workflows_referenced = list(serialized_flow_commands.node_dependencies.referenced_workflows)
 
         return WorkflowMetadata(
             name=str(file_name),
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
-            node_libraries_referenced=list(serialized_flow_commands.node_libraries_used),
+            node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
@@ -1395,7 +1396,7 @@ class WorkflowManager:
             image=image_path,
         )
 
-    def _generate_workflow_file_content(  # noqa: PLR0912, C901
+    def _generate_workflow_file_content(  # noqa: PLR0912, PLR0915, C901
         self,
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
@@ -1409,6 +1410,13 @@ class WorkflowManager:
 
         import_recorder = ImportRecorder()
         import_recorder.add_from_import("griptape_nodes.retained_mode.griptape_nodes", "GriptapeNodes")
+
+        # Add imports from node dependencies
+        for import_dep in serialized_flow_commands.node_dependencies.imports:
+            if import_dep.class_name:
+                import_recorder.add_from_import(import_dep.module, import_dep.class_name)
+            else:
+                import_recorder.add_import(import_dep.module)
 
         ast_container = ASTContainer()
 
@@ -3276,11 +3284,79 @@ class WorkflowManager:
             if isinstance(result, PublishWorkflowResultSuccess):
                 workflow_file = Path(result.published_workflow_file_path)
                 result = self._register_published_workflow_file(workflow_file, result)
+
+                if request.execute_on_publish:
+                    await self._handle_execute_on_publish(request, workflow_file)
+
             return result  # noqa: TRY300
         except Exception as e:
             details = f"Failed to publish workflow '{request.workflow_name}': {e!s}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
+
+    async def _handle_execute_on_publish(self, request: PublishWorkflowRequest, workflow_file: Path) -> None:
+        class ExecuteOnPublishError(Exception):
+            pass
+
+        # Create an event to track when we get a start workflow result
+        start_result_received = asyncio.Event()
+        exception: ExecuteOnPublishError | None = None
+
+        def invoke_done_callback(future: asyncio.Future) -> None:
+            nonlocal exception
+            try:
+                future.result()
+            except Exception as e:
+                msg = f"Error during invocation of published workflow '{request.workflow_name}': {e!s}"
+                logger.exception(msg)
+                exception = ExecuteOnPublishError(e)
+                start_result_received.set()
+
+        def on_start_flow_result(start_result: ResultPayload) -> None:
+            nonlocal exception
+            if isinstance(start_result, StartFlowResultSuccess):
+                msg = f"Successfully started published workflow '{request.workflow_name}'"
+                logger.info(msg)
+            elif isinstance(start_result, StartFlowResultFailure):
+                msg = f"Failed to invoke published workflow '{request.workflow_name}': {start_result.exception}"
+                logger.exception(msg)
+                exceptions = start_result.validation_exceptions
+                exceptions.append(start_result.exception) if start_result.exception else None
+                exception = ExecuteOnPublishError(exceptions)
+
+            start_result_received.set()
+
+        invoke_task = asyncio.create_task(
+            self._invoke_published_workflow(request.workflow_name, workflow_file, on_start_flow_result)
+        )
+        invoke_task.add_done_callback(invoke_done_callback)
+
+        # Wait for StartFlow result
+        try:
+            await asyncio.wait_for(start_result_received.wait(), timeout=10.0)
+            if exception is not None:
+                raise exception
+        except TimeoutError:
+            # Timeout occurred - don't block on subprocess workflow execution, just log a warning
+            msg = f"Timeout waiting for workflow '{request.workflow_name}' StartFlow result."
+            logger.warning(msg)
+
+    async def _invoke_published_workflow(
+        self, workflow_name: str, workflow_path: Path, on_start_flow_result: Callable[[ResultPayload], None]
+    ) -> None:
+        from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import SubprocessWorkflowExecutor
+
+        subprocess_executor = SubprocessWorkflowExecutor(
+            workflow_path=str(workflow_path), on_start_flow_result=on_start_flow_result
+        )
+        storage_backend_value = GriptapeNodes.ConfigManager().get_config_value("storage_backend")
+
+        async with subprocess_executor as executor:
+            await executor.arun(
+                workflow_name=workflow_name,
+                flow_input={},
+                storage_backend=StorageBackend(value=storage_backend_value),
+            )
 
     def _register_published_workflow_file(
         self, workflow_file: Path, result: PublishWorkflowResultSuccess
