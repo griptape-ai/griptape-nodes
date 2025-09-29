@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_builder_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.builder_parameters import (
     DiffusionPipelineBuilderParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
@@ -13,31 +13,34 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
+        self._initializing = True
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
-        self.params.add_input_parameters()
-
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
+        self.log_params = LogParameter(self)
+
+        self.params.add_input_parameters()
         self.huggingface_pipeline_params.add_input_parameters()
 
         self.params.add_output_parameters()
-
-        self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
 
-        self.set_config_hash()
+        self._initializing = False
 
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
         self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")
-        self.set_parameter_value("pipeline", config_hash)
-        self.parameter_output_values["pipeline"] = config_hash
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(parameter_name="pipeline", value=config_hash, node_name=self.name)
+        )
 
     @property
     def optimization_kwargs(self) -> dict[str, Any]:
@@ -57,17 +60,53 @@ class DiffusionPipelineBuilderNode(ControlNode):
             config_data[f"opt_{key}"] = value
 
         return (
-            self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_class.__name__
+            self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_name
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+    def add_parameter(self, parameter: Parameter) -> None:
+        """Add a parameter to the node.
+
+        During initialization, parameters are added normally.
+        After initialization (dynamic mode), parameters are marked as user-defined
+        for serialization and duplicates are prevented.
+        """
+        if self._initializing:
+            super().add_parameter(parameter)
+            return
+
+        # Dynamic mode: prevent duplicates and mark as user-defined
+        if not self.does_name_exist(parameter.name):
+            parameter.user_defined = True
+            super().add_parameter(parameter)
+
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        parameter = self.get_parameter_by_name(param_name)
+        if parameter is None:
+            return
+        self.params.before_value_set(parameter, value)
+
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
         self.params.after_value_set(parameter, value)
         self.huggingface_pipeline_params.after_value_set(parameter, value)
         if parameter.name != "pipeline":
             self.set_config_hash()
-        return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()

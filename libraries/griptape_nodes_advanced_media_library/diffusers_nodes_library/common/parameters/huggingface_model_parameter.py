@@ -44,7 +44,7 @@ class HuggingFaceModelParameter(ABC):
         if not choices:
             self._node.add_node_element(
                 ParameterMessage(
-                    name="huggingface_repo_parameter_message",
+                    name=f"huggingface_repo_parameter_message_{self._parameter_name}",
                     title="Huggingface Model Download Required",
                     variant="warning",
                     value=self.get_help_message(),
@@ -58,6 +58,7 @@ class HuggingFaceModelParameter(ABC):
                 default_value=choices[0] if choices else None,
                 input_types=["str"],
                 type="str",
+                ui_options={"display_name": self._parameter_name},
                 traits={
                     Options(
                         choices=choices,
@@ -66,6 +67,10 @@ class HuggingFaceModelParameter(ABC):
                 tooltip=self._parameter_name,
             )
         )
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name(self._parameter_name)
+        self._node.remove_parameter_element_by_name(f"huggingface_repo_parameter_message_{self._parameter_name}")
 
     def get_choices(self) -> list[str]:
         return list(map(self._repo_revision_to_key, self._repo_revisions))

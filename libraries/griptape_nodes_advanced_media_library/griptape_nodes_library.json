@@ -16,6 +16,13 @@
         "max_directory_size_gb": 5,
         "enable_directory_cleanup": false
       }
+    },
+    {
+      "description": "Configuration settings for image preview intermediates in diffusion pipeline runtime. Enables real-time image previews during generation but will slow down inference time.",
+      "category": "advanced_media_library",
+      "contents": {
+        "enable_image_preview_intermediates": false
+      }
     }
   ],
   "metadata": {
@@ -33,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "git+https://github.com/huggingface/diffusers.git@00f95b9755718aabb65456e791b8408526ae6e76",
+        "diffusers>=0.35.1",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.15.2",

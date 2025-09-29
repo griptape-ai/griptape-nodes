@@ -5,8 +5,9 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -43,12 +44,60 @@ from griptape_nodes.traits.options import Options
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
 AsyncResult = Generator[Callable[[], T], T]
+
+LOCAL_EXECUTION = "Local Execution"
+
+
+class ImportDependency(NamedTuple):
+    """Import dependency specification for a node.
+
+    Attributes:
+        module: The module name to import
+        class_name: Optional class name to import from the module. If None, imports the entire module.
+    """
+
+    module: str
+    class_name: str | None = None
+
+
+@dataclass
+class NodeDependencies:
+    """Dependencies that a node has on external resources.
+
+    This class provides a way for nodes to declare their dependencies on workflows,
+    static files, Python imports, and libraries. This information can be used by the system
+    for workflow packaging, dependency resolution, and deployment planning.
+
+    Attributes:
+        referenced_workflows: Set of workflow names that this node references
+        static_files: Set of static file names that this node depends on
+        imports: Set of Python imports that this node requires
+        libraries: Set of library names and versions that this node uses
+    """
+
+    referenced_workflows: set[str] = field(default_factory=set)
+    static_files: set[str] = field(default_factory=set)
+    imports: set[ImportDependency] = field(default_factory=set)
+    libraries: set[LibraryNameAndVersion] = field(default_factory=set)
+
+    def aggregate_from(self, other: NodeDependencies) -> None:
+        """Aggregate dependencies from another NodeDependencies object into this one.
+
+        Args:
+            other: The NodeDependencies object to aggregate from
+        """
+        # Aggregate all dependency types - no None checks needed since we use default_factory=set
+        self.referenced_workflows.update(other.referenced_workflows)
+        self.static_files.update(other.static_files)
+        self.imports.update(other.imports)
+        self.libraries.update(other.libraries)
 
 
 class NodeResolutionState(StrEnum):
@@ -57,6 +106,23 @@ class NodeResolutionState(StrEnum):
     UNRESOLVED = auto()
     RESOLVING = auto()
     RESOLVED = auto()
+
+
+def get_library_names_with_publish_handlers() -> list[str]:
+    """Get names of all registered libraries that have PublishWorkflowRequest handlers."""
+    from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+    library_manager = GriptapeNodes.LibraryManager()
+    event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
+
+    # Always include "local" as the first option
+    library_names = [LOCAL_EXECUTION]
+
+    # Add all registered library names that can handle PublishWorkflowRequest
+    library_names.extend(sorted(event_handlers.keys()))
+
+    return library_names
 
 
 class BaseNode(ABC):
@@ -104,6 +170,16 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self.set_entry_control_parameter(None)
+        self.execution_environment = Parameter(
+            name="execution_environment",
+            tooltip="Environment that the node should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
+            ui_options={"hide": True},
+        )
+        self.add_parameter(self.execution_environment)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -819,6 +895,35 @@ class BaseNode(ABC):
         # Then clear the reference to the first spotlight parameter
         self.current_spotlight_parameter = None
 
+    def get_node_dependencies(self) -> NodeDependencies | None:
+        """Return the dependencies that this node has on external resources.
+
+        This method should be overridden by nodes that have dependencies on:
+        - Referenced workflows: Other workflows that this node calls or references
+        - Static files: Files that this node reads from or requires for operation
+        - Python imports: Modules or classes that this node imports beyond standard dependencies
+
+        This information can be used by the system for workflow packaging, dependency
+        resolution, deployment planning, and ensuring all required resources are available.
+
+        Returns:
+            NodeDependencies object containing the node's dependencies, or None if the node
+            has no external dependencies beyond the standard framework dependencies.
+
+        Example:
+            def get_node_dependencies(self) -> NodeDependencies | None:
+                return NodeDependencies(
+                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
+                    static_files={"config.json", "model_weights.pkl"},
+                    imports={
+                        ImportDependency("numpy"),
+                        ImportDependency("sklearn.linear_model", "LinearRegression"),
+                        ImportDependency("custom_module", "SpecialProcessor")
+                    }
+                )
+        """
+        return None
+
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -1389,6 +1494,16 @@ class EndNode(BaseNode):
             details = status_prefix
 
         self.status_component.set_execution_result(was_successful=was_successful, result_details=details)
+
+        # Update all values to use the output value
+        for param in self.parameters:
+            if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                value = self.get_parameter_value(param.name)
+                self.parameter_output_values[param.name] = value
+        next_control_output = self.get_next_control_output()
+        # Update which control parameter to flag as the output value.
+        if next_control_output is not None:
+            self.parameter_output_values[next_control_output.name] = 1
 
 
 class StartLoopNode(BaseNode):

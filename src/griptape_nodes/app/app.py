@@ -125,13 +125,10 @@ async def astart_app() -> None:
     # Initialize event queue in main thread
     griptape_nodes.EventManager().initialize_queue()
 
-    # Get main loop reference
-    main_loop = asyncio.get_running_loop()
-
     try:
         # Start WebSocket tasks in daemon thread
         threading.Thread(
-            target=_start_websocket_connection, args=(api_key, main_loop), daemon=True, name="websocket-tasks"
+            target=_start_websocket_connection, args=(api_key,), daemon=True, name="websocket-tasks"
         ).start()
 
         # Run event processing on main thread
@@ -142,7 +139,7 @@ async def astart_app() -> None:
         raise
 
 
-def _start_websocket_connection(api_key: str, main_loop: asyncio.AbstractEventLoop) -> None:
+def _start_websocket_connection(api_key: str) -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
     try:
@@ -155,7 +152,7 @@ def _start_websocket_connection(api_key: str, main_loop: asyncio.AbstractEventLo
         websocket_event_loop_ready.set()
 
         # Run the async WebSocket tasks
-        loop.run_until_complete(_run_websocket_tasks(api_key, main_loop))
+        loop.run_until_complete(_run_websocket_tasks(api_key))
     except Exception as e:
         logger.error("WebSocket thread error: %s", e)
         raise
@@ -164,7 +161,7 @@ def _start_websocket_connection(api_key: str, main_loop: asyncio.AbstractEventLo
         websocket_event_loop_ready.clear()
 
 
-async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoop) -> None:
+async def _run_websocket_tasks(api_key: str) -> None:
     """Run WebSocket tasks - async version."""
     # Create WebSocket connection for this thread
     connection_stream = _create_websocket_connection(api_key)
@@ -181,12 +178,10 @@ async def _run_websocket_tasks(api_key: str, main_loop: asyncio.AbstractEventLoo
                 initialized = True
 
             # Emit connection established event for every connection
-            griptape_nodes.EventManager().put_event_threadsafe(
-                main_loop, AppEvent(payload=app_events.AppConnectionEstablished())
-            )
+            griptape_nodes.EventManager().put_event(AppEvent(payload=app_events.AppConnectionEstablished()))
 
             async with asyncio.TaskGroup() as tg:
-                tg.create_task(_process_incoming_messages(ws_connection, main_loop))
+                tg.create_task(_process_incoming_messages(ws_connection))
                 tg.create_task(_send_outgoing_messages(ws_connection))
         except (ExceptionGroup, ConnectionClosed, ConnectionClosedError):
             logger.info("WebSocket connection closed, reconnecting...")
@@ -217,14 +212,14 @@ def _ensure_api_key() -> str:
     return api_key
 
 
-async def _process_incoming_messages(ws_connection: Any, main_loop: asyncio.AbstractEventLoop) -> None:
+async def _process_incoming_messages(ws_connection: Any) -> None:
     """Process incoming WebSocket requests from Nodes API."""
     logger.debug("Processing incoming WebSocket requests from WebSocket connection")
 
     async for message in ws_connection:
         try:
             data = json.loads(message)
-            await _process_api_event(data, main_loop)
+            await _process_api_event(data)
         except Exception:
             logger.exception("Error processing event, skipping.")
 
@@ -242,7 +237,7 @@ def _create_websocket_connection(api_key: str) -> Any:
     )
 
 
-async def _process_api_event(event: dict, main_loop: asyncio.AbstractEventLoop) -> None:
+async def _process_api_event(event: dict) -> None:
     """Process API events and add to async queue."""
     payload = event.get("payload", {})
 
@@ -278,7 +273,7 @@ async def _process_api_event(event: dict, main_loop: asyncio.AbstractEventLoop) 
         await _process_event_request(request_event)
     else:
         # Add the event to the main thread event queue for processing
-        griptape_nodes.EventManager().put_event_threadsafe(main_loop, request_event)
+        griptape_nodes.EventManager().put_event(request_event)
 
 
 async def _send_outgoing_messages(ws_connection: Any) -> None:
