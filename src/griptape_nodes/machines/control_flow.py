@@ -75,16 +75,28 @@ class ControlFlowContext:
         for current_node in self.current_nodes:
             if output_parameter is not None:
                 # Get connected node from control flow
-                logger.info("Control Flow: Getting connection for node '%s' with output parameter '%s'", current_node.name, output_parameter.name)
+                logger.info(
+                    "Control Flow: Getting connection for node '%s' with output parameter '%s'",
+                    current_node.name,
+                    output_parameter.name,
+                )
                 node_connection = (
                     GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, output_parameter)
                 )
                 if node_connection is not None:
                     node, entry_parameter = node_connection
-                    logger.info("Control Flow: Found connection - next node: '%s', entry parameter: '%s'", node.name, entry_parameter.name if entry_parameter else None)
+                    logger.info(
+                        "Control Flow: Found connection - next node: '%s', entry parameter: '%s'",
+                        node.name,
+                        entry_parameter.name if entry_parameter else None,
+                    )
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
                 else:
-                    logger.info("Control Flow: No connection found for node '%s' with output parameter '%s'", current_node.name, output_parameter.name)
+                    logger.info(
+                        "Control Flow: No connection found for node '%s' with output parameter '%s'",
+                        current_node.name,
+                        output_parameter.name,
+                    )
             else:
                 # Get next control output for this node
                 if current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION:
@@ -92,16 +104,27 @@ class ControlFlowContext:
                 else:
                     next_output = current_node.get_next_control_output()
                 if next_output is not None:
-                    logger.info("Control Flow: Node '%s' has next control output: '%s'", current_node.name, next_output.name)
+                    logger.info(
+                        "Control Flow: Node '%s' has next control output: '%s'", current_node.name, next_output.name
+                    )
                     node_connection = (
                         GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
                     )
                     if node_connection is not None:
                         node, entry_parameter = node_connection
-                        logger.info("Control Flow: Found connection from '%s' to '%s' via entry parameter '%s'", current_node.name, node.name, entry_parameter.name if entry_parameter else None)
+                        logger.info(
+                            "Control Flow: Found connection from '%s' to '%s' via entry parameter '%s'",
+                            current_node.name,
+                            node.name,
+                            entry_parameter.name if entry_parameter else None,
+                        )
                         next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
                     else:
-                        logger.info("Control Flow: No connection found for node '%s' with control output '%s'", current_node.name, next_output.name)
+                        logger.info(
+                            "Control Flow: No connection found for node '%s' with control output '%s'",
+                            current_node.name,
+                            next_output.name,
+                        )
                 else:
                     logger.info("Control Flow: Node '%s' has no control output", current_node.name)
 
@@ -114,10 +137,19 @@ class ControlFlowContext:
         return next_nodes
 
     def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
-        logger.info("Control Flow: Searching for control output in node '%s' parameter_output_values: %s", node.name, list(node.parameter_output_values.keys()))
+        logger.info(
+            "Control Flow: Searching for control output in node '%s' parameter_output_values: %s",
+            node.name,
+            list(node.parameter_output_values.keys()),
+        )
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)
-            logger.info("Control Flow: Checking parameter '%s' - type: %s, value: %s", param_name, parameter.type if parameter else None, value)
+            logger.info(
+                "Control Flow: Checking parameter '%s' - type: %s, value: %s",
+                param_name,
+                parameter.type if parameter else None,
+                value,
+            )
             if (
                 parameter is not None
                 and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
@@ -232,7 +264,11 @@ class NextNodeState(State):
         # Set up next nodes as current nodes
         next_nodes = []
         for next_node_info in next_node_infos:
-            logger.info("Control Flow: Setting entry control parameter for node '%s' to '%s'", next_node_info.node.name, next_node_info.entry_parameter.name if next_node_info.entry_parameter else None)
+            logger.info(
+                "Control Flow: Setting entry control parameter for node '%s' to '%s'",
+                next_node_info.node.name,
+                next_node_info.entry_parameter.name if next_node_info.entry_parameter else None,
+            )
             next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
             next_nodes.append(next_node_info.node)
 
@@ -269,6 +305,12 @@ class CompleteState(State):
                         )
                     )
                 )
+            )
+            logger.info(
+                "Parameter output values for %s: %s, and unique uuid is %s",
+                current_node.name,
+                parameter_output_values,
+                unique_uuid_to_values,
             )
         logger.info("Flow is complete.")
         return None

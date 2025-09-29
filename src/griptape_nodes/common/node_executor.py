@@ -16,6 +16,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowRequest,
+    SaveWorkflowFileFromSerializedFlowRequest,
+    SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -114,35 +116,35 @@ class NodeExecutor:
                 msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
                 raise ValueError(msg)
             file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
-            # workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
-            #     file_name=file_name,
-            #     serialized_flow_commands=package_result.serialized_flow_commands,
-            #     workflow_shape=package_result.workflow_shape,
-            # )
-            # workflow_result = GriptapeNodes.handle_request(workflow_file_request)
-            # if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-            #     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
-            #     raise ValueError(msg)
-            SubprocessWorkflowPublisher()
+            workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+                file_name=file_name,
+                serialized_flow_commands=package_result.serialized_flow_commands,
+                workflow_shape=package_result.workflow_shape,
+            )
+            workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+            if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+                msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+                raise ValueError(msg)
+            subprocess_workflow_publisher = SubprocessWorkflowPublisher()
             # Remove .py extension from the original file path and add _published
-            # published_filename = f"{Path(workflow_result.file_path).stem}_published"
-            # published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
+            published_filename = f"{Path(workflow_result.file_path).stem}_published"
+            published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
             # Get the full path where the published workflow will be saved
-            # await local_workflow_publisher.arun(
-            #     workflow_name=file_name,
-            #     workflow_path=workflow_result.file_path,
-            #     publisher_name=library_name,
-            #     published_workflow_file_name=published_filename,
-            # )
-            # if not Path(published_workflow_filename).exists():
-            #     msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
-            #     raise FileNotFoundError(msg)
+            await subprocess_workflow_publisher.arun(
+                workflow_name=file_name,
+                workflow_path=workflow_result.file_path,
+                publisher_name=library_name,
+                published_workflow_file_name=published_filename,
+            )
+            if not Path(published_workflow_filename).exists():
+                msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
+                raise FileNotFoundError(msg)
             # Run the subprocess.
             from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
                 SubprocessWorkflowExecutor,
             )
 
-            published_workflow_filename = "/Users/kateforsberg/GriptapeNodes/Add_Text_to_Image_AWS_Deadline_Cloud_Library_packaged_flow_published.py"
+            # published_workflow_filename = "/Users/kateforsberg/GriptapeNodes/Add_Text_to_Image_AWS_Deadline_Cloud_Library_packaged_flow_published.py"
             subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
             async with subprocess_executor as executor:
                 await executor.arun(
@@ -222,11 +224,11 @@ class NodeExecutor:
                         node.parameter_output_values[clean_param_name] = param_value
 
             # Cleanup: Remove the workflow files using DeleteWorkflowRequest
-            # for workflow in [
-            #     (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
-            #     (published_filename, Path(published_workflow_filename)),
-            # ]:
-            #     await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+            for workflow in [
+                (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
+                (published_filename, Path(published_workflow_filename)),
+            ]:
+                await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
 
             return
 
