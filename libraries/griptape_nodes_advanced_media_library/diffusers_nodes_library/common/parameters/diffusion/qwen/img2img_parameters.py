@@ -69,7 +69,6 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
         return diffusers.QwenImageImg2ImgPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
-            text_encoder=text_encoder,
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )
