@@ -16,6 +16,7 @@ from pydantic import TypeAdapter
 from rich.logging import RichHandler
 from starlette.types import Receive, Scope, Send
 
+from griptape_nodes.api_client import Client, RequestClient
 from griptape_nodes.retained_mode.events.base_events import RequestPayload
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
@@ -37,7 +38,6 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.servers.ws_request_manager import AsyncRequestManager, WebSocketConnectionManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Nodes
@@ -72,11 +72,11 @@ mcp_server_logger.setLevel(logging.INFO)
 def start_mcp_server(api_key: str) -> None:
     """Synchronous version of main entry point for the Griptape Nodes MCP server."""
     mcp_server_logger.debug("Starting MCP GTN server...")
-    # Give these a session ID
-    connection_manager = WebSocketConnectionManager()
-    request_manager = AsyncRequestManager(connection_manager, api_key)
 
     app = Server("mcp-gtn")
+
+    # Manager reference to be set in lifespan
+    manager: RequestClient | None = None
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
@@ -87,16 +87,17 @@ def start_mcp_server(api_key: str) -> None:
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+        if manager is None:
+            msg = "Request manager not initialized"
+            raise RuntimeError(msg)
+
         if name not in SUPPORTED_REQUEST_EVENTS:
             msg = f"Unsupported tool: {name}"
             raise ValueError(msg)
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
 
-        await request_manager.connect()
-        result = await request_manager.create_request_event(
-            request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000
-        )
+        result = await manager.request(request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=5000)
         mcp_server_logger.debug("Got result: %s", result)
 
         return [TextContent(type="text", text=json.dumps(result))]
@@ -108,13 +109,20 @@ def start_mcp_server(api_key: str) -> None:
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        """Context manager for managing session manager lifecycle."""
-        async with session_manager.run():
-            mcp_server_logger.debug("GTN MCP server started with StreamableHTTP session manager!")
-            try:
-                yield
-            finally:
-                mcp_server_logger.debug("GTN MCP server shutting down...")
+        """Context manager for managing session manager and WebSocket client lifecycle."""
+        nonlocal manager
+
+        async with Client(api_key=api_key) as ws_client, RequestClient(client=ws_client) as req_manager:
+            manager = req_manager
+            mcp_server_logger.debug("Request manager initialized")
+
+            async with session_manager.run():
+                mcp_server_logger.debug("GTN MCP server started with StreamableHTTP session manager!")
+                try:
+                    yield
+                finally:
+                    mcp_server_logger.debug("GTN MCP server shutting down...")
+                    manager = None
 
     mcp_server_app = FastAPI(lifespan=lifespan)
 

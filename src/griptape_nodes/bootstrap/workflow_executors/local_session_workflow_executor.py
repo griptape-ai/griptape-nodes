@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 from typing import TYPE_CHECKING, Any, Self
 
-from websockets.exceptions import ConnectionClosed, ConnectionClosedError
-
-from griptape_nodes.app.app import (
-    WebSocketMessage,
-    _create_websocket_connection,
-    _send_websocket_message,
-)
+from griptape_nodes.api_client import Client
+from griptape_nodes.app.app import WebSocketMessage
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import (
     LocalExecutorError,
     LocalWorkflowExecutor,
@@ -261,13 +257,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
     async def _start_websocket_connection(self) -> None:
         """Start websocket connection in a background thread for event emission."""
         logger.info("Starting websocket connection for session %s", self._session_id)
-        api_key = self._get_api_key()
-        if api_key is None:
-            logger.warning("No API key found, websocket connection will not be established")
-            return
-
-        logger.info("API key found, starting websocket thread")
-        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, args=(api_key,), daemon=True)
+        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, daemon=True)
         self._websocket_thread.start()
 
         if self._websocket_event_loop_ready.wait(timeout=10):
@@ -276,16 +266,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         else:
             logger.error("Timeout waiting for websocket thread to start")
 
-    def _get_api_key(self) -> str | None:
-        """Get API key from secrets manager."""
-        try:
-            secrets_manager = GriptapeNodes.SecretsManager()
-            return secrets_manager.get_secret("GT_CLOUD_API_KEY")
-        except Exception:
-            logger.exception("Failed to get API key")
-            return None
-
-    def _start_websocket_thread(self, api_key: str) -> None:
+    def _start_websocket_thread(self) -> None:
         """Run WebSocket tasks in a separate thread with its own async loop."""
         try:
             # Create a new event loop for this thread
@@ -302,7 +283,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
             logger.info("Websocket thread started and ready")
 
             # Run the async WebSocket tasks
-            loop.run_until_complete(self._run_websocket_tasks(api_key))
+            loop.run_until_complete(self._run_websocket_tasks())
         except Exception as e:
             logger.error("WebSocket thread error: %s", e)
         finally:
@@ -311,35 +292,21 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
             self._shutdown_event = None
             logger.info("Websocket thread ended")
 
-    async def _run_websocket_tasks(self, api_key: str) -> None:
+    async def _run_websocket_tasks(self) -> None:
         """Run websocket tasks - establish connection and handle outgoing messages."""
-        logger.info("Creating websocket connection stream")
-        connection_stream = _create_websocket_connection(api_key)
+        logger.info("Creating Client for session %s", self._session_id)
 
-        async for ws_connection in connection_stream:
+        async with Client() as client:
             logger.info("WebSocket connection established for session %s", self._session_id)
-            try:
-                # Use our own version that works with our local queue
-                await self._send_outgoing_messages(ws_connection)
 
-            except (ConnectionClosed, ConnectionClosedError):
-                logger.info("WebSocket connection closed, reconnecting...")
-                continue
-            except asyncio.CancelledError:
-                logger.info("WebSocket task cancelled, shutting down")
-                break
+            try:
+                await self._send_outgoing_messages(client)
             except Exception:
                 logger.exception("WebSocket tasks failed")
-                await asyncio.sleep(2.0)
-                continue
+            finally:
+                logger.info("WebSocket connection loop ended")
 
-            if self._shutdown_event and self._shutdown_event.is_set():
-                logger.info("Shutdown requested, ending WebSocket connection loop")
-                break
-
-        logger.info("WebSocket connection loop ended")
-
-    async def _send_outgoing_messages(self, ws_connection: Any) -> None:
+    async def _send_outgoing_messages(self, client: Client) -> None:
         """Send outgoing WebSocket messages from queue - matches app.py pattern exactly."""
         if self._ws_outgoing_queue is None:
             logger.error("No outgoing queue available")
@@ -362,7 +329,9 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
 
             try:
                 if isinstance(message, WebSocketMessage):
-                    await _send_websocket_message(ws_connection, message.event_type, message.payload, message.topic)
+                    topic = message.topic if message.topic else f"sessions/{self._session_id}/response"
+                    payload_dict = json.loads(message.payload)
+                    await client.publish(message.event_type, payload_dict, topic)
                     logger.debug("DELIVERED: %s event", message.event_type)
                 else:
                     logger.warning("Unknown outgoing message type: %s", type(message))
