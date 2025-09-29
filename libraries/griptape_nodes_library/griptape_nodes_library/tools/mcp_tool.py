@@ -7,6 +7,13 @@ from griptape_nodes_library.tools.base_tool import BaseTool
 
 
 class MCPToolNode(BaseTool):
+    """A tool that can be used to call MCP tools.
+
+    TODO: (Jason) This tool is temporarily disabled, until we upgrade Griptape to Python 3.10
+    as it won't currently import correctly for Agents.
+    https://github.com/griptape-ai/griptape-nodes/issues/2368
+    """
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -37,8 +44,6 @@ class MCPToolNode(BaseTool):
 
         # Do this because it manually triggers post_init - but it's jucky. YMMV.
         await tool._init_activities()
-
-        # logger.info(f"MCPToolNode created tool: {tool.to_dict(types_overrides={'connection': dict})}")
 
         # Set the output
         self.parameter_output_values["tool"] = tool
