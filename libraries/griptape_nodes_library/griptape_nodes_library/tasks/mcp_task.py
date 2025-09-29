@@ -244,7 +244,7 @@ class MCPTaskNode(SuccessFailureNode):
             tools = []
             agent = self.get_parameter_value("agent")
             if isinstance(agent, dict):
-                # The agent is conected. We'll use that
+                # The agent is connected. We'll use that
                 agent = Agent().from_dict(agent)
                 task = agent.tasks[0]
                 driver = task.prompt_driver
