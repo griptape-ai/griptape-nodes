@@ -32,7 +32,7 @@ def get_pipeline_component_names(pipe: DiffusionPipeline) -> list[str]:
                 if hasattr(attr, "to") and callable(attr.to) and hasattr(attr, "parameters"):
                     component_names.append(attr_name)
             except Exception:
-                logger.debug("Error accessing attribute %s of pipeline: %s", attr_name, exc_info=True)
+                logger.debug("Error accessing attribute %s of pipeline: %s", attr_name, pipe)
                 continue
 
     if not component_names:
