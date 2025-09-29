@@ -1,9 +1,13 @@
-from griptape.tools.mcp.sessions import StdioConnection
+from typing import TYPE_CHECKING
+
 from griptape.tools.mcp.tool import MCPTool
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.tools.base_tool import BaseTool
+
+if TYPE_CHECKING:
+    from griptape.tools.mcp.sessions import StdioConnection
 
 
 class MCPToolNode(BaseTool):

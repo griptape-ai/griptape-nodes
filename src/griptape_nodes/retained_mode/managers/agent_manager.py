@@ -185,9 +185,9 @@ class AgentManager:
 
         # Map relevant fields based on transport type
         fields_to_map = field_mappings.get(transport, field_mappings["stdio"])
-        for field in fields_to_map:
-            if field in server_config and server_config[field] is not None:
-                connection[field] = server_config[field]
+        for field_name in fields_to_map:
+            if field_name in server_config and server_config[field_name] is not None:
+                connection[field_name] = server_config[field_name]
 
         return connection
 

@@ -91,44 +91,31 @@ class MCPManager:
 
     def _update_server_fields(self, server_config: MCPServerConfig, request: UpdateMCPServerRequest) -> None:
         """Update server configuration fields from request."""
-        if request.new_name is not None:
-            server_config.name = request.new_name
-        if request.transport is not None:
-            server_config.transport = request.transport
-        if request.enabled is not None:
-            server_config.enabled = request.enabled
+        # Map request fields to server config attributes
+        field_mapping = {
+            "new_name": "name",
+            "transport": "transport",
+            "enabled": "enabled",
+            "command": "command",
+            "args": "args",
+            "env": "env",
+            "cwd": "cwd",
+            "encoding": "encoding",
+            "encoding_error_handler": "encoding_error_handler",
+            "url": "url",
+            "headers": "headers",
+            "timeout": "timeout",
+            "sse_read_timeout": "sse_read_timeout",
+            "terminate_on_close": "terminate_on_close",
+            "description": "description",
+            "capabilities": "capabilities",
+        }
 
-        # StdioConnection fields
-        if request.command is not None:
-            server_config.command = request.command
-        if request.args is not None:
-            server_config.args = request.args
-        if request.env is not None:
-            server_config.env = request.env
-        if request.cwd is not None:
-            server_config.cwd = request.cwd
-        if request.encoding is not None:
-            server_config.encoding = request.encoding
-        if request.encoding_error_handler is not None:
-            server_config.encoding_error_handler = request.encoding_error_handler
-
-        # HTTP-based connection fields
-        if request.url is not None:
-            server_config.url = request.url
-        if request.headers is not None:
-            server_config.headers = request.headers
-        if request.timeout is not None:
-            server_config.timeout = request.timeout
-        if request.sse_read_timeout is not None:
-            server_config.sse_read_timeout = request.sse_read_timeout
-        if request.terminate_on_close is not None:
-            server_config.terminate_on_close = request.terminate_on_close
-
-        # Common fields
-        if request.description is not None:
-            server_config.description = request.description
-        if request.capabilities is not None:
-            server_config.capabilities = request.capabilities
+        # Update fields that are not None
+        for request_field, config_field in field_mapping.items():
+            value = getattr(request, request_field, None)
+            if value is not None:
+                setattr(server_config, config_field, value)
 
     def on_list_mcp_servers_request(
         self, request: ListMCPServersRequest

@@ -77,7 +77,7 @@ class MCPTaskNode(SuccessFailureNode):
             ui_options={
                 "multiline": True,
                 "placeholder_text": "Input text to process",
-            },  # TODO: (jason) Make this markdown output to handle images
+            },  # TODO: (jason) Make this markdown output to handle images: https://github.com/griptape-ai/griptape-nodes/issues/2403
         )
         self.add_parameter(self.output)
 
