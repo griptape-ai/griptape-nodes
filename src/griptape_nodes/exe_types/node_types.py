@@ -49,7 +49,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
-CONTROL_INPUT_PARAMETER = "Control Output Selection"
+CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
 class ImportDependency(NamedTuple):

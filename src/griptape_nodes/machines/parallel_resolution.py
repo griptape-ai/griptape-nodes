@@ -244,9 +244,6 @@ class ExecuteDagState(State):
                 next_parameter.name if next_parameter else None,
             )
             next_node.set_entry_control_parameter(next_parameter)
-
-        if node_connection is not None:
-            next_node, next_parameter = node_connection
             # Prepare next node for execution
             if not next_node.lock:
                 next_node.make_node_unresolved(
