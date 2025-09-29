@@ -192,14 +192,26 @@ class NodeExecutor:
 
         GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", True)
         subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
-        async with subprocess_executor as executor:
-            await executor.arun(
-                workflow_name=file_name, flow_input={}, storage_backend=await self._get_storage_backend()
+
+        try:
+            async with subprocess_executor as executor:
+                await executor.arun(
+                    workflow_name=file_name, flow_input={}, storage_backend=await self._get_storage_backend()
+                )
+        except RuntimeError as e:
+            # Subprocess returned non-zero exit code
+            logger.error(
+                "Subprocess execution failed for workflow '%s' at path '%s'. Error: %s",
+                file_name,
+                published_workflow_filename,
+                e,
             )
+            raise
 
         my_subprocess_result = subprocess_executor.output
         if my_subprocess_result is None:
-            msg = "Subprocess result is None."
+            msg = f"Subprocess completed but returned no output for workflow '{file_name}'"
+            logger.error(msg)
             raise ValueError(msg)
 
         return my_subprocess_result
