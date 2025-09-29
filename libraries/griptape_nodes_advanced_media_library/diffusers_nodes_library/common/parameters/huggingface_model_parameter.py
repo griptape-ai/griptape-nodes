@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from diffusers_nodes_library.common.utils.option_utils import update_option_choices
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
@@ -48,6 +48,9 @@ class HuggingFaceModelParameter(ABC):
                     title="Huggingface Model Download Required",
                     variant="warning",
                     value=self.get_help_message(),
+                    button_link=f"#model-management?search={self.get_download_models()[0]}",
+                    button_text="Model Management",
+                    button_icon="hard-drive",
                 )
             )
             return
@@ -65,6 +68,7 @@ class HuggingFaceModelParameter(ABC):
                     )
                 },
                 tooltip=self._parameter_name,
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
 
@@ -96,19 +100,15 @@ class HuggingFaceModelParameter(ABC):
         return base_repo_id, base_revision
 
     def get_help_message(self) -> str:
-        download_commands = "\n".join([f"  {cmd}" for cmd in self.get_download_commands()])
+        download_models = "\n".join([f"  {model}" for model in self.get_download_models()])
+
         return (
             "Model download required to continue.\n\n"
             "To download models:\n\n"
-            "1. Configure huggingface-cli by following the documentation at:\n"
-            "   https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/\n\n"
-            "2. Download one or more models using the following commands:\n"
-            f"{download_commands}\n\n"
-            "3. Save and reopen the workflow after downloading models.\n\n"
-            "After completing these steps, a dropdown menu with available models will appear. "
-            "If you encounter issues, please refer to the huggingface-cli documentation or "
-            "contact support through Discord or GitHub.\n\n"
-            "Note: CLI download is currently the only supported installation method."
+            "1. Navigate to Settings -> Model Management\n\n"
+            "2. Search for the model(s) you need and click the download button:\n"
+            f"{download_models}\n\n"
+            "After completing these steps, a dropdown menu with available models will appear."
         )
 
     @abstractmethod
@@ -116,3 +116,6 @@ class HuggingFaceModelParameter(ABC):
 
     @abstractmethod
     def get_download_commands(self) -> list[str]: ...
+
+    @abstractmethod
+    def get_download_models(self) -> list[str]: ...
