@@ -1766,24 +1766,13 @@
       }
     },
     {
-      "class_name": "MCPToolNode",
-      "file_path": "griptape_nodes_library/tools/mcp_tool.py",
-      "metadata": {
-        "category": "agents/tools",
-        "description": "Give an agent the ability to use an MCP tool",
-        "display_name": "MCP Tool",
-        "icon": "bolt",
-        "group": "create"
-      }
-    },
-    {
       "class_name": "MCPTaskNode",
       "file_path": "griptape_nodes_library/tasks/mcp_task.py",
       "metadata": {
         "category": "agents",
         "description": "Give an agent the ability to use an MCP tool",
         "display_name": "MCP Task",
-        "icon": "bolt",
+        "icon": "network",
         "group": "create"
       }
     },
