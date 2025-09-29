@@ -45,12 +45,9 @@ class FluxKontextPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._text_encoder_2_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder_2")
-        self._node.remove_parameter_element_by_name("text_encoder")
-        self._node.remove_parameter_element_by_name("text_encoder_2")
+        self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
+        self._text_encoder_2_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
