@@ -79,23 +79,39 @@ class NodeExecutor:
         library_name = library.get_library_data().name
         workflow_handler = self.get_workflow_handler(library_name)
         if workflow_handler is not None:
-            (
-                workflow_result,
-                published_workflow_filename,
-                file_name,
-                output_parameter_prefix,
-            ) = await self._publish_workflow(node, library, library_name)
-            my_subprocess_result = await self._execute_subprocess(published_workflow_filename, file_name)
-            parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-            self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
-            GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", False)
-            # Cleanup workflows
-            published_filename = Path(published_workflow_filename).stem
-            for workflow in [
-                (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
-                (published_filename, Path(published_workflow_filename)),
-            ]:
-                await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+            workflow_result = None
+            published_workflow_filename = None
+
+            try:
+                (
+                    workflow_result,
+                    published_workflow_filename,
+                    file_name,
+                    output_parameter_prefix,
+                ) = await self._publish_workflow(node, library, library_name)
+                my_subprocess_result = await self._execute_subprocess(published_workflow_filename, file_name)
+                parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
+                self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
+
+            except Exception as e:
+                logger.exception(
+                    "Failed to execute node '%s' via library executor '%s'. Node type: %s",
+                    node.name,
+                    library_name,
+                    node.__class__.__name__,
+                )
+                msg = f"Library executor failed for node '{node.name}': {e}"
+                raise RuntimeError(msg) from e
+
+            finally:
+                GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", False)
+                if workflow_result is not None and published_workflow_filename is not None:
+                    published_filename = Path(published_workflow_filename).stem
+                    for workflow in [
+                        (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
+                        (published_filename, Path(published_workflow_filename)),
+                    ]:
+                        await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
 
     async def _publish_workflow(
         self, node: BaseNode, library: Library, library_name: str

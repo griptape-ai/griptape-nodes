@@ -499,10 +499,23 @@ class ExecuteDagState(State):
             # Check for task exceptions and handle them properly
             for task in done:
                 if task.exception():
-                    # Get the actual exception and re-raise it
                     exc = task.exception()
+                    dag_node = context.task_to_node.get(task)
+                    node_name = dag_node.node_reference.name if dag_node else "Unknown"
+                    node_type = dag_node.node_reference.__class__.__name__ if dag_node else "Unknown"
+
+                    logger.exception(
+                        "Task execution failed for node '%s' (type: %s) in flow '%s'. Exception: %s",
+                        node_name,
+                        node_type,
+                        context.flow_name,
+                        exc,
+                    )
+
                     context.task_to_node.pop(task)
-                    raise RuntimeError(exc)
+                    context.error_message = f"Task execution failed for node '{node_name}': {exc}"
+                    context.workflow_state = WorkflowState.ERRORED
+                    return ErrorState
                 context.task_to_node.pop(task)
         # Once a task has finished, loop back to the top.
         await ExecuteDagState.pop_done_states(context)
