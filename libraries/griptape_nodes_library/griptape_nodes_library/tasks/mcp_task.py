@@ -249,6 +249,7 @@ class MCPTaskNode(SuccessFailureNode):
                 task = agent.tasks[0]
                 driver = task.prompt_driver
                 tools = task.tools
+                rulesets = task.rulesets
             else:
                 driver = self._create_driver()
                 agent = Agent()
