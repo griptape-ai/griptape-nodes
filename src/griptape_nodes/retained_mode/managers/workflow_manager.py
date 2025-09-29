@@ -1252,7 +1252,7 @@ class WorkflowManager:
         # Extract workflow shape if possible
         workflow_shape = None
         try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name, include_control_params=True)
             workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
         except ValueError:
             # If we can't extract workflow shape, continue without it
