@@ -178,7 +178,7 @@ class ExecuteDagState(State):
             parameter = node.get_parameter_by_name(param_name)
             if (
                 parameter is not None
-                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
+                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value
                 and value == CONTROL_INPUT_PARAMETER
             ):
                 # This is the parameter
