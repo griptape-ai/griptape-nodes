@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_builder_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.builder_parameters import (
     DiffusionPipelineBuilderParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
@@ -27,10 +27,10 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
         self.log_params = LogParameter(self)
 
+        self.params.add_output_parameters()
         self.params.add_input_parameters()
         self.huggingface_pipeline_params.add_input_parameters()
 
-        self.params.add_output_parameters()
         self.log_params.add_output_parameters()
 
         self._initializing = False

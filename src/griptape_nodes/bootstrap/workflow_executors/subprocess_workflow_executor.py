@@ -16,11 +16,17 @@ from griptape_nodes.app.app import _create_websocket_connection, _send_subscribe
 from griptape_nodes.bootstrap.utils.python_subprocess_executor import PythonSubprocessExecutor
 from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor import LocalSessionWorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
-from griptape_nodes.retained_mode.events.base_events import ExecutionEvent
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent
+from griptape_nodes.retained_mode.events.base_events import (
+    EventResultFailure,
+    EventResultSuccess,
+    ExecutionEvent,
+    ResultPayload,
+)
+from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent, StartFlowRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -31,9 +37,14 @@ class SubprocessWorkflowExecutorError(Exception):
 
 
 class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessExecutor):
-    def __init__(self, workflow_path: str) -> None:
+    def __init__(
+        self,
+        workflow_path: str,
+        on_start_flow_result: Callable[[ResultPayload], None] | None = None,
+    ) -> None:
         PythonSubprocessExecutor.__init__(self)
         self._workflow_path = workflow_path
+        self._on_start_flow_result = on_start_flow_result
         # Generate a unique session ID for this execution
         self._session_id = uuid.uuid4().hex
         self._websocket_thread: threading.Thread | None = None
@@ -233,14 +244,21 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
     async def _process_event(self, event: dict) -> None:
         """Process events received from the subprocess via WebSocket."""
+        event_type = event.get("type", "unknown")
+        if event_type == "execution_event":
+            await self._process_execution_event(event)
+        elif event_type in ["success_result", "failure_result"]:
+            await self._process_result_event(event)
+
+    async def _process_execution_event(self, event: dict) -> None:
         payload = event.get("payload", {})
         event_type = payload.get("event_type", "")
         payload_type_name = payload.get("payload_type", "")
         payload_type = PayloadRegistry.get_type(payload_type_name)
 
         # Focusing on ExecutionEvent types for the workflow executor
-        if event_type != "ExecutionEvent":
-            logger.debug("Ignoring non-ExecutionEvent type: %s", event_type)
+        if event_type not in ["ExecutionEvent", "EventResultSuccess", "EventResultFailure"]:
+            logger.debug("Ignoring event type: %s", event_type)
             return
 
         if payload_type is None:
@@ -257,3 +275,29 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
                 "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values,
             }
             self.output = {ex_event.payload.end_node_name: result}
+
+    async def _process_result_event(self, event: dict) -> None:
+        payload = event.get("payload", {})
+        request_type_name = payload.get("request_type", "")
+        response_type_name = payload.get("result_type", "")
+        request_payload_type = PayloadRegistry.get_type(request_type_name)
+        response_payload_type = PayloadRegistry.get_type(response_type_name)
+
+        if request_payload_type is None or response_payload_type is None:
+            logger.warning("Unknown payload types: %s, %s", request_type_name, response_type_name)
+            return
+        if payload.get("type", "unknown") == "success_result":
+            result_event = EventResultSuccess.from_dict(
+                data=payload, req_payload_type=request_payload_type, res_payload_type=response_payload_type
+            )
+        else:
+            result_event = EventResultFailure.from_dict(
+                data=payload, req_payload_type=request_payload_type, res_payload_type=response_payload_type
+            )
+
+        if isinstance(result_event.request, StartFlowRequest):
+            logger.info("Received StartFlowRequest result event")
+            if self._on_start_flow_result:
+                self._on_start_flow_result(result_event.result)
+        else:
+            logger.warning("Ignoring result event for request type: %s", request_type_name)

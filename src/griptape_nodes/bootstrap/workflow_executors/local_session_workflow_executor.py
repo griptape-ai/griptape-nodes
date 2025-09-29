@@ -20,13 +20,19 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
+    EventResultFailure,
+    EventResultSuccess,
     ExecutionGriptapeNodeEvent,
     ResultPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest, StartFlowResultFailure
+from griptape_nodes.retained_mode.events.execution_events import (
+    StartFlowRequest,
+    StartFlowResultFailure,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -37,9 +43,11 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         self,
         session_id: str,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
+        on_start_flow_result: Callable[[ResultPayload], None] | None = None,
     ):
         super().__init__(storage_backend=storage_backend)
         self._session_id = session_id
+        self._on_start_flow_result = on_start_flow_result
         self._websocket_thread: threading.Thread | None = None
         self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
         self._websocket_event_loop_ready = threading.Event()
@@ -136,13 +144,20 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         error: Exception | None = None
 
         def _handle_start_flow_result(task: asyncio.Task[ResultPayload]) -> None:
-            nonlocal is_flow_finished, error
+            nonlocal is_flow_finished, error, start_flow_request
             try:
                 start_flow_result = task.result()
+                self._on_start_flow_result(start_flow_result) if self._on_start_flow_result is not None else None
+
                 if isinstance(start_flow_result, StartFlowResultFailure):
                     msg = f"Failed to start flow {flow_name}"
                     logger.error(msg)
+                    event_result_failure = EventResultFailure(request=start_flow_request, result=start_flow_result)
+                    self.send_event("failure_result", event_result_failure.json())
                     raise LocalExecutorError(msg) from start_flow_result.exception  # noqa: TRY301
+
+                event_result_success = EventResultSuccess(request=start_flow_request, result=start_flow_result)
+                self.send_event("success_result", event_result_success.json())
 
             except Exception as e:
                 msg = "Error starting workflow"

@@ -2061,9 +2061,4 @@ class LibraryManager:
             if library_path.exists():
                 process_path(library_path)
 
-        # Add from workspace - recursive discovery of library JSON files
-        workspace_path = config_mgr.workspace_path
-        if workspace_path.exists():
-            process_path(workspace_path)
-
         return list(discovered_libraries)
