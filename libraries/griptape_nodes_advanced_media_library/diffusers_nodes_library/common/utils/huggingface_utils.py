@@ -71,6 +71,9 @@ class ModelCache:
     def get_or_build_pipeline(self, config_hash: str, builder_func: Any) -> Any:
         """Get cached pipeline or build new one if not exists."""
         if config_hash not in self._pipeline_cache:
+            logger.info("No cached pipeline found with config hash: %s", config_hash)
+            # TODO: Support multiple pipelines via Resource Manager: https://github.com/griptape-ai/griptape-nodes/issues/2237
+            self.clear_pipeline_cache()
             logger.info("Building new pipeline with config hash: %s", config_hash)
             self._pipeline_cache[config_hash] = builder_func()
         else:
