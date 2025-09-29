@@ -83,18 +83,19 @@ class ListFiles(ControlNode):
         request = ListDirectoryRequest(
             directory_path=directory_path if directory_path else None,
             show_hidden=show_hidden,
-            workspace_only=False  # Allow system-wide browsing
+            workspace_only=False,  # Allow system-wide browsing
         )
 
         # Send request through GriptapeNodes.handle_request
         try:
             result = GriptapeNodes.handle_request(request)
         except Exception as e:
-            raise RuntimeError(f"Error while listing directory: {str(e)}")
+            msg = f"Error while listing directory: {e!s}"
+            raise RuntimeError(msg) from e
 
         if isinstance(result, ListDirectoryResultSuccess):
             # Filter to only include files (not directories)
-            file_entries = [entry for entry in result.entries]
+            file_entries = list(result.entries)
 
             file_paths = [entry.path for entry in file_entries]
             file_names = [entry.name for entry in file_entries]
@@ -110,5 +111,6 @@ class ListFiles(ControlNode):
             self.parameter_values["file_count"] = len(file_paths)
         else:
             # Handle failure case
-            error_msg = getattr(result, 'error_message', 'Unknown error occurred')
-            raise RuntimeError(f"Failed to list directory: {error_msg}")
+            error_msg = getattr(result, "error_message", "Unknown error occurred")
+            msg = f"Failed to list directory: {error_msg}"
+            raise TypeError(msg) from None
