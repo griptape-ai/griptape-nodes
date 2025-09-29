@@ -31,10 +31,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-    ParameterValueUpdateEvent,
-)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -191,6 +187,7 @@ class BaseNode(ABC):
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
+            from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent
 
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -947,6 +944,7 @@ class BaseNode(ABC):
         )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         parameter = self.get_parameter_by_name(parameter_name)

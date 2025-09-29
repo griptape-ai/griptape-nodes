@@ -2576,7 +2576,7 @@ class NodeManager:
 
     @staticmethod
     def serialize_parameter_output_values(
-        node: BaseNode, use_pickling: bool = False
+        node: BaseNode, *, use_pickling: bool = False
     ) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Serialize parameter output values with optional pickling for complex objects.
 
@@ -2593,76 +2593,153 @@ class NodeManager:
             return {}, None
 
         if not use_pickling:
-            # Use simple serialization - collect all parameter values
-            param_values = {}
-            for param in node.parameters:
-                # Check parameter_output_values first, then fall back to get_parameter_value
-                if param.name in node.parameter_output_values:
-                    param_values[param.name] = node.parameter_output_values[param.name]
-                else:
-                    param_values[param.name] = node.get_parameter_value(param.name)
-            simple_values = TypeValidator.safe_serialize(param_values)
-            return simple_values, None
+            return NodeManager._serialize_without_pickling(node)
 
-        # Use pickle-based serialization - inline the _handle_value_hashing logic
+        return NodeManager._serialize_with_pickling(node)
+
+    @staticmethod
+    def _serialize_without_pickling(node: BaseNode) -> tuple[dict[str, Any], None]:
+        """Serialize parameter values using simple TypeValidator serialization.
+
+        Args:
+            node: The node whose parameter values should be serialized
+
+        Returns:
+            Tuple of (serialized_values, None)
+        """
+        param_values = {}
+        for param in node.parameters:
+            if param.name in node.parameter_output_values:
+                param_values[param.name] = node.parameter_output_values[param.name]
+            else:
+                param_values[param.name] = node.get_parameter_value(param.name)
+        simple_values = TypeValidator.safe_serialize(param_values)
+        return simple_values, None
+
+    @staticmethod
+    def _serialize_with_pickling(
+        node: BaseNode,
+    ) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
+        """Serialize parameter values using pickle-based serialization with UUID references.
+
+        Args:
+            node: The node whose parameter values should be serialized
+
+        Returns:
+            Tuple of (uuid_referenced_values, unique_parameter_uuid_to_values)
+        """
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
         uuid_referenced_values = {}
 
         for parameter in node.parameters:
             param_name = parameter.name
-            # Check parameter_output_values first, then fall back to get_parameter_value
-            if param_name in node.parameter_output_values:
-                param_value = node.parameter_output_values[param_name]
-            else:
-                param_value = node.get_parameter_value(param_name)
-            logger.info("Serializing parameter %s with value %s", param_name, param_value)
-            # Inline the _handle_value_hashing logic without creating fake parameters
-            try:
-                hash(param_value)
-                value_id = param_value
-            except TypeError:
-                # Couldn't get a hash. Use the object's ID
-                value_id = id(param_value)
+            param_value = NodeManager._get_parameter_value_for_serialization(node, param_name)
 
-            tracker_status = serialized_parameter_value_tracker.get_tracker_state(value_id)
-            unique_uuid = None
+            unique_uuid = NodeManager._process_parameter_for_pickling(
+                param_value,
+                param_name,
+                serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values,
+                uuid_referenced_values,
+            )
 
-            match tracker_status:
-                case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
-                    # We have a match on this value. We're all good.
-                    unique_uuid = serialized_parameter_value_tracker.get_uuid_for_value_hash(value_id)
-                case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
-                    # This value is not serializable. Store None.
-                    uuid_referenced_values[param_name] = None
-                    continue
-                case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
-                    # This value is new for us.
-                    # Check if we can serialize it using the proper workflow pickling method
-                    try:
-                        # Use the workflow manager's patching and pickling method
-                        workflow_manager = GriptapeNodes.WorkflowManager()
-                        pickled_bytes = workflow_manager._patch_and_pickle_object(param_value)
-                    except Exception:
-                        # Not serializable; don't waste time on future attempts.
-                        serialized_parameter_value_tracker.add_as_not_serializable(value_id)
-                        # Store None.
-                        uuid_referenced_values[param_name] = None
-                        continue
-
-                    # The value should be serialized. Add it to the map of uniques.
-                    unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-                    # Store the pickled bytes directly instead of deepcopying the object
-                    unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
-                    serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
-
-            # Store the UUID reference for this parameter
-            if unique_uuid is not None:
-                uuid_referenced_values[param_name] = unique_uuid
-            else:
-                uuid_referenced_values[param_name] = None
+            uuid_referenced_values[param_name] = unique_uuid
 
         return uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+
+    @staticmethod
+    def _get_parameter_value_for_serialization(node: BaseNode, param_name: str) -> Any:
+        """Get parameter value for serialization, checking output values first.
+
+        Args:
+            node: The node to get the parameter value from
+            param_name: The parameter name
+
+        Returns:
+            The parameter value
+        """
+        if param_name in node.parameter_output_values:
+            return node.parameter_output_values[param_name]
+        return node.get_parameter_value(param_name)
+
+    @staticmethod
+    def _process_parameter_for_pickling(
+        param_value: Any,
+        param_name: str,
+        tracker: SerializedParameterValueTracker,
+        unique_parameter_uuid_to_values: dict,
+        uuid_referenced_values: dict,
+    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
+        """Process a parameter value for pickle-based serialization.
+
+        Args:
+            param_value: The value to serialize
+            param_name: Parameter name for tracking
+            tracker: Tracker for managing serialization state
+            unique_parameter_uuid_to_values: Dictionary to store pickled values
+            uuid_referenced_values: Dictionary to store UUID references
+
+        Returns:
+            UUID reference for the value, or None if not serializable
+        """
+        try:
+            hash(param_value)
+            value_id = param_value
+        except TypeError:
+            value_id = id(param_value)
+
+        tracker_status = tracker.get_tracker_state(value_id)
+
+        match tracker_status:
+            case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
+                return tracker.get_uuid_for_value_hash(value_id)
+            case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
+                uuid_referenced_values[param_name] = None
+                return None
+            case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
+                return NodeManager._handle_new_value_for_pickling(
+                    param_value, param_name, tracker, unique_parameter_uuid_to_values, uuid_referenced_values
+                )
+
+    @staticmethod
+    def _handle_new_value_for_pickling(
+        param_value: Any,
+        param_name: str,
+        tracker: SerializedParameterValueTracker,
+        unique_parameter_uuid_to_values: dict,
+        uuid_referenced_values: dict,
+    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
+        """Handle a new value that hasn't been seen before in pickling serialization.
+
+        Args:
+            param_value: The value to pickle
+            param_name: Parameter name for tracking
+            tracker: Tracker for managing serialization state
+            unique_parameter_uuid_to_values: Dictionary to store pickled values
+            uuid_referenced_values: Dictionary to store UUID references
+
+        Returns:
+            UUID reference for the value, or None if not serializable
+        """
+        try:
+            hash(param_value)
+            value_id = param_value
+        except TypeError:
+            value_id = id(param_value)
+
+        try:
+            workflow_manager = GriptapeNodes.WorkflowManager()
+            pickled_bytes = workflow_manager._patch_and_pickle_object(param_value)
+        except Exception:
+            tracker.add_as_not_serializable(value_id)
+            uuid_referenced_values[param_name] = None
+            return None
+
+        unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+        unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
+        tracker.add_as_serializable(value_id, unique_uuid)
+        return unique_uuid
 
     def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.
