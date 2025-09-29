@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, EndNode, StartNode
+from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, EndNode, StartNode
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
@@ -242,7 +242,6 @@ class NodeExecutor:
                 parameter_output_values[param_name] = self._deserialize_parameter_value(
                     param_name, param_value, unique_uuid_to_values
                 )
-        logger.info("Parameter output values: %s", parameter_output_values)
         return parameter_output_values
 
     def _deserialize_parameter_value(self, param_name: str, param_value: Any, unique_uuid_to_values: dict) -> Any:
@@ -287,6 +286,9 @@ class NodeExecutor:
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
         """
+        if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
+            msg = f"Failed to execute node: {node.name}, with exception: {parameter_output_values.get('result_details', 'No result details were returned.')}"
+            raise RuntimeError(msg)
         for param_name, param_value in parameter_output_values.items():
             if param_name.startswith(output_parameter_prefix):
                 clean_param_name = param_name[len(output_parameter_prefix) :]
