@@ -2616,6 +2616,7 @@ class NodeManager:
                 param_value = node.parameter_output_values[param_name]
             else:
                 param_value = node.get_parameter_value(param_name)
+            logger.info("Serializing parameter %s with value %s", param_name, param_value)
             # Inline the _handle_value_hashing logic without creating fake parameters
             try:
                 hash(param_value)

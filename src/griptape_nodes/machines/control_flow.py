@@ -243,7 +243,7 @@ class CompleteState(State):
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
                 current_node, use_pickling=True
             )
-
+            logger.info("Logging control flow event for %s", current_node.name)
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
                     wrapped_event=ExecutionEvent(

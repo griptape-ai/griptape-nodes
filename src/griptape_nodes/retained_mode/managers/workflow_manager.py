@@ -3156,7 +3156,7 @@ class WorkflowManager:
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
-        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str
+        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str, *, include_control_params: bool
     ) -> dict[str, Any]:
         """Creates a workflow shape from the nodes.
 
@@ -3167,7 +3167,7 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                param_info = self.extract_parameter_shape_info(param, include_control_params=True)
+                param_info = self.extract_parameter_shape_info(param, include_control_params=include_control_params)
                 if param_info is not None:
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = param_info
@@ -3175,7 +3175,7 @@ class WorkflowManager:
                         workflow_shape[workflow_shape_type][node.name] = {param.name: param_info}
         return workflow_shape
 
-    def extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
+    def extract_workflow_shape(self, workflow_name: str, *, include_control_params: bool = False) -> dict[str, Any]:
         """Extracts the input and output shape for a workflow.
 
         Here we gather information about the Workflow's exposed input and output Parameters
@@ -3215,16 +3215,16 @@ class WorkflowManager:
 
         # Now, we need to gather the input and output parameters for each node type.
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input"
+            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input", include_control_params=include_control_params
         )
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output"
+            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output", include_control_params=include_control_params
         )
 
         return workflow_shape
 
     def extract_parameter_shape_info(
-        self, parameter: Parameter, *, include_control_params: bool = True
+        self, parameter: Parameter, *, include_control_params: bool = False
     ) -> ParameterShapeInfo | None:
         """Extract shape information from a parameter for workflow shape building.
 

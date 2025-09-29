@@ -1504,6 +1504,7 @@ class EndNode(BaseNode):
         entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
         if entry_parameter is not None:
+            logger.info("End Node %s: %s is SET to CONTROLINPUTPARAMETER", self.name, entry_parameter.name)
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
