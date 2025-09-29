@@ -127,15 +127,26 @@ class Connections:
                         return connection.source_node, connection.source_parameter
         return None  # No connection found for this control parameter
 
-    def get_connected_node(self, node: BaseNode, parameter: Parameter) -> tuple[BaseNode, Parameter] | None:
+    def get_connected_node(self, node: BaseNode, parameter: Parameter, direction: str | None = None) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
         # Override this method for EndLoopNodes - these might have to go backwards or forwards.
-        if isinstance(node, EndLoopNode) and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
-            return self._get_connected_node_for_end_loop_control(node, parameter)
-        if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
-            connections = self.outgoing_index
+        if direction is not None:
+            if direction == "upstream":
+                connections = self.incoming_index
+            elif direction == "downstream":
+                connections = self.outgoing_index
+            else:
+                msg = f"Invalid direction: {direction}"
+                raise ValueError(msg)
         else:
-            connections = self.incoming_index
+            if isinstance(node, EndLoopNode) and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                return self._get_connected_node_for_end_loop_control(node, parameter)
+            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                connections = self.outgoing_index
+                direction = "downstream"
+            else:
+                connections = self.incoming_index
+                direction = "upstream"
         connections_from_node = connections.get(node.name, {})
 
         connection_id = connections_from_node.get(parameter.name, [])
@@ -148,7 +159,7 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+            if direction == "downstream":
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
             # Return the source (next place to chain back to)

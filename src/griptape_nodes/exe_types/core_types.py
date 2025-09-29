@@ -1287,7 +1287,7 @@ class ControlParameter(Parameter, ABC):
         super().__init__(
             type=ParameterTypeBuiltin.CONTROL_TYPE.value,
             default_value=None,
-            settable=False,
+            settable=True,
             name=name,
             tooltip=tooltip,
             input_types=input_types,

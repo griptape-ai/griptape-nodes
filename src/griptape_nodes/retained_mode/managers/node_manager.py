@@ -1528,15 +1528,15 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
+        if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value:
+            # Well this seems kind of stupid
+            object_type = request.data_type if request.data_type else parameter.type
+            # Is this value kosher for the types allowed?
+            if not parameter.is_incoming_type_allowed(object_type):
+                details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
 
-        # Well this seems kind of stupid
-        object_type = request.data_type if request.data_type else parameter.type
-        # Is this value kosher for the types allowed?
-        if not parameter.is_incoming_type_allowed(object_type):
-            details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
-
-            result = SetParameterValueResultFailure(result_details=details)
-            return result
+                result = SetParameterValueResultFailure(result_details=details)
+                return result
 
         try:
             parent_flow_name = self.get_node_parent_flow_by_name(node.name)

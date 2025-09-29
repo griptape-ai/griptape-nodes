@@ -163,12 +163,8 @@ class ExecuteNodeState(State):
         connections = GriptapeNodes.FlowManager().get_connections()
 
         for parameter in current_node.parameters:
-            # Skip control type parameters
-            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
-                continue
-
             # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter)
+            upstream_connection = connections.get_connected_node(current_node, parameter, direction="upstream")
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -179,21 +175,16 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                # Skip propagation for Control Parameters as they should not receive values
-                if (
-                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
-                    != ParameterTypeBuiltin.CONTROL_TYPE
-                ):
-                    GriptapeNodes.get_instance().handle_request(
-                        SetParameterValueRequest(
-                            parameter_name=parameter.name,
-                            node_name=current_node.name,
-                            value=output_value,
-                            data_type=upstream_parameter.output_type,
-                            incoming_connection_source_node_name=upstream_node.name,
-                            incoming_connection_source_parameter_name=upstream_parameter.name,
-                        )
+                GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=parameter.name,
+                        node_name=current_node.name,
+                        value=output_value,
+                        data_type=upstream_parameter.output_type,
+                        incoming_connection_source_node_name=upstream_node.name,
+                        incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
+                )
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
