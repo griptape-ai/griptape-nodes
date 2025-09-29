@@ -216,7 +216,19 @@ async def _process_incoming_messages(ws_connection: Any) -> None:
     """Process incoming WebSocket requests from Nodes API."""
     logger.debug("Processing incoming WebSocket requests from WebSocket connection")
 
-    async for message in ws_connection:
+    topics = ["request"]
+    engine_id = griptape_nodes.get_engine_id()
+    if engine_id:
+        topics.append(f"engines/{engine_id}/request")
+
+    session_id = griptape_nodes.get_session_id()
+    if session_id:
+        topics.append(f"sessions/{session_id}/request")
+
+    for topic in topics:
+        await client.subscribe(topic)
+
+    async for message in client.messages:
         try:
             data = json.loads(message)
             await _process_api_event(data)
@@ -382,13 +394,7 @@ async def _process_event_request(event: EventRequest) -> None:
         event.request,
         result_context={"response_topic": event.response_topic, "request_id": event.request_id},
     )
-
-    if result_event.result.succeeded():
-        dest_socket = "success_result"
-    else:
-        dest_socket = "failure_result"
-
-    await _send_message(dest_socket, result_event.json(), topic=result_event.response_topic)
+    await _process_node_event(GriptapeNodeEvent(wrapped_event=result_event))
 
 
 async def _process_app_event(event: AppEvent) -> None:
@@ -403,8 +409,21 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
     # Emit the result back to the GUI
     result_event = event.wrapped_event
+
     if isinstance(result_event, EventResultSuccess):
         dest_socket = "success_result"
+        # Handle session-specific topic subscriptions
+        if isinstance(result_event.result, app_events.AppStartSessionResultSuccess):
+            session_id = result_event.result.session_id
+            topic = f"sessions/{session_id}/request"
+            await _subscribe_to_topic(topic)
+            logger.info("Subscribed to session topic: %s", topic)
+        elif isinstance(result_event.result, app_events.AppEndSessionResultSuccess):
+            session_id = result_event.result.session_id
+            if session_id is not None:
+                topic = f"sessions/{session_id}/request"
+                await _unsubscribe_from_topic(topic)
+                logger.info("Unsubscribed from session topic: %s", topic)
     elif isinstance(result_event, EventResultFailure):
         dest_socket = "failure_result"
     else:
@@ -443,14 +462,14 @@ async def _send_message(event_type: str, payload: str, topic: str | None = None)
 
     # Determine topic based on session_id and engine_id in the payload
     if topic is None:
-        topic = determine_response_topic()
+        topic = _determine_response_topic()
 
     message = WebSocketMessage(event_type, payload, topic)
 
     asyncio.run_coroutine_threadsafe(ws_outgoing_queue.put(message), websocket_event_loop)
 
 
-async def subscribe_to_topic(topic: str) -> None:
+async def _subscribe_to_topic(topic: str) -> None:
     """Queue a subscribe command for WebSocket using run_coroutine_threadsafe."""
     # Wait for websocket event loop to be ready
     websocket_event_loop_ready.wait()
@@ -462,7 +481,7 @@ async def subscribe_to_topic(topic: str) -> None:
     asyncio.run_coroutine_threadsafe(ws_outgoing_queue.put(SubscribeCommand(topic)), websocket_event_loop)
 
 
-async def unsubscribe_from_topic(topic: str) -> None:
+async def _unsubscribe_from_topic(topic: str) -> None:
     """Queue an unsubscribe command for WebSocket using run_coroutine_threadsafe."""
     if websocket_event_loop is None:
         logger.error("WebSocket event loop not available for unsubscribe")
@@ -471,7 +490,7 @@ async def unsubscribe_from_topic(topic: str) -> None:
     asyncio.run_coroutine_threadsafe(ws_outgoing_queue.put(UnsubscribeCommand(topic)), websocket_event_loop)
 
 
-def determine_response_topic() -> str | None:
+def _determine_response_topic() -> str:
     """Determine the response topic based on session_id and engine_id in the payload."""
     engine_id = griptape_nodes.get_engine_id()
     session_id = griptape_nodes.get_session_id()
@@ -487,21 +506,3 @@ def determine_response_topic() -> str | None:
 
     # Default to generic response topic
     return "response"
-
-
-def determine_request_topic() -> str | None:
-    """Determine the request topic based on session_id and engine_id in the payload."""
-    engine_id = griptape_nodes.get_engine_id()
-    session_id = griptape_nodes.get_session_id()
-
-    # Normal topic determination logic
-    # Check for session_id first (highest priority)
-    if session_id:
-        return f"sessions/{session_id}/request"
-
-    # Check for engine_id if no session_id
-    if engine_id:
-        return f"engines/{engine_id}/request"
-
-    # Default to generic request topic
-    return "request"
