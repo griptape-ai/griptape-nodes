@@ -33,13 +33,18 @@ class FluxLorasParameter:
     def to_adapter_name(self, model_path: str) -> str:
         """Returns a unique name for an adapter given its model path."""
         return hashlib.sha256(model_path.encode("utf-8")).hexdigest()
-
-    def configure_loras(self, pipe: Any) -> None:
+    
+    def get_loras(self) -> dict[str, float]:
         loras_list = self._node.get_parameter_value(self._loras_parameter_name) or []
 
         loras = {}
         for lora in loras_list:
             loras.update(lora)
+
+        return loras
+
+    def configure_loras(self, pipe: Any) -> None:
+        loras  = self.get_loras()
 
         if not loras:
             pipe.disable_lora()
