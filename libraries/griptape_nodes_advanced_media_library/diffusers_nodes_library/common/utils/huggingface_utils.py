@@ -83,7 +83,8 @@ class ModelCache:
     def clear_pipeline_cache(self) -> None:
         """Clear all cached pipelines."""
         logger.info("Clearing pipeline cache")
-        for pipe in self._pipeline_cache.values():
+        for config_hash, pipe in self._pipeline_cache.items():
+            logger.info("Clearing pipeline with config hash: %s", config_hash)
             clear_diffusion_pipeline(pipe)
         self._pipeline_cache.clear()
 
