@@ -40,8 +40,7 @@ class AmusedImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
         )
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
+        self._model_repo_parameter.remove_input_parameters()
         self._node.remove_parameter_element_by_name("input_image")
 
     def get_config_kwargs(self) -> dict:
