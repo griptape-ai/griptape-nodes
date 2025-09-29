@@ -1472,18 +1472,36 @@ class EndNode(BaseNode):
         )
 
     def process(self) -> None:
+        # Debug logging for control flow analysis
+        logger.info(
+            "End Node '%s': _entry_control_parameter = %s",
+            self.name,
+            self._entry_control_parameter.name if self._entry_control_parameter else None,
+        )
+        logger.info(
+            "End Node '%s': succeeded_control = %s",
+            self.name,
+            self.succeeded_control.name if self.succeeded_control else None,
+        )
+        logger.info(
+            "End Node '%s': failed_control = %s", self.name, self.failed_control.name if self.failed_control else None
+        )
+
         # Detect which control input was used to enter this node and determine success status
         match self._entry_control_parameter:
             case self.succeeded_control:
                 was_successful = True
                 status_prefix = "[SUCCEEDED]"
+                logger.info("End Node '%s': Matched succeeded_control path", self.name)
             case self.failed_control:
                 was_successful = False
                 status_prefix = "[FAILED]"
+                logger.info("End Node '%s': Matched failed_control path", self.name)
             case _:
                 # No specific success/failure connection provided, assume success
                 was_successful = True
                 status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+                logger.info("End Node '%s': No specific control connection, assuming success", self.name)
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")
@@ -1506,6 +1524,16 @@ class EndNode(BaseNode):
         if entry_parameter is not None:
             logger.info("End Node %s: %s is SET to CONTROLINPUTPARAMETER", self.name, entry_parameter.name)
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
+        else:
+            logger.info("End Node %s: No entry_parameter found, no control output will be set", self.name)
+
+        # Debug: Log all parameter output values for control parameters
+        for param in self.parameters:
+            if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                output_value = self.parameter_output_values.get(param.name, "NOT_SET")
+                logger.info(
+                    "End Node %s: Control parameter '%s' output value = %s", self.name, param.name, output_value
+                )
 
 
 class StartLoopNode(BaseNode):

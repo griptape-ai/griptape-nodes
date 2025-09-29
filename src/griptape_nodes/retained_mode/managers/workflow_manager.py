@@ -3156,7 +3156,12 @@ class WorkflowManager:
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
-        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str, *, include_control_params: bool
+        self,
+        nodes: Sequence[BaseNode],
+        workflow_shape: dict[str, Any],
+        workflow_shape_type: str,
+        *,
+        include_control_params: bool,
     ) -> dict[str, Any]:
         """Creates a workflow shape from the nodes.
 
@@ -3215,10 +3220,16 @@ class WorkflowManager:
 
         # Now, we need to gather the input and output parameters for each node type.
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input", include_control_params=include_control_params
+            nodes=start_nodes,
+            workflow_shape=workflow_shape,
+            workflow_shape_type="input",
+            include_control_params=include_control_params,
         )
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output", include_control_params=include_control_params
+            nodes=end_nodes,
+            workflow_shape=workflow_shape,
+            workflow_shape_type="output",
+            include_control_params=include_control_params,
         )
 
         return workflow_shape

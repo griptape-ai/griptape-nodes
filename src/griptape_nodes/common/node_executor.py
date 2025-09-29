@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import logging
 import pickle
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
@@ -17,12 +16,12 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowRequest,
-    SaveWorkflowFileFromSerializedFlowRequest,
-    SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -124,7 +123,7 @@ class NodeExecutor:
             # if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
             #     msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
             #     raise ValueError(msg)
-            local_workflow_publisher = SubprocessWorkflowPublisher()
+            SubprocessWorkflowPublisher()
             # Remove .py extension from the original file path and add _published
             # published_filename = f"{Path(workflow_result.file_path).stem}_published"
             # published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
@@ -142,6 +141,7 @@ class NodeExecutor:
             from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
                 SubprocessWorkflowExecutor,
             )
+
             published_workflow_filename = "/Users/kateforsberg/GriptapeNodes/Add_Text_to_Image_AWS_Deadline_Cloud_Library_packaged_flow_published.py"
             subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
             async with subprocess_executor as executor:
