@@ -1253,7 +1253,7 @@ class WorkflowManager:
         # Extract workflow shape if possible
         workflow_shape = None
         try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name, include_control_params=True)
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
             workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
         except ValueError:
             # If we can't extract workflow shape, continue without it
@@ -3161,8 +3161,6 @@ class WorkflowManager:
         nodes: Sequence[BaseNode],
         workflow_shape: dict[str, Any],
         workflow_shape_type: str,
-        *,
-        include_control_params: bool,
     ) -> dict[str, Any]:
         """Creates a workflow shape from the nodes.
 
@@ -3181,7 +3179,7 @@ class WorkflowManager:
                         workflow_shape[workflow_shape_type][node.name] = {param.name: param_info}
         return workflow_shape
 
-    def extract_workflow_shape(self, workflow_name: str, *, include_control_params: bool = False) -> dict[str, Any]:
+    def extract_workflow_shape(self, workflow_name: str) -> dict[str, Any]:
         """Extracts the input and output shape for a workflow.
 
         Here we gather information about the Workflow's exposed input and output Parameters
@@ -3224,13 +3222,11 @@ class WorkflowManager:
             nodes=start_nodes,
             workflow_shape=workflow_shape,
             workflow_shape_type="input",
-            include_control_params=include_control_params,
         )
         workflow_shape = self._create_workflow_shape_from_nodes(
             nodes=end_nodes,
             workflow_shape=workflow_shape,
             workflow_shape_type="output",
-            include_control_params=include_control_params,
         )
 
         return workflow_shape

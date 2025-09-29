@@ -127,7 +127,9 @@ class Connections:
                         return connection.source_node, connection.source_parameter
         return None  # No connection found for this control parameter
 
-    def get_connected_node(self, node: BaseNode, parameter: Parameter, direction: str | None = None) -> tuple[BaseNode, Parameter] | None:
+    def get_connected_node(
+        self, node: BaseNode, parameter: Parameter, direction: str | None = None
+    ) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
         # Override this method for EndLoopNodes - these might have to go backwards or forwards.
         if direction is not None:
@@ -153,7 +155,9 @@ class Connections:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/859
         if not len(connection_id):
             return None
-        if len(connection_id) > 1 and not (direction == "upstream" and parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value):
+        if len(connection_id) > 1 and not (
+            direction == "upstream" and parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value
+        ):
             msg = "There should not be more than one connection here."
             raise ValueError(msg)
         connection_id = connection_id[0]

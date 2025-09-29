@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import ast
-from enum import unique
 import logging
 import pickle
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
@@ -21,10 +21,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from pathlib import Path
 
 if TYPE_CHECKING:
-
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -144,6 +142,7 @@ class NodeExecutor:
             from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
                 SubprocessWorkflowExecutor,
             )
+
             subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
             async with subprocess_executor as executor:
                 await executor.arun(
@@ -229,7 +228,7 @@ class NodeExecutor:
             ]:
                 await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
 
-            return 
+            return
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
         from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
