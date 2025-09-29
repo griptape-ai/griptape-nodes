@@ -3224,7 +3224,7 @@ class WorkflowManager:
         return workflow_shape
 
     def extract_parameter_shape_info(
-        self, parameter: Parameter, *, include_control_params: bool = False
+        self, parameter: Parameter, *, include_control_params: bool = True
     ) -> ParameterShapeInfo | None:
         """Extract shape information from a parameter for workflow shape building.
 
