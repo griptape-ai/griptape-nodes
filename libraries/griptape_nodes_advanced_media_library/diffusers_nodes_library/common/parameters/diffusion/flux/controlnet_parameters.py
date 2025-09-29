@@ -109,6 +109,7 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=controlnet_repo_id,
             revision=controlnet_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/2322
@@ -117,4 +118,5 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
             revision=base_revision,
             controlnet=controlnet,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )

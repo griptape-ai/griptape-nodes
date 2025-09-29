@@ -89,4 +89,5 @@ class FluxImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )

@@ -72,6 +72,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=text_encoder_repo_id,
             revision=text_encoder_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
         return diffusers.QwenImageImg2ImgPipeline.from_pretrained(
@@ -79,4 +80,5 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             revision=base_revision,
             text_encoder=text_encoder,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )

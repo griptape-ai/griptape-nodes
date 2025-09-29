@@ -74,4 +74,5 @@ class WuerstchenPipelineParameters(DiffusionPipelineTypePipelineParameters):
             prior_revision=prior_revision,
             decoder_revision=decoder_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
