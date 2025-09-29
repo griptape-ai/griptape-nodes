@@ -27,10 +27,10 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
         self.log_params = LogParameter(self)
 
+        self.params.add_output_parameters()
         self.params.add_input_parameters()
         self.huggingface_pipeline_params.add_input_parameters()
 
-        self.params.add_output_parameters()
         self.log_params.add_output_parameters()
 
         self._initializing = False
