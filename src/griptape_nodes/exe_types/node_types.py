@@ -1527,14 +1527,6 @@ class EndNode(BaseNode):
         else:
             logger.info("End Node %s: No entry_parameter found, no control output will be set", self.name)
 
-        # Debug: Log all parameter output values for control parameters
-        for param in self.parameters:
-            if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
-                output_value = self.parameter_output_values.get(param.name, "NOT_SET")
-                logger.info(
-                    "End Node %s: Control parameter '%s' output value = %s", self.name, param.name, output_value
-                )
-
 
 class StartLoopNode(BaseNode):
     end_node: EndLoopNode | None = None

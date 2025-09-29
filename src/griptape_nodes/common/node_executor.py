@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from enum import unique
 import logging
 import pickle
 from typing import TYPE_CHECKING
@@ -163,6 +164,7 @@ class NodeExecutor:
                 if isinstance(result_dict, dict) and "parameter_output_values" in result_dict:
                     param_output_vals = result_dict["parameter_output_values"]
                     unique_uuid_to_values = result_dict.get("unique_parameter_uuid_to_values")
+                    logger.info("Subprocess result: %s, UUIDS %s", parameter_output_values, unique_uuid_to_values)
 
                     # Deserialize UUID references back to actual values
                     if unique_uuid_to_values:
@@ -208,19 +210,23 @@ class NodeExecutor:
                     # Backward compatibility: old structure (flat dictionary)
                     parameter_output_values.update(result_dict)
             # Remove the output_parameter_prefix and set values on BaseNode
+            logger.info(f"Parameter output values after depickling {parameter_output_values}")
             for param_name, param_value in parameter_output_values.items():
                 if param_name.startswith(output_parameter_prefix):
                     clean_param_name = param_name[len(output_parameter_prefix) :]
                     # Set this value for certain hacks
                     parameter = node.get_parameter_by_name(clean_param_name)
+                    logger.info("Settinfor parameter '%s' to value '%s'", clean_param_name, param_value)
                     if (
                         # Don't set execution_environment since it will have been Local.
                         parameter is not None and parameter != node.execution_environment
                     ):
                         # Don't run set_parameter_value on control parameters
                         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                            logger.info("Setting parameter value on non control type")
                             node.set_parameter_value(clean_param_name, param_value)
                         # Set this value for output values. Include if a control parameter has an output value, because it signals the path to take.
+                        logger.info("Setting in parameter output values regardless.")
                         node.parameter_output_values[clean_param_name] = param_value
 
             # Cleanup: Remove the workflow files using DeleteWorkflowRequest
