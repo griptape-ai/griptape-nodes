@@ -106,6 +106,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultFailure,
     PackageNodeAsSerializedFlowResultSuccess,
+    PackageNodesAsSerializedFlowRequest,
+    PackageNodesAsSerializedFlowResultFailure,
     SerializedFlowCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultFailure,
@@ -123,6 +125,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
+    SerializeSelectedNodesToCommandsRequest,
+    SerializeSelectedNodesToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -1663,6 +1667,89 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=packaged_dependencies,
+        )
+
+    def on_package_nodes_as_serialized_flow_request(  # noqa: C901
+        self, request: PackageNodesAsSerializedFlowRequest
+    ) -> ResultPayload:
+        """Handle request to package multiple nodes as a serialized flow.
+
+        Creates a self-contained flow with Start → [Selected Nodes] → End structure,
+        where artificial start/end nodes interface with external connections only.
+        """
+        # Step 1: Handle empty node list
+        if not request.node_names:
+            logger.warning(
+                "PackageNodesAsSerializedFlowRequest received empty node_names list. Creating minimal StartFlow→EndFlow structure."
+            )
+            # Minimal flow creation not yet implemented
+            return PackageNodesAsSerializedFlowResultFailure(
+                result_details="Attempted to package nodes as serialized flow. Failed because empty node list handling is not yet implemented."
+            )
+
+        # Step 2: Validate all nodes exist and get current flow
+        try:
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                return PackageNodesAsSerializedFlowResultFailure(
+                    result_details="Attempted to package nodes as serialized flow. Failed because no current context flow found."
+                )
+
+            # Validate all nodes exist - collect all missing nodes before failing
+            nodes_to_package = []
+            missing_nodes = []
+            for node_name in request.node_names:
+                try:
+                    node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                    nodes_to_package.append(node)
+                except Exception:
+                    missing_nodes.append(node_name)
+
+            if missing_nodes:
+                return PackageNodesAsSerializedFlowResultFailure(
+                    result_details=f"Attempted to package nodes as serialized flow. Failed because the following nodes were not found: {', '.join(missing_nodes)}."
+                )
+
+        except Exception as e:
+            return PackageNodesAsSerializedFlowResultFailure(
+                result_details=f"Attempted to package nodes as serialized flow. Failed to validate nodes: {e!s}"
+            )
+
+        # Step 3: Intercept execution_environment for all nodes before serialization
+        original_execution_environments = {}
+        for node in nodes_to_package:
+            original_value = node.get_parameter_value("execution_environment")
+            original_execution_environments[node.name] = original_value
+            node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
+
+        # Step 4: Serialize nodes and get internal connections using existing method
+        # NOTE: SerializeSelectedNodesToCommandsRequest has a terrible API design
+        # It expects list[list[str]] where each inner list is [node_name, timestamp]
+        # BUT it completely ignores the timestamp! (see node_manager.py:2259 `for node_name, _ in nodes_to_serialize`)
+        # We're forced to provide dummy empty string timestamps to satisfy this broken interface
+        node_name_timestamp_pairs = []
+        for node in nodes_to_package:
+            node_name_timestamp_pairs.append([node.name, ""])  # timestamp is ignored by the method  # noqa: PERF401
+        selected_nodes_result = GriptapeNodes.NodeManager().on_serialize_selected_nodes_to_commands(
+            SerializeSelectedNodesToCommandsRequest(
+                nodes_to_serialize=node_name_timestamp_pairs, copy_to_clipboard=False
+            )
+        )
+
+        # Restore original execution_environment values before checking results
+        for node_name, original_value in original_execution_environments.items():
+            node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+            node.set_parameter_value("execution_environment", original_value)
+
+        if not isinstance(selected_nodes_result, SerializeSelectedNodesToCommandsResultSuccess):
+            return PackageNodesAsSerializedFlowResultFailure(
+                result_details=f"Attempted to package nodes as serialized flow. Failed to serialize selected nodes: {selected_nodes_result.result_details}"
+            )
+
+        # Steps 5-8: Create start node, end node, control connections, and assemble final flow
+        # (Implementation continues here - serialized_selected_data will be used in next steps)
+        _ = selected_nodes_result  # Placeholder to avoid unused variable warning
+        return PackageNodesAsSerializedFlowResultFailure(
+            result_details="Attempted to package nodes as serialized flow. Failed because multi-node packaging implementation is in progress."
         )
 
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
