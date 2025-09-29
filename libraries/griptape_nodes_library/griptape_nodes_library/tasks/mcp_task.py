@@ -19,6 +19,9 @@ class MCPTaskNode(SuccessFailureNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        # Cache MCP tools like the agent does
+        self._mcp_tools: dict[str, MCPTool] = {}
+
         # Get available MCP servers for the dropdown
         mcp_servers = self._get_available_mcp_servers()
         default_mcp_server = mcp_servers[0] if mcp_servers else None
@@ -96,14 +99,14 @@ class MCPTaskNode(SuccessFailureNode):
             if hasattr(enabled_result, "servers"):
                 servers.extend(enabled_result.servers.keys())
 
-            # Always add the local Griptape Nodes MCP server
-            servers.append("griptape-nodes-local")
+            # Note: griptape-nodes-local removed from MCPTaskNode due to circular dependency issues
+            # It's still available for the agent, but not for MCPTaskNode
 
             return servers
         except Exception as e:
             logger.warning(f"Failed to get MCP servers: {e}")
-            # Still return the local server even if others fail
-            return ["griptape-nodes-local"]
+            # Return empty list if no servers available (no griptape-nodes-local for MCPTaskNode)
+            return []
 
     def _reload_mcp_servers(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002
         """Reload MCP servers when the refresh button is clicked."""
@@ -144,26 +147,39 @@ class MCPTaskNode(SuccessFailureNode):
 
         # Validate MCP server exists and is enabled
         if mcp_server_name:
-            # Special case: local Griptape Nodes MCP server is always available
-            if mcp_server_name == "griptape-nodes-local":
-                pass  # Always valid
-            else:
-                try:
-                    app = GriptapeNodes()
-                    mcp_manager = app.MCPManager()
+            try:
+                app = GriptapeNodes()
+                mcp_manager = app.MCPManager()
 
-                    # Get enabled MCP servers
-                    enabled_request = GetEnabledMCPServersRequest()
-                    enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+                # Get enabled MCP servers
+                enabled_request = GetEnabledMCPServersRequest()
+                enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
 
-                    if not hasattr(enabled_result, "servers") or mcp_server_name not in enabled_result.servers:
-                        msg = f"{self.name}: MCP server '{mcp_server_name}' not found or not enabled."
-                        exceptions.append(ValueError(msg))
-                except Exception as mcp_error:
-                    msg = f"{self.name}: Failed to get MCP server configuration: {mcp_error}"
+                if not hasattr(enabled_result, "servers") or mcp_server_name not in enabled_result.servers:
+                    msg = f"{self.name}: MCP server '{mcp_server_name}' not found or not enabled."
                     exceptions.append(ValueError(msg))
+            except Exception as mcp_error:
+                msg = f"{self.name}: Failed to get MCP server configuration: {mcp_error}"
+                exceptions.append(ValueError(msg))
 
         return exceptions if exceptions else None
+
+    async def _get_or_create_mcp_tool(self, mcp_server_name: str, server_config: dict[str, Any] | str) -> MCPTool:
+        """Get or create MCP tool, caching it like the agent does."""
+        if mcp_server_name not in self._mcp_tools:
+            # Create MCP connection from server config
+            connection: dict[str, Any] = self._create_connection_from_config(server_config)  # type: ignore[arg-type]
+
+            # Create tool with unique name
+            clean_name = "".join(c for c in mcp_server_name if c.isalnum())
+            tool_name = f"mcp{clean_name.title()}"
+
+            # Create and initialize the tool (match agent's parameters exactly)
+            tool = MCPTool(connection=connection, name=tool_name)  # type: ignore[arg-type]
+            await tool._init_activities()  # Initialize once when created
+            self._mcp_tools[mcp_server_name] = tool
+
+        return self._mcp_tools[mcp_server_name]
 
     async def aprocess(self) -> None:
         # Reset execution state and set failure defaults
@@ -174,22 +190,17 @@ class MCPTaskNode(SuccessFailureNode):
         # Get parameter values
         mcp_server_name = self.get_parameter_value("mcp_server_name")
         prompt = self.get_parameter_value("prompt")
-        off_prompt = self.parameter_values.get("off_prompt", False)
         agent = None
 
         # Get MCP server configuration (validation already done in validate_before_node_run)
         try:
-            if mcp_server_name == "griptape-nodes-local":
-                # Special case: use local Griptape Nodes MCP server
-                server_config = "griptape-nodes-local"
-            else:
-                app = GriptapeNodes()
-                mcp_manager = app.MCPManager()
+            app = GriptapeNodes()
+            mcp_manager = app.MCPManager()
 
-                # Get enabled MCP servers
-                enabled_request = GetEnabledMCPServersRequest()
-                enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
-                server_config = enabled_result.servers[mcp_server_name]
+            # Get enabled MCP servers
+            enabled_request = GetEnabledMCPServersRequest()
+            enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+            server_config = enabled_result.servers[mcp_server_name]
         except Exception as mcp_error:
             error_details = f"Failed to get MCP server configuration: {mcp_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -199,20 +210,8 @@ class MCPTaskNode(SuccessFailureNode):
 
         # MCP tool creation and execution
         try:
-            # Create MCP connection from server config based on transport type
-            connection: dict[str, Any] = self._create_connection_from_config(server_config)  # type: ignore[arg-type]
-
-            # Create the tool with unique name
-            if mcp_server_name == "griptape-nodes-local":
-                tool_name = "mcpGriptapeNodes"
-            else:
-                # Convert server name to valid tool name (letters and numbers only)
-                clean_name = "".join(c for c in mcp_server_name if c.isalnum())
-                tool_name = f"mcp{clean_name.title()}"
-            tool = MCPTool(connection=connection, off_prompt=off_prompt, name=tool_name)  # type: ignore[arg-type]
-
-            # Initialize the tool activities
-            await tool._init_activities()
+            # Get or create cached MCP tool (like the agent does)
+            tool = await self._get_or_create_mcp_tool(mcp_server_name, server_config)
 
             rulesets = []
             tools = []
@@ -300,16 +299,6 @@ class MCPTaskNode(SuccessFailureNode):
 
     def _create_connection_from_config(self, server_config: dict[str, Any]) -> dict[str, Any]:
         """Create a connection dictionary from server configuration based on transport type."""
-        # Handle special case for local Griptape Nodes MCP server
-        if isinstance(server_config, str) and server_config == "griptape-nodes-local":
-            import os
-
-            port = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
-            return {
-                "transport": "streamable_http",
-                "url": f"http://localhost:{port}/mcp/",
-            }
-
         transport = server_config.get("transport", "stdio")
 
         # Define field mappings for each transport type
