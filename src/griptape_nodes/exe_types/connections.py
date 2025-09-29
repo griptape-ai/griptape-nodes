@@ -153,7 +153,7 @@ class Connections:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/859
         if not len(connection_id):
             return None
-        if len(connection_id) > 1:
+        if len(connection_id) > 1 and not (direction == "upstream" and parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value):
             msg = "There should not be more than one connection here."
             raise ValueError(msg)
         connection_id = connection_id[0]

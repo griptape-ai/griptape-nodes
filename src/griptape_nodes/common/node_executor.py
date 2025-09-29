@@ -236,7 +236,7 @@ class NodeExecutor:
             ]:
                 await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
 
-            return
+            return 
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
         from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
