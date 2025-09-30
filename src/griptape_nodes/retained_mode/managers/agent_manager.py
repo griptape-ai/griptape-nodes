@@ -40,6 +40,7 @@ from griptape_nodes.retained_mode.events.agent_events import (
 )
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
+from griptape_nodes.retained_mode.events.mcp_events import GetEnabledMCPServersRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -145,11 +146,8 @@ class AgentManager:
             app = GriptapeNodes()
             mcp_manager = app.MCPManager()
 
-            # Get enabled MCP servers
-            from griptape_nodes.retained_mode.events.mcp_events import GetEnabledMCPServersRequest
-
             enabled_request = GetEnabledMCPServersRequest()
-            enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
+            enabled_result = app.handle_request(enabled_request)
 
             if hasattr(enabled_result, "servers"):
                 for server_name in server_names:
