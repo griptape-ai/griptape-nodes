@@ -28,6 +28,7 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+OUTPUT_SCALE = 4 
 
 class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
@@ -269,8 +270,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         tile_overlap = self._node.get_parameter_value("tile_overlap")
         tile_strategy = self._node.get_parameter_value("tile_strategy")
 
-        output_scale = 4
-
         with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
             filename = self._upscale_model_repo_parameter.get_repo_filename()
@@ -296,7 +295,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            output_scale=output_scale,
+            output_scale=OUTPUT_SCALE,
             callback_on_tile_end=callback_on_tile_end,
         )
         self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
@@ -325,7 +324,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         w, h = input_image_pil.size
         output_image_pil = input_image_pil.resize(
-            size=(int(w * scale), int(h * scale)),
+            size=(int(w * scale / OUTPUT_SCALE), int(h * scale / OUTPUT_SCALE)),
             resample=resample,
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/844
         )
