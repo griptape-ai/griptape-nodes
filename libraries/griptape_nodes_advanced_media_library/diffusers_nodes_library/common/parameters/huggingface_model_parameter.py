@@ -121,7 +121,7 @@ class HuggingFaceModelParameter(ABC):
         if not revision:
             for stored_repo_id, stored_revision in self._repo_revisions:
                 if stored_repo_id == repo_id:
-                    logger.debug(f"Using revision '{stored_revision}' for model '{repo_id}'")
+                    logger.debug("Using revision '%s' for model '%s'", stored_revision, repo_id)
                     return stored_repo_id, stored_revision
             # If not found, raise an error
             msg = f"Model '{repo_id}' not found in available models!"
