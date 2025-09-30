@@ -160,8 +160,8 @@ class AgentManager:
             enabled_result = app.handle_request(enabled_request)
 
             if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
-                msg = f"Failed to get enabled MCP servers: {enabled_result}"
-                logger.error(msg)
+                msg = f"Failed to get enabled MCP servers for additional tools: {enabled_result}. Agent will continue with default MCP tool only."
+                logger.warning(msg)
                 return additional_tools
 
             for server_name in server_names:
