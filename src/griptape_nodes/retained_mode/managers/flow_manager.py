@@ -126,11 +126,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeserializeNodeFromCommandsRequest,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
-    SerializedSelectedNodesCommands,
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
-    SerializeSelectedNodesToCommandsRequest,
-    SerializeSelectedNodesToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -2302,9 +2299,17 @@ class FlowManager:
 
         return None
 
-    def _serialize_package_nodes_for_local_execution(
-        self, nodes_to_package: list[BaseNode]
-    ) -> SerializedSelectedNodesCommands | PackageNodesAsSerializedFlowResultFailure:
+    def _serialize_package_nodes_for_local_execution(  # noqa: C901, PLR0913
+        self,
+        nodes_to_package: list[BaseNode],
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],  # OUTPUT: will be populated
+        set_parameter_value_commands: dict[  # OUTPUT: will be populated
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ],
+        internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
+    ) -> list[SerializedNodeCommands] | PackageNodesAsSerializedFlowResultFailure:
         """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops.
 
         This method temporarily overrides each node's execution_environment parameter to LOCAL_EXECUTION
@@ -2313,9 +2318,14 @@ class FlowManager:
 
         Args:
             nodes_to_package: List of nodes to serialize
+            unique_parameter_uuid_to_values: Shared dictionary for deduplicating parameter values across all nodes
+            serialized_parameter_value_tracker: Tracker for serialized parameter values
+            node_name_to_uuid: OUTPUT - Dictionary mapping node names to UUIDs (populated by this method)
+            set_parameter_value_commands: OUTPUT - Dict mapping node UUIDs to parameter value commands (populated by this method)
+            internal_connections: OUTPUT - List of connections between package nodes (populated by this method)
 
         Returns:
-            SerializedSelectedNodesCommands on success, or PackageNodesAsSerializedFlowResultFailure on failure
+            List of SerializedNodeCommands on success, or PackageNodesAsSerializedFlowResultFailure on failure
         """
         # Intercept execution_environment for all nodes before serialization
         original_execution_environments = {}
@@ -2324,34 +2334,76 @@ class FlowManager:
             original_execution_environments[node.name] = original_value
             node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
 
-        # Serialize nodes and generate internal connections using existing method
-        # NOTE: SerializeSelectedNodesToCommandsRequest has a terrible API design
-        # It expects list[list[str]] where each inner list is [node_name, timestamp]
-        # BUT it completely ignores the timestamp! (see node_manager.py:2259 `for node_name, _ in nodes_to_serialize`)
-        # We're forced to provide dummy empty string timestamps to satisfy this broken interface
-        node_name_timestamp_pairs = []
-        for node in nodes_to_package:
-            node_name_timestamp_pairs.append([node.name, ""])  # timestamp is ignored by the method  # noqa: PERF401
-        package_nodes_result = GriptapeNodes.NodeManager().on_serialize_selected_nodes_to_commands(
-            SerializeSelectedNodesToCommandsRequest(
-                nodes_to_serialize=node_name_timestamp_pairs, copy_to_clipboard=False
-            )
-        )
+        try:
+            # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
+            serialized_node_commands = []
 
-        # Restore original execution_environment values before checking results
-        for node_name, original_value in original_execution_environments.items():
-            node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-            node.set_parameter_value("execution_environment", original_value)
+            for node in nodes_to_package:
+                # Serialize this node using shared dictionaries for value deduplication
+                serialize_request = SerializeNodeToCommandsRequest(
+                    node_name=node.name,
+                    unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                )
+                serialize_result = GriptapeNodes.NodeManager().on_serialize_node_to_commands(serialize_request)
 
-        if not isinstance(package_nodes_result, SerializeSelectedNodesToCommandsResultSuccess):
-            return PackageNodesAsSerializedFlowResultFailure(
-                result_details=f"Attempted to package nodes as serialized flow. Failed to serialize package nodes: {package_nodes_result.result_details}"
-            )
+                if not isinstance(serialize_result, SerializeNodeToCommandsResultSuccess):
+                    return PackageNodesAsSerializedFlowResultFailure(
+                        result_details=f"Attempted to package nodes as serialized flow. Failed to serialize node '{node.name}': {serialize_result.result_details}"
+                    )
 
-        return package_nodes_result.serialized_selected_node_commands
+                # Collect serialized node
+                serialized_node_commands.append(serialize_result.serialized_node_commands)
+
+                # Populate the shared node_name_to_uuid mapping
+                if serialize_result.serialized_node_commands.create_node_command.node_name is not None:
+                    node_name_to_uuid[serialize_result.serialized_node_commands.create_node_command.node_name] = (
+                        serialize_result.serialized_node_commands.node_uuid
+                    )
+
+                # Collect set parameter value commands (references to unique_parameter_uuid_to_values)
+                if serialize_result.set_parameter_value_commands:
+                    set_parameter_value_commands[serialize_result.serialized_node_commands.node_uuid] = (
+                        serialize_result.set_parameter_value_commands
+                    )
+
+            # Build internal connections between package nodes
+            package_node_names_set = {n.name for n in nodes_to_package}
+            for node in nodes_to_package:
+                # Get connections FROM this node TO other nodes in the package
+                list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
+                list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
+                    list_connections_request
+                )
+
+                if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                    return PackageNodesAsSerializedFlowResultFailure(
+                        result_details=f"Attempted to package nodes as serialized flow. Failed to list connections for node '{node.name}': {list_connections_result.result_details}"
+                    )
+
+                # Only include connections where BOTH source and target are in the package
+                for outgoing_conn in list_connections_result.outgoing_connections:
+                    if outgoing_conn.target_node_name in package_node_names_set:
+                        source_uuid = node_name_to_uuid[node.name]
+                        target_uuid = node_name_to_uuid[outgoing_conn.target_node_name]
+                        internal_connections.append(
+                            SerializedFlowCommands.IndirectConnectionSerialization(
+                                source_node_uuid=source_uuid,
+                                source_parameter_name=outgoing_conn.source_parameter_name,
+                                target_node_uuid=target_uuid,
+                                target_parameter_name=outgoing_conn.target_parameter_name,
+                            )
+                        )
+        finally:
+            # Always restore original execution_environment values, even on failure
+            for node_name, original_value in original_execution_environments.items():
+                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                restore_node.set_parameter_value("execution_environment", original_value)
+
+        return serialized_node_commands
 
     def _inject_output_mode_for_property_parameters(
-        self, nodes_to_package: list[BaseNode], serialized_package_data: SerializedSelectedNodesCommands
+        self, nodes_to_package: list[BaseNode], serialized_package_nodes: list[SerializedNodeCommands]
     ) -> None:
         """Inject OUTPUT mode for PROPERTY-only parameters to enable value reconciliation.
 
@@ -2361,7 +2413,7 @@ class FlowManager:
 
         Args:
             nodes_to_package: List of nodes being packaged
-            serialized_package_data: The serialized node commands to modify
+            serialized_package_nodes: The serialized node commands to modify
         """
         # Apply ALTER parameter commands for PROPERTY-only parameters to enable OUTPUT mode
         # We need these to emit their values back so that the orchestrator/caller
@@ -2369,13 +2421,15 @@ class FlowManager:
         for package_node in nodes_to_package:
             # Find the corresponding serialized node
             serialized_node = None
-            for serialized_node_command in serialized_package_data.serialized_node_commands:
+            for serialized_node_command in serialized_package_nodes:
                 if serialized_node_command.create_node_command.node_name == package_node.name:
                     serialized_node = serialized_node_command
                     break
 
             if serialized_node is None:
-                continue
+                error_msg = f"Data integrity error: Could not find serialized node for package node '{package_node.name}'. This indicates a logic error in the serialization process."
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
 
             package_alter_parameter_commands = []
             for package_param in package_node.parameters:
@@ -2424,16 +2478,32 @@ class FlowManager:
             node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
             nodes_to_package.append(node)
 
-        # Step 4: Serialize nodes with local execution environment to prevent recursive loops
-        serialized_package_data = self._serialize_package_nodes_for_local_execution(nodes_to_package)
-        if isinstance(serialized_package_data, PackageNodesAsSerializedFlowResultFailure):
-            return serialized_package_data
+        # Step 4: Initialize tracking variables and mappings (moved up so package node serialization can use them)
+        unique_parameter_uuid_to_values = {}
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID] = {}
+        packaged_nodes_set_parameter_value_commands: dict[
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ] = {}
+        packaged_nodes_internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization] = []
 
-        # Step 5: Inject OUTPUT mode changes for PROPERTY-only parameters to enable value reconciliation after the
+        # Step 5: Serialize nodes with local execution environment to prevent recursive loops
+        serialized_package_nodes = self._serialize_package_nodes_for_local_execution(
+            nodes_to_package=nodes_to_package,
+            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+            node_name_to_uuid=node_name_to_uuid,
+            set_parameter_value_commands=packaged_nodes_set_parameter_value_commands,
+            internal_connections=packaged_nodes_internal_connections,
+        )
+        if isinstance(serialized_package_nodes, PackageNodesAsSerializedFlowResultFailure):
+            return serialized_package_nodes
+
+        # Step 6: Inject OUTPUT mode changes for PROPERTY-only parameters to enable value reconciliation after the
         # packaged workflow is run.
-        self._inject_output_mode_for_property_parameters(nodes_to_package, serialized_package_data)
+        self._inject_output_mode_for_property_parameters(nodes_to_package, serialized_package_nodes)
 
-        # Step 6: Analyze external connections (connections from/to nodes outside our selection)
+        # Step 7: Analyze external connections (connections from/to nodes outside our selection)
         node_connections_dict = self._analyze_multi_node_external_connections(package_nodes=nodes_to_package)
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
@@ -2444,15 +2514,6 @@ class FlowManager:
         for conn_analysis in node_connections_dict.values():
             all_external_incoming_data_connections.extend(conn_analysis.incoming_data_connections)
             all_external_outgoing_data_connections.extend(conn_analysis.outgoing_data_connections)
-
-        # Step 7: Initialize tracking variables and mappings for start/end node creation
-        unique_parameter_uuid_to_values = {}
-        serialized_parameter_value_tracker = SerializedParameterValueTracker()
-        node_name_to_uuid = {
-            serialized_node.create_node_command.node_name: serialized_node.node_uuid
-            for serialized_node in serialized_package_data.serialized_node_commands
-            if serialized_node.create_node_command.node_name is not None
-        }
 
         # Step 8: Create end node with parameters for external outgoing connections and parameter mappings
         # (we create the End node before the Start node so that the Start node can create a control connection
@@ -2489,7 +2550,7 @@ class FlowManager:
         self._collect_all_connections_for_multi_node_package(
             start_node_result=start_node_result,
             end_node_packaging_result=end_node_packaging_result,
-            serialized_package_data=serialized_package_data,
+            packaged_nodes_internal_connections=packaged_nodes_internal_connections,
             all_connections=all_connections,
         )
 
@@ -2502,13 +2563,13 @@ class FlowManager:
         # Create set parameter value commands dict
         set_parameter_value_commands = {
             start_node_result.start_node_commands.node_uuid: start_node_result.start_node_parameter_value_commands,
-            **serialized_package_data.set_parameter_value_commands,
+            **packaged_nodes_set_parameter_value_commands,
         }
 
-        # Collect *all* serialized nodes
+        # Collect all serialized nodes
         all_serialized_nodes = [
             start_node_result.start_node_commands,
-            *serialized_package_data.serialized_node_commands,
+            *serialized_package_nodes,
             end_node_packaging_result.end_node_commands,
         ]
 
@@ -2516,6 +2577,12 @@ class FlowManager:
         combined_dependencies = NodeDependencies()
         for serialized_node in all_serialized_nodes:
             combined_dependencies.aggregate_from(serialized_node.node_dependencies)
+
+        # Extract lock commands from serialized nodes (they're embedded in SerializedNodeCommands)
+        set_lock_commands_per_node = {}
+        for serialized_node in all_serialized_nodes:
+            if serialized_node.lock_node_command:
+                set_lock_commands_per_node[serialized_node.node_uuid] = serialized_node.lock_node_command
 
         # Create a CreateFlowRequest for the packaged flow so that it can
         # run as a standalone workflow
@@ -2537,7 +2604,7 @@ class FlowManager:
             serialized_connections=all_connections,
             unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
             set_parameter_value_commands=set_parameter_value_commands,
-            set_lock_commands_per_node=serialized_package_data.set_lock_commands_per_node,
+            set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=combined_dependencies,
         )
@@ -2571,37 +2638,28 @@ class FlowManager:
         self,
         start_node_result: PackagingStartNodeResult,
         end_node_packaging_result: PackagingEndNodeResult,
-        serialized_package_data: SerializedSelectedNodesCommands,
+        packaged_nodes_internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
         all_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
     ) -> None:
-        """Collect and convert all connections for the multi-node packaged flow.
+        """Collect all connections for the multi-node packaged flow.
 
         Populates the provided list with:
-        1. Start node connections (data + control, already correct type)
-        2. End node connections (data, already correct type)
-        3. Internal package node connections (converted from SerializedSelectedNodesCommands type)
+        1. Start node connections (data + control)
+        2. End node connections (data)
+        3. Internal package node connections
 
         Args:
             start_node_result: Result containing start node and its connections
             end_node_packaging_result: Result containing end node and its connections
-            serialized_package_data: Serialized data for the package nodes including their internal connections
+            packaged_nodes_internal_connections: Internal connections between package nodes
             all_connections: OUTPUT - List to populate with connections (mutated in place)
         """
-        # Add start and end node connections (already SerializedFlowCommands.IndirectConnectionSerialization type)
+        # Add start and end node connections
         all_connections.extend(start_node_result.start_to_package_connections)
         all_connections.extend(end_node_packaging_result.package_to_end_connections)
 
-        # Convert SerializedSelectedNodesCommands connections to SerializedFlowCommands connections
-        # We serialized the package nodes via SerializeSelectedNodes which has the exact same connection type definition.
-        # (yes, this is kinda dumb, but I don't want to risk breaking anything)
-        for conn in serialized_package_data.serialized_connection_commands:
-            flow_conn = SerializedFlowCommands.IndirectConnectionSerialization(
-                source_node_uuid=conn.source_node_uuid,
-                source_parameter_name=conn.source_parameter_name,
-                target_node_uuid=conn.target_node_uuid,
-                target_parameter_name=conn.target_parameter_name,
-            )
-            all_connections.append(flow_conn)
+        # Add internal package node connections
+        all_connections.extend(packaged_nodes_internal_connections)
 
     async def on_start_flow_request(self, request: StartFlowRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
