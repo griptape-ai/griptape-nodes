@@ -2085,51 +2085,85 @@ class FlowManager:
 
             # Handle external outgoing control connections
             for control_conn in node_connection_analysis.outgoing_control_connections:
-                # Create mangled parameter name for the control connection
-                sanitized_param_name = (
-                    f"{request.output_parameter_prefix}{package_node.name}_{control_conn.source_parameter_name}"
-                )
-
-                # Add to parameter name mappings (rosetta stone)
-                parameter_name_mappings[sanitized_param_name] = OriginalNodeParameter(
-                    node_name=package_node.name,
-                    parameter_name=control_conn.source_parameter_name,
-                )
-
-                # Get the source parameter for type information
+                # Get the source parameter for validation and processing
                 source_param = package_node.get_parameter_by_name(control_conn.source_parameter_name)
                 if source_param is None:
                     msg = f"External control connection references parameter '{control_conn.source_parameter_name}' on node '{package_node.name}' which does not exist. This indicates a data consistency issue."
                     raise ValueError(msg)
 
-                # Extract parameter shape info for workflow shape (outputs to external consumers)
-                param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
-                    source_param, include_control_params=True
-                )
-                if param_shape_info is not None:
-                    if end_node_name not in output_shape_data:
-                        output_shape_data[end_node_name] = {}
-                    output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
-
-                # Create parameter command for end node
-                add_param_request = AddParameterToNodeRequest(
-                    node_name=end_node_name,
-                    parameter_name=sanitized_param_name,
-                    type=source_param.output_type,
-                    default_value=None,
+                # Use comprehensive helper to process this control parameter
+                self._process_parameter_for_end_node(
+                    request=request,
+                    parameter=source_param,
+                    node_name=package_node.name,
+                    node_uuid=node_name_to_uuid[package_node.name],
+                    end_node_name=end_node_name,
+                    end_node_uuid=end_node_uuid,
                     tooltip=f"Control output {control_conn.source_parameter_name} from packaged node {package_node.name}",
-                    initial_setup=True,
+                    end_node_parameter_commands=end_node_parameter_commands,
+                    package_to_end_connections=package_to_end_connections,
+                    parameter_name_mappings=parameter_name_mappings,
+                    output_shape_data=output_shape_data,
                 )
-                end_node_parameter_commands.append(add_param_request)
 
-                # Create connection from package node to end node
-                package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                    source_node_uuid=node_name_to_uuid[package_node.name],
-                    source_parameter_name=control_conn.source_parameter_name,
-                    target_node_uuid=end_node_uuid,
-                    target_parameter_name=sanitized_param_name,
-                )
-                package_to_end_connections.append(package_to_end_connection)
+    def _process_parameter_for_end_node(  # noqa: PLR0913
+        self,
+        request: PackageNodesAsSerializedFlowRequest,
+        parameter: Parameter,
+        node_name: str,
+        node_uuid: SerializedNodeCommands.NodeUUID,
+        end_node_name: str,
+        end_node_uuid: SerializedNodeCommands.NodeUUID,
+        tooltip: str,
+        end_node_parameter_commands: list[
+            AddParameterToNodeRequest
+        ],  # OUTPUT: Will populate with parameters to add to end node
+        package_to_end_connections: list[
+            SerializedFlowCommands.IndirectConnectionSerialization
+        ],  # OUTPUT: Will populate with connections to add
+        parameter_name_mappings: dict[
+            SanitizedParameterName, OriginalNodeParameter
+        ],  # OUTPUT: Will populate rosetta stone for parameter names
+        output_shape_data: WorkflowShapeNodes,  # OUTPUT: Will populate with workflow shape data
+    ) -> None:
+        """Process a single parameter for inclusion in the end node, handling all aspects of parameter creation and connection."""
+        # Create sanitized parameter name with collision avoidance
+        sanitized_param_name = f"{request.output_parameter_prefix}{node_name}_{parameter.name}"
+
+        # Build parameter name mapping for rosetta stone
+        parameter_name_mappings[sanitized_param_name] = OriginalNodeParameter(
+            node_name=node_name,
+            parameter_name=parameter.name,
+        )
+
+        # Extract parameter shape info for workflow shape (outputs to external consumers)
+        param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
+            parameter, include_control_params=True
+        )
+        if param_shape_info is not None:
+            if end_node_name not in output_shape_data:
+                output_shape_data[end_node_name] = {}
+            output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
+
+        # Create parameter command for end node
+        add_param_request = AddParameterToNodeRequest(
+            node_name=end_node_name,
+            parameter_name=sanitized_param_name,
+            type=parameter.output_type,
+            default_value=None,
+            tooltip=tooltip,
+            initial_setup=True,
+        )
+        end_node_parameter_commands.append(add_param_request)
+
+        # Create connection from package node to end node
+        package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+            source_node_uuid=node_uuid,
+            source_parameter_name=parameter.name,
+            target_node_uuid=end_node_uuid,
+            target_parameter_name=sanitized_param_name,
+        )
+        package_to_end_connections.append(package_to_end_connection)
 
     def _create_end_node_data_parameters_and_connections(  # noqa: PLR0913
         self,
@@ -2165,42 +2199,20 @@ class FlowManager:
                 if package_param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
                     continue
 
-                sanitized_param_name = f"{request.output_parameter_prefix}{package_node.name}_{package_param.name}"
-
-                # Build parameter name mapping for rosetta stone
-                parameter_name_mappings[sanitized_param_name] = OriginalNodeParameter(
+                # Use comprehensive helper to process this data parameter
+                self._process_parameter_for_end_node(
+                    request=request,
+                    parameter=package_param,
                     node_name=package_node.name,
-                    parameter_name=package_param.name,
-                )
-
-                # Extract parameter shape info for workflow shape (outputs to external consumers)
-                param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
-                    package_param, include_control_params=True
-                )
-                if param_shape_info is not None:
-                    if end_node_name not in output_shape_data:
-                        output_shape_data[end_node_name] = {}
-                    output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
-
-                # Create parameter command for end node
-                add_param_request = AddParameterToNodeRequest(
-                    node_name=end_node_name,
-                    parameter_name=sanitized_param_name,
-                    type=package_param.output_type,
-                    default_value=None,
+                    node_uuid=package_node_uuid,
+                    end_node_name=end_node_name,
+                    end_node_uuid=end_node_uuid,
                     tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
-                    initial_setup=True,
+                    end_node_parameter_commands=end_node_parameter_commands,
+                    package_to_end_connections=package_to_end_connections,
+                    parameter_name_mappings=parameter_name_mappings,
+                    output_shape_data=output_shape_data,
                 )
-                end_node_parameter_commands.append(add_param_request)
-
-                # Create connection from package node to end node
-                package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                    source_node_uuid=package_node_uuid,
-                    source_parameter_name=package_param.name,
-                    target_node_uuid=end_node_uuid,
-                    target_parameter_name=sanitized_param_name,
-                )
-                package_to_end_connections.append(package_to_end_connection)
 
     def _validate_multi_node_request(
         self, request: PackageNodesAsSerializedFlowRequest
