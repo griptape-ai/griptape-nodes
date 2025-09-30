@@ -842,6 +842,9 @@ class LibraryManager:
                 # Determine venv path for dependency installation
                 venv_path = self._get_library_venv_path(library_data.name, file_path)
 
+                # Check if venv already exists before initialization
+                venv_already_exists = venv_path.exists()
+
                 # Only install dependencies if conditions are met
                 try:
                     library_venv_python_path = await self._init_library_venv(venv_path)
@@ -856,7 +859,14 @@ class LibraryManager:
                     details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
                     logger.error(details)
                     return RegisterLibraryFromFileResultFailure(result_details=details)
-                if self._can_write_to_venv_location(library_venv_python_path):
+
+                if venv_already_exists:
+                    logger.debug(
+                        "Skipping dependency installation for library '%s' - venv already exists at %s",
+                        library_data.name,
+                        venv_path,
+                    )
+                elif self._can_write_to_venv_location(library_venv_python_path):
                     # Check disk space before installing dependencies
                     config_manager = GriptapeNodes.ConfigManager()
                     min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
@@ -991,6 +1001,9 @@ class LibraryManager:
             # Determine venv path for dependency installation
             venv_path = self._get_library_venv_path(package_name, None)
 
+            # Check if venv already exists before initialization
+            venv_already_exists = venv_path.exists()
+
             # Only install dependencies if conditions are met
             try:
                 library_python_venv_path = await self._init_library_venv(venv_path)
@@ -998,7 +1011,14 @@ class LibraryManager:
                 details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
                 logger.error(details)
                 return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
-            if self._can_write_to_venv_location(library_python_venv_path):
+
+            if venv_already_exists:
+                logger.debug(
+                    "Skipping dependency installation for package '%s' - venv already exists at %s",
+                    package_name,
+                    venv_path,
+                )
+            elif self._can_write_to_venv_location(library_python_venv_path):
                 # Check disk space before installing dependencies
                 config_manager = GriptapeNodes.ConfigManager()
                 min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
