@@ -1943,9 +1943,12 @@ class FlowManager:
         for connection in incoming_data_connections:
             target_parameter_name = connection.target_parameter_name
 
-            # Create sanitized parameter name with prefix + node + parameter (following your requirements)
-            sanitized_node_name = target_node_name.replace(" ", "_").replace(".", "_")
-            param_name = f"{output_parameter_prefix}{sanitized_node_name}_{target_parameter_name}"
+            # Create sanitized parameter name with prefix + node + parameter
+            param_name = self._generate_sanitized_parameter_name(
+                prefix=output_parameter_prefix,
+                node_name=target_node_name,
+                parameter_name=target_parameter_name,
+            )
 
             # Get the source node to determine parameter type (from the external connection)
             try:
@@ -2178,7 +2181,11 @@ class FlowManager:
     ) -> None:
         """Process a single parameter for inclusion in the end node, handling all aspects of parameter creation and connection."""
         # Create sanitized parameter name with collision avoidance
-        sanitized_param_name = f"{request.output_parameter_prefix}{node_name}_{parameter.name}"
+        sanitized_param_name = self._generate_sanitized_parameter_name(
+            prefix=request.output_parameter_prefix,
+            node_name=node_name,
+            parameter_name=parameter.name,
+        )
 
         # Build parameter name mapping for rosetta stone
         parameter_name_mappings[sanitized_param_name] = OriginalNodeParameter(
@@ -2542,6 +2549,23 @@ class FlowManager:
             parameter_name_mappings=parameter_name_mappings,
             result_details=f"Successfully packaged {len(request.node_names)} nodes as serialized flow.",
         )
+
+    def _generate_sanitized_parameter_name(self, prefix: str, node_name: str, parameter_name: str) -> str:
+        """Generate a sanitized parameter name for multi-node packaging.
+
+        Creates a parameter name in the format: prefix + sanitized_node_name + _ + parameter_name
+        Node names are sanitized by replacing spaces and dots with underscores.
+
+        Args:
+            prefix: Prefix for the parameter name (e.g., "packaged_node_")
+            node_name: Original node name (may contain spaces, dots, etc.)
+            parameter_name: Original parameter name
+
+        Returns:
+            Sanitized parameter name safe for use (e.g., "packaged_node_Merge_Texts_merge_string")
+        """
+        sanitized_node_name = node_name.replace(" ", "_").replace(".", "_")
+        return f"{prefix}{sanitized_node_name}_{parameter_name}"
 
     def _collect_all_connections_for_multi_node_package(
         self,
