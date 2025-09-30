@@ -10,6 +10,7 @@ from diffusers_nodes_library.common.parameters.diffusion.builder_parameters impo
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
+from diffusers_nodes_library.common.utils.lora_utils import FluxLorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import ControlNode
@@ -17,6 +18,9 @@ from griptape_nodes.retained_mode.events.parameter_events import SetParameterVal
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
+
+# Additional postfix bits must be powers of two (1, 2, 4, 8, etc.) to ensure unique combinations
+UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 
 
 class DiffusionPipelineBuilderNode(ControlNode):
@@ -27,10 +31,13 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
         self.log_params = LogParameter(self)
 
+        self.params.add_output_parameters()
         self.params.add_input_parameters()
         self.huggingface_pipeline_params.add_input_parameters()
 
-        self.params.add_output_parameters()
+        self.loras_params = FluxLorasParameter(self)
+        self.loras_params.add_input_parameters()
+
         self.log_params.add_output_parameters()
 
         self._initializing = False
@@ -47,11 +54,20 @@ class DiffusionPipelineBuilderNode(ControlNode):
         """Get optimization settings for the pipeline."""
         return self.huggingface_pipeline_params.get_hf_pipeline_parameters()
 
+    def _get_config_hash_postfix(self) -> int:
+        config_bits = 0
+        controlnet_model = self.get_parameter_value("controlnet_model")
+        if controlnet_model and controlnet_model.startswith("Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"):
+            # Set the UNION_PRO_2_CONFIG_HASH_POSTFIX bit
+            config_bits |= UNION_PRO_2_CONFIG_HASH_POSTFIX
+        return config_bits
+
     @property
     def _config_hash(self) -> str:
         """Generate a hash for the current configuration to use as cache key."""
         config_data = {
             **self.params.get_config_kwargs(),
+            **self.loras_params.get_loras(),
             "torch_dtype": "bfloat16",  # Currently hardcoded
         }
 
@@ -59,11 +75,14 @@ class DiffusionPipelineBuilderNode(ControlNode):
         for key, value in opt_kwargs.items():
             config_data[f"opt_{key}"] = value
 
-        return (
+        config_hash = (
             self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_name
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
+        # Convert to hex and append postfix bits
+        config_hash += f"-{self._get_config_hash_postfix():x}"
+        return config_hash
 
     def add_parameter(self, parameter: Parameter) -> None:
         """Add a parameter to the node.
@@ -132,6 +151,9 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         with self.log_params.append_profile_to_logs("Loading pipeline"):
             pipe = self.params.pipeline_type_parameters.pipeline_type_pipeline_params.build_pipeline()
+
+        with self.log_params.append_profile_to_logs("Configuring FLUX loras"):
+            self.loras_params.configure_loras(pipe)
 
         with self.log_params.append_profile_to_logs("Applying optimizations"):
             optimization_kwargs = self.huggingface_pipeline_params.get_hf_pipeline_parameters()

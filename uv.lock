@@ -320,7 +320,6 @@ dev = [
     { name = "pyright" },
     { name = "ruff" },
     { name = "typos" },
-    { name = "watchdog" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -372,7 +371,6 @@ dev = [
     { name = "pyright", specifier = ">=1.1.396" },
     { name = "ruff", specifier = ">=0.11.0" },
     { name = "typos", specifier = ">=1.30.2" },
-    { name = "watchdog", specifier = ">=6.0.0" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.5.2" },
