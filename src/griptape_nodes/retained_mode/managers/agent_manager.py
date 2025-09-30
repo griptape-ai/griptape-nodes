@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from attrs import define, field
 from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
@@ -96,7 +96,7 @@ class NodesPromptImageGenerationTool(BaseImageGenerationTool):
 
 class AgentManager:
     # Field mappings for each transport type
-    TRANSPORT_FIELD_MAPPINGS = {
+    TRANSPORT_FIELD_MAPPINGS: ClassVar[dict[str, list[str]]] = {
         "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
         "sse": ["url", "headers", "timeout", "sse_read_timeout"],
         "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
