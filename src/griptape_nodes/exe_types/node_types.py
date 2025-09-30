@@ -50,6 +50,7 @@ AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
+LOCAL_SUBPROCESS = "Local Subprocess"
 
 
 class ImportDependency(NamedTuple):
@@ -114,7 +115,7 @@ def get_library_names_with_publish_handlers() -> list[str]:
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
     # Always include "local" as the first option
-    library_names = [LOCAL_EXECUTION]
+    library_names = [LOCAL_EXECUTION, LOCAL_SUBPROCESS]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
