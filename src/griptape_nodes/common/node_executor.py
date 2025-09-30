@@ -46,7 +46,7 @@ class NodeExecutor:
             return registered_handlers[library_name]
         return None
 
-    async def execute(self, node: BaseNode, library_name: str | None = None) -> None:
+    async def execute(self, node: BaseNode, library_name: str | None = None) -> None:  # noqa: C901, PLR0912, PLR0915
         """Execute the given node.
 
         Args:

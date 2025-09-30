@@ -473,7 +473,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             obj_manager.add_object_by_name(proxy_name, proxy_node)
 
             # Map all grouped nodes to this proxy
-            for node in group.nodes:
+            for node in group.nodes.values():
                 node_to_proxy_map[node] = proxy_node
 
             # Remap connections to point to proxy
@@ -486,7 +486,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
         """Analyze and categorize connections for a node group."""
-        node_names_in_group = {n.name for n in group.nodes}
+        node_names_in_group = group.nodes.keys()
 
         # Analyze all connections in the flow
         for conn in connections.connections.values():

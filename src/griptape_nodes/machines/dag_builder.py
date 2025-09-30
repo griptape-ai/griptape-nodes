@@ -307,7 +307,7 @@ class DagBuilder:
             group: NodeGroup to analyze
             connections: Connections object containing all flow connections
         """
-        node_names_in_group = {n.name for n in group.nodes}
+        node_names_in_group = set(group.nodes.keys())
 
         # Analyze all connections in the flow
         for conn in connections.connections.values():
@@ -348,7 +348,7 @@ class DagBuilder:
         # Determine which graph to add proxy to (use first grouped node's graph)
         target_graph_name = None
         for graph_name, node_set in self.graph_to_nodes.items():
-            if any(node.name in node_set for node in group.nodes):
+            if any(node_name in node_set for node_name in group.nodes):
                 target_graph_name = graph_name
                 break
 
@@ -422,16 +422,16 @@ class DagBuilder:
         Args:
             group: NodeGroup whose nodes should be removed from the DAG
         """
-        for node in group.nodes:
+        for node_name in group.nodes:
             # Remove from node_to_reference
-            if node.name in self.node_to_reference:
-                del self.node_to_reference[node.name]
+            if node_name in self.node_to_reference:
+                del self.node_to_reference[node_name]
 
             # Remove from all graphs
             for graph in self.graphs.values():
-                if node.name in graph.nodes():
-                    graph.remove_node(node.name)
+                if node_name in graph.nodes():
+                    graph.remove_node(node_name)
 
             # Remove from graph_to_nodes tracking
             for node_set in self.graph_to_nodes.values():
-                node_set.discard(node.name)
+                node_set.discard(node_name)
