@@ -94,25 +94,17 @@ def _quantize_flux_pipeline(
     _log_memory_info(pipe, device)
     quant_map = {"fp8": qfloat8, "int8": qint8, "int4": qint4}
     quant_type = quant_map[quantization_mode]
-    if hasattr(pipe, "transformer") and pipe.transformer is not None:
-        logger.debug("Quantizing transformer with %s", quantization_mode)
-        quantize(pipe.transformer, weights=quant_type, exclude=["proj_out"])
-        logger.debug("Freezing transformer")
-        freeze(pipe.transformer)
-        logger.debug("Quantizing completed for transformer.")
-    if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
-        logger.debug("Quantizing text_encoder with %s", quantization_mode)
-        quantize(pipe.text_encoder, weights=quant_type)
-        logger.debug("Freezing text_encoder")
-        freeze(pipe.text_encoder)
-        logger.debug("Quantizing completed for text_encoder.")
-    if hasattr(pipe, "text_encoder_2") and pipe.text_encoder_2 is not None:
-        logger.debug("Quantizing text_encoder_2 with %s", quantization_mode)
-        quantize(pipe.text_encoder_2, weights=quant_type)
-        logger.debug("Freezing text_encoder_2")
-        freeze(pipe.text_encoder_2)
-        logger.debug("Quantizing completed for text_encoder_2.")
 
+    component_names = get_pipeline_component_names(pipe)
+    logger.debug("Quantizing components: %s", component_names)
+    for name in component_names:
+        component = getattr(pipe, name, None)
+        if component is not None:
+            logger.debug("Quantizing %s with %s", name, quantization_mode)
+            quantize(component, weights=quant_type, exclude=["proj_out"])
+            logger.debug("Freezing %s", name)
+            freeze(component)
+            logger.debug("Quantizing completed for %s.", name)
     logger.info("Quantization complete.")
 
 
