@@ -239,7 +239,12 @@ class MCPTaskNode(SuccessFailureNode):
         try:
             # Get or create cached MCP tool (like the agent does)
             tool = await self._get_or_create_mcp_tool(mcp_server_name, server_config)
-
+        except Exception as e:
+            msg = f"{self.name}: Failed to get or create MCP tool: {e}"
+            logger.error(f"MCPTaskNode '{self.name}': {msg}")
+            self._handle_failure_exception(e)
+            return
+        try:
             rulesets = []
             tools = []
             agent = self.get_parameter_value("agent")
@@ -253,10 +258,20 @@ class MCPTaskNode(SuccessFailureNode):
             else:
                 driver = self._create_driver()
                 agent = Agent()
-
+        except Exception as e:
+            msg = f"{self.name}: Failed to get or create agent: {e}"
+            logger.error(f"MCPTaskNode '{self.name}': {msg}")
+            self._handle_failure_exception(e)
+            return
+        try:
             prompt_task = PromptTask(tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets)
             agent.add_task(prompt_task)
-
+        except Exception as e:
+            msg = f"{self.name}: Failed to add task to agent: {e}"
+            logger.error(f"MCPTaskNode '{self.name}': {msg}")
+            self._handle_failure_exception(e)
+            return
+        try:
             # Run the process with proper streaming
             execution_start = time.time()
             logger.debug(f"MCPTaskNode '{self.name}': Starting agent execution with MCP tool...")
@@ -264,7 +279,6 @@ class MCPTaskNode(SuccessFailureNode):
             execution_time = time.time() - execution_start
             logger.debug(f"MCPTaskNode '{self.name}': Agent execution completed in {execution_time:.2f}s")
 
-            # Success path
             self._set_success_output_values(prompt, result)
             success_details = f"Successfully executed MCP task with server '{mcp_server_name}'"
             self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
