@@ -479,8 +479,8 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
         start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
         end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
         start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
-        entry_control_node: Name of the node that should receive the control flow entry (None for auto-detection)
-        entry_control_parameter_name: Name of the control parameter on the entry node (None for auto-detection)
+        entry_control_node_name: Name of the node that should receive the control flow entry (required if entry_control_parameter_name specified)
+        entry_control_parameter_name: Name of the control parameter on the entry node (None for auto-detection of first available control parameter)
         output_parameter_prefix: Prefix for parameter names on the generated end node to avoid collisions (defaults to "packaged_node_")
 
     Results: PackageNodesAsSerializedFlowResultSuccess (with serialized flow and node name mapping) | PackageNodesAsSerializedFlowResultFailure
@@ -491,7 +491,7 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     start_node_type: str = "StartFlow"
     end_node_type: str = "EndFlow"
     start_end_specific_library_name: str = "Griptape Nodes Library"
-    entry_control_node: str | None = None
+    entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
 
@@ -505,13 +505,13 @@ class PackageNodesAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultP
         serialized_flow_commands: The complete serialized flow with StartFlow, selected nodes with preserved connections, and EndFlow
         workflow_shape: The workflow shape defining inputs and outputs for external callers
         packaged_node_names: List of node names that were included in the package
-        parameter_name_mappings: List of mappings from sanitized parameter names back to original node and parameter names
+        parameter_name_mappings: Dict mapping sanitized parameter names to original node and parameter names for O(1) lookup
     """
 
     serialized_flow_commands: SerializedFlowCommands
     workflow_shape: WorkflowShape
     packaged_node_names: list[str]
-    parameter_name_mappings: list[ParameterNameMapping]
+    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
 
 
 @dataclass
