@@ -117,6 +117,12 @@ class ExecuteDagState(State):
             )
             return
 
+        # Check if this is a NodeGroupProxyNode - if so, handle grouped nodes
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        if isinstance(current_node, NodeGroupProxyNode):
+            await ExecuteDagState._handle_group_proxy_completion(current_node)
+
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
         # Track this as the last resolved node
@@ -171,6 +177,150 @@ class ExecuteDagState(State):
         )
         # Now the final thing to do, is to take their directed graph and update it.
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
+
+    @staticmethod
+    async def _handle_group_proxy_completion(proxy_node: BaseNode) -> None:
+        """Handle completion of a NodeGroupProxyNode by marking all grouped nodes as resolved.
+
+        When a NodeGroupProxyNode completes, all nodes in the group have been executed
+        in parallel by the NodeExecutor. This method marks each grouped node as RESOLVED
+        and emits NodeResolvedEvent for each one.
+
+        Args:
+            proxy_node: The NodeGroupProxyNode that completed execution
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        if not isinstance(proxy_node, NodeGroupProxyNode):
+            return
+
+        node_group = proxy_node.node_group_data
+
+        # Mark all grouped nodes as resolved and emit events
+        for grouped_node in node_group.nodes:
+            # Mark node as resolved
+            grouped_node.state = NodeResolutionState.RESOLVED
+
+            # Emit parameter update events for each output parameter
+            for parameter_name, value in grouped_node.parameter_output_values.items():
+                parameter = grouped_node.get_parameter_by_name(parameter_name)
+                if parameter is None:
+                    logger.warning(
+                        "Node '%s' in group '%s' has output parameter '%s' but parameter not found",
+                        grouped_node.name,
+                        node_group.group_id,
+                        parameter_name,
+                    )
+                    continue
+
+                data_type = parameter.type
+                if data_type is None:
+                    data_type = ParameterTypeBuiltin.NONE.value
+
+                await GriptapeNodes.EventManager().aput_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=ParameterValueUpdateEvent(
+                                node_name=grouped_node.name,
+                                parameter_name=parameter_name,
+                                data_type=data_type,
+                                value=TypeValidator.safe_serialize(value),
+                            )
+                        ),
+                    )
+                )
+
+            # Emit NodeResolvedEvent for the grouped node
+            library = LibraryRegistry.get_libraries_with_node_type(grouped_node.__class__.__name__)
+            library_name = library[0] if len(library) == 1 else None
+
+            await GriptapeNodes.EventManager().aput_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=NodeResolvedEvent(
+                            node_name=grouped_node.name,
+                            parameter_output_values=TypeValidator.safe_serialize(grouped_node.parameter_output_values),
+                            node_type=grouped_node.__class__.__name__,
+                            specific_library_name=library_name,
+                        )
+                    )
+                )
+            )
+
+        # Cleanup: restore connections and deregister proxy
+        await ExecuteDagState._cleanup_proxy_node(proxy_node)
+
+    @staticmethod
+    async def _cleanup_proxy_node(proxy_node: BaseNode) -> None:
+        """Clean up a NodeGroupProxyNode after execution completes.
+
+        Restores original connections from proxy back to grouped nodes and
+        deregisters the proxy node from ObjectManager.
+
+        Args:
+            proxy_node: The NodeGroupProxyNode to clean up
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        if not isinstance(proxy_node, NodeGroupProxyNode):
+            return
+
+        node_group = proxy_node.node_group_data
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Restore external incoming connections (proxy -> original target node)
+        for conn in node_group.external_incoming_connections:
+            conn_id = id(conn)
+
+            # Remove proxy from incoming index
+            if (
+                proxy_node.name in connections.incoming_index
+                and conn.target_parameter.name in connections.incoming_index[proxy_node.name]
+            ):
+                connections.incoming_index[proxy_node.name][conn.target_parameter.name].remove(conn_id)
+
+            # Restore connection to original target node
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is not None:
+                conn.target_node = original_target
+
+            # Add back to original target node's incoming index
+            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Restore external outgoing connections (original source node -> proxy)
+        for conn in node_group.external_outgoing_connections:
+            conn_id = id(conn)
+
+            # Remove proxy from outgoing index
+            if (
+                proxy_node.name in connections.outgoing_index
+                and conn.source_parameter.name in connections.outgoing_index[proxy_node.name]
+            ):
+                connections.outgoing_index[proxy_node.name][conn.source_parameter.name].remove(conn_id)
+
+            # Restore connection to original source node
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is not None:
+                conn.source_node = original_source
+
+            # Add back to original source node's outgoing index
+            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+
+        # Deregister proxy node from ObjectManager
+        obj_manager = GriptapeNodes.ObjectManager()
+        if obj_manager.has_object_with_name(proxy_node.name):
+            del obj_manager._name_to_objects[proxy_node.name]
+
+        logger.debug(
+            "Cleaned up proxy node '%s' for group '%s' - restored %d connections",
+            proxy_node.name,
+            node_group.group_id,
+            len(node_group.external_incoming_connections) + len(node_group.external_outgoing_connections),
+        )
 
     @staticmethod
     def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:

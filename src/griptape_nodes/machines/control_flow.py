@@ -20,6 +20,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
+    from griptape_nodes.exe_types.flow import ControlFlow
+    from griptape_nodes.exe_types.node_types import NodeGroup
+
 
 @dataclass
 class NextNodeInfo:
@@ -339,7 +344,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901, PLR0912
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -353,10 +358,32 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         if dag_builder is None:
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
-        # Build with the first node:
-        dag_builder.add_node_with_dependencies(start_node, start_node.name)
+
+        # FIRST: Scan all nodes in the flow and create node groups BEFORE building the DAG
+        # This creates proxy nodes and a mapping from original nodes to proxies
+        flow = flow_manager.get_flow_by_name(self._context.flow_name)
+        logger.debug("Scanning flow '%s' for node groups before DAG building", self._context.flow_name)
+        try:
+            node_to_proxy_map = self._identify_and_create_node_group_proxies(flow, flow_manager.get_connections())
+            if node_to_proxy_map:
+                logger.info(
+                    "Created %d proxy nodes for %d grouped nodes in flow '%s'",
+                    len(set(node_to_proxy_map.values())),
+                    len(node_to_proxy_map),
+                    self._context.flow_name,
+                )
+        except ValueError as e:
+            logger.error("Failed to process node groups: %s", e)
+            raise
+
+        # Build with the first node (use proxy if it's part of a group):
+        if start_node in node_to_proxy_map:
+            start_node_to_add = node_to_proxy_map[start_node]
+        else:
+            start_node_to_add = start_node
+        dag_builder.add_node_with_dependencies(start_node_to_add, start_node_to_add.name)
         queue_items = list(flow_manager.global_flow_queue.queue)
-        start_nodes = [start_node]
+        start_nodes = [start_node_to_add]
         # Find data_nodes and remove them from queue
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
@@ -364,16 +391,155 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
-                dag_builder.add_node_with_dependencies(node, node.name)
+                # Use proxy node if this node is part of a group, otherwise use original node
+                if node in node_to_proxy_map:
+                    node_to_add = node_to_proxy_map[node]
+                else:
+                    node_to_add = node
+                # Only add if not already added (proxy might already be in DAG)
+                if node_to_add.name not in dag_builder.node_to_reference:
+                    dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
+                    if node_to_add not in start_nodes:
+                        start_nodes.append(node_to_add)
                 flow_manager.global_flow_queue.queue.remove(item)
-                start_nodes.append(node)
             elif item.dag_execution_type == DagExecutionType.DATA_NODE:
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
-                # Build here.
-                dag_builder.add_node_with_dependencies(node, node.name)
+                # Use proxy node if this node is part of a group, otherwise use original node
+                if node in node_to_proxy_map:
+                    node_to_add = node_to_proxy_map[node]
+                else:
+                    node_to_add = node
+                # Only add if not already added (proxy might already be in DAG)
+                if node_to_add.name not in dag_builder.node_to_reference:
+                    dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
                 flow_manager.global_flow_queue.queue.remove(item)
+
         return start_nodes
+
+    def _identify_and_create_node_group_proxies(
+        self, flow: ControlFlow, connections: Connections
+    ) -> dict[BaseNode, BaseNode]:
+        """Scan all nodes in flow, identify groups, and create proxy nodes.
+
+        Returns:
+            Dictionary mapping original nodes to their proxy nodes (only for grouped nodes)
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroup, NodeGroupProxyNode
+
+        # Step 1: Identify groups by scanning all nodes in the flow
+        groups: dict[str, NodeGroup] = {}
+        for node in flow.nodes.values():
+            group_id = node.get_parameter_value("job_group")
+
+            # Skip nodes without group assignment or empty group ID
+            if not group_id or group_id == "":
+                continue
+
+            # Create group if it doesn't exist
+            if group_id not in groups:
+                groups[group_id] = NodeGroup(group_id=group_id)
+
+            # Add node to group
+            groups[group_id].add_node(node)
+
+        if not groups:
+            return {}
+
+        # Step 2: Analyze connections for each group
+        for group in groups.values():
+            self._analyze_group_connections(group, connections)
+
+        # Step 3: Validate each group
+        for group in groups.values():
+            group.validate_no_intermediate_nodes(connections.connections)
+
+        # Step 4: Create proxy nodes and build mapping
+        node_to_proxy_map: dict[BaseNode, BaseNode] = {}
+        for group_id, group in groups.items():
+            # Create proxy node
+            proxy_name = f"__group_proxy_{group_id}"
+            proxy_node = NodeGroupProxyNode(name=proxy_name, node_group=group)
+
+            # Register the proxy node with ObjectManager so it can be found during parameter updates
+            obj_manager = GriptapeNodes.ObjectManager()
+            obj_manager.add_object_by_name(proxy_name, proxy_node)
+
+            # Map all grouped nodes to this proxy
+            for node in group.nodes:
+                node_to_proxy_map[node] = proxy_node
+
+            # Remap connections to point to proxy
+            self._remap_connections_to_proxy_node(group, proxy_node, connections)
+
+        return node_to_proxy_map
+
+    def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
+        """Analyze and categorize connections for a node group."""
+        node_names_in_group = {n.name for n in group.nodes}
+
+        # Analyze all connections in the flow
+        for conn in connections.connections.values():
+            source_in_group = conn.source_node.name in node_names_in_group
+            target_in_group = conn.target_node.name in node_names_in_group
+
+            if source_in_group and target_in_group:
+                # Both endpoints in group - internal connection
+                group.internal_connections.append(conn)
+            elif source_in_group and not target_in_group:
+                # From group to outside - external outgoing
+                group.external_outgoing_connections.append(conn)
+            elif not source_in_group and target_in_group:
+                # From outside to group - external incoming
+                group.external_incoming_connections.append(conn)
+
+    def _remap_connections_to_proxy_node(
+        self, group: NodeGroup, proxy_node: BaseNode, connections: Connections
+    ) -> None:
+        """Remap external connections from group nodes to the proxy node."""
+        # Remap external incoming connections (from outside -> group becomes outside -> proxy)
+        for conn in group.external_incoming_connections:
+            conn_id = id(conn)
+
+            # Save original target node before remapping (for cleanup later)
+            group.original_incoming_targets[conn_id] = conn.target_node
+
+            # Remove old incoming index entry
+            if (
+                conn.target_node.name in connections.incoming_index
+                and conn.target_parameter.name in connections.incoming_index[conn.target_node.name]
+            ):
+                connections.incoming_index[conn.target_node.name][conn.target_parameter.name].remove(conn_id)
+
+            # Update connection target to proxy
+            conn.target_node = proxy_node
+
+            # Add new incoming index entry
+            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Remap external outgoing connections (group -> outside becomes proxy -> outside)
+        for conn in group.external_outgoing_connections:
+            conn_id = id(conn)
+
+            # Save original source node before remapping (for cleanup later)
+            group.original_outgoing_sources[conn_id] = conn.source_node
+
+            # Remove old outgoing index entry
+            if (
+                conn.source_node.name in connections.outgoing_index
+                and conn.source_parameter.name in connections.outgoing_index[conn.source_node.name]
+            ):
+                connections.outgoing_index[conn.source_node.name][conn.source_parameter.name].remove(conn_id)
+
+            # Update connection source to proxy
+            conn.source_node = proxy_node
+
+            # Add new outgoing index entry
+            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)

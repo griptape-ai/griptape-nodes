@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     import asyncio
 
     from griptape_nodes.exe_types.connections import Connections
-    from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.exe_types.node_types import BaseNode, NodeGroup
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -224,3 +224,214 @@ class DagBuilder:
             for node_name in self.graph_to_nodes[graph_name]:
                 self.node_to_reference.pop(node_name, None)
             self.graph_to_nodes.pop(graph_name, None)
+
+    def identify_and_process_node_groups(self) -> dict[str, BaseNode]:
+        """Identify node groups, validate them, and replace with proxy nodes.
+
+        Scans all nodes in the DAG for non-empty node_group parameter values,
+        creates NodeGroup instances, validates they have no intermediate ungrouped nodes,
+        and replaces them with NodeGroupProxyNode instances in the DAG.
+
+        Returns:
+            Dictionary mapping group IDs to their proxy nodes
+
+        Raises:
+            ValueError: If validation fails (e.g., ungrouped nodes between grouped nodes)
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Step 1: Identify groups by scanning all nodes
+        groups = self._identify_node_groups(connections)
+
+        if not groups:
+            return {}
+
+        # Step 2: Validate each group
+        for group in groups.values():
+            group.validate_no_intermediate_nodes(connections.connections)
+
+        # Step 3: Create proxy nodes and replace groups in DAG
+        proxy_nodes = {}
+        for group_id, group in groups.items():
+            proxy_node = self._create_and_install_proxy_node(group_id, group, connections)
+            proxy_nodes[group_id] = proxy_node
+
+        return proxy_nodes
+
+    def _identify_node_groups(self, connections: Connections) -> dict[str, NodeGroup]:
+        """Identify and build NodeGroup instances from nodes in the DAG.
+
+        Args:
+            connections: Connections object for analyzing connection topology
+
+        Returns:
+            Dictionary mapping group IDs to NodeGroup instances
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroup
+
+        groups: dict[str, NodeGroup] = {}
+
+        # Scan all nodes in DAG for group membership
+        for dag_node in self.node_to_reference.values():
+            node = dag_node.node_reference
+            group_id = node.get_parameter_value("job_group")
+
+            # Skip nodes without group assignment or empty group ID
+            if not group_id or group_id == "":
+                continue
+
+            # Create group if it doesn't exist
+            if group_id not in groups:
+                groups[group_id] = NodeGroup(group_id=group_id)
+
+            # Add node to group
+            groups[group_id].add_node(node)
+
+        # Analyze connections for each group
+        for group in groups.values():
+            self._analyze_group_connections(group, connections)
+
+        return groups
+
+    def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
+        """Analyze and categorize connections for a node group.
+
+        Categorizes all connections involving group nodes as either:
+        - Internal: Both endpoints within the group
+        - External incoming: From outside node to group node
+        - External outgoing: From group node to outside node
+
+        Args:
+            group: NodeGroup to analyze
+            connections: Connections object containing all flow connections
+        """
+        node_names_in_group = {n.name for n in group.nodes}
+
+        # Analyze all connections in the flow
+        for conn in connections.connections.values():
+            source_in_group = conn.source_node.name in node_names_in_group
+            target_in_group = conn.target_node.name in node_names_in_group
+
+            if source_in_group and target_in_group:
+                # Both endpoints in group - internal connection
+                group.internal_connections.append(conn)
+            elif source_in_group and not target_in_group:
+                # From group to outside - external outgoing
+                group.external_outgoing_connections.append(conn)
+            elif not source_in_group and target_in_group:
+                # From outside to group - external incoming
+                group.external_incoming_connections.append(conn)
+
+    def _create_and_install_proxy_node(self, group_id: str, group: NodeGroup, connections: Connections) -> BaseNode:
+        """Create a proxy node for a group and install it in the DAG.
+
+        Creates a NodeGroupProxyNode, adds it to the DAG, remaps all external
+        connections to point to the proxy, and removes the original grouped
+        nodes from the DAG.
+
+        Args:
+            group_id: Unique identifier for the group
+            group: NodeGroup instance to replace
+            connections: Connections object for remapping connections
+
+        Returns:
+            The created NodeGroupProxyNode
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        # Create proxy node with unique name
+        proxy_name = f"__group_proxy_{group_id}"
+        proxy_node = NodeGroupProxyNode(name=proxy_name, node_group=group)
+
+        # Determine which graph to add proxy to (use first grouped node's graph)
+        target_graph_name = None
+        for graph_name, node_set in self.graph_to_nodes.items():
+            if any(node.name in node_set for node in group.nodes):
+                target_graph_name = graph_name
+                break
+
+        if target_graph_name is None:
+            target_graph_name = "default"
+
+        # Add proxy node to DAG
+        self.add_node(proxy_node, target_graph_name)
+
+        # Remap external connections to proxy
+        self._remap_connections_to_proxy(group, proxy_node, connections)
+
+        # Remove grouped nodes from DAG
+        self._remove_grouped_nodes_from_dag(group)
+
+        return proxy_node
+
+    def _remap_connections_to_proxy(self, group: NodeGroup, proxy_node: BaseNode, connections: Connections) -> None:
+        """Remap external connections from group nodes to the proxy node.
+
+        Updates the connection indices and Connection objects to redirect
+        external connections through the proxy node instead of the original
+        grouped nodes.
+
+        Args:
+            group: NodeGroup being replaced
+            proxy_node: Proxy node that will handle external connections
+            connections: Connections object to update
+        """
+        # Remap external incoming connections (from outside -> group becomes outside -> proxy)
+        for conn in group.external_incoming_connections:
+            conn_id = id(conn)
+
+            # Remove old incoming index entry
+            if (
+                conn.target_node.name in connections.incoming_index
+                and conn.target_parameter.name in connections.incoming_index[conn.target_node.name]
+            ):
+                connections.incoming_index[conn.target_node.name][conn.target_parameter.name].remove(conn_id)
+
+            # Update connection target to proxy
+            conn.target_node = proxy_node
+
+            # Add new incoming index entry
+            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Remap external outgoing connections (group -> outside becomes proxy -> outside)
+        for conn in group.external_outgoing_connections:
+            conn_id = id(conn)
+
+            # Remove old outgoing index entry
+            if (
+                conn.source_node.name in connections.outgoing_index
+                and conn.source_parameter.name in connections.outgoing_index[conn.source_node.name]
+            ):
+                connections.outgoing_index[conn.source_node.name][conn.source_parameter.name].remove(conn_id)
+
+            # Update connection source to proxy
+            conn.source_node = proxy_node
+
+            # Add new outgoing index entry
+            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+
+    def _remove_grouped_nodes_from_dag(self, group: NodeGroup) -> None:
+        """Remove all nodes in a group from the DAG graphs and references.
+
+        Args:
+            group: NodeGroup whose nodes should be removed from the DAG
+        """
+        for node in group.nodes:
+            # Remove from node_to_reference
+            if node.name in self.node_to_reference:
+                del self.node_to_reference[node.name]
+
+            # Remove from all graphs
+            for graph in self.graphs.values():
+                if node.name in graph.nodes():
+                    graph.remove_node(node.name)
+
+            # Remove from graph_to_nodes tracking
+            for node_set in self.graph_to_nodes.values():
+                node_set.discard(node.name)

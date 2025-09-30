@@ -39,6 +39,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 from griptape_nodes.traits.options import Options
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -177,6 +178,15 @@ class BaseNode(ABC):
             ui_options={"hide": True},
         )
         self.add_parameter(self.execution_environment)
+        self.node_group = Parameter(
+            name="job_group",
+            tooltip="Groupings of multiple nodes to send up as a Deadline Cloud job.",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value="",
+            ui_options={"hide": True},
+        )
+        self.add_parameter(self.node_group)
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -1736,6 +1746,286 @@ class ErrorProxyNode(BaseNode):
     def process(self) -> Any:
         """No-op process method. Error Proxy nodes do nothing during execution."""
         return None
+
+
+@dataclass
+class NodeGroup:
+    """Represents a group of nodes that should be executed together in parallel.
+
+    Nodes in a group are identified by having the same non-empty value in their
+    node_group parameter. During DAG resolution, grouped nodes are replaced with
+    a single NodeGroupProxyNode that represents them in the execution graph.
+
+    Attributes:
+        group_id: Unique identifier for this group (value from node_group parameter)
+        nodes: Set of BaseNode instances that belong to this group
+        internal_connections: Connections between nodes within the group
+        external_incoming_connections: Connections from outside nodes into the group
+        external_outgoing_connections: Connections from group nodes to outside nodes
+    """
+
+    group_id: str
+    nodes: set[BaseNode] = field(default_factory=set)
+    internal_connections: list[Connection] = field(default_factory=list)
+    external_incoming_connections: list[Connection] = field(default_factory=list)
+    external_outgoing_connections: list[Connection] = field(default_factory=list)
+    # Store original node references before remapping to proxy (for cleanup)
+    original_incoming_targets: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original target
+    original_outgoing_sources: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original source
+
+    def add_node(self, node: BaseNode) -> None:
+        """Add a node to this group."""
+        self.nodes.add(node)
+
+    def validate_no_intermediate_nodes(self, all_connections: dict[int, Connection]) -> None:
+        """Validate that no ungrouped nodes exist between grouped nodes.
+
+        This method checks the dependency graph to ensure that all nodes that lie
+        on paths between grouped nodes are also part of the group. If ungrouped
+        nodes are found between grouped nodes, this indicates a logical error in
+        the group definition.
+
+        Args:
+            all_connections: Dictionary mapping connection IDs to Connection objects
+
+        Raises:
+            ValueError: If ungrouped nodes are found between grouped nodes
+        """
+        from griptape_nodes.exe_types.connections import Connections
+
+        # Build a Connections object for traversal
+        connections = Connections()
+        connections.connections = all_connections
+
+        # Rebuild indices for efficient lookup
+        for conn_id, conn in all_connections.items():
+            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Check each pair of nodes in the group
+        for node_a in self.nodes:
+            for node_b in self.nodes:
+                if node_a == node_b:
+                    continue
+
+                # Check if there's a path from node_a to node_b
+                intermediate_nodes = self._find_intermediate_nodes(node_a, node_b, connections)
+
+                # Check if any intermediate nodes are not in the group
+                ungrouped_intermediates = [n for n in intermediate_nodes if n not in self.nodes]
+
+                if ungrouped_intermediates:
+                    ungrouped_names = [n.name for n in ungrouped_intermediates]
+                    msg = (
+                        f"Invalid node group '{self.group_id}': Found ungrouped nodes between grouped nodes. "
+                        f"Ungrouped nodes {ungrouped_names} exist on the path from '{node_a.name}' to '{node_b.name}'. "
+                        f"All nodes on paths between grouped nodes must be part of the same group."
+                    )
+                    raise ValueError(msg)
+
+    def _find_intermediate_nodes(  # noqa: C901
+        self, start_node: BaseNode, end_node: BaseNode, connections: Connections
+    ) -> set[BaseNode]:
+        """Find all nodes on paths between start_node and end_node (excluding endpoints).
+
+        Uses BFS to explore all paths from start_node to end_node and collects
+        all nodes encountered (except start and end nodes themselves).
+
+        Args:
+            start_node: Starting node for path search
+            end_node: Target node for path search
+            connections: Connections object for graph traversal
+
+        Returns:
+            Set of nodes found on paths between start and end (excluding endpoints)
+        """
+        if start_node.name not in connections.outgoing_index:
+            return set()
+
+        visited = set()
+        intermediate = set()
+        queue = [(start_node, [start_node])]
+
+        while queue:
+            current_node, path = queue.pop(0)
+
+            if current_node.name in visited:
+                continue
+            visited.add(current_node.name)
+
+            # Process outgoing connections from current node
+            if current_node.name not in connections.outgoing_index:
+                continue
+
+            for conn_ids in connections.outgoing_index[current_node.name].values():
+                for conn_id in conn_ids:
+                    if conn_id not in connections.connections:
+                        continue
+
+                    conn = connections.connections[conn_id]
+                    next_node = conn.target_node
+
+                    # If we reached the end node, record intermediate nodes
+                    if next_node == end_node:
+                        for node in path[1:]:
+                            intermediate.add(node)
+                        continue
+
+                    # Continue exploring if not already visited
+                    if next_node.name not in visited:
+                        queue.append((next_node, [*path, next_node]))
+
+        return intermediate
+
+
+class NodeGroupProxyNode(BaseNode):
+    """Proxy node that represents a group of nodes during DAG execution.
+
+    This node acts as a single execution unit for a group of nodes that should
+    be executed in parallel. When the DAG executor encounters this proxy node,
+    it passes the entire NodeGroup to the NodeExecutor which handles parallel
+    execution of all grouped nodes.
+
+    The proxy node has parameters that mirror the external connections to/from
+    the group, allowing it to seamlessly integrate into the DAG structure.
+
+    Attributes:
+        node_group: The NodeGroup instance this proxy represents
+    """
+
+    def __init__(
+        self,
+        name: str,
+        node_group: NodeGroup,
+        metadata: dict[Any, Any] | None = None,
+    ) -> None:
+        super().__init__(name, metadata)
+        self.node_group_data = node_group
+
+        # Track mapping from proxy parameter name to (original_node, original_param_name)
+        self._proxy_param_to_node_param: dict[str, tuple[BaseNode, str]] = {}
+
+        # Create proxy parameters for external connections
+        self._create_proxy_parameters()
+
+    def _create_proxy_parameters(self) -> None:
+        """Create parameters on the proxy that match external connections.
+
+        For each external incoming connection, create an input parameter with name
+        format: {sanitized_node_name}__{param_name}. This allows the proxy to
+        forward parameter values to the correct original node.
+
+        For each external outgoing connection, create an output parameter.
+        This allows the proxy to integrate seamlessly into the DAG.
+        """
+        # Track created parameters to avoid duplicates
+        created_params = set()
+
+        # Create input parameters for external incoming connections
+        for conn in self.node_group_data.external_incoming_connections:
+            conn_id = id(conn)
+            # Get the original target node from saved mapping (before it was remapped to proxy)
+            target_node = self.node_group_data.original_incoming_targets.get(conn_id)
+            if target_node is None:
+                # Fallback if not found (shouldn't happen)
+                continue
+
+            target_param = conn.target_parameter
+
+            # Create proxy parameter name: {sanitized_node_name}__{param_name}
+            sanitized_node_name = target_node.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{target_param.name}"
+
+            if proxy_param_name not in created_params:
+                proxy_param = Parameter(
+                    name=proxy_param_name,
+                    type=target_param.type,
+                    input_types=target_param.input_types,
+                    output_type=target_param.output_type,
+                    tooltip=f"Proxy input for {target_node.name}.{target_param.name}",
+                    allowed_modes={ParameterMode.INPUT},
+                )
+                self.add_parameter(proxy_param)
+                created_params.add(proxy_param_name)
+
+                # Track mapping from proxy param to original node/param
+                self._proxy_param_to_node_param[proxy_param_name] = (target_node, target_param.name)
+
+        # Create output parameters for external outgoing connections
+        for conn in self.node_group_data.external_outgoing_connections:
+            conn_id = id(conn)
+            # Get the original source node from saved mapping (before it was remapped to proxy)
+            source_node = self.node_group_data.original_outgoing_sources.get(conn_id)
+            if source_node is None:
+                # Fallback if not found (shouldn't happen)
+                continue
+
+            source_param = conn.source_parameter
+
+            # Create proxy parameter name: {sanitized_node_name}__{param_name}
+            sanitized_node_name = source_node.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{source_param.name}"
+
+            if proxy_param_name not in created_params:
+                proxy_param = Parameter(
+                    name=proxy_param_name,
+                    type=source_param.type,
+                    input_types=source_param.input_types,
+                    output_type=source_param.output_type,
+                    tooltip=f"Proxy output for {source_node.name}.{source_param.name}",
+                    allowed_modes={ParameterMode.OUTPUT},
+                )
+                self.add_parameter(proxy_param)
+                created_params.add(proxy_param_name)
+
+                # Track mapping from proxy param to original node/param
+                self._proxy_param_to_node_param[proxy_param_name] = (source_node, source_param.name)
+
+    async def aprocess(self) -> None:
+        """Execute all nodes in the group in parallel.
+
+        This method is called by the DAG executor. It executes all nodes in the
+        group concurrently using asyncio.gather and handles propagating input
+        values from the proxy to the grouped nodes.
+        """
+        import asyncio
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        executor = GriptapeNodes.FlowManager().node_executor
+
+        # Propagate input values from proxy to grouped nodes using the mapping
+        for proxy_param_name, (original_node, original_param_name) in self._proxy_param_to_node_param.items():
+            # Only process input parameters
+            proxy_param = self.get_parameter_by_name(proxy_param_name)
+            if proxy_param and ParameterMode.INPUT in proxy_param.allowed_modes:
+                # Get value from proxy parameter
+                proxy_param_value = self.get_parameter_value(proxy_param_name)
+                # Set value on original node's parameter
+                original_node.set_parameter_value(original_param_name, proxy_param_value)
+
+        # Execute all nodes in parallel
+        tasks = [executor.execute(node) for node in self.node_group_data.nodes]
+        await asyncio.gather(*tasks)
+
+        # Propagate output values from grouped nodes to proxy using the mapping
+        for proxy_param_name, (original_node, original_param_name) in self._proxy_param_to_node_param.items():
+            # Only process output parameters
+            proxy_param = self.get_parameter_by_name(proxy_param_name)
+            if proxy_param and ParameterMode.OUTPUT in proxy_param.allowed_modes:
+                # Get value from original node's parameter
+                original_param_value = original_node.get_parameter_value(original_param_name)
+                # Set value on proxy parameter
+                self.set_parameter_value(proxy_param_name, original_param_value)
+
+    def process(self) -> Any:
+        """Synchronous process method - not used for proxy nodes."""
+        msg = "NodeGroupProxyNode should use aprocess() for async execution"
+        raise NotImplementedError(msg)
 
 
 class Connection:
