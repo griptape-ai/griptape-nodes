@@ -79,10 +79,10 @@ def _log_memory_info(
         logger.info("Recommended max memory on %s: %s", device, to_human_readable_size(recommended_max_memory))
         logger.info("Free memory on %s: %s", device, to_human_readable_size(free_memory))
 
-    logger.info("Require memory for Flux Pipeline: %s", to_human_readable_size(model_memory))
+    logger.info("Require memory for diffusion pipeline: %s", to_human_readable_size(model_memory))
 
 
-def _quantize_flux_pipeline(
+def _quantize_diffusion_pipeline(
     pipe: DiffusionPipeline,
     quantization_mode: str,
     device: torch.device,
@@ -208,7 +208,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     quantization_mode: str,
 ) -> None:
     if quantization_mode != "None":
-        _quantize_flux_pipeline(pipe, quantization_mode, device)
+        _quantize_diffusion_pipeline(pipe, quantization_mode, device)
     if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
         logger.info("Enabling attention slicing")
         pipe.enable_attention_slicing()
