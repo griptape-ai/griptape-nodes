@@ -908,13 +908,11 @@ class LibraryManager:
         match library_load_results.status:
             case LibraryStatus.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
-                GriptapeNodes.FlowManager().node_executor.load_library(library=library)
                 return RegisterLibraryFromFileResultSuccess(
                     library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.INFO)
                 )
             case LibraryStatus.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
-                GriptapeNodes.FlowManager().node_executor.load_library(library=library)
                 return RegisterLibraryFromFileResultSuccess(
                     library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.WARNING)
                 )
@@ -1128,8 +1126,6 @@ class LibraryManager:
         lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
             del self._library_file_path_to_info[lib_info.library_path]
-        # Unload the library from possible execution
-        GriptapeNodes.FlowManager().node_executor.unload_library(request.library_name)
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
