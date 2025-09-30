@@ -28,7 +28,8 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
-OUTPUT_SCALE = 4 
+OUTPUT_SCALE = 4
+
 
 class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
