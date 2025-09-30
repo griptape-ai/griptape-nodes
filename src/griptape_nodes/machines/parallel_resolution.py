@@ -179,7 +179,9 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
-    async def _handle_group_proxy_completion(context: ParallelResolutionContext, proxy_node: BaseNode, network_name: str) -> None:
+    async def _handle_group_proxy_completion(
+        context: ParallelResolutionContext, proxy_node: BaseNode, network_name: str
+    ) -> None:
         """Handle completion of a NodeGroupProxyNode by marking all grouped nodes as resolved.
 
         When a NodeGroupProxyNode completes, all nodes in the group have been executed

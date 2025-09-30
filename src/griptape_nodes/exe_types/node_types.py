@@ -1765,7 +1765,7 @@ class NodeGroup:
     """
 
     group_id: str
-    nodes: set[BaseNode] = field(default_factory=set)
+    nodes: dict[str, BaseNode] = field(default_factory=dict)
     internal_connections: list[Connection] = field(default_factory=list)
     external_incoming_connections: list[Connection] = field(default_factory=list)
     external_outgoing_connections: list[Connection] = field(default_factory=list)
@@ -1775,7 +1775,7 @@ class NodeGroup:
 
     def add_node(self, node: BaseNode) -> None:
         """Add a node to this group."""
-        self.nodes.add(node)
+        self.nodes[node.name] = node
 
     def validate_no_intermediate_nodes(self, all_connections: dict[int, Connection]) -> None:
         """Validate that no ungrouped nodes exist between grouped nodes.
@@ -1807,8 +1807,8 @@ class NodeGroup:
             ).append(conn_id)
 
         # Check each pair of nodes in the group
-        for node_a in self.nodes:
-            for node_b in self.nodes:
+        for node_a in self.nodes.values():
+            for node_b in self.nodes.values():
                 if node_a == node_b:
                     continue
 
@@ -1992,14 +1992,8 @@ class NodeGroupProxyNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
-        for param in self.parameters:
-            if param.name in self._proxy_param_to_node_param:
-                target_node, target_param =self._proxy_param_to_node_param[param.name]
-                param = target_node.get_parameter_by_name(target_param)
-                if param and param.type == ParameterTypeBuiltin.STR.value:
-                    target_node.parameter_output_values[param.name] = "Testing testing testing"
-        # msg = "NodeGroupProxyNode should not be used for local execution."
-        # raise NotImplementedError(msg)
+        msg = "NodeGroupProxyNode should not be executed locally."
+        raise NotImplementedError(msg)
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""

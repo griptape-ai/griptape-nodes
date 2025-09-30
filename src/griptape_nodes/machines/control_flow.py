@@ -49,6 +49,7 @@ class ControlFlowContext:
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
+    node_to_proxy_map: dict[BaseNode, BaseNode]
 
     def __init__(
         self,
@@ -69,6 +70,7 @@ class ControlFlowContext:
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
+        self.node_to_proxy_map = {}
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
@@ -282,11 +284,34 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+        # FIRST: Scan all nodes in the flow and create node groups BEFORE any resolution
+        flow_manager = GriptapeNodes.FlowManager()
+        flow = flow_manager.get_flow_by_name(self._context.flow_name)
+        logger.debug("Scanning flow '%s' for node groups before execution", self._context.flow_name)
+
+        try:
+            node_to_proxy_map = self._identify_and_create_node_group_proxies(flow, flow_manager.get_connections())
+            if node_to_proxy_map:
+                logger.info(
+                    "Created %d proxy nodes for %d grouped nodes in flow '%s'",
+                    len(set(node_to_proxy_map.values())),
+                    len(node_to_proxy_map),
+                    self._context.flow_name,
+                )
+            # Store the mapping in context so it can be used by resolution machines
+            self._context.node_to_proxy_map = node_to_proxy_map
+        except ValueError as e:
+            logger.error("Failed to process node groups: %s", e)
+            raise
+
+        # Determine the actual start node (use proxy if it's part of a group)
+        actual_start_node = node_to_proxy_map.get(start_node, start_node)
+
         # If using DAG resolution, process data_nodes from queue first
         if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
-            current_nodes = await self._process_nodes_for_dag(start_node)
+            current_nodes = await self._process_nodes_for_dag(actual_start_node)
         else:
-            current_nodes = [start_node]
+            current_nodes = [actual_start_node]
             # For control flow/sequential: emit all nodes in flow as involved
         self._context.current_nodes = current_nodes
         # Set entry control parameter for initial node (None for workflow start)
@@ -344,7 +369,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901, PLR0912
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -359,31 +384,13 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
 
-        # FIRST: Scan all nodes in the flow and create node groups BEFORE building the DAG
-        # This creates proxy nodes and a mapping from original nodes to proxies
-        flow = flow_manager.get_flow_by_name(self._context.flow_name)
-        logger.debug("Scanning flow '%s' for node groups before DAG building", self._context.flow_name)
-        try:
-            node_to_proxy_map = self._identify_and_create_node_group_proxies(flow, flow_manager.get_connections())
-            if node_to_proxy_map:
-                logger.info(
-                    "Created %d proxy nodes for %d grouped nodes in flow '%s'",
-                    len(set(node_to_proxy_map.values())),
-                    len(node_to_proxy_map),
-                    self._context.flow_name,
-                )
-        except ValueError as e:
-            logger.error("Failed to process node groups: %s", e)
-            raise
+        # Use the node-to-proxy map that was created in start_flow
+        node_to_proxy_map = self._context.node_to_proxy_map
 
-        # Build with the first node (use proxy if it's part of a group):
-        if start_node in node_to_proxy_map:
-            start_node_to_add = node_to_proxy_map[start_node]
-        else:
-            start_node_to_add = start_node
-        dag_builder.add_node_with_dependencies(start_node_to_add, start_node_to_add.name)
+        # Build with the first node (it should already be the proxy if it's part of a group)
+        dag_builder.add_node_with_dependencies(start_node, start_node.name)
         queue_items = list(flow_manager.global_flow_queue.queue)
-        start_nodes = [start_node_to_add]
+        start_nodes = [start_node]
         # Find data_nodes and remove them from queue
         for item in queue_items:
             from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType

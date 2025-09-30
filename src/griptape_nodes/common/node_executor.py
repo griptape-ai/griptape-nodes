@@ -56,6 +56,56 @@ class NodeExecutor:
         execution_type = node.get_parameter_value(node.execution_environment.name)
         if isinstance(node, NodeGroupProxyNode):
             logger.info("Handling Group")
+            # TEST CASE: Simulate subprocess execution result for node group
+            # Dictionary mapping proxy parameter names to (node_name, parameter_name)
+            proxy_param_mapping = {
+                "Agent__output": ("Agent", "output"),
+                "Agent__prompt": ("Agent", "prompt"),
+                "Display_Text__value": ("Text Input", "value"),
+            }
+
+            # Simulated subprocess result with random test values
+            test_subprocess_result = {
+                "workflow_output": {
+                    "parameter_output_values": {
+                        "Agent__output": "This is a test agent response",
+                        "Agent__prompt": "Test prompt for the agent",
+                        "Display_Text__value": "Test input value",
+                    },
+                    "unique_parameter_uuid_to_values": {},
+                }
+            }
+
+            # Extract parameter values using the existing method
+            parameter_output_values = self._extract_parameter_output_values(test_subprocess_result)
+            logger.info("Extracted parameter values: %s", parameter_output_values)
+
+            for proxy_param_name, param_value in parameter_output_values.items():
+                if proxy_param_name in proxy_param_mapping:
+                    target_node_name, target_param_name = proxy_param_mapping[proxy_param_name]
+                    # Get the target node from the flow
+                    if target_node_name in node.node_group_data.nodes:
+                        target_node = node.node_group_data.nodes[target_node_name]
+                        target_param = target_node.get_parameter_by_name(target_param_name)
+
+                        if target_param is not None and target_param != target_node.execution_environment:
+                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                target_node.set_parameter_value(target_param_name, param_value)
+                            target_node.parameter_output_values[target_param_name] = param_value
+                            logger.info(
+                                "Set parameter '%s' on node '%s' to value: %s",
+                                target_param_name,
+                                target_node_name,
+                                param_value,
+                            )
+                    else:
+                        logger.warning("Target node '%s' not found in flow", target_node_name)
+                else:
+                    logger.warning("Proxy parameter '%s' not in mapping", proxy_param_name)
+
+            logger.info("Completed test case for NodeGroupProxyNode")
+            return
+
         if execution_type == LOCAL_EXECUTION or execution_type is None:
             await node.aprocess()
             return
@@ -73,8 +123,6 @@ class NodeExecutor:
             logger.error("Could not find workflow handler for node '%s', defaulting to local execution.", node.name)
             await node.aprocess()
             return
-        if isinstance(node, NodeGroupProxyNode):
-            logger.info("Handling Group")
         workflow_result = None
         published_workflow_filename = None
 
