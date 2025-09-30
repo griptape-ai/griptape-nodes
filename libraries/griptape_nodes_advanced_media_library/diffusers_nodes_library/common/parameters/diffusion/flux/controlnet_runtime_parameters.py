@@ -8,6 +8,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 )
 from utils.image_utils import load_image_from_url_artifact
 
+from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import UNION_PRO_2_CONFIG_HASH_POSTFIX
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
 )
@@ -134,13 +135,11 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         if parameter.name == "pipeline":
-            pipe = model_cache.get_pipeline(value)
-            if (
-                pipe is not None
-                and hasattr(pipe, "controlnet")
-                and pipe.controlnet.config._name_or_path == "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"
-            ):
+            config_bits_postfix = int(value.split("-")[-1], 16)
+            if config_bits_postfix & UNION_PRO_2_CONFIG_HASH_POSTFIX:
                 self._node.hide_parameter_by_name("control_mode")
+            else:
+                self._node.show_parameter_by_name("control_mode")
 
     def _get_pipe_kwargs(self) -> dict:
         return {
