@@ -3,10 +3,7 @@ import logging
 from typing import Any
 
 import safetensors  # type: ignore[reportMissingImports]
-import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -33,7 +30,7 @@ class FluxLorasParameter:
     def to_adapter_name(self, model_path: str) -> str:
         """Returns a unique name for an adapter given its model path."""
         return hashlib.sha256(model_path.encode("utf-8")).hexdigest()
-    
+
     def get_loras(self) -> dict[str, float]:
         loras_list = self._node.get_parameter_value(self._loras_parameter_name) or []
 
@@ -44,7 +41,7 @@ class FluxLorasParameter:
         return loras
 
     def configure_loras(self, pipe: Any) -> None:
-        loras  = self.get_loras()
+        loras = self.get_loras()
 
         if not loras:
             return
@@ -75,7 +72,7 @@ class FluxLorasParameter:
         msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
         logger.info(msg)
         pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
-        
+
         logger.info("Fusing lora weights with diffusion model.")
         pipe.fuse_lora(adapter_names=adapter_names, lora_scale=1.0)
         pipe.unload_lora_weights()
