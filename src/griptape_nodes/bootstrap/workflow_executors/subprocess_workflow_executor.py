@@ -22,7 +22,11 @@ from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ResultPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import ControlFlowResolvedEvent, StartFlowRequest
+from griptape_nodes.retained_mode.events.execution_events import (
+    ControlFlowCancelledEvent,
+    ControlFlowResolvedEvent,
+    StartFlowRequest,
+)
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
@@ -41,17 +45,19 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         self,
         workflow_path: str,
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
+        session_id: str | None = None,
     ) -> None:
         PythonSubprocessExecutor.__init__(self)
         self._workflow_path = workflow_path
         self._on_start_flow_result = on_start_flow_result
         # Generate a unique session ID for this execution
-        self._session_id = uuid.uuid4().hex
+        self._session_id = session_id or uuid.uuid4().hex
         self._websocket_thread: threading.Thread | None = None
         self._websocket_event_loop: asyncio.AbstractEventLoop | None = None
         self._websocket_event_loop_ready = threading.Event()
         self._event_handlers: dict[str, list] = {}
         self._shutdown_event: asyncio.Event | None = None
+        self._stored_exception: SubprocessWorkflowExecutorError | None = None
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: start WebSocket connection."""
@@ -110,11 +116,21 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
                 "--workflow-path",
                 str(tmp_workflow_path),
             ]
-            await self.execute_python_script(
-                script_path=tmp_script_path,
-                args=args,
-                cwd=Path(tmpdir),
-            )
+
+            try:
+                await self.execute_python_script(
+                    script_path=tmp_script_path,
+                    args=args,
+                    cwd=Path(tmpdir),
+                )
+            except Exception as e:
+                msg = f"Failed to execute subprocess script: {e}"
+                logger.exception(msg)
+                raise SubprocessWorkflowExecutorError(msg) from e
+            finally:
+                # Check if an exception was stored coming from the WebSocket
+                if self._stored_exception:
+                    raise self._stored_exception
 
     async def _start_websocket_listener(self) -> None:
         """Start WebSocket connection to listen for events from the subprocess."""
@@ -270,6 +286,18 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         if isinstance(ex_event.payload, ControlFlowResolvedEvent):
             logger.info("Workflow execution completed successfully")
             self.output = {ex_event.payload.end_node_name: ex_event.payload.parameter_output_values}
+
+        if isinstance(ex_event.payload, ControlFlowCancelledEvent):
+            logger.error("Workflow execution cancelled")
+
+            details = ex_event.payload.result_details or "No details provided"
+            msg = f"Workflow execution cancelled: {details}"
+
+            if ex_event.payload.exception:
+                msg = f"Exception running workflow: {ex_event.payload.exception}"
+                self._stored_exception = SubprocessWorkflowExecutorError(ex_event.payload.exception)
+            else:
+                self._stored_exception = SubprocessWorkflowExecutorError(msg)
 
     async def _process_result_event(self, event: dict) -> None:
         payload = event.get("payload", {})
