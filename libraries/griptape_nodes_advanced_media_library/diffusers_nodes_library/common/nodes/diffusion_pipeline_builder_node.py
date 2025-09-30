@@ -56,6 +56,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
         config_bits = 0
         controlnet_model = self.get_parameter_value("controlnet_model")
         if controlnet_model and controlnet_model.startswith("Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"):
+            # Set the UNION_PRO_2_CONFIG_HASH_POSTFIX bit
             config_bits |= UNION_PRO_2_CONFIG_HASH_POSTFIX
         return config_bits
 
@@ -77,6 +78,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
+        # Append postfix bits to config hash as hex
         config_hash += f"-{self._get_config_hash_postfix():x}"
         return config_hash
 

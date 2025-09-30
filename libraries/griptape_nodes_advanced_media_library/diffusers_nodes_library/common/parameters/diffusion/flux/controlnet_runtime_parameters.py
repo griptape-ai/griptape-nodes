@@ -135,7 +135,9 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         if parameter.name == "pipeline":
+            # Convert hex postfix to int
             config_bits_postfix = int(value.split("-")[-1], 16)
+            # If UNION_PRO_2_CONFIG_HASH_POSTFIX bit is set, hide control_mode parameter
             if config_bits_postfix & UNION_PRO_2_CONFIG_HASH_POSTFIX:
                 self._node.hide_parameter_by_name("control_mode")
             else:
