@@ -1,7 +1,7 @@
 """MCP (Model Context Protocol) server management events."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -11,6 +11,47 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+# Type definitions for better clarity
+class MCPServerConfig(TypedDict, total=False):
+    """Configuration for an MCP server."""
+
+    name: str
+    transport: str  # Transport protocol type
+    enabled: bool
+    command: str | None  # Process command for stdio transport
+    args: list[str] | None  # Process arguments for stdio transport
+    env: dict[str, str] | None  # Environment variables for stdio transport
+    cwd: str | None  # Working directory for stdio transport
+    encoding: str  # Text encoding for stdio transport
+    encoding_error_handler: str  # Error handling strategy for stdio transport
+    url: str | None  # Connection URL for HTTP-based transports
+    headers: dict[str, str] | None  # HTTP headers for HTTP-based transports
+    timeout: float | None  # Connection timeout for HTTP-based transports
+    sse_read_timeout: float | None  # Read timeout for SSE transport
+    terminate_on_close: bool  # Session termination behavior for streamable HTTP transport
+    description: str | None
+    capabilities: list[str] | None
+
+
+class MCPServerCapability(TypedDict):
+    """Information about an MCP server capability."""
+
+    name: str
+    description: str | None
+    input_schema: dict[str, Any] | None  # JSON schema for capability inputs
+    output_schema: dict[str, Any] | None  # JSON schema for capability outputs
+
+
+class MCPServerInfo(TypedDict, total=False):
+    """Information about an MCP server."""
+
+    name: str
+    version: str | None  # Server version identifier
+    description: str | None  # Human-readable server description
+    capabilities: list[str] | None  # List of supported capability names
+
 
 # MCP Server Management Events
 
@@ -22,8 +63,8 @@ class DiscoverMCPServerCapabilitiesRequest(RequestPayload):
     """Discover capabilities from a running MCP server.
 
     Args:
-        name: The MCP server to discover capabilities from
-        timeout: Maximum time to wait for server response (seconds)
+        name: The MCP server identifier to discover capabilities from
+        timeout: Maximum time to wait for server response in seconds
     """
 
     name: str
@@ -37,8 +78,8 @@ class DiscoverMCPServerCapabilitiesResultSuccess(WorkflowNotAlteredMixin, Result
 
     name: str
     capabilities: list[str]
-    detailed_tools: list[dict[str, Any]] | None = None
-    server_info: dict[str, Any] | None = None
+    detailed_tools: list[MCPServerCapability] | None = None
+    server_info: MCPServerInfo | None = None
 
 
 @dataclass
@@ -64,7 +105,7 @@ class ListMCPServersRequest(RequestPayload):
 class ListMCPServersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """MCP servers listed successfully."""
 
-    servers: dict[str, dict[str, Any]]
+    servers: dict[str, MCPServerConfig]
 
 
 @dataclass
@@ -90,7 +131,7 @@ class GetMCPServerRequest(RequestPayload):
 class GetMCPServerResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """MCP server configuration retrieved successfully."""
 
-    server_config: dict[str, Any]
+    server_config: MCPServerConfig
 
 
 @dataclass
@@ -106,18 +147,18 @@ class CreateMCPServerRequest(RequestPayload):
 
     Args:
         name: Unique identifier for the server
-        transport: Transport type (stdio, sse, streamable_http, websocket)
-        command: Command to start the server (required for stdio)
-        args: Arguments to pass to the command (stdio)
-        env: Environment variables for the server (stdio)
-        cwd: Working directory for the server (stdio)
+        transport: Transport protocol type
+        command: Process command to start the server (required for stdio transport)
+        args: Process arguments to pass to the command (stdio transport)
+        env: Environment variables for the server process (stdio transport)
+        cwd: Working directory for the server process (stdio transport)
         encoding: Text encoding for stdio communication
-        encoding_error_handler: Encoding error handler for stdio
-        url: URL for HTTP-based connections (sse, streamable_http, websocket)
+        encoding_error_handler: Encoding error handling strategy for stdio
+        url: Connection URL for HTTP-based transports
         headers: HTTP headers for HTTP-based connections
-        timeout: HTTP timeout in seconds
+        timeout: Connection timeout in seconds
         sse_read_timeout: SSE read timeout in seconds
-        terminate_on_close: Whether to terminate session on close (streamable_http)
+        terminate_on_close: Session termination behavior for streamable HTTP transport
         description: Optional description of the server
         capabilities: List of server capabilities
         enabled: Whether the server is enabled by default
@@ -169,18 +210,18 @@ class UpdateMCPServerRequest(RequestPayload):
     Args:
         name: The unique identifier for the MCP server
         new_name: Updated display name for the server
-        transport: Updated transport type (stdio, sse, streamable_http, websocket)
-        command: Updated command to start the server (stdio)
-        args: Updated arguments to pass to the command (stdio)
-        env: Updated environment variables for the server (stdio)
-        cwd: Updated working directory for the server (stdio)
+        transport: Updated transport protocol type
+        command: Updated process command to start the server (stdio transport)
+        args: Updated process arguments to pass to the command (stdio transport)
+        env: Updated environment variables for the server process (stdio transport)
+        cwd: Updated working directory for the server process (stdio transport)
         encoding: Updated text encoding for stdio communication
-        encoding_error_handler: Updated encoding error handler for stdio
-        url: Updated URL for HTTP-based connections (sse, streamable_http, websocket)
+        encoding_error_handler: Updated encoding error handling strategy for stdio
+        url: Updated connection URL for HTTP-based transports
         headers: Updated HTTP headers for HTTP-based connections
-        timeout: Updated HTTP timeout in seconds
+        timeout: Updated connection timeout in seconds
         sse_read_timeout: Updated SSE read timeout in seconds
-        terminate_on_close: Updated terminate on close setting (streamable_http)
+        terminate_on_close: Updated session termination behavior for streamable HTTP transport
         description: Updated description of the server
         capabilities: Updated list of server capabilities
     """
@@ -313,7 +354,7 @@ class GetEnabledMCPServersRequest(RequestPayload):
 class GetEnabledMCPServersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Enabled MCP servers retrieved successfully."""
 
-    servers: dict[str, dict[str, Any]]
+    servers: dict[str, MCPServerConfig]
 
 
 @dataclass
