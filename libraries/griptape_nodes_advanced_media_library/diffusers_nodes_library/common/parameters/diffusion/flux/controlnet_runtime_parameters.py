@@ -119,6 +119,9 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
             )
         )
 
+        self._node.hide_parameter_by_name("prompt_2")
+        self._node.hide_parameter_by_name("negative_prompt_2")
+
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prompt")
         self._node.remove_parameter_element_by_name("prompt_2")
@@ -143,7 +146,7 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
                 self._node.show_parameter_by_name("control_mode")
 
     def _get_pipe_kwargs(self) -> dict:
-        return {
+        kwargs = {
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
@@ -155,6 +158,11 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
             "control_guidance_end": self._node.get_parameter_value("control_guidance_end"),
             "control_mode": CONTROL_MODES[self._node.get_parameter_value("control_mode")],
         }
+        if kwargs["prompt_2"] is None or kwargs["prompt_2"] == "":
+            del kwargs["prompt_2"]
+        if kwargs["negative_prompt_2"] is None or kwargs["negative_prompt_2"] == "":
+            del kwargs["negative_prompt_2"]
+        return kwargs
 
     def get_control_image_pil(self) -> Image:
         control_image_artifact = self._node.get_parameter_value("control_image")
