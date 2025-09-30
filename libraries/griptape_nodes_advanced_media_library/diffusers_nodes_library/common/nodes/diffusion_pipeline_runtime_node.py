@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
@@ -18,6 +18,9 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineRuntimeNode(ControlNode):
+    START_PARAMS: ClassVar = ["pipeline"]
+    END_PARAMS: ClassVar = ["logs"]
+
     def __init__(self, **kwargs) -> None:
         self._initializing = True
         super().__init__(**kwargs)
@@ -62,11 +65,13 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.pipe_params.after_value_set(parameter, value)
 
         if did_pipeline_change:
-            sorted_parameters = ["pipeline"]
-            sorted_parameters.extend(
-                [param.name for param in self.parameters if param.name not in ["pipeline", "logs"]]
-            )
-            sorted_parameters.extend(["logs"])
+            start_params = DiffusionPipelineRuntimeNode.START_PARAMS
+            end_params = DiffusionPipelineRuntimeNode.END_PARAMS
+            excluded_params = {*start_params, *end_params}
+
+            middle_params = [param.name for param in self.parameters if param.name not in excluded_params]
+            sorted_parameters = [*start_params, *middle_params, *end_params]
+
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
