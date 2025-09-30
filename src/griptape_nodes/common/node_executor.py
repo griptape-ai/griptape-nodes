@@ -24,7 +24,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
-    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -33,28 +32,12 @@ logger = logging.getLogger("griptape_nodes")
 class NodeExecutor:
     """Simple singleton executor that draws methods from libraries and executes them dynamically."""
 
-    advanced_libraries: dict[str, AdvancedNodeLibrary]
-
-    def __init__(self) -> None:
-        self._advanced_libraries = {}
-
-    def load_library(self, library: Library) -> None:
-        advanced_library = library.get_advanced_library()
-        library_name = library.get_library_data().name
-        if advanced_library is not None:
-            self._advanced_libraries[library_name] = advanced_library
-
-    def unload_library(self, library_name: str) -> None:
-        if library_name in self._advanced_libraries:
-            del self._advanced_libraries[library_name]
-
     def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler | None:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
-        if library_name in self._advanced_libraries:
-            library_manager = GriptapeNodes.LibraryManager()
-            registered_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
-            if library_name in registered_handlers:
-                return registered_handlers[library_name]
+        library_manager = GriptapeNodes.LibraryManager()
+        registered_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
+        if library_name in registered_handlers:
+            return registered_handlers[library_name]
         return None
 
     async def execute(self, node: BaseNode, library_name: str | None = None) -> None:
@@ -340,6 +323,3 @@ class NodeExecutor:
         except ValueError:
             storage_backend = StorageBackend.LOCAL
         return storage_backend
-
-    def clear(self) -> None:
-        self._advanced_libraries = {}
