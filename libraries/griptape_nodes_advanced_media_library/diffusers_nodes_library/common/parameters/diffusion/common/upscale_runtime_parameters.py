@@ -237,13 +237,13 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def publish_output_image_preview_placeholder(self) -> None:
         input_image_pil = self.get_image_pil()
         width, height = input_image_pil.size
-        # Immediately set a preview placeholder image to make it react quickly and adjust
-        # the size of the image preview on the node.
 
         # Check to ensure there's enough space in the intermediates directory
         # if that setting is enabled.
         check_cleanup_intermediates_directory()
 
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter(
             "output_image",
@@ -292,7 +292,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
-        def callback_on_tile_end(i: int) -> None:
+        def callback_on_tile_end(i: int, _preview_image_pil: Image) -> None:
             if i < num_tiles:
                 self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
                 self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
@@ -350,7 +350,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         num_inference_steps = self.get_num_inference_steps()
 
-        def wrapped_pipe(tile: Image) -> Image:
+        def wrapped_pipe(tile: Image, _get_preview_image_with_partial_tile: Any) -> Image:
             def callback_on_step_end(_pipe: DiffusionPipeline, i: int, _t: Any, _callback_kwargs: dict) -> dict:
                 if i < num_inference_steps - 1:
                     # HERE -> need to update the tile by calling something in the tile processor.
@@ -385,7 +385,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
-        def callback_on_tile_end(i: int) -> None:
+        def callback_on_tile_end(i: int, _preview_image_pil: Image) -> None:
             if i < num_tiles:
                 # Check to ensure there's enough space in the intermediates directory
                 # if that setting is enabled.
