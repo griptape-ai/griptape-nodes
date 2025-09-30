@@ -207,7 +207,7 @@ class PackagingEndNodeResult(NamedTuple):
     """Result of creating end node commands and data connections for flow packaging."""
 
     end_node_commands: SerializedNodeCommands
-    package_to_end_data_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
+    package_to_end_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
     output_shape_data: WorkflowShapeNodes
 
 
@@ -1549,7 +1549,7 @@ class FlowManager:
         # Process ALL package node parameters to create end node parameters and connections
         # Note: PROPERTY-only parameters are guaranteed to have OUTPUT mode after serialization
         end_node_parameter_commands = []
-        package_to_end_data_connections = []
+        package_to_end_connections = []
         output_shape_data: WorkflowShapeNodes = {}
 
         for package_param in package_node.parameters:
@@ -1592,7 +1592,7 @@ class FlowManager:
                 target_node_uuid=end_node_uuid,
                 target_parameter_name=end_param_name,
             )
-            package_to_end_data_connections.append(package_to_end_connection)
+            package_to_end_connections.append(package_to_end_connection)
 
         # Build complete SerializedNodeCommands for end node
         end_node_dependencies = NodeDependencies()
@@ -1607,7 +1607,7 @@ class FlowManager:
 
         return PackagingEndNodeResult(
             end_node_commands=end_node_commands,
-            package_to_end_data_connections=package_to_end_data_connections,
+            package_to_end_connections=package_to_end_connections,
             output_shape_data=output_shape_data,
         )
 
@@ -1669,7 +1669,7 @@ class FlowManager:
         # Combine all connections: Start->Package + Package->End + Control Flow
         all_connections = (
             start_node_result.start_to_package_connections
-            + end_node_result.package_to_end_data_connections
+            + end_node_result.package_to_end_connections
             + control_flow_connections
         )
 
@@ -1968,7 +1968,7 @@ class FlowManager:
             parameter_value_commands=start_node_parameter_value_commands,
         )
 
-    def _create_multi_node_end_node_commands(  # noqa: PLR0913
+    def _create_multi_node_end_node_with_connections(  # noqa: PLR0913
         self,
         request: PackageNodesAsSerializedFlowRequest,
         package_nodes: list[BaseNode],
@@ -1998,12 +1998,29 @@ class FlowManager:
             library_version=library_version,
         )
 
+        # Initialize collections for building the end node
+        end_node_parameter_commands = []
+        package_to_end_connections = []
+        output_shape_data: WorkflowShapeNodes = {}
+        # Parameter name mappings (rosetta stone): maps mangled end node parameter names back to original (node_name, parameter_name)
+        # This is essential for callers to understand which end node outputs correspond to which original node parameters
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter] = {}
+
+        # Handle external control connections first
+        self._create_end_node_control_connections(
+            request=request,
+            package_nodes=package_nodes,
+            node_connections_dict=node_connections_dict,
+            node_name_to_uuid=node_name_to_uuid,
+            end_node_uuid=end_node_uuid,
+            end_node_name=end_node_name,
+            end_node_parameter_commands=end_node_parameter_commands,
+            package_to_end_connections=package_to_end_connections,
+            parameter_name_mappings=parameter_name_mappings,
+        )
+
         # Process ALL parameters with OUTPUT or PROPERTY modes for reconciliation
         # Exception: control parameters that are already connected internally cannot also connect to end node
-        end_node_parameter_commands = []
-        package_to_end_data_connections = []
-        output_shape_data: WorkflowShapeNodes = {}
-        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter] = {}
 
         for package_node in package_nodes:
             package_node_uuid = node_name_to_uuid[package_node.name]
@@ -2064,7 +2081,7 @@ class FlowManager:
                     target_node_uuid=end_node_uuid,
                     target_parameter_name=sanitized_param_name,
                 )
-                package_to_end_data_connections.append(package_to_end_connection)
+                package_to_end_connections.append(package_to_end_connection)
 
         # Build complete SerializedNodeCommands for end node
         end_node_dependencies = NodeDependencies()
@@ -2079,7 +2096,7 @@ class FlowManager:
 
         end_node_result = PackagingEndNodeResult(
             end_node_commands=end_node_commands,
-            package_to_end_data_connections=package_to_end_data_connections,
+            package_to_end_connections=package_to_end_connections,
             output_shape_data=output_shape_data,
         )
 
@@ -2088,6 +2105,72 @@ class FlowManager:
             parameter_name_mappings=parameter_name_mappings,
             alter_parameter_commands=[],
         )
+
+    def _create_end_node_control_connections(  # noqa: PLR0913
+        self,
+        request: PackageNodesAsSerializedFlowRequest,
+        package_nodes: list[BaseNode],
+        node_connections_dict: dict[str, ConnectionAnalysis],  # Contains only EXTERNAL connections
+        node_name_to_uuid: dict[
+            str, SerializedNodeCommands.NodeUUID
+        ],  # Map node names to UUIDs for connection creation
+        end_node_uuid: SerializedNodeCommands.NodeUUID,
+        end_node_name: str,
+        end_node_parameter_commands: list[
+            AddParameterToNodeRequest
+        ],  # OUTPUT: Will populate with parameters to add to end node
+        package_to_end_connections: list[
+            SerializedFlowCommands.IndirectConnectionSerialization
+        ],  # OUTPUT: Will populate with connections to add
+        parameter_name_mappings: dict[
+            SanitizedParameterName, OriginalNodeParameter
+        ],  # OUTPUT: Will populate rosetta stone for parameter names so customer knows how to map mangled names back to original nodes.
+    ) -> None:
+        """Create control connections and parameters on end node for EXTERNAL control flow connections."""
+        for package_node in package_nodes:
+            node_connection_analysis = node_connections_dict.get(package_node.name)
+            if node_connection_analysis is None:
+                # This node has no external connections (neither incoming nor outgoing), skip it
+                continue
+
+            # Handle external outgoing control connections
+            for control_conn in node_connection_analysis.outgoing_control_connections:
+                # Create mangled parameter name for the control connection
+                sanitized_param_name = (
+                    f"{request.output_parameter_prefix}{package_node.name}_{control_conn.source_parameter_name}"
+                )
+
+                # Add to parameter name mappings (rosetta stone)
+                parameter_name_mappings[sanitized_param_name] = OriginalNodeParameter(
+                    node_name=package_node.name,
+                    parameter_name=control_conn.source_parameter_name,
+                )
+
+                # Get the source parameter for type information
+                source_param = package_node.get_parameter_by_name(control_conn.source_parameter_name)
+                if source_param is None:
+                    msg = f"External control connection references parameter '{control_conn.source_parameter_name}' on node '{package_node.name}' which does not exist. This indicates a data consistency issue."
+                    raise ValueError(msg)
+
+                # Create parameter command for end node
+                add_param_request = AddParameterToNodeRequest(
+                    node_name=end_node_name,
+                    parameter_name=sanitized_param_name,
+                    type=source_param.output_type,
+                    default_value=None,
+                    tooltip=f"Control output {control_conn.source_parameter_name} from packaged node {package_node.name}",
+                    initial_setup=True,
+                )
+                end_node_parameter_commands.append(add_param_request)
+
+                # Create connection from package node to end node
+                package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                    source_node_uuid=node_name_to_uuid[package_node.name],
+                    source_parameter_name=control_conn.source_parameter_name,
+                    target_node_uuid=end_node_uuid,
+                    target_parameter_name=sanitized_param_name,
+                )
+                package_to_end_connections.append(package_to_end_connection)
 
     def _validate_multi_node_request(
         self, request: PackageNodesAsSerializedFlowRequest
@@ -2284,8 +2367,8 @@ class FlowManager:
         if isinstance(start_node_result, PackageNodesAsSerializedFlowResultFailure):
             return start_node_result
 
-        # Step 9: Create end node and connections
-        end_node_result = self._create_multi_node_end_node_commands(
+        # Step 9: Create end node with parameters for external outgoing connections and parameter mappings
+        end_node_result = self._create_multi_node_end_node_with_connections(
             request=request,
             package_nodes=nodes_to_package,
             node_name_to_uuid=node_name_to_uuid,
@@ -2322,7 +2405,7 @@ class FlowManager:
         # Convert all connections to the same type (SerializedFlowCommands.IndirectConnectionSerialization)
         all_connections = []
         all_connections.extend(start_node_result.start_to_package_connections)
-        all_connections.extend(end_node_packaging_result.package_to_end_data_connections)
+        all_connections.extend(end_node_packaging_result.package_to_end_connections)
 
         # Convert SerializedSelectedNodesCommands connections to SerializedFlowCommands connections
         for conn in serialized_package_data.serialized_connection_commands:
