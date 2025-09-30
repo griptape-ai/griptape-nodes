@@ -76,7 +76,7 @@ class DiffusionPipelineTypeParameters(ABC):
         )
 
         # Add end parameters
-        sorted_parameters.extend([*hf_param_names, "logs"])
+        sorted_parameters.extend([*hf_param_names, "loras", "logs"])
 
         self._node.reorder_elements(sorted_parameters)
 
