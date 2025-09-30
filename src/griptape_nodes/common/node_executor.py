@@ -12,7 +12,7 @@ from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
-    LOCAL_SUBPROCESS,
+    PRIVATE_EXECUTION,
     EndNode,
     StartNode,
 )
@@ -54,10 +54,10 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
-        if execution_type == LOCAL_EXECUTION or execution_type is None:
+        if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
             return
-        if execution_type == LOCAL_SUBPROCESS:
+        if execution_type == PRIVATE_EXECUTION:
             workflow_result = None
             try:
                 workflow_result, file_name, output_parameter_prefix = await self._publish_local_workflow(node)
@@ -101,13 +101,13 @@ class NodeExecutor:
                     await self._delete_workflow(
                         workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
                     )
+            return
 
         try:
             library = LibraryRegistry.get_library(name=execution_type)
         except KeyError:
-            logger.error("Could not find library for node '%s', defaulting to local execution.", node.name)
-            await node.aprocess()
-            return
+            msg = f"Could not find library for execution environment {execution_type} for node {node.name}."
+            raise RuntimeError(msg)  # noqa: B904
 
         library_name = library.get_library_data().name
         workflow_handler = self.get_workflow_handler(library_name)
