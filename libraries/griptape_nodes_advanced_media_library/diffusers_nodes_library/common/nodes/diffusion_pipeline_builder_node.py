@@ -19,7 +19,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
-UNION_PRO_2_CONFIG_HASH_POSTFIX = 1 # 0001
+# Additional postfix bits must be powers of two (1, 2, 4, 8, etc.) to ensure unique combinations
+UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
+
 
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
@@ -51,7 +53,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
     def optimization_kwargs(self) -> dict[str, Any]:
         """Get optimization settings for the pipeline."""
         return self.huggingface_pipeline_params.get_hf_pipeline_parameters()
-    
+
     def _get_config_hash_postfix(self) -> int:
         config_bits = 0
         controlnet_model = self.get_parameter_value("controlnet_model")
@@ -78,7 +80,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
-        # Append postfix bits to config hash as hex
+        # Convert to hex and append postfix bits
         config_hash += f"-{self._get_config_hash_postfix():x}"
         return config_hash
 
