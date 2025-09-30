@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
 
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
@@ -14,6 +14,9 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineTypeParameters(ABC):
+    START_PARAMS: ClassVar = ["pipeline", "provider", "pipeline_type"]
+    END_PARAMS: ClassVar = ["loras", "logs"]
+
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
         self.did_pipeline_type_change = False
@@ -59,24 +62,15 @@ class DiffusionPipelineTypeParameters(ABC):
         # Get all current element names
         all_element_names = [element.name for element in self._node.root_ui_element.children]
 
-        # Start with required positioning
-        sorted_parameters = ["pipeline", "provider", "pipeline_type"]
-
-        # Add all other parameters that aren't already positioned or at the end
+        # Build parameter groupings
         hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
-        end_params = {*hf_param_names, "logs"}
-        positioned_params = {"pipeline", "provider", "pipeline_type"}
+        start_params = DiffusionPipelineTypeParameters.START_PARAMS
+        end_params = [*hf_param_names, *DiffusionPipelineTypeParameters.END_PARAMS]
+        excluded_params = {*start_params, *end_params}
 
-        sorted_parameters.extend(
-            [
-                param_name
-                for param_name in all_element_names
-                if param_name not in positioned_params and param_name not in end_params
-            ]
-        )
-
-        # Add end parameters
-        sorted_parameters.extend([*hf_param_names, "logs"])
+        # Assemble final order: start -> middle -> end
+        middle_params = [name for name in all_element_names if name not in excluded_params]
+        sorted_parameters = [*start_params, *middle_params, *end_params]
 
         self._node.reorder_elements(sorted_parameters)
 

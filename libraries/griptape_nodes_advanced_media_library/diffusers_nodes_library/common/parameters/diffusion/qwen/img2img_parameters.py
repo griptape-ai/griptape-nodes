@@ -38,6 +38,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     def remove_input_parameters(self) -> None:
         self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
