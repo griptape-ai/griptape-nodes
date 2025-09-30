@@ -164,6 +164,9 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             )
         )
 
+        self._node.hide_parameter_by_name("prompt_2")
+        self._node.hide_parameter_by_name("negative_prompt_2")
+
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
         self._node.add_parameter(
@@ -204,7 +207,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         return input_image_pil.convert("RGB")
 
     def _get_pipe_kwargs(self) -> dict:
-        return {
+        kwargs = {
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
@@ -213,6 +216,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
+        if kwargs["prompt_2"] is None or kwargs["prompt_2"] == "":
+            del kwargs["prompt_2"]
+        if kwargs["negative_prompt_2"] is None or kwargs["negative_prompt_2"] == "":
+            del kwargs["negative_prompt_2"]
+        return kwargs
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
