@@ -91,7 +91,7 @@ class MCPManager:
                     if match:
                         filtered_servers.append(server)
                 return filtered_servers
-            return servers
+            return servers  # noqa: TRY300
         except Exception as e:
             logger.error("Failed to parse MCP servers configuration: %s", e)
             return []

@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape.artifacts import BaseArtifact
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
@@ -17,6 +17,14 @@ from griptape_nodes.traits.options import Options
 
 
 class MCPTaskNode(SuccessFailureNode):
+    # Field mappings for each transport type
+    TRANSPORT_FIELD_MAPPINGS: ClassVar[dict[str, list[str]]] = {
+        "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
+        "sse": ["url", "headers", "timeout", "sse_read_timeout"],
+        "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
+        "websocket": ["url"],
+    }
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -217,39 +225,61 @@ class MCPTaskNode(SuccessFailureNode):
         # Get parameter values
         mcp_server_name = self.get_parameter_value("mcp_server_name")
         prompt = self.get_parameter_value("prompt")
-        agent = None
 
-        # Get MCP server configuration (validation already done in validate_before_node_run)
+        # Get MCP server configuration
+        server_config = self._get_server_config(mcp_server_name)
+        if server_config is None:
+            return
+
+        # Get MCP tool
+        tool = await self._get_mcp_tool(mcp_server_name, server_config)
+        if tool is None:
+            return
+
+        # Setup agent and task
+        agent, driver, tools, rulesets = self._setup_agent()
+        if agent is None:
+            return
+
+        # Add task to agent
+        if not self._add_task_to_agent(agent, tool, driver, tools, rulesets):
+            return
+
+        # Execute with streaming
+        self._execute_with_streaming(agent, prompt, mcp_server_name)
+
+    def _get_server_config(self, mcp_server_name: str) -> dict[str, Any] | None:
+        """Get MCP server configuration."""
         try:
             app = GriptapeNodes()
             mcp_manager = app.MCPManager()
-
-            # Get enabled MCP servers
             enabled_request = GetEnabledMCPServersRequest()
             enabled_result = mcp_manager.on_get_enabled_mcp_servers_request(enabled_request)
-            server_config = enabled_result.servers[mcp_server_name]
+            return enabled_result.servers[mcp_server_name]
         except Exception as mcp_error:
             error_details = f"Failed to get MCP server configuration: {mcp_error}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
             logger.error(f"MCPTaskNode '{self.name}': {error_details}")
             self._handle_failure_exception(mcp_error)
-            return
+            return None
 
-        # MCP tool creation and execution
+    async def _get_mcp_tool(self, mcp_server_name: str, server_config: dict[str, Any]) -> MCPTool | None:
+        """Get or create MCP tool."""
         try:
-            # Get or create cached MCP tool (like the agent does)
-            tool = await self._get_or_create_mcp_tool(mcp_server_name, server_config)
+            return await self._get_or_create_mcp_tool(mcp_server_name, server_config)
         except Exception as e:
             msg = f"{self.name}: Failed to get or create MCP tool: {e}"
             logger.error(f"MCPTaskNode '{self.name}': {msg}")
             self._handle_failure_exception(e)
-            return
+            return None
+
+    def _setup_agent(self) -> tuple[Agent | None, Any, list, list]:
+        """Setup agent, driver, tools, and rulesets."""
         try:
             rulesets = []
             tools = []
             agent = self.get_parameter_value("agent")
             if isinstance(agent, dict):
-                # The agent is connected. We'll use that
                 agent = Agent().from_dict(agent)
                 task = agent.tasks[0]
                 driver = task.prompt_driver
@@ -262,7 +292,11 @@ class MCPTaskNode(SuccessFailureNode):
             msg = f"{self.name}: Failed to get or create agent: {e}"
             logger.error(f"MCPTaskNode '{self.name}': {msg}")
             self._handle_failure_exception(e)
-            return
+            return None, None, [], []
+        return agent, driver, tools, rulesets
+
+    def _add_task_to_agent(self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list) -> bool:
+        """Add task to agent."""
         try:
             prompt_task = PromptTask(tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets)
             agent.add_task(prompt_task)
@@ -270,9 +304,12 @@ class MCPTaskNode(SuccessFailureNode):
             msg = f"{self.name}: Failed to add task to agent: {e}"
             logger.error(f"MCPTaskNode '{self.name}': {msg}")
             self._handle_failure_exception(e)
-            return
+            return False
+        return True
+
+    def _execute_with_streaming(self, agent: Agent, prompt: str, mcp_server_name: str) -> None:
+        """Execute agent with streaming."""
         try:
-            # Run the process with proper streaming
             execution_start = time.time()
             logger.debug(f"MCPTaskNode '{self.name}': Starting agent execution with MCP tool...")
             result = self._process_with_streaming(agent, prompt)
@@ -289,7 +326,6 @@ class MCPTaskNode(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
             logger.error(f"MCPTaskNode '{self.name}': {error_details}")
             self._handle_failure_exception(execution_error)
-            return
 
     def _process_with_streaming(self, agent: Agent, prompt: BaseArtifact | str) -> Agent:
         """Process the agent with proper streaming, similar to the Agent node."""
@@ -347,19 +383,11 @@ class MCPTaskNode(SuccessFailureNode):
         """Create a connection dictionary from server configuration based on transport type."""
         transport = server_config.get("transport", "stdio")
 
-        # Define field mappings for each transport type
-        field_mappings = {
-            "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
-            "sse": ["url", "headers", "timeout", "sse_read_timeout"],
-            "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
-            "websocket": ["url"],
-        }
-
         # Start with transport
         connection = {"transport": transport}
 
         # Map relevant fields based on transport type
-        fields_to_map = field_mappings.get(transport, field_mappings["stdio"])
+        fields_to_map = self.TRANSPORT_FIELD_MAPPINGS.get(transport, self.TRANSPORT_FIELD_MAPPINGS["stdio"])
         for field in fields_to_map:
             if field in server_config and server_config[field] is not None:
                 connection[field] = server_config[field]
