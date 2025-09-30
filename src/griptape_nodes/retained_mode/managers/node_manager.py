@@ -1479,13 +1479,14 @@ class NodeManager:
             node.set_parameter_value(param_name, request.value)
 
             # Forward the value to the original node if this proxy parameter maps to one
+            result = None
             if param_name in node._proxy_param_to_node_param:
                 original_node, original_param_name = node._proxy_param_to_node_param[param_name]
-                GriptapeNodes.handle_request(
+                result = GriptapeNodes.handle_request(
                     SetParameterValueRequest(
-                        parameter_name = original_param_name,
-                        node_name = original_node.name,
-                        value = request.value,
+                        parameter_name=original_param_name,
+                        node_name=original_node.name,
+                        value=request.value,
                         data_type=request.data_type,
                         incoming_connection_source_node_name=request.incoming_connection_source_node_name,
                         incoming_connection_source_parameter_name=request.incoming_connection_source_parameter_name,
@@ -1498,12 +1499,8 @@ class NodeManager:
                     original_node.name,
                     original_param_name,
                 )
-
-            return SetParameterValueResultSuccess(
-                finalized_value=request.value,
-                data_type=request.data_type or "unknown",
-                result_details=f"Set parameter value on NodeGroupProxyNode '{node_name}.{param_name}' and forwarded to original node",
-            )
+            details = f"Attempted to set parameter value for '{node_name}.{param_name}'. Successfully set value on the NodeGroupProxyNode '{node_name}', but failed to set value on the original node'."
+            return result if result else SetParameterValueResultFailure(result_details=details)
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)

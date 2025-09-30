@@ -1909,8 +1909,8 @@ class NodeGroupProxyNode(BaseNode):
         # Track mapping from proxy parameter name to (original_node, original_param_name)
         self._proxy_param_to_node_param: dict[str, tuple[BaseNode, str]] = {}
 
-        # Create proxy parameters for external connections
-        self._create_proxy_parameters()
+        # Note: Proxy parameters are created AFTER connection remapping in control_flow.py
+        # via explicit call to _create_proxy_parameters()
 
     def _create_proxy_parameters(self) -> None:
         """Create parameters on the proxy that match external connections.
@@ -1992,39 +1992,18 @@ class NodeGroupProxyNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
-        import asyncio
-
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        executor = GriptapeNodes.FlowManager().node_executor
-
-        # Propagate input values from proxy to grouped nodes using the mapping
-        for proxy_param_name, (original_node, original_param_name) in self._proxy_param_to_node_param.items():
-            # Only process input parameters
-            proxy_param = self.get_parameter_by_name(proxy_param_name)
-            if proxy_param and ParameterMode.INPUT in proxy_param.allowed_modes:
-                # Get value from proxy parameter
-                proxy_param_value = self.get_parameter_value(proxy_param_name)
-                # Set value on original node's parameter
-                original_node.set_parameter_value(original_param_name, proxy_param_value)
-
-        # Execute all nodes in parallel
-        tasks = [executor.execute(node) for node in self.node_group_data.nodes]
-        await asyncio.gather(*tasks)
-
-        # Propagate output values from grouped nodes to proxy using the mapping
-        for proxy_param_name, (original_node, original_param_name) in self._proxy_param_to_node_param.items():
-            # Only process output parameters
-            proxy_param = self.get_parameter_by_name(proxy_param_name)
-            if proxy_param and ParameterMode.OUTPUT in proxy_param.allowed_modes:
-                # Get value from original node's parameter
-                original_param_value = original_node.get_parameter_value(original_param_name)
-                # Set value on proxy parameter
-                self.set_parameter_value(proxy_param_name, original_param_value)
+        for param in self.parameters:
+            if param.name in self._proxy_param_to_node_param:
+                target_node, target_param =self._proxy_param_to_node_param[param.name]
+                param = target_node.get_parameter_by_name(target_param)
+                if param and param.type == ParameterTypeBuiltin.STR.value:
+                    target_node.parameter_output_values[param.name] = "Testing testing testing"
+        # msg = "NodeGroupProxyNode should not be used for local execution."
+        # raise NotImplementedError(msg)
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
-        msg = "NodeGroupProxyNode should use aprocess() for async execution"
+        msg = "NodeGroupProxyNode should use aprocess() for async execution."
         raise NotImplementedError(msg)
 
 

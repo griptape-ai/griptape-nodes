@@ -472,6 +472,9 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # Remap connections to point to proxy
             self._remap_connections_to_proxy_node(group, proxy_node, connections)
 
+            # Now create proxy parameters (after remapping so original references are saved)
+            proxy_node._create_proxy_parameters()
+
         return node_to_proxy_map
 
     def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
@@ -502,7 +505,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             conn_id = id(conn)
 
             # Save original target node before remapping (for cleanup later)
-            group.original_incoming_targets[conn_id] = conn.target_node
+            original_target_node = conn.target_node
+            group.original_incoming_targets[conn_id] = original_target_node
 
             # Remove old incoming index entry
             if (
@@ -514,17 +518,20 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # Update connection target to proxy
             conn.target_node = proxy_node
 
-            # Add new incoming index entry
-            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(
-                conn.target_parameter.name, []
-            ).append(conn_id)
+            # Create proxy parameter name using original node name
+            sanitized_node_name = original_target_node.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+
+            # Add new incoming index entry with proxy parameter name
+            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
 
         # Remap external outgoing connections (group -> outside becomes proxy -> outside)
         for conn in group.external_outgoing_connections:
             conn_id = id(conn)
 
             # Save original source node before remapping (for cleanup later)
-            group.original_outgoing_sources[conn_id] = conn.source_node
+            original_source_node = conn.source_node
+            group.original_outgoing_sources[conn_id] = original_source_node
 
             # Remove old outgoing index entry
             if (
@@ -536,10 +543,12 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # Update connection source to proxy
             conn.source_node = proxy_node
 
-            # Add new outgoing index entry
-            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(
-                conn.source_parameter.name, []
-            ).append(conn_id)
+            # Create proxy parameter name using original node name
+            sanitized_node_name = original_source_node.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+
+            # Add new outgoing index entry with proxy parameter name
+            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
 
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)

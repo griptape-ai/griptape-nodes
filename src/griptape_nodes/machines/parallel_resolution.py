@@ -121,8 +121,8 @@ class ExecuteDagState(State):
         from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
 
         if isinstance(current_node, NodeGroupProxyNode):
-            await ExecuteDagState._handle_group_proxy_completion(current_node)
-
+            await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
+            return
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
         # Track this as the last resolved node
@@ -179,7 +179,7 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
-    async def _handle_group_proxy_completion(proxy_node: BaseNode) -> None:
+    async def _handle_group_proxy_completion(context: ParallelResolutionContext, proxy_node: BaseNode, network_name: str) -> None:
         """Handle completion of a NodeGroupProxyNode by marking all grouped nodes as resolved.
 
         When a NodeGroupProxyNode completes, all nodes in the group have been executed
@@ -188,6 +188,8 @@ class ExecuteDagState(State):
 
         Args:
             proxy_node: The NodeGroupProxyNode that completed execution
+            context: The ParallelResolutionContext
+            network_name: The name of the network
         """
         from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
 
@@ -248,6 +250,7 @@ class ExecuteDagState(State):
             )
 
         # Cleanup: restore connections and deregister proxy
+        ExecuteDagState.get_next_control_graph(context, proxy_node, network_name)
         await ExecuteDagState._cleanup_proxy_node(proxy_node)
 
     @staticmethod
@@ -272,19 +275,26 @@ class ExecuteDagState(State):
         for conn in node_group.external_incoming_connections:
             conn_id = id(conn)
 
-            # Remove proxy from incoming index
+            # Get original target node
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is None:
+                continue
+
+            # Create proxy parameter name to find it in the index
+            sanitized_node_name = original_target.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+
+            # Remove proxy from incoming index (using proxy parameter name)
             if (
                 proxy_node.name in connections.incoming_index
-                and conn.target_parameter.name in connections.incoming_index[proxy_node.name]
+                and proxy_param_name in connections.incoming_index[proxy_node.name]
             ):
-                connections.incoming_index[proxy_node.name][conn.target_parameter.name].remove(conn_id)
+                connections.incoming_index[proxy_node.name][proxy_param_name].remove(conn_id)
 
             # Restore connection to original target node
-            original_target = node_group.original_incoming_targets.get(conn_id)
-            if original_target is not None:
-                conn.target_node = original_target
+            conn.target_node = original_target
 
-            # Add back to original target node's incoming index
+            # Add back to original target node's incoming index (using original parameter name)
             connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
                 conn.target_parameter.name, []
             ).append(conn_id)
@@ -293,19 +303,26 @@ class ExecuteDagState(State):
         for conn in node_group.external_outgoing_connections:
             conn_id = id(conn)
 
-            # Remove proxy from outgoing index
+            # Get original source node
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is None:
+                continue
+
+            # Create proxy parameter name to find it in the index
+            sanitized_node_name = original_source.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+
+            # Remove proxy from outgoing index (using proxy parameter name)
             if (
                 proxy_node.name in connections.outgoing_index
-                and conn.source_parameter.name in connections.outgoing_index[proxy_node.name]
+                and proxy_param_name in connections.outgoing_index[proxy_node.name]
             ):
-                connections.outgoing_index[proxy_node.name][conn.source_parameter.name].remove(conn_id)
+                connections.outgoing_index[proxy_node.name][proxy_param_name].remove(conn_id)
 
             # Restore connection to original source node
-            original_source = node_group.original_outgoing_sources.get(conn_id)
-            if original_source is not None:
-                conn.source_node = original_source
+            conn.source_node = original_source
 
-            # Add back to original source node's outgoing index
+            # Add back to original source node's outgoing index (using original parameter name)
             connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
                 conn.source_parameter.name, []
             ).append(conn_id)
