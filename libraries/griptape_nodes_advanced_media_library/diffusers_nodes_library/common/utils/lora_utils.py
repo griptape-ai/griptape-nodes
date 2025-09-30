@@ -76,6 +76,6 @@ class FluxLorasParameter:
         logger.info(msg)
         pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
         
-        logger.info("Fusing lora weights into model for inference.")
+        logger.info("Fusing lora weights with diffusion model.")
         pipe.fuse_lora(adapter_names=adapter_names, lora_scale=1.0)
         pipe.unload_lora_weights()
