@@ -252,7 +252,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
 def optimize_diffusion_pipeline(  # noqa: PLR0913
     pipe: DiffusionPipeline,
     *,
-    memory_optimization_strategy: str = "Automatic",
+    memory_optimization_strategy: str = "Manual",
     attention_slicing: bool = False,
     vae_slicing: bool = False,
     transformer_layerwise_casting: bool = False,

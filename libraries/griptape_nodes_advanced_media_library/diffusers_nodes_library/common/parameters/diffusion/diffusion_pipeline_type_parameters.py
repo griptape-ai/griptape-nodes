@@ -64,7 +64,7 @@ class DiffusionPipelineTypeParameters(ABC):
 
         # Add all other parameters that aren't already positioned or at the end
         hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
-        end_params = {*hf_param_names, "logs"}
+        end_params = {*hf_param_names, "loras", "logs"}
         positioned_params = {"pipeline", "provider", "pipeline_type"}
 
         sorted_parameters.extend(

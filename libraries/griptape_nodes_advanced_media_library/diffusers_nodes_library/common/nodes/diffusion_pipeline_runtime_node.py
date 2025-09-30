@@ -11,7 +11,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
-from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 
@@ -24,9 +23,6 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
-
-        self.loras_params = FluxLorasParameter(self)
-        self.loras_params.add_input_parameters()
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
@@ -68,9 +64,9 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         if did_pipeline_change:
             sorted_parameters = ["pipeline"]
             sorted_parameters.extend(
-                [param.name for param in self.parameters if param.name not in ["pipeline", "loras", "logs"]]
+                [param.name for param in self.parameters if param.name not in ["pipeline", "logs"]]
             )
-            sorted_parameters.extend(["loras", "logs"])
+            sorted_parameters.extend(["logs"])
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
@@ -120,11 +116,5 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
-
-        with (
-            self.log_params.append_profile_to_logs("Configuring FLUX loras"),
-            self.log_params.append_logs_to_logs(logger),
-        ):
-            self.loras_params.configure_loras(pipe)
 
         await asyncio.to_thread(self.pipe_params.runtime_parameters.process_pipeline, pipe)

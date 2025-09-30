@@ -8,10 +8,10 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.lora_utils import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_kontext_pipeline_parameters import (
     FluxKontextPipelineParameters,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
