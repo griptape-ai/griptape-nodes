@@ -40,7 +40,10 @@ from griptape_nodes.retained_mode.events.agent_events import (
 )
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent, ResultPayload
-from griptape_nodes.retained_mode.events.mcp_events import GetEnabledMCPServersRequest
+from griptape_nodes.retained_mode.events.mcp_events import (
+    GetEnabledMCPServersRequest,
+    GetEnabledMCPServersResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -92,6 +95,14 @@ class NodesPromptImageGenerationTool(BaseImageGenerationTool):
 
 
 class AgentManager:
+    # Field mappings for each transport type
+    TRANSPORT_FIELD_MAPPINGS = {
+        "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
+        "sse": ["url", "headers", "timeout", "sse_read_timeout"],
+        "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
+        "websocket": ["url"],
+    }
+
     def __init__(self, static_files_manager: StaticFilesManager, event_manager: EventManager | None = None) -> None:
         self.conversation_memory = ConversationMemory()
         self.prompt_driver = None
@@ -144,21 +155,24 @@ class AgentManager:
 
         try:
             app = GriptapeNodes()
-            mcp_manager = app.MCPManager()
 
             enabled_request = GetEnabledMCPServersRequest()
             enabled_result = app.handle_request(enabled_request)
 
-            if hasattr(enabled_result, "servers"):
-                for server_name in server_names:
-                    if server_name in enabled_result.servers:
-                        server_config = enabled_result.servers[server_name]
-                        connection = self._create_connection_from_mcp_config(server_config)
-                        tool = MCPTool(connection=connection, name=f"mcp{server_name.title()}")  # type: ignore[arg-type]
-                        additional_tools.append(tool)
-                    else:
-                        msg = f"Additional MCP server '{server_name}' not found or not enabled"
-                        logger.warning(msg)
+            if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
+                msg = f"Failed to get enabled MCP servers: {enabled_result}"
+                logger.error(msg)
+                return additional_tools
+
+            for server_name in server_names:
+                if server_name in enabled_result.servers:
+                    server_config = enabled_result.servers[server_name]
+                    connection = self._create_connection_from_mcp_config(server_config)  # type: ignore[arg-type]
+                    tool = MCPTool(connection=connection, name=f"mcp{server_name.title()}")  # type: ignore[arg-type]
+                    additional_tools.append(tool)
+                else:
+                    msg = f"Additional MCP server '{server_name}' not found or not enabled"
+                    logger.warning(msg)
 
         except Exception as e:
             msg = f"Failed to create additional MCP tools: {e}"
@@ -170,19 +184,11 @@ class AgentManager:
         """Create connection dictionary from MCP server configuration."""
         transport = server_config.get("transport", "stdio")
 
-        # Define field mappings for each transport type
-        field_mappings = {
-            "stdio": ["command", "args", "env", "cwd", "encoding", "encoding_error_handler"],
-            "sse": ["url", "headers", "timeout", "sse_read_timeout"],
-            "streamable_http": ["url", "headers", "timeout", "sse_read_timeout", "terminate_on_close"],
-            "websocket": ["url"],
-        }
-
         # Start with transport
         connection = {"transport": transport}
 
         # Map relevant fields based on transport type
-        fields_to_map = field_mappings.get(transport, field_mappings["stdio"])
+        fields_to_map = self.TRANSPORT_FIELD_MAPPINGS.get(transport, self.TRANSPORT_FIELD_MAPPINGS["stdio"])
         for field_name in fields_to_map:
             if field_name in server_config and server_config[field_name] is not None:
                 connection[field_name] = server_config[field_name]
