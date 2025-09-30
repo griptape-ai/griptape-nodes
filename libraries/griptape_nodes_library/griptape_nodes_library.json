@@ -1891,6 +1891,17 @@
       }
     },
     {
+      "class_name": "RunSubflow",
+      "file_path": "griptape_nodes_library/execution/run_subflow.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Execute a registered workflow as a subflow with dynamic parameter mapping",
+        "display_name": "Run Subflow",
+        "icon": "workflow",
+        "group": "flow control"
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {
