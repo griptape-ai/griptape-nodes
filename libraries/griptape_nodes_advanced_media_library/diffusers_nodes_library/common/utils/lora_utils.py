@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class FluxLorasParameter:
+class LorasParameter:
     def __init__(self, node: BaseNode):
         self._node = node
         self._loras_parameter_name = "loras"
