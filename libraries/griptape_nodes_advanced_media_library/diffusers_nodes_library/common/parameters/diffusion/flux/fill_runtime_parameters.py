@@ -76,6 +76,9 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             )
         )
 
+        self._node.hide_parameter_by_name("prompt_2")
+        self._node.hide_parameter_by_name("negative_prompt_2")
+
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("input_image")
         self._node.remove_parameter_element_by_name("mask_image")
@@ -86,7 +89,7 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.remove_parameter_element_by_name("guidance_scale")
 
     def _get_pipe_kwargs(self) -> dict:
-        return {
+        kwargs = {
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
@@ -95,6 +98,11 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "image": self.get_input_image_pil(),
             "mask_image": self.get_mask_image_pil(),
         }
+        if kwargs["prompt_2"] is None or kwargs["prompt_2"] == "":
+            del kwargs["prompt_2"]
+        if kwargs["negative_prompt_2"] is None or kwargs["negative_prompt_2"] == "":
+            del kwargs["negative_prompt_2"]
+        return kwargs
 
     def validate_before_node_run(self) -> list[Exception] | None:
         input_image_pil = self.get_input_image_pil()

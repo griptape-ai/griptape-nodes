@@ -1,4 +1,5 @@
 import logging
+import re
 from abc import ABC, abstractmethod
 
 from diffusers_nodes_library.common.utils.option_utils import update_option_choices
@@ -16,10 +17,14 @@ class HuggingFaceModelParameter(ABC):
 
     @classmethod
     def _key_to_repo_revision(cls, key: str) -> tuple[str, str]:
-        parts = key.rsplit(" (", maxsplit=1)
-        if len(parts) != 2 or parts[1][-1] != ")":  # noqa: PLR2004
-            logger.exception("Invalid key")
-        return parts[0], parts[1][:-1]
+        # Check if key has hash format using regex
+        hash_pattern = r"^(.+) \(([a-f0-9]{40})\)$"
+        match = re.match(hash_pattern, key)
+        if match:
+            return match.group(1), match.group(2)
+
+        # Key is just the model name (no hash)
+        return key, ""
 
     def __init__(self, node: BaseNode, parameter_name: str):
         self._node = node
@@ -77,7 +82,23 @@ class HuggingFaceModelParameter(ABC):
         self._node.remove_parameter_element_by_name(f"huggingface_repo_parameter_message_{self._parameter_name}")
 
     def get_choices(self) -> list[str]:
-        return list(map(self._repo_revision_to_key, self._repo_revisions))
+        # Count occurrences of each model name
+        model_counts = {}
+        for repo_id, _ in self.list_repo_revisions():
+            model_counts[repo_id] = model_counts.get(repo_id, 0) + 1
+
+        # Generate choices with hash only when there are duplicates
+        choices = []
+        for repo_revision in self.list_repo_revisions():
+            repo_id, _ = repo_revision
+            if model_counts[repo_id] > 1:
+                # Multiple versions exist, show hash for disambiguation
+                choices.append(self._repo_revision_to_key(repo_revision))
+            else:
+                # Only one version, show just the model name
+                choices.append(repo_id)
+
+        return choices
 
     def validate_before_node_run(self) -> list[Exception] | None:
         self.refresh_parameters()
@@ -96,8 +117,22 @@ class HuggingFaceModelParameter(ABC):
         if value is None:
             msg = "Model download required!"
             raise RuntimeError(msg)
-        base_repo_id, base_revision = self._key_to_repo_revision(value)
-        return base_repo_id, base_revision
+
+        # Parse the value using _key_to_repo_revision
+        repo_id, revision = self._key_to_repo_revision(value)
+
+        # If revision is empty (just model name), find it in our stored list
+        if not revision:
+            for stored_repo_id, stored_revision in self._repo_revisions:
+                if stored_repo_id == repo_id:
+                    logger.debug("Using revision '%s' for model '%s'", stored_revision, repo_id)
+                    return stored_repo_id, stored_revision
+            # If not found, raise an error
+            msg = f"Model '{repo_id}' not found in available models!"
+            raise RuntimeError(msg)
+
+        # If revision was provided, return it directly
+        return repo_id, revision
 
     def get_help_message(self) -> str:
         download_models = "\n".join([f"  {model}" for model in self.get_download_models()])

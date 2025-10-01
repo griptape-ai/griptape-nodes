@@ -19,6 +19,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+# Additional postfix bits must be powers of two (1, 2, 4, 8, etc.) to ensure unique combinations
+UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
+
 
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
@@ -51,6 +54,14 @@ class DiffusionPipelineBuilderNode(ControlNode):
         """Get optimization settings for the pipeline."""
         return self.huggingface_pipeline_params.get_hf_pipeline_parameters()
 
+    def _get_config_hash_postfix(self) -> int:
+        config_bits = 0
+        controlnet_model = self.get_parameter_value("controlnet_model")
+        if controlnet_model and controlnet_model.startswith("Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0"):
+            # Set the UNION_PRO_2_CONFIG_HASH_POSTFIX bit
+            config_bits |= UNION_PRO_2_CONFIG_HASH_POSTFIX
+        return config_bits
+
     @property
     def _config_hash(self) -> str:
         """Generate a hash for the current configuration to use as cache key."""
@@ -64,11 +75,14 @@ class DiffusionPipelineBuilderNode(ControlNode):
         for key, value in opt_kwargs.items():
             config_data[f"opt_{key}"] = value
 
-        return (
+        config_hash = (
             self.params.pipeline_type_parameters.pipeline_type_pipeline_params.pipeline_name
             + "-"
             + hashlib.sha256(json.dumps(config_data, sort_keys=True).encode()).hexdigest()
         )
+        # Convert to hex and append postfix bits
+        config_hash += f"-{self._get_config_hash_postfix():x}"
+        return config_hash
 
     def add_parameter(self, parameter: Parameter) -> None:
         """Add a parameter to the node.
