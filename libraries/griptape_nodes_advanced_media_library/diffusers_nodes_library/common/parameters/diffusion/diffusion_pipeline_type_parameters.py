@@ -6,7 +6,7 @@ from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameter
     DiffusionPipelineTypePipelineParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
@@ -38,6 +38,7 @@ class DiffusionPipelineTypeParameters(ABC):
                 type="str",
                 traits={Options(choices=self.pipeline_types)},
                 tooltip="Type of diffusion pipeline to build",
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
 

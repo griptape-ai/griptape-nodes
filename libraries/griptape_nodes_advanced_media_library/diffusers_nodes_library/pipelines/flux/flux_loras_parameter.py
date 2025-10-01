@@ -3,14 +3,16 @@ import logging
 from typing import Any
 
 import safetensors  # type: ignore[reportMissingImports]
+import torch  # type: ignore[reportMissingImports]
 
+from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class LorasParameter:
+class FluxLorasParameter:
     def __init__(self, node: BaseNode):
         self._node = node
         self._loras_parameter_name = "loras"
@@ -31,19 +33,15 @@ class LorasParameter:
         """Returns a unique name for an adapter given its model path."""
         return hashlib.sha256(model_path.encode("utf-8")).hexdigest()
 
-    def get_loras(self) -> dict[str, float]:
+    def configure_loras(self, pipe: Any) -> None:
         loras_list = self._node.get_parameter_value(self._loras_parameter_name) or []
 
         loras = {}
         for lora in loras_list:
             loras.update(lora)
 
-        return loras
-
-    def configure_loras(self, pipe: Any) -> None:
-        loras = self.get_loras()
-
         if not loras:
+            pipe.disable_lora()
             return
 
         lora_by_name = {
@@ -66,13 +64,31 @@ class LorasParameter:
             state_dict = safetensors.torch.load_file(lora_path)  # type: ignore[reportAttributeAccessIssue]
             pipe.load_lora_weights(state_dict, adapter_name=item["name"])
 
+        if loras_to_load and get_best_device(quiet=True) == torch.device("cuda"):
+            # If we loaded any loras, make sure the layers have been casted
+            # to bfloat16. For cuda, we enable the layerwise caching on the
+            # transformer, but this isn't applied to the linear layers added
+            # by the loras. Those are loaded as fp8, and cuda doesn't have
+            # all the right matrix operation kernels for fp8, so we need to
+            # cast to bfloat16. That's fine because there are a lot less lora
+            # weights when compared to the original transformer (so it won't
+            # take up that much space on the device).
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/849
+            logger.info("converting all lora_A and lora_B layers to bfloat16")
+            lora_modules = [
+                module
+                for name, module in pipe.transformer.named_modules()
+                if hasattr(module, "lora_A") or hasattr(module, "lora_B")
+            ]
+
+            logger.info("Converting %d lora related layers to bfloat16", len(lora_modules))
+            for module in lora_modules:
+                module.to(dtype=torch.bfloat16)
+
         # Use them with given weights.
         adapter_names = [v["name"] for v in lora_by_name.values()]
         adapter_weights = [v["weight"] for v in lora_by_name.values()]
         msg = f"Using adapter_names with weights:\n{adapter_names=}\n{adapter_weights=}"
         logger.info(msg)
         pipe.set_adapters(adapter_names=adapter_names, adapter_weights=adapter_weights)
-
-        logger.info("Fusing lora weights with diffusion model.")
-        pipe.fuse_lora(adapter_names=adapter_names, lora_scale=1.0)
-        pipe.unload_lora_weights()
+        pipe.enable_lora()
