@@ -50,6 +50,7 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+PRIVATE_EXECUTION = "Private Execution"
 CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
@@ -114,8 +115,8 @@ def get_library_names_with_publish_handlers() -> list[str]:
     library_manager = GriptapeNodes.LibraryManager()
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" as the first option
-    library_names = [LOCAL_EXECUTION]
+    # Always include "local" and "private" as the first options
+    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
