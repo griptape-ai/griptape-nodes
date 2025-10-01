@@ -10,7 +10,6 @@ from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher 
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
-    (
     CONTROL_INPUT_PARAMETER,
    
     LOCAL_EXECUTION,
@@ -20,7 +19,6 @@ from griptape_nodes.exe_types.node_types import (
    
     NodeGroupProxyNode,
     StartNode,
-),
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
@@ -60,6 +58,34 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
+
+        # Handle NodeGroupProxyNode execution
+        if isinstance(node, NodeGroupProxyNode):
+            logger.info("Executing NodeGroupProxyNode '%s'", node.name)
+
+            # Package the group nodes as a serialized flow
+            from griptape_nodes.retained_mode.events.flow_events import (
+                PackageNodesAsSerializedFlowRequest,
+                PackageNodesAsSerializedFlowResultSuccess,
+            )
+
+            node_group = node.node_group_data
+            node_names = list(node_group.nodes.keys())
+
+            package_request = PackageNodesAsSerializedFlowRequest(node_names=node_names)
+            package_result = GriptapeNodes.handle_request(package_request)
+
+            if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+                msg = f"Failed to package node group '{node_group.group_id}'. Error: {package_result.result_details}"
+                raise RuntimeError(msg)
+
+            logger.info("Successfully packaged node group '%s' as serialized flow", node_group.group_id)
+
+            # TODO: Execute the packaged workflow and extract outputs
+            # TODO: Apply outputs to grouped nodes
+            # For now, just return after packaging
+            return
+
         # if isinstance(node, NodeGroupProxyNode):
         #     # Extract parameter values using the existing method
         #     parameter_output_values = self._extract_parameter_output_values(test_subprocess_result)
