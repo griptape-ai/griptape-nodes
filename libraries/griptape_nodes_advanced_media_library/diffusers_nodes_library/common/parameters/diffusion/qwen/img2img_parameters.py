@@ -2,6 +2,7 @@ import logging
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
+import transformers  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
@@ -36,10 +37,8 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._text_encoder_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder")
-        self._node.remove_parameter_element_by_name("text_encoder")
+        self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -65,10 +64,19 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     def build_pipeline(self) -> diffusers.QwenImageImg2ImgPipeline:
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
+        text_encoder_repo_id, text_encoder_revision = self._text_encoder_repo_parameter.get_repo_revision()
+
+        text_encoder = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            pretrained_model_name_or_path=text_encoder_repo_id,
+            revision=text_encoder_revision,
+            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+        )
 
         return diffusers.QwenImageImg2ImgPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
+            text_encoder=text_encoder,
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )

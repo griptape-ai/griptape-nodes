@@ -2,6 +2,7 @@ import logging
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
+import transformers  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
@@ -58,14 +59,10 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._controlnet_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_text_encoder_2")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_controlnet_model")
-        self._node.remove_parameter_element_by_name("text_encoder")
-        self._node.remove_parameter_element_by_name("text_encoder_2")
-        self._node.remove_parameter_element_by_name("controlnet_model")
+        self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
+        self._text_encoder_2_repo_parameter.remove_input_parameters()
+        self._controlnet_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -100,8 +97,24 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
         return errors or None
 
     def build_pipeline(self) -> diffusers.FluxControlNetPipeline:
+        text_encoder_repo_id, text_encoder_revision = self._text_encoder_repo_parameter.get_repo_revision()
+        text_encoder_2_repo_id, text_encoder_2_revision = self._text_encoder_2_repo_parameter.get_repo_revision()
         controlnet_repo_id, controlnet_revision = self._controlnet_repo_parameter.get_repo_revision()
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
+
+        text_encoder = transformers.CLIPTextModel.from_pretrained(
+            pretrained_model_name_or_path=text_encoder_repo_id,
+            revision=text_encoder_revision,
+            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+        )
+
+        text_encoder_2 = transformers.T5EncoderModel.from_pretrained(
+            pretrained_model_name_or_path=text_encoder_2_repo_id,
+            revision=text_encoder_2_revision,
+            torch_dtype=torch.bfloat16,
+            local_files_only=True,
+        )
 
         # Load ControlNet model first
         controlnet = diffusers.FluxControlNetModel.from_pretrained(
@@ -115,6 +128,8 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
         return diffusers.FluxControlNetPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
+            text_encoder=text_encoder,
+            text_encoder_2=text_encoder_2,
             controlnet=controlnet,
             torch_dtype=torch.bfloat16,
             local_files_only=True,

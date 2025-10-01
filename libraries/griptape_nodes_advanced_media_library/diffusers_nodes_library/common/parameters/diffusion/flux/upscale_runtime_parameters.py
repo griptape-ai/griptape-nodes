@@ -1,4 +1,4 @@
-from diffusers_nodes_library.common.parameters.diffusion.common.runtime_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.common.upscale_runtime_parameters import (
     UpscalePipelineRuntimeParameters,
 )
 from griptape_nodes.exe_types.node_types import BaseNode

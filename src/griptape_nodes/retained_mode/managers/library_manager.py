@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import logging
@@ -895,7 +896,8 @@ class LibraryManager:
                         continue  # SKIP IT
 
         # Attempt to load nodes from the library.
-        library_load_results = self._attempt_load_nodes_from_library(
+        library_load_results = await asyncio.to_thread(
+            self._attempt_load_nodes_from_library,
             library_data=library_data,
             library=library,
             base_dir=base_dir,
@@ -1520,7 +1522,7 @@ class LibraryManager:
         for library_result in metadata_result.successful_libraries:
             if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
                 # Handle sandbox library - use the schema we already have
-                self._attempt_generate_sandbox_library_from_schema(
+                await self._attempt_generate_sandbox_library_from_schema(
                     library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
                 )
             else:
@@ -1852,7 +1854,7 @@ class LibraryManager:
             problems=problems,
         )
 
-    def _attempt_generate_sandbox_library_from_schema(
+    async def _attempt_generate_sandbox_library_from_schema(
         self, library_schema: LibrarySchema, sandbox_directory: str
     ) -> None:
         """Generate sandbox library using an existing schema, loading actual node classes."""
@@ -1944,7 +1946,8 @@ class LibraryManager:
             return
 
         # Load nodes into the library
-        library_load_results = self._attempt_load_nodes_from_library(
+        library_load_results = await asyncio.to_thread(
+            self._attempt_load_nodes_from_library,
             library_data=library_data,
             library=library,
             base_dir=sandbox_library_dir,

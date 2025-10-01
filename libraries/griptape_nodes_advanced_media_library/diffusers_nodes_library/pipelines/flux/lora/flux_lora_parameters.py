@@ -22,7 +22,7 @@ class FluxLoraParameters:
         self._node.add_parameter(
             Parameter(
                 name="loras",
-                default_value=1.0,
+                default_value={},
                 type="loras",
                 output_type="loras",
                 allowed_modes={ParameterMode.OUTPUT},
