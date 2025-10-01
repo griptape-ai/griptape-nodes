@@ -97,7 +97,6 @@ class HuggingFaceRepoFileParameter:
         return repo, file, revision
 
     def get_help_message(self) -> str:
-        download_commands = "\n".join([f"  {cmd}" for cmd in self.get_download_commands()])
         download_models = "\n".join([f"  {model}" for model in self.get_download_models()])
         return (
             "OpenPose model download required to continue.\n\n"
