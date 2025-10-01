@@ -31,7 +31,7 @@ class WanPipelineTypeParameters(DiffusionPipelineTypeParameters):
 
     @property
     def pipeline_types(self) -> list[str]:
-        return ["WanPipeline", "WanImageToVideoPipeline", "WanVideoToVideoPipeline", "WanVACEPipeline"]
+        return ["WanPipeline", "WanImageToVideoPipeline", "WanVideoToVideoPipeline", "WanVacePipeline"]
 
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
         match pipeline_type:
@@ -41,7 +41,7 @@ class WanPipelineTypeParameters(DiffusionPipelineTypeParameters):
                 self._pipeline_type_pipeline_params = WanImageToVideoPipelineParameters(self._node)
             case "WanVideoToVideoPipeline":
                 self._pipeline_type_pipeline_params = WanVideoToVideoPipelineParameters(self._node)
-            case "WanVACEPipeline":
+            case "WanVacePipeline":
                 self._pipeline_type_pipeline_params = WanVacePipelineParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline type: {pipeline_type}"
