@@ -10,6 +10,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  
 from diffusers_nodes_library.common.utils.lora_utils import (
     FluxLorasParameter,  # type: ignore[reportMissingImports]
 )
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.controlnet.union_two_flux_control_net_parameters import (
     UnionTwoFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
@@ -18,7 +19,6 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 
 logger = logging.getLogger("diffusers_nodes_library")
 
