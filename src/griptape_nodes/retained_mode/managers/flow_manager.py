@@ -1612,10 +1612,10 @@ class FlowManager:
         Creates a self-contained flow with Start → [Selected Nodes] → End structure,
         where artificial start/end nodes interface with external connections only.
         """
-        # Step 1: Handle empty node list
+        # Step 1: Reject empty node list
         if not request.node_names:
-            logger.warning(
-                "PackageNodesAsSerializedFlowRequest received empty node_names list. Creating minimal StartFlow→EndFlow structure."
+            return PackageNodesAsSerializedFlowResultFailure(
+                result_details="Attempted to package nodes as serialized flow. Failed because no nodes were specified in the node_names list."
             )
 
         # Step 2: Validate library and get version
@@ -1657,6 +1657,10 @@ class FlowManager:
 
         # Step 6: Inject OUTPUT mode changes for PROPERTY-only parameters to enable value reconciliation after the
         # packaged workflow is run.
+        # Example: Nodes A -> B -> C. If B has property-only parameters, those values may change during execution,
+        # so we need to send the value back after the packaged flow has run. We do this by making connections from
+        # B's property-only parameters to the End Node, ensuring they're reflected when the packaged flow returns.
+        # Since connections require an OUTPUT parameter mode, we inject that here.
         self._inject_output_mode_for_property_parameters(nodes_to_package, serialized_package_nodes)
 
         # Step 7: Analyze external connections (connections from/to nodes outside our selection)
@@ -1664,16 +1668,19 @@ class FlowManager:
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
-        # Aggregate all external incoming and outgoing data connections across nodes
-        all_external_incoming_data_connections = []
-        all_external_outgoing_data_connections = []
-        for conn_analysis in node_connections_dict.values():
-            all_external_incoming_data_connections.extend(conn_analysis.incoming_data_connections)
-            all_external_outgoing_data_connections.extend(conn_analysis.outgoing_data_connections)
+        # Step 8: Create start node with parameters for external incoming connections
+        start_node_result = self._create_multi_node_start_node_with_connections(
+            request=request,
+            library_version=library_version,
+            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+            node_name_to_uuid=node_name_to_uuid,
+            external_connections_dict=node_connections_dict,
+        )
+        if isinstance(start_node_result, PackageNodesAsSerializedFlowResultFailure):
+            return start_node_result
 
-        # Step 8: Create end node with parameters for external outgoing connections and parameter mappings
-        # (we create the End node before the Start node so that the Start node can create a control connection
-        # to the End node in the case of an empty package list).
+        # Step 9: Create end node with parameters for external outgoing connections and parameter mappings
         end_node_result = self._create_multi_node_end_node_with_connections(
             request=request,
             package_nodes=nodes_to_package,
@@ -1684,30 +1691,15 @@ class FlowManager:
         if isinstance(end_node_result, PackageNodesAsSerializedFlowResultFailure):
             return end_node_result
 
-        # Step 9: Create start node with parameters for external incoming connections
-        start_node_result = self._create_multi_node_start_node_with_connections(
-            request=request,
-            library_version=library_version,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-            node_name_to_uuid=node_name_to_uuid,
-            external_connections_dict=node_connections_dict,
-            end_node_result=end_node_result,
-        )
-        if isinstance(start_node_result, PackageNodesAsSerializedFlowResultFailure):
-            return start_node_result
-
         end_node_packaging_result = end_node_result.packaging_result
         parameter_name_mappings = end_node_result.parameter_name_mappings
 
         # Step 10: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
-        all_connections = []
-        self._collect_all_connections_for_multi_node_package(
+        all_connections = self._collect_all_connections_for_multi_node_package(
             start_node_result=start_node_result,
             end_node_packaging_result=end_node_packaging_result,
             packaged_nodes_internal_connections=packaged_nodes_internal_connections,
-            all_connections=all_connections,
         )
 
         # Build WorkflowShape from collected parameter shape data
@@ -1742,13 +1734,10 @@ class FlowManager:
 
         # Create a CreateFlowRequest for the packaged flow so that it can
         # run as a standalone workflow
-        package_flow_name = "Packaged_MultiNode"
-
         packaged_flow_metadata = {}  # Keep it simple until we have reason to populate it
 
         create_packaged_flow_request = CreateFlowRequest(
             parent_flow_name=None,  # Standalone flow
-            flow_name=package_flow_name,
             set_as_new_context=False,  # Let deserializer decide
             metadata=packaged_flow_metadata,
         )
@@ -2327,7 +2316,6 @@ class FlowManager:
         external_connections_dict: dict[
             str, ConnectionAnalysis
         ],  # Contains EXTERNAL connections only - used to determine which parameters need start node inputs
-        end_node_result: MultiNodeEndNodeResult,  # End node info needed for empty node list case - creates direct start→end connection
     ) -> PackagingStartNodeResult | PackageNodesAsSerializedFlowResultFailure:
         """Create start node commands and connections for external incoming connections."""
         # Generate UUID and name for start node
@@ -2387,12 +2375,11 @@ class FlowManager:
                     input_shape_data[node_name] = {}
                 input_shape_data[node_name].update(params)
 
-        # Create all control connections (handles both empty node list and entry control node cases)
+        # Create all control connections
         control_connections = self._create_start_node_control_connections(
             request=request,
             start_node_uuid=start_node_uuid,
             node_name_to_uuid=node_name_to_uuid,
-            end_node_uuid=end_node_result.packaging_result.end_node_commands.node_uuid,
         )
         if isinstance(control_connections, PackageNodesAsSerializedFlowResultFailure):
             return control_connections
@@ -2522,37 +2509,21 @@ class FlowManager:
         request: PackageNodesAsSerializedFlowRequest,
         start_node_uuid: SerializedNodeCommands.NodeUUID,
         node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],
-        end_node_uuid: SerializedNodeCommands.NodeUUID,
     ) -> list[SerializedFlowCommands.IndirectConnectionSerialization] | PackageNodesAsSerializedFlowResultFailure:
-        """Create all control connections from start node.
-
-        Handles two cases:
-        1. Empty node list: Create Start→End control connection
-        2. Entry control node specified: Create Start→EntryNode control connection
+        """Create control connection from start node to entry control node.
 
         Args:
             request: The packaging request with control flow configuration
             start_node_uuid: UUID of the start node
             node_name_to_uuid: Mapping of node names to UUIDs for lookup
-            end_node_uuid: UUID of the end node (used for empty node list case)
 
         Returns:
             List of control connections or failure result
         """
         control_connections = []
 
-        # Case 1: Empty node list - create direct StartFlow → EndFlow control connection
-        if not request.node_names:
-            start_to_end_control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                source_node_uuid=start_node_uuid,
-                source_parameter_name="exec_out",
-                target_node_uuid=end_node_uuid,
-                target_parameter_name="exec_in",
-            )
-            control_connections.append(start_to_end_control_connection)
-
-        # Case 2: Entry control node specified - connect start node to specified entry control node
-        elif request.entry_control_node_name:
+        # Connect start node to specified entry control node (if specified)
+        if request.entry_control_node_name:
             # Get the entry node (already validated to exist)
             entry_node = GriptapeNodes.NodeManager().get_node_by_name(request.entry_control_node_name)
             entry_node_uuid = node_name_to_uuid[request.entry_control_node_name]
@@ -2622,11 +2593,10 @@ class FlowManager:
         start_node_result: PackagingStartNodeResult,
         end_node_packaging_result: PackagingEndNodeResult,
         packaged_nodes_internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
-        all_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
-    ) -> None:
+    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
         """Collect all connections for the multi-node packaged flow.
 
-        Populates the provided list with:
+        Returns a list containing:
         1. Start node connections (data + control)
         2. End node connections (data)
         3. Internal package node connections
@@ -2635,14 +2605,20 @@ class FlowManager:
             start_node_result: Result containing start node and its connections
             end_node_packaging_result: Result containing end node and its connections
             packaged_nodes_internal_connections: Internal connections between package nodes
-            all_connections: OUTPUT - List to populate with connections (mutated in place)
+
+        Returns:
+            List of all connections for the packaged flow
         """
+        all_connections = []
+
         # Add start and end node connections
         all_connections.extend(start_node_result.start_to_package_connections)
         all_connections.extend(end_node_packaging_result.package_to_end_connections)
 
         # Add internal package node connections
         all_connections.extend(packaged_nodes_internal_connections)
+
+        return all_connections
 
     def _generate_sanitized_parameter_name(self, prefix: str, node_name: str, parameter_name: str) -> str:
         """Generate a sanitized parameter name for multi-node packaging.
