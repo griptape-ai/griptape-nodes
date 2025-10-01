@@ -9,11 +9,11 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.lora_utils import FluxLorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.controlnet.union_one_flux_control_net_model import (
     UnionOneFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]

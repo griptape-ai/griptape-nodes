@@ -120,7 +120,7 @@
     },
     {
       "image": {
-        "color": "border-purple-500",
+        "color": "border-slate-500",
         "title": "Image",
         "description": "Image related nodes",
         "icon": "Image",
