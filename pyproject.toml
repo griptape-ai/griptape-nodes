@@ -24,7 +24,7 @@ dependencies = [
   "pillow>=11.3.0",
   "watchfiles>=1.1.0",
   "typer>=0.15.0",
-  "huggingface-hub>=0.28.0",
+  "huggingface-hub[xf_xet]>=0.28.0",
   "rich>=14.1.0",
 ]
 
