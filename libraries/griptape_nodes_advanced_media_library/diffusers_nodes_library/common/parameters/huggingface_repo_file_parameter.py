@@ -23,6 +23,10 @@ class HuggingFaceRepoFileParameter(HuggingFaceModelParameter):
     def get_download_commands(self) -> list[str]:
         return [f'huggingface-cli download "{repo}" "{file}"' for (repo, file) in self._repo_files]
 
+    def get_download_models(self) -> list[str]:
+        """Returns a list of model names that should be downloaded."""
+        return [repo for (repo, file) in self._repo_files]
+
     def get_repo_filename(self) -> str:
         repo_id, _ = self.get_repo_revision()
         for repo, file in self._repo_files:
