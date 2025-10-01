@@ -37,16 +37,8 @@ class WanImageToVideoPipelineParameters:
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
 
-        default_width, default_height = self._get_model_defaults()
+        _default_width, _default_height = self._get_model_defaults()
 
-        self._node.add_parameter(
-            Parameter(
-                name="input_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Input image for video generation",
-            )
-        )
         self._node.add_parameter(
             Parameter(
                 name="auto_resize_input_image",
@@ -72,26 +64,6 @@ class WanImageToVideoPipelineParameters:
                 input_types=["str"],
                 type="str",
                 tooltip="Negative prompt (optional)",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="width",
-                default_value=default_width,
-                input_types=["int"],
-                type="int",
-                allowed_modes=set(),
-                tooltip="Video frame width (model-specific)",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="height",
-                default_value=default_height,
-                input_types=["int"],
-                type="int",
-                allowed_modes=set(),
-                tooltip="Video frame height (model-specific)",
             )
         )
         self._node.add_parameter(
