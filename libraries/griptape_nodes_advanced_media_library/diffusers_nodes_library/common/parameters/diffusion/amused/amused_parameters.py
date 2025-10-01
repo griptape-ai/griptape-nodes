@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
@@ -8,7 +7,6 @@ from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameter
     DiffusionPipelineTypePipelineParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
-from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -53,20 +51,3 @@ class AmusedPipelineParameters(DiffusionPipelineTypePipelineParameters):
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Auto-set width and height based on selected model for dimension-dependent parameters
-        if parameter.name == "model":
-            model = str(value)
-            if "256" in model:
-                # Set dimensions to 256x256 for 256 models
-                if self._node.get_parameter_by_name("width"):
-                    self._node.set_parameter_value("width", 256)
-                if self._node.get_parameter_by_name("height"):
-                    self._node.set_parameter_value("height", 256)
-            elif "512" in model:
-                # Set dimensions to 512x512 for 512 models
-                if self._node.get_parameter_by_name("width"):
-                    self._node.set_parameter_value("width", 512)
-                if self._node.get_parameter_by_name("height"):
-                    self._node.set_parameter_value("height", 512)

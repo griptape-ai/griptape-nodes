@@ -280,7 +280,7 @@ wheels = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.56.0"
+version = "0.57.0"
 source = { editable = "." }
 dependencies = [
     { name = "binaryornot" },
@@ -342,7 +342,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "griptape", specifier = ">=1.8.3" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
-    { name = "huggingface-hub", specifier = ">=0.28.0" },
+    { name = "huggingface-hub", extras = ["xf-xet"], specifier = ">=0.28.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
     { name = "mcp", extras = ["ws"], specifier = ">=1.10.1" },
     { name = "packaging", specifier = ">=25.0" },

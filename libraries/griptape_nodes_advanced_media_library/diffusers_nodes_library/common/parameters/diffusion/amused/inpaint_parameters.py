@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
@@ -8,7 +7,6 @@ from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameter
     DiffusionPipelineTypePipelineParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
-from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -29,30 +27,8 @@ class AmusedInpaintPipelineParameters(DiffusionPipelineTypePipelineParameters):
     def add_input_parameters(self) -> None:
         self._model_repo_parameter.add_input_parameters()
 
-        # Add input_image parameter for inpainting
-        self._node.add_parameter(
-            Parameter(
-                name="input_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Input image to inpaint",
-            )
-        )
-
-        # Add mask_image parameter for inpainting
-        self._node.add_parameter(
-            Parameter(
-                name="mask_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Mask image (white areas will be inpainted)",
-            )
-        )
-
     def remove_input_parameters(self) -> None:
         self._model_repo_parameter.remove_input_parameters()
-        self._node.remove_parameter_element_by_name("input_image")
-        self._node.remove_parameter_element_by_name("mask_image")
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -75,20 +51,3 @@ class AmusedInpaintPipelineParameters(DiffusionPipelineTypePipelineParameters):
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        # Auto-set width and height based on selected model for dimension-dependent parameters
-        if parameter.name == "model":
-            model = str(value)
-            if "256" in model:
-                # Set dimensions to 256x256 for 256 models
-                if self._node.get_parameter_by_name("width"):
-                    self._node.set_parameter_value("width", 256)
-                if self._node.get_parameter_by_name("height"):
-                    self._node.set_parameter_value("height", 256)
-            elif "512" in model:
-                # Set dimensions to 512x512 for 512 models
-                if self._node.get_parameter_by_name("width"):
-                    self._node.set_parameter_value("width", 512)
-                if self._node.get_parameter_by_name("height"):
-                    self._node.set_parameter_value("height", 512)
