@@ -63,7 +63,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
 
         logger.info("Setting up session %s", self._session_id)
         GriptapeNodes.SessionManager().save_session(self._session_id)
-        GriptapeNodes.SessionManager().set_active_session_id(self._session_id)
+        GriptapeNodes.SessionManager().active_session_id = self._session_id
         await self._start_websocket_connection()
 
         return self

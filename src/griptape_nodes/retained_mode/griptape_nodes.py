@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -12,32 +11,15 @@ from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     AppConnectionEstablished,
-    AppEndSessionRequest,
-    AppEndSessionResultFailure,
-    AppEndSessionResultSuccess,
-    AppGetSessionRequest,
-    AppGetSessionResultSuccess,
-    AppStartSessionRequest,
-    AppStartSessionResultSuccess,
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
     EngineHeartbeatResultSuccess,
-    GetEngineNameRequest,
-    GetEngineNameResultFailure,
-    GetEngineNameResultSuccess,
     GetEngineVersionRequest,
     GetEngineVersionResultFailure,
     GetEngineVersionResultSuccess,
-    SessionHeartbeatRequest,
-    SessionHeartbeatResultFailure,
-    SessionHeartbeatResultSuccess,
-    SetEngineNameRequest,
-    SetEngineNameResultFailure,
-    SetEngineNameResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import (
     GriptapeNodeEvent,
-    ResultDetails,
     ResultPayloadFailure,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
@@ -155,7 +137,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
 
-    def __init__(self) -> None:  # noqa: PLR0915
+    def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -213,8 +195,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             )
             self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
-            self._session_manager = SessionManager(self._event_manager)
             self._engine_identity_manager = EngineIdentityManager(self._event_manager)
+            self._session_manager = SessionManager(self._engine_identity_manager, self._event_manager)
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
 
@@ -222,23 +204,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersionRequest, self.handle_engine_version_request
             )
-            self._event_manager.assign_manager_to_request_type(
-                AppStartSessionRequest, self.handle_session_start_request
-            )
-            self._event_manager.assign_manager_to_request_type(AppEndSessionRequest, self.handle_session_end_request)
             self._event_manager.add_listener_to_app_event(AppConnectionEstablished, self.on_app_connection_established)
-            self._event_manager.assign_manager_to_request_type(AppGetSessionRequest, self.handle_get_session_request)
-            self._event_manager.assign_manager_to_request_type(
-                SessionHeartbeatRequest, self.handle_session_heartbeat_request
-            )
             self._event_manager.assign_manager_to_request_type(
                 EngineHeartbeatRequest, self.handle_engine_heartbeat_request
-            )
-            self._event_manager.assign_manager_to_request_type(
-                GetEngineNameRequest, self.handle_get_engine_name_request
-            )
-            self._event_manager.assign_manager_to_request_type(
-                SetEngineNameRequest, self.handle_set_engine_name_request
             )
 
     @classmethod
@@ -304,11 +272,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_session_id(cls) -> str | None:
-        return GriptapeNodes.SessionManager().get_active_session_id()
+        return GriptapeNodes.SessionManager().active_session_id
 
     @classmethod
     def get_engine_id(cls) -> str | None:
-        return GriptapeNodes.EngineIdentityManager().get_active_engine_id()
+        return GriptapeNodes.EngineIdentityManager().active_engine_id
 
     @classmethod
     def EventManager(cls) -> EventManager:
@@ -460,74 +428,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             logger.error(details)
             return GetEngineVersionResultFailure(result_details=details)
 
-    async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
-        from griptape_nodes.app.app import subscribe_to_topic
-
-        current_session_id = GriptapeNodes.SessionManager().get_active_session_id()
-        if current_session_id is None:
-            # Client wants a new session
-            current_session_id = uuid.uuid4().hex
-            GriptapeNodes.SessionManager().save_session(current_session_id)
-            details = f"New session '{current_session_id}' started at {datetime.now(tz=UTC)}."
-            logger.info(details)
-        else:
-            details = f"Session '{current_session_id}' already active. Joining..."
-
-        topic = f"sessions/{current_session_id}/request"
-        await subscribe_to_topic(topic)
-        logger.info("Subscribed to new session topic: %s", topic)
-
-        return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
-
-    async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
-        from griptape_nodes.app.app import unsubscribe_from_topic
-
-        try:
-            previous_session_id = GriptapeNodes.SessionManager().get_active_session_id()
-            if previous_session_id is None:
-                details = "No active session to end."
-                logger.info(details)
-            else:
-                details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
-                logger.info(details)
-                GriptapeNodes.SessionManager().clear_saved_session()
-
-            unsubscribe_topic = f"sessions/{previous_session_id}/request"
-            await unsubscribe_from_topic(unsubscribe_topic)
-
-            return AppEndSessionResultSuccess(
-                session_id=previous_session_id, result_details="Session ended successfully."
-            )
-        except Exception as err:
-            details = f"Failed to end session due to '{err}'."
-            logger.error(details)
-            return AppEndSessionResultFailure(result_details=details)
-
-    def handle_get_session_request(self, _: AppGetSessionRequest) -> ResultPayload:
-        return AppGetSessionResultSuccess(
-            session_id=GriptapeNodes.SessionManager().get_active_session_id(),
-            result_details="Session ID retrieved successfully.",
-        )
-
-    def handle_session_heartbeat_request(self, request: SessionHeartbeatRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle session heartbeat requests.
-
-        Simply verifies that the session is active and responds with success.
-        """
-        try:
-            active_session_id = GriptapeNodes.SessionManager().get_active_session_id()
-            if active_session_id is None:
-                details = "Session heartbeat received but no active session found"
-                logger.warning(details)
-                return SessionHeartbeatResultFailure(result_details=details)
-
-            details = f"Session heartbeat successful for session: {active_session_id}"
-            return SessionHeartbeatResultSuccess(result_details=details)
-        except Exception as err:
-            details = f"Failed to handle session heartbeat: {err}"
-            logger.error(details)
-            return SessionHeartbeatResultFailure(result_details=details)
-
     def handle_engine_heartbeat_request(self, request: EngineHeartbeatRequest) -> ResultPayload:
         """Handle engine heartbeat requests.
 
@@ -541,14 +441,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
             workflow_info = self._get_current_workflow_info()
 
             # Get engine name
-            engine_name = GriptapeNodes.EngineIdentityManager().get_engine_name()
+            engine_name = GriptapeNodes.EngineIdentityManager().engine_name
 
             return EngineHeartbeatResultSuccess(
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
                 engine_name=engine_name,
-                engine_id=GriptapeNodes.EngineIdentityManager().get_active_engine_id(),
-                session_id=GriptapeNodes.SessionManager().get_active_session_id(),
+                engine_id=GriptapeNodes.EngineIdentityManager().active_engine_id,
+                session_id=GriptapeNodes.SessionManager().active_session_id,
                 timestamp=datetime.now(tz=UTC).isoformat(),
                 result_details="Engine heartbeat successful",
                 **instance_info,
@@ -558,40 +458,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             details = f"Failed to handle engine heartbeat: {err}"
             logger.error(details)
             return EngineHeartbeatResultFailure(heartbeat_id=request.heartbeat_id, result_details=details)
-
-    def handle_get_engine_name_request(self, request: GetEngineNameRequest) -> ResultPayload:  # noqa: ARG002
-        """Handle requests to get the current engine name."""
-        try:
-            engine_name = GriptapeNodes.EngineIdentityManager().get_engine_name()
-            return GetEngineNameResultSuccess(
-                engine_name=engine_name, result_details="Engine name retrieved successfully."
-            )
-        except Exception as err:
-            error_message = f"Failed to get engine name: {err}"
-            logger.error(error_message)
-            return GetEngineNameResultFailure(error_message=error_message, result_details=error_message)
-
-    def handle_set_engine_name_request(self, request: SetEngineNameRequest) -> ResultPayload:
-        """Handle requests to set a new engine name."""
-        try:
-            # Validate engine name (basic validation)
-            if not request.engine_name or not request.engine_name.strip():
-                error_message = "Engine name cannot be empty"
-                logger.warning(error_message)
-                return SetEngineNameResultFailure(error_message=error_message, result_details=error_message)
-
-            # Set the new engine name
-            GriptapeNodes.EngineIdentityManager().set_engine_name(request.engine_name.strip())
-            details = f"Engine name set to: {request.engine_name.strip()}"
-            return SetEngineNameResultSuccess(
-                engine_name=request.engine_name.strip(),
-                result_details=ResultDetails(message=details, level=logging.INFO),
-            )
-
-        except Exception as err:
-            error_message = f"Failed to set engine name: {err}"
-            logger.error(error_message)
-            return SetEngineNameResultFailure(error_message=error_message, result_details=error_message)
 
     def _get_instance_info(self) -> dict[str, str | None]:
         """Get instance information from environment variables.
