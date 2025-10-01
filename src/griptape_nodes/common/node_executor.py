@@ -24,6 +24,7 @@ from griptape_nodes.node_library.library_registry import Library, LibraryRegistr
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
+    PackageNodesAsSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowRequest,
@@ -63,59 +64,40 @@ class NodeExecutor:
         if isinstance(node, NodeGroupProxyNode):
             logger.info("Executing NodeGroupProxyNode '%s'", node.name)
 
-            # Package the group nodes as a serialized flow
-            from griptape_nodes.retained_mode.events.flow_events import (
-                PackageNodesAsSerializedFlowRequest,
-                PackageNodesAsSerializedFlowResultSuccess,
-            )
-
-            node_group = node.node_group_data
-            node_names = list(node_group.nodes.keys())
-
-            package_request = PackageNodesAsSerializedFlowRequest(node_names=node_names)
-            package_result = GriptapeNodes.handle_request(package_request)
-
-            if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
-                msg = f"Failed to package node group '{node_group.group_id}'. Error: {package_result.result_details}"
-                raise RuntimeError(msg)
-
-            logger.info("Successfully packaged node group '%s' as serialized flow", node_group.group_id)
+            # Package the group nodes as a workflow
+            package_result, workflow_result, file_name = await self._package_node_group(node)
+            my_subprocess_result = await self._execute_subprocess(Path(workflow_result.file_path), file_name)
+            parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
 
             # TODO: Execute the packaged workflow and extract outputs
             # TODO: Apply outputs to grouped nodes
             # For now, just return after packaging
+            proxy_param_mapping = package_result.parameter_name_mappings
+            for proxy_param_name, param_value in parameter_output_values.items():
+                if proxy_param_name in proxy_param_mapping:
+                    target_node_name, target_param_name = proxy_param_mapping[proxy_param_name]
+                    # Get the target node from the flow
+                    if target_node_name in node.node_group_data.nodes:
+                        target_node = node.node_group_data.nodes[target_node_name]
+                        target_param = target_node.get_parameter_by_name(target_param_name)
+
+                        if target_param is not None and target_param != target_node.execution_environment:
+                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                target_node.set_parameter_value(target_param_name, param_value)
+                            target_node.parameter_output_values[target_param_name] = param_value
+                            logger.info(
+                                "Set parameter '%s' on node '%s' to value: %s",
+                                target_param_name,
+                                target_node_name,
+                                param_value,
+                            )
+                    else:
+                        logger.warning("Target node '%s' not found in flow", target_node_name)
+                else:
+                    logger.warning("Proxy parameter '%s' not in mapping", proxy_param_name)
+
+            logger.info("Completed test case for NodeGroupProxyNode")
             return
-
-        # if isinstance(node, NodeGroupProxyNode):
-        #     # Extract parameter values using the existing method
-        #     parameter_output_values = self._extract_parameter_output_values(test_subprocess_result)
-        #     logger.info("Extracted parameter values: %s", parameter_output_values)
-
-        #     for proxy_param_name, param_value in parameter_output_values.items():
-        #         if proxy_param_name in proxy_param_mapping:
-        #             target_node_name, target_param_name = proxy_param_mapping[proxy_param_name]
-        #             # Get the target node from the flow
-        #             if target_node_name in node.node_group_data.nodes:
-        #                 target_node = node.node_group_data.nodes[target_node_name]
-        #                 target_param = target_node.get_parameter_by_name(target_param_name)
-
-        #                 if target_param is not None and target_param != target_node.execution_environment:
-        #                     if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-        #                         target_node.set_parameter_value(target_param_name, param_value)
-        #                     target_node.parameter_output_values[target_param_name] = param_value
-        #                     logger.info(
-        #                         "Set parameter '%s' on node '%s' to value: %s",
-        #                         target_param_name,
-        #                         target_node_name,
-        #                         param_value,
-        #                     )
-        #             else:
-        #                 logger.warning("Target node '%s' not found in flow", target_node_name)
-        #         else:
-        #             logger.warning("Proxy parameter '%s' not in mapping", proxy_param_name)
-
-        #     logger.info("Completed test case for NodeGroupProxyNode")
-        #     return
 
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
@@ -301,6 +283,85 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: TRY004
 
         return workflow_result, file_name, output_parameter_prefix
+
+    async def _package_node_group(
+        self, proxy_node: BaseNode
+    ) -> tuple[PackageNodesAsSerializedFlowResultSuccess, SaveWorkflowFileFromSerializedFlowResultSuccess, str]:
+        """Package a node group as a workflow for subprocess execution.
+
+        Args:
+            proxy_node: The NodeGroupProxyNode containing the nodes to package
+
+        Returns:
+            Tuple of (workflow_result, file_name)
+
+        Raises:
+            RuntimeError: If packaging fails
+        """
+        from griptape_nodes.retained_mode.events.flow_events import (
+            PackageNodesAsSerializedFlowRequest,
+            PackageNodesAsSerializedFlowResultSuccess,
+        )
+
+        node_group = proxy_node.node_group_data
+        node_names = list(node_group.nodes.keys())
+
+        # Get library information from the proxy node's execution environment
+        execution_type = proxy_node.get_parameter_value(proxy_node.execution_environment.name)
+        library_name = None
+        library = None
+
+        if execution_type and execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+            try:
+                library = LibraryRegistry.get_library(name=execution_type)
+                library_name = library.get_library_data().name
+            except KeyError:
+                logger.warning(
+                    "Could not find library '%s' for node group '%s', packaging without library specifics",
+                    execution_type,
+                    node_group.group_id,
+                )
+
+        # Determine start and end node types based on library
+        start_node_type = "StartFlow"
+        end_node_type = "EndFlow"
+        if library is not None:
+            start_nodes = library.get_nodes_by_base_type(StartNode)
+            end_nodes = library.get_nodes_by_base_type(EndNode)
+            start_node_type = start_nodes[0] if len(start_nodes) > 0 else "StartFlow"
+            end_node_type = end_nodes[0] if len(end_nodes) > 0 else "EndFlow"
+
+        # Package the nodes as a serialized flow
+        package_request = PackageNodesAsSerializedFlowRequest(
+            node_names=node_names,
+            start_node_type=start_node_type,
+            end_node_type=end_node_type,
+            start_end_specific_library_name=library_name,
+        )
+        package_result = GriptapeNodes.handle_request(package_request)
+
+        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            msg = f"Failed to package node group '{node_group.group_id}'. Error: {package_result.result_details}"
+            raise RuntimeError(msg)
+
+        # Create file name from group ID
+        sanitized_group_id = node_group.group_id.replace(" ", "_")
+        file_name = f"node_group_{sanitized_group_id}_packaged_flow"
+
+        # Save workflow file from serialized flow
+        workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+            file_name=file_name,
+            serialized_flow_commands=package_result.serialized_flow_commands,
+            workflow_shape=package_result.workflow_shape,
+        )
+
+        workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+        if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+            msg = f"Failed to save workflow file for node group '{node_group.group_id}'. Error: {package_result.result_details}"
+            raise RuntimeError(msg)
+
+        logger.info("Successfully packaged node group '%s' as workflow file", node_group.group_id)
+        return package_result, workflow_result, file_name
 
     async def _publish_library_workflow(
         self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
