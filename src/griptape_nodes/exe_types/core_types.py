@@ -712,7 +712,10 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         # Check if there are any Button traits with on_click callbacks
         has_button_callback = False
         for child in self.children:
-            if hasattr(child, "on_click_callback") and child.on_click_callback is not None:
+            # Import here to avoid circular imports
+            from griptape_nodes.traits.button import Button
+
+            if isinstance(child, Button) and child.on_click_callback is not None:
                 has_button_callback = True
                 break
 
