@@ -201,6 +201,7 @@ class ExecuteDagState(State):
         node_group = proxy_node.node_group_data
 
         # Mark all grouped nodes as resolved and emit events
+        proxy_node.state = NodeResolutionState.RESOLVED
         for grouped_node in node_group.nodes.values():
             # Mark node as resolved
             grouped_node.state = NodeResolutionState.RESOLVED
