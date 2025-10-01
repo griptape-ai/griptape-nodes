@@ -16,6 +16,8 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint impor
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
+
 logger = logging.getLogger("diffusers_nodes_library")
 
 
@@ -91,4 +93,6 @@ class FluxKontextPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.pipe_params.publish_output_image(output_image_pil)
+        self.log_params.append_to_logs("Clearing pipeline from memory...\n")
+        clear_diffusion_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")

@@ -30,6 +30,8 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
+
 logger = logging.getLogger("diffusers_nodes_library")
 
 
@@ -268,5 +270,9 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             callback_on_tile_end=callback_on_tile_end,
         )
         self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
+        
+        self.log_params.append_to_logs("Clearing pipeline from memory...\n")
+        clear_diffusion_pipeline(pipe)
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
+        self.log_params.append_to_logs("Done.\n")
