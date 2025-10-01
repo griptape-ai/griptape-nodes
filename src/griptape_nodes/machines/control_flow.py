@@ -243,7 +243,7 @@ class CompleteState(State):
             # Use pickle-based serialization for complex parameter output values
             from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
-            use_pickling = GriptapeNodes.ConfigManager().get_config_value("pickle_control_flow_result", default=False)
+            use_pickling = True
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
                 current_node, use_pickling=use_pickling
             )
