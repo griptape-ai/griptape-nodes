@@ -97,6 +97,12 @@ class DiffusionPipelineRuntimeParameters(ABC):
             _t: Any,
             callback_kwargs: dict,
         ) -> dict:
+            # Check for cancellation request
+            if self._node.is_cancellation_requested:
+                pipe._interrupt = True
+                self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
+                return callback_kwargs
+
             if i < num_inference_steps - 1:
                 if enable_preview:
                     self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
