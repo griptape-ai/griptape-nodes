@@ -573,12 +573,14 @@ class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPa
 
     Args:
         nodes_to_serialize: List of node identifiers (each containing [node_name, timestamp])
+        copy_to_clipboard: Whether to copy the result to clipboard (defaults to True for backward compatibility)
 
     Results: SerializeSelectedNodesToCommandsResultSuccess (with commands) | SerializeSelectedNodesToCommandsResultFailure (node not found, serialization error)
     """
 
     # They will be passed with node_name, timestamp
     nodes_to_serialize: list[list[str]]
+    copy_to_clipboard: bool = True
 
 
 @dataclass
