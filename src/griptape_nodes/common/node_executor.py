@@ -4,12 +4,18 @@ import ast
 import logging
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, EndNode, StartNode
+from griptape_nodes.exe_types.node_types import (
+    CONTROL_INPUT_PARAMETER,
+    LOCAL_EXECUTION,
+    PRIVATE_EXECUTION,
+    EndNode,
+    StartNode,
+)
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
@@ -29,18 +35,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class NodeExecutor:
-    """Simple singleton executor that draws methods from libraries and executes them dynamically."""
+class PublishLocalWorkflowResult(NamedTuple):
+    """Result from publishing a local workflow."""
 
-    def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler | None:
+    workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess
+    file_name: str
+    output_parameter_prefix: str
+
+
+class NodeExecutor:
+    """Singleton executor that executes nodes dynamically."""
+
+    def get_workflow_handler(self, library_name: str) -> LibraryManager.RegisteredEventHandler:
         """Get the PublishWorkflowRequest handler for a library, or None if not available."""
         library_manager = GriptapeNodes.LibraryManager()
         registered_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
         if library_name in registered_handlers:
             return registered_handlers[library_name]
-        return None
+        msg = f"Could not find PublishWorkflowRequest handler for library {library_name}"
+        raise ValueError(msg)
 
-    async def execute(self, node: BaseNode, library_name: str | None = None) -> None:
+    async def execute(self, node: BaseNode) -> None:
         """Execute the given node.
 
         Args:
@@ -48,72 +63,166 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
-        if execution_type == LOCAL_EXECUTION or execution_type is None:
+        if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
-            return
+        elif execution_type == PRIVATE_EXECUTION:
+            await self._execute_private_workflow(node)
+        else:
+            await self._execute_library_workflow(node, execution_type)
 
+    async def _execute_and_apply_workflow(
+        self,
+        node: BaseNode,
+        workflow_path: Path,
+        file_name: str,
+        output_parameter_prefix: str,
+    ) -> None:
+        """Execute workflow in subprocess and apply results to node.
+
+        Args:
+            node: The node to apply results to
+            workflow_path: Path to workflow file to execute
+            file_name: Name of workflow for logging
+            output_parameter_prefix: Prefix for output parameters
+        """
+        my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
+        parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
+        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
+
+    async def _execute_private_workflow(self, node: BaseNode) -> None:
+        """Execute node in private subprocess environment.
+
+        Args:
+            node: The node to execute
+        """
+        workflow_result = None
+        try:
+            result = await self._publish_local_workflow(node)
+            workflow_result = result.workflow_result
+        except Exception as e:
+            logger.exception(
+                "Failed to publish local workflow for node '%s'. Node type: %s",
+                node.name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to publish workflow for node '{node.name}': {e}"
+            raise RuntimeError(msg) from e
+
+        try:
+            await self._execute_and_apply_workflow(
+                node, Path(workflow_result.file_path), result.file_name, result.output_parameter_prefix
+            )
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.exception(
+                "Subprocess execution failed for node '%s'. Node type: %s",
+                node.name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to execute node '{node.name}' in local subprocess: {e}"
+            raise RuntimeError(msg) from e
+        finally:
+            if workflow_result is not None:
+                await self._delete_workflow(
+                    workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+                )
+
+    async def _execute_library_workflow(self, node: BaseNode, execution_type: str) -> None:
+        """Execute node via library handler.
+
+        Args:
+            node: The node to execute
+            execution_type: Library name for execution
+        """
         try:
             library = LibraryRegistry.get_library(name=execution_type)
         except KeyError:
-            logger.error("Could not find library for node '%s', defaulting to local execution.", node.name)
-            await node.aprocess()
-            return
+            msg = f"Could not find library for execution environment {execution_type} for node {node.name}."
+            raise RuntimeError(msg)  # noqa: B904
 
         library_name = library.get_library_data().name
-        workflow_handler = self.get_workflow_handler(library_name)
-        if workflow_handler is not None:
-            workflow_result = None
-            published_workflow_filename = None
 
-            try:
-                (
-                    workflow_result,
-                    published_workflow_filename,
-                    file_name,
-                    output_parameter_prefix,
-                ) = await self._publish_workflow(node, library, library_name)
-                my_subprocess_result = await self._execute_subprocess(published_workflow_filename, file_name)
-                parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-                self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
+        try:
+            self.get_workflow_handler(library_name)
+        except ValueError as e:
+            logger.error("Library execution failed for node '%s' via library '%s': %s", node.name, library_name, e)
+            msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
 
-            except Exception as e:
-                logger.exception(
-                    "Failed to execute node '%s' via library executor '%s'. Node type: %s",
-                    node.name,
-                    library_name,
-                    node.__class__.__name__,
-                )
-                msg = f"Library executor failed for node '{node.name}': {e}"
-                raise RuntimeError(msg) from e
+        workflow_result = None
+        published_workflow_filename = None
 
-            finally:
-                GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", False)
-                if workflow_result is not None and published_workflow_filename is not None:
-                    published_filename = Path(published_workflow_filename).stem
-                    for workflow in [
-                        (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
-                        (published_filename, Path(published_workflow_filename)),
-                    ]:
-                        await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+        try:
+            result = await self._publish_local_workflow(node, library=library, library_name=library_name)
+            workflow_result = result.workflow_result
+        except Exception as e:
+            logger.exception(
+                "Failed to publish local workflow for node '%s' via library '%s'. Node type: %s",
+                node.name,
+                library_name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to publish workflow for node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
 
-    async def _publish_workflow(
-        self, node: BaseNode, library: Library, library_name: str
-    ) -> tuple[SaveWorkflowFileFromSerializedFlowResultSuccess, Path, str, str]:
+        try:
+            published_workflow_filename = await self._publish_library_workflow(
+                workflow_result, library_name, result.file_name
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to publish library workflow for node '%s' via library '%s'. Node type: %s",
+                node.name,
+                library_name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to publish library workflow for node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
+
+        try:
+            await self._execute_and_apply_workflow(
+                node, published_workflow_filename, result.file_name, result.output_parameter_prefix
+            )
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.exception(
+                "Subprocess execution failed for node '%s' via library '%s'. Node type: %s",
+                node.name,
+                library_name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
+        finally:
+            if workflow_result is not None and published_workflow_filename is not None:
+                published_filename = published_workflow_filename.stem
+                for workflow in [
+                    (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
+                    (published_filename, published_workflow_filename),
+                ]:
+                    await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+
+    async def _publish_local_workflow(
+        self, node: BaseNode, library: Library | None = None
+    ) -> PublishLocalWorkflowResult:
         """Package and publish a workflow for subprocess execution.
 
         Returns:
-            Tuple of (workflow_result, published_workflow_filename, file_name, output_parameter_prefix)
+            PublishLocalWorkflowResult containing workflow_result, file_name, and output_parameter_prefix
         """
-        start_node_type = library.get_nodes_by_base_type(StartNode)
-        start_node_type = start_node_type[0] if len(start_node_type) > 0 else "StartFlow"
-
-        end_node_type = library.get_nodes_by_base_type(EndNode)
-        end_node_type = end_node_type[0] if len(end_node_type) > 0 else "EndFlow"
-
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_packaged_node_"
-        sanitized_library_name = library_name.replace(" ", "_")
-
+        library_name = None
+        sanitized_library_name = ""
+        if library is not None:
+            library_name = library.get_library_data().name
+            sanitized_library_name = library_name.replace(" ", "_")
+        start_node_type = library.get_nodes_by_base_type(StartNode)
+        end_node_type = library.get_nodes_by_base_type(EndNode)
+        start_node_type = start_node_type[0] if len(start_node_type) > 0 else None
+        end_node_type = end_node_type[0] if len(end_node_type) > 0 else None
         request = PackageNodeAsSerializedFlowRequest(
             node_name=node.name,
             start_node_type=start_node_type,
@@ -142,6 +251,13 @@ class NodeExecutor:
             msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
+        return PublishLocalWorkflowResult(
+            workflow_result=workflow_result, file_name=file_name, output_parameter_prefix=output_parameter_prefix
+        )
+
+    async def _publish_library_workflow(
+        self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
+    ) -> Path:
         subprocess_workflow_publisher = SubprocessWorkflowPublisher()
         published_filename = f"{Path(workflow_result.file_path).stem}_published"
         published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
@@ -157,7 +273,7 @@ class NodeExecutor:
             msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
             raise FileNotFoundError(msg)
 
-        return workflow_result, published_workflow_filename, file_name, output_parameter_prefix
+        return published_workflow_filename
 
     async def _execute_subprocess(
         self,
@@ -173,7 +289,6 @@ class NodeExecutor:
             SubprocessWorkflowExecutor,
         )
 
-        GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", True)
         subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
 
         try:
