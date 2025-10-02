@@ -271,8 +271,6 @@ class SessionManager:
         self._sessions_data = sessions_data
 
     async def handle_session_start_request(self, request: AppStartSessionRequest) -> ResultPayload:  # noqa: ARG002
-        from griptape_nodes.app.app import subscribe_to_topic
-
         current_session_id = self.active_session_id
         if current_session_id is None:
             # Client wants a new session
@@ -283,15 +281,9 @@ class SessionManager:
         else:
             details = f"Session '{current_session_id}' already active. Joining..."
 
-        topic = f"sessions/{current_session_id}/request"
-        await subscribe_to_topic(topic)
-        logger.info("Subscribed to new session topic: %s", topic)
-
         return AppStartSessionResultSuccess(current_session_id, result_details="Session started successfully.")
 
     async def handle_session_end_request(self, _: AppEndSessionRequest) -> ResultPayload:
-        from griptape_nodes.app.app import unsubscribe_from_topic
-
         try:
             previous_session_id = self.active_session_id
             if previous_session_id is None:
@@ -301,9 +293,6 @@ class SessionManager:
                 details = f"Session '{previous_session_id}' ended at {datetime.now(tz=UTC)}."
                 logger.info(details)
                 self.clear_saved_session()
-
-            unsubscribe_topic = f"sessions/{previous_session_id}/request"
-            await unsubscribe_from_topic(unsubscribe_topic)
 
             return AppEndSessionResultSuccess(
                 session_id=previous_session_id, result_details="Session ended successfully."
