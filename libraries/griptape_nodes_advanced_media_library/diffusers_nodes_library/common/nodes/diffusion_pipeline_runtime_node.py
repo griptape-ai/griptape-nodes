@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any, ClassVar
 
@@ -12,7 +11,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode, ControlNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode, NodeResolutionState
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -120,9 +119,9 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         )
         return self.pipe_params.runtime_parameters.validate_before_node_run()
 
-    async def aprocess(self) -> None:
+    def process(self) -> AsyncResult:
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
-        await asyncio.to_thread(self.pipe_params.runtime_parameters.process_pipeline, pipe)
+        yield lambda: (self.pipe_params.runtime_parameters.process_pipeline, pipe)
