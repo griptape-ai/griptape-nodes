@@ -196,13 +196,11 @@ class NodeExecutor:
             msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
             raise RuntimeError(msg) from e
         finally:
-            if workflow_result is not None and published_workflow_filename is not None:
+            if workflow_result is not None:
+                await self._delete_workflow(workflow_name = workflow_result.workflow_metadata.name, workflow_path = Path(workflow_result.file_path))
+            if published_workflow_filename is not None:
                 published_filename = published_workflow_filename.stem
-                for workflow in [
-                    (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
-                    (published_filename, published_workflow_filename),
-                ]:
-                    await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+                await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
 
     async def _publish_local_workflow(
         self, node: BaseNode, library: Library | None = None
@@ -244,6 +242,7 @@ class NodeExecutor:
             file_name=file_name,
             serialized_flow_commands=package_result.serialized_flow_commands,
             workflow_shape=package_result.workflow_shape,
+            pickle_control_flow_result=True,
         )
 
         workflow_result = GriptapeNodes.handle_request(workflow_file_request)
@@ -279,8 +278,14 @@ class NodeExecutor:
         self,
         published_workflow_filename: Path,
         file_name: str,
+        pickle_control_flow_result: bool = True,
     ) -> dict:
         """Execute the published workflow in a subprocess.
+
+        Args:
+            published_workflow_filename: Path to the workflow file to execute
+            file_name: Name of the workflow for logging
+            pickle_control_flow_result: Whether to pickle control flow results (defaults to True)
 
         Returns:
             The subprocess execution output dictionary
@@ -294,7 +299,10 @@ class NodeExecutor:
         try:
             async with subprocess_executor as executor:
                 await executor.arun(
-                    workflow_name=file_name, flow_input={}, storage_backend=await self._get_storage_backend()
+                    workflow_name=file_name,
+                    flow_input={},
+                    storage_backend=await self._get_storage_backend(),
+                    pickle_control_flow_result=pickle_control_flow_result,
                 )
         except RuntimeError as e:
             # Subprocess returned non-zero exit code

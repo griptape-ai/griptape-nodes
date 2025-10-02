@@ -1341,6 +1341,7 @@ class WorkflowManager:
                 serialized_flow_commands=request.serialized_flow_commands,
                 workflow_metadata=workflow_metadata,
                 execution_flow_name=execution_flow_name,
+                pickle_control_flow_result=request.pickle_control_flow_result,
             )
         except Exception as err:
             details = f"Attempted to save workflow file '{request.file_name}' from serialized flow commands. Failed during content generation: {err}"
@@ -1401,6 +1402,7 @@ class WorkflowManager:
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
         execution_flow_name: str,
+        pickle_control_flow_result: bool = False,
     ) -> str:
         """Generate workflow file content from serialized commands and metadata."""
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
@@ -1531,6 +1533,7 @@ class WorkflowManager:
             flow_name=execution_flow_name,
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
+            pickle_control_flow_result=pickle_control_flow_result,
         )
         if workflow_execution_code is not None:
             for node in workflow_execution_code:
@@ -1601,6 +1604,7 @@ class WorkflowManager:
         flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
+        pickle_control_flow_result: bool = False,
     ) -> list[ast.AST] | None:
         """Generates execute_workflow(...) and the __main__ guard."""
         # Use workflow shape from metadata if available, otherwise skip execution block
@@ -1626,7 +1630,7 @@ class WorkflowManager:
         )
         import_recorder.add_from_import("griptape_nodes.drivers.storage.storage_backend", "StorageBackend")
 
-        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None) -> dict | None:` ===
+        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None, pickle_control_flow_result: bool = False) -> dict | None:` ===
         #   args
         arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
         arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
@@ -1638,14 +1642,21 @@ class WorkflowManager:
                 right=ast.Constant(value=None),
             ),
         )
+        arg_pickle_control_flow_result = ast.arg(
+            arg="pickle_control_flow_result", annotation=ast.Name(id="bool", ctx=ast.Load())
+        )
         args = ast.arguments(
             posonlyargs=[],
-            args=[arg_input, arg_storage_backend, arg_workflow_executor],
+            args=[arg_input, arg_storage_backend, arg_workflow_executor, arg_pickle_control_flow_result],
             vararg=None,
             kwonlyargs=[],
             kw_defaults=[],
             kwarg=None,
-            defaults=[ast.Constant(StorageBackend.LOCAL.value), ast.Constant(value=None)],
+            defaults=[
+                ast.Constant(StorageBackend.LOCAL.value),
+                ast.Constant(value=None),
+                ast.Constant(value=pickle_control_flow_result),
+            ],
         )
         #   return annotation: dict | None
         return_annotation = ast.BinOp(

@@ -655,6 +655,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
         branched_from: Optional branched from information to preserve workflow lineage
         workflow_shape: Optional workflow shape defining inputs and outputs for external callers
         file_path: Optional specific file path to use (defaults to workspace path if not provided)
+        pickle_control_flow_result: Whether to pickle control flow results in generated execution code (defaults to False)
 
     Results: SaveWorkflowFileFromSerializedFlowResultSuccess (with file path) | SaveWorkflowFileFromSerializedFlowResultFailure (save error)
     """
@@ -667,6 +668,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
     execution_flow_name: str | None = None
     branched_from: str | None = None
     workflow_shape: WorkflowShape | None = None
+    pickle_control_flow_result: bool = False
 
 
 @dataclass
