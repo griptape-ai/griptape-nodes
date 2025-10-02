@@ -121,4 +121,4 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
-        yield lambda: (self.pipe_params.runtime_parameters.process_pipeline, pipe)
+        yield lambda: self.pipe_params.runtime_parameters.process_pipeline(pipe)
