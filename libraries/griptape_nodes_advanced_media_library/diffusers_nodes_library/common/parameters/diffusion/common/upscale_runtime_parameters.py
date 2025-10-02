@@ -192,11 +192,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.remove_parameter_element_by_name("tile_strategy")
         self._node.remove_parameter_element_by_name("scale")
         self._node.remove_parameter_element_by_name("resample_strategy")
-        self._upscale_model_repo_parameter.remove_input_parameters()
+        self._node.remove_parameter_element_by_name("num_inference_steps")
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("num_inference_steps")
         self._seed_parameter.remove_input_parameters()
+        self._upscale_model_repo_parameter.remove_input_parameters()
         self._remove_input_parameters()
 
     def get_image_pil(self) -> Image:
