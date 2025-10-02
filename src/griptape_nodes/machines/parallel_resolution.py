@@ -176,6 +176,7 @@ class ExecuteDagState(State):
         # Now the final thing to do, is to take their directed graph and update it.
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
+    # Method is mirrored in Control_flow.py. If you update one, update the other.
     @staticmethod
     def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
         for param_name, value in node.parameter_output_values.items():

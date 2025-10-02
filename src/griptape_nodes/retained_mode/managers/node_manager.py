@@ -12,8 +12,10 @@ class SerializedParameterValues(NamedTuple):
         parameter_output_values: Either raw values or UUID references if pickling was used
         unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
     """
+
     parameter_output_values: dict[str, Any]
     unique_parameter_uuid_to_values: dict[Any, Any] | None
+
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -2588,9 +2590,7 @@ class NodeManager:
         return commands if commands else None
 
     @staticmethod
-    def serialize_parameter_output_values(
-        node: BaseNode, *, use_pickling: bool = False
-    ) -> SerializedParameterValues:
+    def serialize_parameter_output_values(node: BaseNode, *, use_pickling: bool = False) -> SerializedParameterValues:
         """Serialize parameter output values with optional pickling for complex objects.
 
         Args:
@@ -2660,8 +2660,7 @@ class NodeManager:
             uuid_referenced_values[param_name] = unique_uuid
 
         return SerializedParameterValues(
-            uuid_referenced_values,
-            unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+            uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
         )
 
     @staticmethod

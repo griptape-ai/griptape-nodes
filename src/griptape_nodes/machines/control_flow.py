@@ -108,6 +108,7 @@ class ControlFlowContext:
 
         return next_nodes
 
+    # Mirrored in @parallel_resolution.py. if you update one, update the other.
     def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)

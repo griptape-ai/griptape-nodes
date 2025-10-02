@@ -417,8 +417,13 @@ class NodeExecutor:
                 parameter = node.get_parameter_by_name(clean_param_name)
                 # Don't set execution_environment, since that will be set to Local Execution on any published flow.
                 if parameter is None:
-                    logger.warning("Parameter '%s' not found on node '%s'", clean_param_name, node.name)
-                    continue
+                    msg = (
+                        "Parameter '%s' from parameter output values not found on node '%s'",
+                        clean_param_name,
+                        node.name,
+                    )
+                    logger.error(msg)
+                    raise RuntimeError(msg)
                 if parameter != node.execution_environment:
                     if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
                         # If the node is control type, only set its value in parameter_output_values.
