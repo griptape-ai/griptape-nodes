@@ -212,15 +212,18 @@ class NodeExecutor:
         """
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_packaged_node_"
-        library_name = None
+        # We have to make our defaults strings because the PackageNodeAsSerializedFlowRequest doesn't accept None types.
+        library_name = "Griptape Nodes Library"
         sanitized_library_name = ""
+        start_node_type = "StartFlow"
+        end_node_type = "StartFlow"
         if library is not None:
             library_name = library.get_library_data().name
             sanitized_library_name = library_name.replace(" ", "_")
-        start_node_type = library.get_nodes_by_base_type(StartNode)
-        end_node_type = library.get_nodes_by_base_type(EndNode)
-        start_node_type = start_node_type[0] if len(start_node_type) > 0 else None
-        end_node_type = end_node_type[0] if len(end_node_type) > 0 else None
+            start_node_type = library.get_nodes_by_base_type(StartNode)
+            end_node_type = library.get_nodes_by_base_type(EndNode)
+            start_node_type = start_node_type[0] if len(start_node_type) > 0 else "StartFlow"
+            end_node_type = end_node_type[0] if len(end_node_type) > 0 else "EndFlow"
         request = PackageNodeAsSerializedFlowRequest(
             node_name=node.name,
             start_node_type=start_node_type,

@@ -1730,7 +1730,7 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         # By now, it has been validated with no exceptions.
         try:
-            await self.start_flow(flow, start_node, debug_mode=request.debug_mode)
+            await self.start_flow(flow, start_node, debug_mode=request.debug_mode, pickle_control_flow_result=request.pickle_control_flow_result)
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
@@ -2265,6 +2265,7 @@ class FlowManager:
         start_node: BaseNode | None = None,
         *,
         debug_mode: bool = False,
+        pickle_control_flow_result: bool = False,
     ) -> None:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
@@ -2281,7 +2282,7 @@ class FlowManager:
 
         # Initialize global control flow machine and DAG builder
 
-        self._global_control_flow_machine = ControlFlowMachine(flow.name)
+        self._global_control_flow_machine = ControlFlowMachine(flow.name, pickle_control_flow_result=pickle_control_flow_result)
         # Set off the request here.
         try:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)

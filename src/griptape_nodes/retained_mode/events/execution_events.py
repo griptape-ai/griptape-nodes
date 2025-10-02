@@ -72,6 +72,8 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
+    # If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess.
+    pickle_control_flow_result: bool = False
 
 
 @dataclass
