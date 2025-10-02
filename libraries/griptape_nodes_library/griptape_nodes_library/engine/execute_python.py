@@ -100,4 +100,6 @@ class ExecutePython(SuccessFailureNode):
         else:
             # Fallback for unexpected response type
             self._set_status_results(was_successful=False, result_details="Failure: Unexpected response type")
-            self._handle_failure_exception(RuntimeError(f"RunArbitraryPythonStringRequest returned an unexpected response type: {type(response)}"))
+            self._handle_failure_exception(
+                RuntimeError(f"RunArbitraryPythonStringRequest returned an unexpected response type: {type(response)}")
+            )

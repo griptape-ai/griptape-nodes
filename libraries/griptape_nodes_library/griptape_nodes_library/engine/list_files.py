@@ -78,7 +78,7 @@ class ListFiles(SuccessFailureNode):
             result_details_tooltip="Details about the execute python result",
             result_details_placeholder="Details on the execution attempt will be presented here.",
         )
-        
+
     def process(self) -> None:
         self._clear_execution_status()
         directory_path = self.parameter_values["directory_path"]
