@@ -37,7 +37,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     SerializedFlowCommands,
-    SerializedNodeCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultSuccess,
     SetFlowMetadataRequest,
@@ -119,7 +118,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
-    from griptape_nodes.retained_mode.events.node_events import SetLockNodeStateRequest
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -2007,6 +2006,17 @@ class WorkflowManager:
                 for param_name in node_params
             ]
         )
+
+        # Ensure body is not empty - add pass statement if no input parameters
+        if not build_flow_input_stmts:
+            build_flow_input_stmts = [
+                ast.Expr(
+                    value=ast.Constant(
+                        value="This workflow has no input parameters defined, so there's nothing necessary to supply"
+                    )
+                ),
+                ast.Pass(),
+            ]
 
         # Wrap the individual argument processing in an else clause
         individual_args_else = ast.If(

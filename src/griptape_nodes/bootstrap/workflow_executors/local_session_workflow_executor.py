@@ -22,10 +22,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventRequest,
     EventResultFailure,
     EventResultSuccess,
+    ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ResultPayload,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    ControlFlowCancelledEvent,
     StartFlowRequest,
     StartFlowResultFailure,
 )
@@ -61,7 +63,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
 
         logger.info("Setting up session %s", self._session_id)
         GriptapeNodes.SessionManager().save_session(self._session_id)
-        GriptapeNodes.SessionManager().set_active_session_id(self._session_id)
+        GriptapeNodes.SessionManager().active_session_id = self._session_id
         await self._start_websocket_connection()
 
         return self
@@ -109,7 +111,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         logger.debug("REAL-TIME: Processing execution event for session %s", self._session_id)
         self.send_event("execution_event", event.wrapped_event.json())
 
-    async def arun(  # noqa: C901, PLR0915
+    async def arun(
         self,
         workflow_name: str,
         flow_input: Any,
@@ -129,6 +131,36 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         Returns:
             None
         """
+        try:
+            await self._arun(
+                workflow_name=workflow_name,
+                flow_input=flow_input,
+                storage_backend=storage_backend,
+                **kwargs,
+            )
+        except Exception as e:
+            msg = f"Workflow execution failed: {e}"
+            logger.exception(msg)
+            control_flow_cancelled_event = ControlFlowCancelledEvent(
+                result_details="Encountered an error during workflow execution",
+                exception=e,
+            )
+            execution_event = ExecutionEvent(payload=control_flow_cancelled_event)
+            self.send_event("execution_event", execution_event.json())
+            await self._wait_for_websocket_queue_flush()
+            await asyncio.sleep(1)
+            raise LocalExecutorError(msg) from e
+        finally:
+            self._stop_websocket_thread()
+
+    async def _arun(  # noqa: C901, PLR0915
+        self,
+        workflow_name: str,
+        flow_input: Any,
+        storage_backend: StorageBackend | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Internal async run method with detailed event handling and websocket integration."""
         flow_name = await self.aprepare_workflow_for_run(
             workflow_name=workflow_name,
             flow_input=flow_input,

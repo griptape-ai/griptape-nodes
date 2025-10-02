@@ -97,14 +97,14 @@ class HuggingFaceRepoFileParameter:
         return repo, file, revision
 
     def get_help_message(self) -> str:
-        download_commands = "\n".join([f"  {cmd}" for cmd in self.get_download_commands()])
+        download_models = "\n".join([f"  {model}" for model in self.get_download_models()])
         return (
             "OpenPose model download required to continue.\n\n"
             "To download models:\n\n"
             "1. Configure huggingface-cli by following the documentation at:\n"
             "   https://docs.griptapenodes.com/en/stable/how_to/installs/hugging_face/\n\n"
             "2. Download one or more models using the following commands:\n"
-            f"{download_commands}\n\n"
+            f"{download_models}\n\n"
             "3. Save, close, and reopen the workflow (do not simply reload the page).\n\n"
             "After completing these steps, a dropdown menu with available models will appear. "
             "If the download fails, please refer to the huggingface-cli documentation. "
@@ -151,3 +151,7 @@ class HuggingFaceRepoFileParameter:
 
     def get_download_commands(self) -> list[str]:
         return [f'huggingface-cli download "{repo}" "{file}"' for (repo, file) in self._repo_files_by_name.values()]
+
+    def get_download_models(self) -> list[str]:
+        """Returns a list of model names that should be downloaded."""
+        return list(self._repo_files_by_name.keys())

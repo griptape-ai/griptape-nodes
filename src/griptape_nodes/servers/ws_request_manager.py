@@ -121,21 +121,20 @@ class AsyncRequestManager(Generic[T]):  # noqa: UP046
             logger.error("Unexpected error while subscribing to topic %s: %s", topic, e)
 
     async def _subscribe_to_topics(self) -> None:
-        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
-        from griptape_nodes.retained_mode.utils.engine_identity import EngineIdentity
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Subscribe to response topic (engine discovery)
         await self._subscribe_to_topic("response")
 
         # Get engine ID and subscribe to engine_id/response
-        engine_id = EngineIdentity.get_engine_id()
+        engine_id = GriptapeNodes.EngineIdentityManager().engine_id
         if engine_id:
             await self._subscribe_to_topic(f"engines/{engine_id}/response")
         else:
             logger.warning("Engine ID not available for subscription")
 
         # Get session ID and subscribe to session_id/response if available
-        session_id = SessionManager.get_saved_session_id()
+        session_id = GriptapeNodes.SessionManager().active_session_id
         if session_id:
             topic = f"sessions/{session_id}/response"
             await self._subscribe_to_topic(topic)

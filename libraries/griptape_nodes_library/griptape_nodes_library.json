@@ -120,7 +120,7 @@
     },
     {
       "image": {
-        "color": "border-purple-500",
+        "color": "border-slate-500",
         "title": "Image",
         "description": "Image related nodes",
         "icon": "Image",
@@ -1762,6 +1762,17 @@
         "description": "Give an agent the ability to load files from disk",
         "display_name": "File Manager",
         "icon": "folder",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "MCPTaskNode",
+      "file_path": "griptape_nodes_library/tasks/mcp_task.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Give an agent the ability to use an MCP tool",
+        "display_name": "MCP Task",
+        "icon": "network",
         "group": "create"
       }
     },

@@ -29,15 +29,17 @@ class MultiOptions(Trait):
     placeholder: str = field(default="Select options...")
     max_selected_display: int = field(default=3)
     show_search: bool = field(default=True)
+    search_filter: str = field(default="")
     icon_size: str = field(default="small")
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         choices: list | None = None,
         placeholder: str = "Select options...",
         max_selected_display: int = 3,
         show_search: bool = True,
+        search_filter: str = "",
         icon_size: str = "small",
     ) -> None:
         super().__init__()
@@ -48,6 +50,7 @@ class MultiOptions(Trait):
         self.placeholder = placeholder
         self.max_selected_display = max_selected_display
         self.show_search = show_search
+        self.search_filter = search_filter
 
         # Validate icon_size
         if icon_size not in ["small", "large"]:
@@ -183,6 +186,7 @@ class MultiOptions(Trait):
                 "placeholder": self.placeholder,
                 "max_selected_display": self.max_selected_display,
                 "show_search": self.show_search,
+                "search_filter": self.search_filter,
                 "icon_size": self.icon_size,
             }
         }
