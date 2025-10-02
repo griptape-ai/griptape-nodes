@@ -39,7 +39,7 @@ class HuggingFaceModelParameter(ABC):
                 self._node.name,
             )
             return
-        
+
         choices = self.get_choices()
 
         if parameter.find_elements_by_type(Options):
