@@ -367,14 +367,6 @@
         "description": "Image generation with Cosmos",
         "icon": "Image"
       }
-    },
-    {
-      "os": {
-        "color": "border-gray-600",
-        "title": "OS",
-        "description": "Operating system and file system related nodes",
-        "icon": "Terminal"
-      }
     }
   ],
   "nodes": [

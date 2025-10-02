@@ -36,7 +36,7 @@ class ExecutePython(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="input_variables",
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 type="dict",
                 default_value="",
                 tooltip="Optional input variables that will be available as local variables in the executed code. Pass as a dictionary of names and values.",
@@ -50,7 +50,7 @@ class ExecutePython(SuccessFailureNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 output_type="str",
                 default_value="",
-                tooltip="The return value from the executed Python code.",
+                tooltip="The printed value from the executed Python code.",
             )
         )
         self._create_status_parameters(
@@ -71,11 +71,12 @@ class ExecutePython(SuccessFailureNode):
         return python_code
 
     def process(self) -> None:
+        self._clear_execution_status()
         python_code = self.get_parameter_value("python_code")
         input_variables: dict[str, Any] = self.get_parameter_value("input_variables")
 
         if not python_code.strip():
-            self._set_output_values("No code provided")
+            self.set_parameter_value("result", "No code provided")
             self._set_status_results(was_successful=False, result_details="Failure: Unexpected response type")
             self._handle_failure_exception(Exception("Unexpected response type"))
 
@@ -87,22 +88,16 @@ class ExecutePython(SuccessFailureNode):
         response = GriptapeNodes.handle_request(request)
 
         # Process the response
-        self._clear_execution_status()
         if isinstance(response, RunArbitraryPythonStringResultSuccess):
             output = response.python_output
-            self._set_output_values(output)
+            self.set_parameter_value("result", output)
             self._set_status_results(was_successful=True, result_details="Success")
         elif isinstance(response, RunArbitraryPythonStringResultFailure):
             error_output = response.python_output
             self._set_status_results(was_successful=False, result_details=f"Failure: {error_output}")
-            self._set_output_values("")
+            self.set_parameter_value("result", "")
             self._handle_failure_exception(Exception(error_output))
         else:
             # Fallback for unexpected response type
             self._set_status_results(was_successful=False, result_details="Failure: Unexpected response type")
-            self._handle_failure_exception(Exception("Unexpected response type"))
-
-    def _set_output_values(self, result: str) -> None:
-        """Helper method to set all output parameter values."""
-        # Also set in parameter_values for get_value compatibility
-        self.set_parameter_value("result", result)
+            self._handle_failure_exception(RuntimeError(f"RunArbitraryPythonStringRequest returned an unexpected response type: {type(response)}"))

@@ -1,13 +1,13 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.events.os_events import ListDirectoryRequest, ListDirectoryResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 
-class ListFiles(ControlNode):
+class ListFiles(SuccessFailureNode):
     def __init__(
         self,
         name: str,
@@ -74,8 +74,13 @@ class ListFiles(ControlNode):
                 tooltip="Total number of files found.",
             )
         )
-
+        self._create_status_parameters(
+            result_details_tooltip="Details about the execute python result",
+            result_details_placeholder="Details on the execution attempt will be presented here.",
+        )
+        
     def process(self) -> None:
+        self._clear_execution_status()
         directory_path = self.parameter_values["directory_path"]
         show_hidden = self.parameter_values["show_hidden"]
 
@@ -87,11 +92,7 @@ class ListFiles(ControlNode):
         )
 
         # Send request through GriptapeNodes.handle_request
-        try:
-            result = GriptapeNodes.handle_request(request)
-        except Exception as e:
-            msg = f"Error while listing directory: {e!s}"
-            raise RuntimeError(msg) from e
+        result = GriptapeNodes.handle_request(request)
 
         if isinstance(result, ListDirectoryResultSuccess):
             # Filter to only include files (not directories)
@@ -101,16 +102,13 @@ class ListFiles(ControlNode):
             file_names = [entry.name for entry in file_entries]
 
             # Set output values
-            self.parameter_output_values["file_paths"] = file_paths
-            self.parameter_output_values["file_names"] = file_names
-            self.parameter_output_values["file_count"] = len(file_paths)
-
-            # Also set in parameter_values for get_value compatibility
-            self.parameter_values["file_paths"] = file_paths
-            self.parameter_values["file_names"] = file_names
-            self.parameter_values["file_count"] = len(file_paths)
+            self.set_parameter_value("file_paths", file_paths)
+            self.set_parameter_value("file_names", file_names)
+            self.set_parameter_value("file_count", len(file_paths))
+            self._set_status_results(was_successful=True, result_details="Success")
         else:
             # Handle failure case
             error_msg = getattr(result, "error_message", "Unknown error occurred")
             msg = f"Failed to list directory: {error_msg}"
-            raise TypeError(msg) from None
+            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
+            self._handle_failure_exception(TypeError(msg))
