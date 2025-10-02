@@ -2727,7 +2727,7 @@ class FlowManager:
             result_details=details,
         )
 
-    def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
+    async def on_cancel_flow_request(self, request: CancelFlowRequest) -> ResultPayload:
         flow_name = request.flow_name
         if not flow_name:
             details = "Could not cancel flow execution. No flow name was provided."
@@ -2740,7 +2740,7 @@ class FlowManager:
 
             return CancelFlowResultFailure(result_details=details)
         try:
-            self.cancel_flow_run()
+            await self.cancel_flow_run()
         except Exception as e:
             details = f"Could not cancel flow execution. Exception: {e}"
 
@@ -2792,7 +2792,7 @@ class FlowManager:
             # We REALLY don't want to fail here, else we'll take the whole engine down
             try:
                 if self.check_for_existing_running_flow():
-                    self.cancel_flow_run()
+                    await self.cancel_flow_run()
             except Exception as e_inner:
                 details = f"Could not cancel flow execution. Exception: {e_inner}"
 
@@ -3252,7 +3252,7 @@ class FlowManager:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
-                self.cancel_flow_run()
+                await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
@@ -3270,11 +3270,16 @@ class FlowManager:
             and self._global_control_flow_machine.context.resolution_machine.is_started()
         )
 
-    def cancel_flow_run(self) -> None:
+    async def cancel_flow_run(self) -> None:
         if not self.check_for_existing_running_flow():
             errormsg = "Flow has not yet been started. Cannot cancel flow that hasn't begun."
             raise RuntimeError(errormsg)
         self._global_flow_queue.queue.clear()
+
+        # Request cancellation on all nodes and wait for them to complete
+        if self._global_control_flow_machine is not None:
+            await self._global_control_flow_machine.cancel_flow()
+
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
@@ -3401,7 +3406,7 @@ class FlowManager:
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
-                    self.cancel_flow_run()
+                    await self.cancel_flow_run()
                     raise RuntimeError(e) from e
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False

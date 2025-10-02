@@ -472,6 +472,11 @@ class ExecuteDagState(State):
             done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
             # Check for task exceptions and handle them properly
             for task in done:
+                if task.cancelled():
+                    # Task was cancelled - this is expected during flow cancellation
+                    context.task_to_node.pop(task)
+                    logger.info("Task execution was cancelled.")
+                    return ErrorState
                 if task.exception():
                     # Get the actual exception and re-raise it
                     exc = task.exception()
@@ -562,6 +567,21 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
         if self.context.dag_builder is None:
             self.context.dag_builder = GriptapeNodes.FlowManager().global_dag_builder
         await self.start(ExecuteDagState)
+
+    async def cancel_all_nodes(self) -> None:
+        """Cancel all executing tasks and set cancellation flags on all nodes."""
+        # Set cancellation flag on all nodes being tracked
+        for dag_node in self.context.node_to_reference.values():
+            dag_node.node_reference.request_cancellation()
+
+        # Cancel all running tasks
+        tasks = list(self.context.task_to_node.keys())
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+        # Wait for all tasks to complete
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def change_debug_mode(self, *, debug_mode: bool) -> None:
         self._context.paused = debug_mode
