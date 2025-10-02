@@ -12,7 +12,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -127,6 +127,9 @@ class DiffusionPipelineBuilderNode(ControlNode):
             self.set_config_hash()
 
     def validate_before_node_run(self) -> list[Exception] | None:
+        self.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()
 
     def preprocess(self) -> None:

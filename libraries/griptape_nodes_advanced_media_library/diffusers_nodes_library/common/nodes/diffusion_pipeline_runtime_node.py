@@ -11,7 +11,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -114,9 +114,6 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
         return self.pipe_params.runtime_parameters.validate_before_node_run()
 
     def process(self) -> AsyncResult:
