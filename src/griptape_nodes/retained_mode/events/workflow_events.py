@@ -278,12 +278,14 @@ class SaveWorkflowRequest(RequestPayload):
     Args:
         file_name: Name of the file to save the workflow to (None for auto-generated)
         image_path: Path to save workflow image/thumbnail (None for no image)
+        pickle_control_flow_result: Whether to use pickle-based serialization for control flow results (None for default behavior)
 
     Results: SaveWorkflowResultSuccess (with file path) | SaveWorkflowResultFailure (save error)
     """
 
     file_name: str | None = None
     image_path: str | None = None
+    pickle_control_flow_result: bool | None = None
 
 
 @dataclass

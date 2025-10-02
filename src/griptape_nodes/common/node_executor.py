@@ -160,7 +160,7 @@ class NodeExecutor:
         published_workflow_filename = None
 
         try:
-            result = await self._publish_local_workflow(node, library=library, library_name=library_name)
+            result = await self._publish_local_workflow(node, library=library)
             workflow_result = result.workflow_result
         except Exception as e:
             logger.exception(

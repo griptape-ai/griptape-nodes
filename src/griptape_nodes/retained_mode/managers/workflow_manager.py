@@ -1259,6 +1259,8 @@ class WorkflowManager:
             pass
 
         # Use the standalone request to save the workflow file
+        # Use pickle_control_flow_result from request if provided, otherwise use False (default)
+        pickle_control_flow_result = request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
             file_name=file_name,
@@ -1268,6 +1270,7 @@ class WorkflowManager:
             branched_from=branched_from,
             workflow_shape=workflow_shape,
             file_path=str(file_path),
+            pickle_control_flow_result=pickle_control_flow_result,
         )
         save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
