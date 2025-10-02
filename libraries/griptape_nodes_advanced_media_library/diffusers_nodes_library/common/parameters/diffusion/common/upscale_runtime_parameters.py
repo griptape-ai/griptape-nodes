@@ -352,6 +352,12 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         def wrapped_pipe(tile: Image, _get_preview_image_with_partial_tile: Any) -> Image:
             def callback_on_step_end(_pipe: DiffusionPipeline, i: int, _t: Any, _callback_kwargs: dict) -> dict:
+                # Check for cancellation request
+                if self._node.is_cancellation_requested:
+                    _pipe._interrupt = True
+                    self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
+                    return _callback_kwargs
+
                 if i < num_inference_steps - 1:
                     # HERE -> need to update the tile by calling something in the tile processor.
                     self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
