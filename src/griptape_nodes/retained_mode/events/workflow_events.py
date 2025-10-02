@@ -388,6 +388,7 @@ class PublishWorkflowRequest(RequestPayload):
     publisher_name: str
     execute_on_publish: bool = False
     published_workflow_file_name: str | None = None
+    pickle_control_flow_result: bool = False
 
 
 @dataclass

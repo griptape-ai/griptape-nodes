@@ -1717,6 +1717,7 @@ class WorkflowManager:
                             keywords=[
                                 ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                                ast.keyword(arg="pickle_control_flow_result", value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load())),
                             ],
                         )
                     )
@@ -1765,6 +1766,9 @@ class WorkflowManager:
                                     ),
                                     ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
+                                    ),
+                                    ast.keyword(
+                                        arg="pickle_control_flow_result", value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load())
                                     ),
                                 ],
                             )

@@ -77,6 +77,8 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
                 "--published-workflow-file-name",
                 published_workflow_file_name,
             ]
+            if kwargs.get("pickle_control_flow_result"):
+                args.append("--pickle-control-flow-result")
             await self.execute_python_script(
                 script_path=tmp_script_path,
                 args=args,

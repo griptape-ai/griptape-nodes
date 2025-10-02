@@ -277,6 +277,7 @@ class NodeExecutor:
             workflow_path=workflow_result.file_path,
             publisher_name=library_name,
             published_workflow_file_name=published_filename,
+            pickle_control_flow_result=True,
         )
 
         if not published_workflow_filename.exists():
@@ -440,20 +441,20 @@ class NodeExecutor:
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
                 WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
 
-        delete_request = DeleteWorkflowRequest(name=workflow_name)
-        delete_result = GriptapeNodes.handle_request(delete_request)
-        if isinstance(delete_result, DeleteWorkflowResultFailure):
-            logger.error(
-                "Failed to delete workflow '%s'. Error: %s",
-                workflow_name,
-                delete_result.result_details,
-            )
-        else:
-            logger.info(
-                "Cleanup result for workflow '%s': %s",
-                workflow_name,
-                delete_result.result_details,
-            )
+        # delete_request = DeleteWorkflowRequest(name=workflow_name)
+        # delete_result = GriptapeNodes.handle_request(delete_request)
+        # if isinstance(delete_result, DeleteWorkflowResultFailure):
+        #     logger.error(
+        #         "Failed to delete workflow '%s'. Error: %s",
+        #         workflow_name,
+        #         delete_result.result_details,
+        #     )
+        # else:
+        #     logger.info(
+        #         "Cleanup result for workflow '%s': %s",
+        #         workflow_name,
+        #         delete_result.result_details,
+        #     )
 
     async def _get_storage_backend(self) -> StorageBackend:
         storage_backend_str = GriptapeNodes.ConfigManager().get_config_value("storage_backend")
