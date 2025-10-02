@@ -53,23 +53,23 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
         )
 
     def add_input_parameters(self) -> None:
+        self._controlnet_repo_parameter.add_input_parameters()
         self._model_repo_parameter.add_input_parameters()
         self._text_encoder_repo_parameter.add_input_parameters()
         self._text_encoder_2_repo_parameter.add_input_parameters()
-        self._controlnet_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
+        self._controlnet_repo_parameter.remove_input_parameters()
         self._model_repo_parameter.remove_input_parameters()
         self._text_encoder_repo_parameter.remove_input_parameters()
         self._text_encoder_2_repo_parameter.remove_input_parameters()
-        self._controlnet_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
+            "controlnet_model": self._node.get_parameter_value("controlnet_model"),
             "model": self._node.get_parameter_value("model"),
             "text_encoder": self._node.get_parameter_value("text_encoder"),
             "text_encoder_2": self._node.get_parameter_value("text_encoder_2"),
-            "controlnet_model": self._node.get_parameter_value("controlnet_model"),
         }
 
     @property
