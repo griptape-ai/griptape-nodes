@@ -106,7 +106,7 @@ class DisplayImageGrid(ControlNode):
             type="str",
             default_value="#00000000",
             tooltip="Background color of the grid (hex color)",
-            ui_options={"hidden": True},
+            ui_options={"hide": True},
             traits={ColorPicker(format="hexa")},
         )
         self.add_parameter(self.background_color)
