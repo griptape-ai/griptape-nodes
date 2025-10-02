@@ -4,6 +4,7 @@ from typing import Any
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
+    ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -307,7 +308,8 @@ class ControlFlowResolvedEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
-    pass
+    result_details: ResultDetails | str | None = None
+    exception: Exception | None = None
 
 
 @dataclass

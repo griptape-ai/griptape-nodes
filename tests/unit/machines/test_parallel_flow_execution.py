@@ -4,6 +4,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
@@ -258,7 +260,8 @@ class TestFlowManagerDagBuilderIntegration:
             # If FlowManager requires complex setup, skip this test
             pass
 
-    def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
+    @pytest.mark.asyncio
+    async def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
         """Test that FlowManager clears DAG builder reference when canceling a flow."""
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
@@ -271,11 +274,19 @@ class TestFlowManagerDagBuilderIntegration:
             # Create mock control flow machine
             mock_control_flow = MagicMock()
             mock_control_flow.reset_machine = MagicMock()
+            mock_control_flow.context.flow_name = "test_flow"
             flow_manager._global_control_flow_machine = mock_control_flow
 
-            with patch.object(flow_manager, "check_for_existing_running_flow", return_value=True):
+            # Create mock flow with no nodes to avoid async complexity in test
+            mock_flow = MagicMock()
+            mock_flow.nodes = {}
+
+            with (
+                patch.object(flow_manager, "check_for_existing_running_flow", return_value=True),
+                patch.object(flow_manager, "get_flow_by_name", return_value=mock_flow),
+            ):
                 # Cancel flow
-                flow_manager.cancel_flow_run()
+                await flow_manager.cancel_flow_run()
 
                 # Verify DAG builder reference is cleared
                 assert flow_manager._global_dag_builder is None

@@ -37,8 +37,8 @@ class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._text_encoder_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("text_encoder")
+        self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -70,6 +70,7 @@ class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=text_encoder_repo_id,
             revision=text_encoder_revision,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )
 
         return diffusers.QwenImagePipeline.from_pretrained(
@@ -77,4 +78,5 @@ class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
             revision=base_revision,
             text_encoder=text_encoder,
             torch_dtype=torch.bfloat16,
+            local_files_only=True,
         )

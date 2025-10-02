@@ -31,6 +31,42 @@ async def call_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
     return func(*args, **kwargs)
 
 
+async def to_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run a synchronous function in a thread pool.
+
+    Differs from `asyncio.to_thread` by waiting for the thread to complete even if the calling coroutine is cancelled.
+
+    CONCURRENCY IS HARD
+    If the coroutine calling `to_thread` is cancelled, the `await` before `asyncio.to_thread` raises CancelledError,
+    But the shielded task itself is not cancelled and continues running in the thread.
+    This allows us to wait for it to complete and get the result.
+
+    References:
+        https://docs.python.org/3/library/asyncio-task.html#shielding-from-cancellation
+        https://trio.readthedocs.io/en/stable/reference-core.html#trio.to_thread.run_sync
+
+    Args:
+        func: The synchronous function to run in a thread
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        The result of the function call
+
+    Raises:
+        asyncio.CancelledError: After waiting for the thread to complete
+    """
+    task = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))
+    try:
+        task_result = await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # Wait for the task to finish if it was already running
+        task_result = await task
+        raise
+
+    return task_result
+
+
 async def subprocess_run(
     args: Sequence[str],
     *,

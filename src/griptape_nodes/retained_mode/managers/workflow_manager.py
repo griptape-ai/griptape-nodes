@@ -37,7 +37,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     SerializedFlowCommands,
-    SerializedNodeCommands,
     SerializeFlowToCommandsRequest,
     SerializeFlowToCommandsResultSuccess,
     SetFlowMetadataRequest,
@@ -119,7 +118,7 @@ if TYPE_CHECKING:
 
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
-    from griptape_nodes.retained_mode.events.node_events import SetLockNodeStateRequest
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
@@ -1997,6 +1996,17 @@ class WorkflowManager:
             ]
         )
 
+        # Ensure body is not empty - add pass statement if no input parameters
+        if not build_flow_input_stmts:
+            build_flow_input_stmts = [
+                ast.Expr(
+                    value=ast.Constant(
+                        value="This workflow has no input parameters defined, so there's nothing necessary to supply"
+                    )
+                ),
+                ast.Pass(),
+            ]
+
         # Wrap the individual argument processing in an else clause
         individual_args_else = ast.If(
             test=ast.Compare(
@@ -3168,7 +3178,7 @@ class WorkflowManager:
         for node in nodes:
             for param in node.parameters:
                 # Expose only the parameters that are relevant for workflow input and output.
-                param_info = self.extract_parameter_shape_info(param, include_control_params=False)
+                param_info = self.extract_parameter_shape_info(param, include_control_params=True)
                 if param_info is not None:
                     if node.name in workflow_shape[workflow_shape_type]:
                         cast("dict", workflow_shape[workflow_shape_type][node.name])[param.name] = param_info
@@ -3225,7 +3235,7 @@ class WorkflowManager:
         return workflow_shape
 
     def extract_parameter_shape_info(
-        self, parameter: Parameter, *, include_control_params: bool = False
+        self, parameter: Parameter, *, include_control_params: bool
     ) -> ParameterShapeInfo | None:
         """Extract shape information from a parameter for workflow shape building.
 

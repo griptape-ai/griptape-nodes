@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -31,6 +32,7 @@ logger = logging.getLogger("griptape_nodes")
 @dataclass
 class Focus:
     node: BaseNode
+    task: asyncio.Task[None] | None = None
 
 
 # This is on a per-node basis
@@ -270,7 +272,23 @@ class ExecuteNodeState(State):
             current_node = current_focus.node
 
             try:
-                await current_node.aprocess()
+                # Create and track task in Focus for cancellation support
+                execution_task = asyncio.create_task(current_node.aprocess())
+                current_focus.task = execution_task
+                await execution_task
+            except asyncio.CancelledError:
+                logger.info("Node '%s' processing was cancelled.", current_node.name)
+                current_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+                )
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
+                    )
+                )
+                return CompleteState
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
@@ -283,7 +301,7 @@ class ExecuteNodeState(State):
 
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                GriptapeNodes.FlowManager().cancel_flow_run()
+                await GriptapeNodes.FlowManager().cancel_flow_run()
 
                 GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
@@ -380,6 +398,27 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
             raise ValueError(msg)
         self._context.focus_stack.append(Focus(node=node))
         await self.start(InitializeSpotlightState)
+
+    async def cancel_all_nodes(self) -> None:
+        """Cancel the currently executing node and set cancellation flags on all nodes in focus stack."""
+        # Set cancellation flag on all nodes in the focus stack
+        for focus in self._context.focus_stack:
+            focus.node.request_cancellation()
+
+        # Collect tasks that need to be cancelled
+        tasks = []
+        if self._context.focus_stack:
+            current_focus = self._context.focus_stack[-1]
+            if current_focus.task and not current_focus.task.done():
+                tasks.append(current_focus.task)
+
+        # Cancel all tasks
+        for task in tasks:
+            task.cancel()
+
+        # Wait for all tasks to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode

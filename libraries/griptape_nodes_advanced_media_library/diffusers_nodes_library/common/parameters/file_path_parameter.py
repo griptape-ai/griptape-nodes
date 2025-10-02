@@ -15,7 +15,7 @@ class FilePathParameter:
                 name=self._parameter_name,
                 input_types=["str"],
                 type="str",
-                tooltip="prompt",
+                tooltip="Path to a local lora file",
             )
         )
 

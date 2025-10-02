@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
@@ -11,22 +11,21 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
-from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.exe_types.node_types import BaseNode, ControlNode, NodeResolutionState
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineRuntimeNode(ControlNode):
+    START_PARAMS: ClassVar = ["pipeline"]
+    END_PARAMS: ClassVar = ["logs"]
+
     def __init__(self, **kwargs) -> None:
         self._initializing = True
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
-
-        self.loras_params = FluxLorasParameter(self)
-        self.loras_params.add_input_parameters()
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
@@ -66,11 +65,13 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         self.pipe_params.after_value_set(parameter, value)
 
         if did_pipeline_change:
-            sorted_parameters = ["pipeline"]
-            sorted_parameters.extend(
-                [param.name for param in self.parameters if param.name not in ["pipeline", "loras", "logs"]]
-            )
-            sorted_parameters.extend(["loras", "logs"])
+            start_params = DiffusionPipelineRuntimeNode.START_PARAMS
+            end_params = DiffusionPipelineRuntimeNode.END_PARAMS
+            excluded_params = {*start_params, *end_params}
+
+            middle_params = [param.name for param in self.parameters if param.name not in excluded_params]
+            sorted_parameters = [*start_params, *middle_params, *end_params]
+
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
@@ -99,7 +100,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         diffusion_pipeline_hash = self.get_parameter_value("pipeline")
         pipeline = model_cache._pipeline_cache.get(diffusion_pipeline_hash)
         if pipeline is None:
-            error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache"
+            error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache: {model_cache._pipeline_cache.keys()}"
             raise RuntimeError(error_msg)
         return pipeline
 
@@ -114,17 +115,14 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
     def validate_before_node_run(self) -> list[Exception] | None:
+        self.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
         return self.pipe_params.runtime_parameters.validate_before_node_run()
 
     async def aprocess(self) -> None:
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
-
-        with (
-            self.log_params.append_profile_to_logs("Configuring FLUX loras"),
-            self.log_params.append_logs_to_logs(logger),
-        ):
-            self.loras_params.configure_loras(pipe)
 
         await asyncio.to_thread(self.pipe_params.runtime_parameters.process_pipeline, pipe)
