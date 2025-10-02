@@ -203,6 +203,12 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
             _t: Any,
             callback_kwargs: dict,
         ) -> dict:
+            # Check for cancellation request
+            if self._node.is_cancellation_requested:
+                pipe._interrupt = True
+                self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
+                return callback_kwargs
+
             if i < num_inference_steps - 1:
                 self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
                 self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
