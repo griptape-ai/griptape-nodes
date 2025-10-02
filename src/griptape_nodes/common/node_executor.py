@@ -17,11 +17,16 @@ from griptape_nodes.exe_types.node_types import (
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
+    DeleteWorkflowRequest,
+    DeleteWorkflowResultFailure,
+    LoadWorkflowMetadata,
+    LoadWorkflowMetadataResultSuccess,
     PublishWorkflowRequest,
     SaveWorkflowFileFromSerializedFlowRequest,
     SaveWorkflowFileFromSerializedFlowResultSuccess,
@@ -30,6 +35,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -197,7 +203,9 @@ class NodeExecutor:
             raise RuntimeError(msg) from e
         finally:
             if workflow_result is not None:
-                await self._delete_workflow(workflow_name = workflow_result.workflow_metadata.name, workflow_path = Path(workflow_result.file_path))
+                await self._delete_workflow(
+                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+                )
             if published_workflow_filename is not None:
                 published_filename = published_workflow_filename.stem
                 await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
@@ -282,7 +290,7 @@ class NodeExecutor:
         published_workflow_filename: Path,
         file_name: str,
         pickle_control_flow_result: bool = True,
-    ) -> dict:
+    ) -> dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Execute the published workflow in a subprocess.
 
         Args:
@@ -322,10 +330,11 @@ class NodeExecutor:
             msg = f"Subprocess completed but returned no output for workflow '{file_name}'"
             logger.error(msg)
             raise ValueError(msg)
-
         return my_subprocess_result
 
-    def _extract_parameter_output_values(self, subprocess_result: dict) -> dict:
+    def _extract_parameter_output_values(
+        self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]
+    ) -> dict[str, Any]:
         """Extract and deserialize parameter output values from subprocess result.
 
         Returns:
@@ -389,34 +398,34 @@ class NodeExecutor:
         return stored_value
 
     def _apply_parameter_values_to_node(
-        self, node: BaseNode, parameter_output_values: dict, output_parameter_prefix: str
+        self, node: BaseNode, parameter_output_values: dict[str, Any], output_parameter_prefix: str
     ) -> None:
         """Apply deserialized parameter values back to the node.
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
         """
+        # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'. That means that running the node failed, but was caught by the published flow.
+        # In this case, we should fail the node, since it didn't complete properly.
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
             msg = f"Failed to execute node: {node.name}, with exception: {parameter_output_values.get('result_details', 'No result details were returned.')}"
             raise RuntimeError(msg)
         for param_name, param_value in parameter_output_values.items():
+            # We are grabbing all of the parameters on our end nodes that align with the node being published.
             if param_name.startswith(output_parameter_prefix):
                 clean_param_name = param_name[len(output_parameter_prefix) :]
+                # If the parameter exists on the node, then we need to set those values on the node.
                 parameter = node.get_parameter_by_name(clean_param_name)
-
-                if parameter is not None and parameter != node.execution_environment:
+                # Don't set execution_environment, since that will be set to Local Execution on any published flow.
+                if parameter is None:
+                    logger.warning("Parameter '%s' not found on node '%s'", clean_param_name, node.name)
+                    continue
+                if parameter != node.execution_environment:
                     if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                        # If the node is control type, only set its value in parameter_output_values.
                         node.set_parameter_value(clean_param_name, param_value)
                     node.parameter_output_values[clean_param_name] = param_value
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
-        from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
-        from griptape_nodes.retained_mode.events.workflow_events import (
-            DeleteWorkflowRequest,
-            DeleteWorkflowResultFailure,
-            LoadWorkflowMetadata,
-            LoadWorkflowMetadataResultSuccess,
-        )
-
         try:
             WorkflowRegistry.get_workflow_by_name(workflow_name)
         except KeyError:

@@ -1,10 +1,16 @@
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, EndLoopNode, NodeResolutionState, StartLoopNode
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class Direction(StrEnum):
+    UPSTREAM = "upstream"
+    DOWNSTREAM = "downstream"
 
 
 @dataclass
@@ -128,42 +134,49 @@ class Connections:
         return None  # No connection found for this control parameter
 
     def get_connected_node(
-        self, node: BaseNode, parameter: Parameter, direction: str | None = None
+        self, node: BaseNode, parameter: Parameter, direction: Direction | None = None
     ) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
         # Override this method for EndLoopNodes - these might have to go backwards or forwards.
         if direction is not None:
-            if direction == "upstream":
+            # We've added direction as an override, since we sometimes need to get connections in a certain direction regardless of parameter types.
+            if direction == Direction.UPSTREAM:
                 connections = self.incoming_index
-            elif direction == "downstream":
+            elif direction == Direction.DOWNSTREAM:
                 connections = self.outgoing_index
-            else:
-                msg = f"Invalid direction: {direction}"
-                raise ValueError(msg)
         else:
             if isinstance(node, EndLoopNode) and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 return self._get_connected_node_for_end_loop_control(node, parameter)
             if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 connections = self.outgoing_index
-                direction = "downstream"
+                # We still default to downstream (forwards) connections for control parameters
+                direction = Direction.DOWNSTREAM
             else:
                 connections = self.incoming_index
-                direction = "upstream"
+                # And upstream (backwards) connections for data parameters.
+                direction = Direction.UPSTREAM
         connections_from_node = connections.get(node.name, {})
 
         connection_id = connections_from_node.get(parameter.name, [])
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/859
         if not len(connection_id):
             return None
-        if len(connection_id) > 1 and not (
-            direction == "upstream" and parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value
+        # Right now, our special case is that it is ok to have multiple inputs to a CONTROL_TYPE parameter, so if we're going upstream, it's ok. And it's ok to have multipe downstream outputs from a data type parameter.
+        if (
+            len(connection_id) > 1
+            and not (
+                direction == Direction.UPSTREAM and parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value
+            )
+            and not (
+                direction == Direction.DOWNSTREAM and parameter.output_type != ParameterTypeBuiltin.CONTROL_TYPE.value
+            )
         ):
-            msg = "There should not be more than one connection here."
+            msg = f"There should not be more than one {direction} connection here to/from {node.name}.{parameter.name}"
             raise ValueError(msg)
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            if direction == "downstream":
+            if direction == Direction.DOWNSTREAM:
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
             # Return the source (next place to chain back to)

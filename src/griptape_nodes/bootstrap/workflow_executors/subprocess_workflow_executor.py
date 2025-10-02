@@ -123,10 +123,10 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
             try:
                 await self.execute_python_script(
-                        script_path=tmp_script_path,
-                        args=args,
-                        cwd=Path(tmpdir),
-                    )
+                    script_path=tmp_script_path,
+                    args=args,
+                    cwd=Path(tmpdir),
+                )
             except Exception as e:
                 msg = f"Failed to execute subprocess script: {e}"
                 logger.exception(msg)

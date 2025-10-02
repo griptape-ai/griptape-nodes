@@ -22,6 +22,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
+    SetParameterValueResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -175,7 +176,7 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
+                result = GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
                         parameter_name=parameter.name,
                         node_name=current_node.name,
@@ -185,6 +186,10 @@ class ExecuteNodeState(State):
                         incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
                 )
+                if isinstance(result, SetParameterValueResultFailure):
+                    msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
+                    logger.error(msg)
+                    raise RuntimeError(msg)
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:

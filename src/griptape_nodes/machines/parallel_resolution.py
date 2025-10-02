@@ -5,6 +5,7 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -22,7 +23,10 @@ from griptape_nodes.retained_mode.events.execution_events import (
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
 )
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    SetParameterValueRequest,
+    SetParameterValueResultFailure,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
@@ -321,7 +325,7 @@ class ExecuteDagState(State):
 
         for parameter in current_node.parameters:
             # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter, direction="upstream")
+            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -332,7 +336,7 @@ class ExecuteDagState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                await GriptapeNodes.get_instance().ahandle_request(
+                result = await GriptapeNodes.get_instance().ahandle_request(
                     SetParameterValueRequest(
                         parameter_name=parameter.name,
                         node_name=current_node.name,
@@ -342,6 +346,10 @@ class ExecuteDagState(State):
                         incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
                 )
+                if isinstance(result, SetParameterValueResultFailure):
+                    msg = f"Failed to set value for parameter '{parameter.name}' on node '{current_node.name}': {result.result_details}"
+                    logger.error(msg)
+                    raise RuntimeError(msg)
 
     @staticmethod
     def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str], set[str]]:

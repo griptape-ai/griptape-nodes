@@ -52,7 +52,7 @@ class ControlFlowContext:
         max_nodes_in_parallel: int,
         *,
         execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
-        pickle_control_flow_result: bool = False
+        pickle_control_flow_result: bool = False,
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
@@ -270,12 +270,17 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, *, pickle_control_flow_result:bool = False) -> None:
+    def __init__(self, flow_name: str, *, pickle_control_flow_result: bool = False) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
         max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
-        context = ControlFlowContext(flow_name, max_nodes_in_parallel, execution_type=execution_type, pickle_control_flow_result=pickle_control_flow_result)
+        context = ControlFlowContext(
+            flow_name,
+            max_nodes_in_parallel,
+            execution_type=execution_type,
+            pickle_control_flow_result=pickle_control_flow_result,
+        )
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
