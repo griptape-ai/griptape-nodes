@@ -47,6 +47,14 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._upscale_model_repo_parameter.add_input_parameters()
         self._node.add_parameter(
             Parameter(
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Image to be used as the starting point.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="prompt",
                 default_value="",
                 type="str",
@@ -73,14 +81,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 name="negative_prompt_2",
                 type="str",
                 tooltip="The prompt or prompts not to guide the image generation to be sent to tokenizer_2 and text_encoder_2. If not defined, negative_prompt is used in all the text-encoders.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Image to be used as the starting point.",
             )
         )
         self._node.add_parameter(

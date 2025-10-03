@@ -26,6 +26,14 @@ class QwenImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def _add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Image to be used as the starting point.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="prompt",
                 default_value="",
                 type="str",
@@ -38,14 +46,6 @@ class QwenImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
                 default_value="",
                 type="str",
                 tooltip="The prompt or prompts not to guide the image generation.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Image to be used as the starting point.",
             )
         )
         self._node.add_parameter(

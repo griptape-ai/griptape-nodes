@@ -34,6 +34,14 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
     def _add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
+                name="control_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="The ControlNet input condition to provide guidance to the unet for generation.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="prompt",
                 default_value="",
                 type="str",
@@ -92,14 +100,6 @@ class FluxControlNetPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters
                     )
                 },
                 tooltip="The control mode.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="control_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="The ControlNet input condition to provide guidance to the unet for generation.",
             )
         )
         self._node.add_parameter(
