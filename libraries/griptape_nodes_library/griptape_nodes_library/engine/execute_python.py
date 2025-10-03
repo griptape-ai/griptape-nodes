@@ -76,9 +76,11 @@ class ExecutePython(SuccessFailureNode):
         input_variables: dict[str, Any] = self.get_parameter_value("input_variables")
 
         if not python_code.strip():
-            self.set_parameter_value("result", "No code provided")
-            self._set_status_results(was_successful=False, result_details="Failure: Unexpected response type")
-            self._handle_failure_exception(Exception("Unexpected response type"))
+            self.set_parameter_value("result", "No Python code provided for execution")
+            self._set_status_results(
+                was_successful=False, result_details="Failure: No Python code provided for execution"
+            )
+            return
 
         full_code = self._assign_vars(python_code, input_variables)
 
@@ -88,18 +90,21 @@ class ExecutePython(SuccessFailureNode):
         response = GriptapeNodes.handle_request(request)
 
         # Process the response
-        if isinstance(response, RunArbitraryPythonStringResultSuccess):
-            output = response.python_output
-            self.set_parameter_value("result", output)
-            self._set_status_results(was_successful=True, result_details="Success")
-        elif isinstance(response, RunArbitraryPythonStringResultFailure):
+        if isinstance(response, RunArbitraryPythonStringResultFailure):
             error_output = response.python_output
             self._set_status_results(was_successful=False, result_details=f"Failure: {error_output}")
             self.set_parameter_value("result", "")
-            self._handle_failure_exception(Exception(error_output))
-        else:
+        elif not isinstance(
+            response, RunArbitraryPythonStringResultSuccess
+        ):  # if it's not a succcess either, it is some response type we don't know
             # Fallback for unexpected response type
-            self._set_status_results(was_successful=False, result_details="Failure: Unexpected response type")
-            self._handle_failure_exception(
-                RuntimeError(f"RunArbitraryPythonStringRequest returned an unexpected response type: {type(response)}")
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failure: Unexpected response type from RunArbitraryPythonStringRequest: {type(response)}",
+            )
+        elif isinstance(response, RunArbitraryPythonStringResultSuccess):
+            output = response.python_output
+            self.set_parameter_value("result", output)
+            self._set_status_results(
+                was_successful=True, result_details="The Python code executed successfully with no exceptions."
             )

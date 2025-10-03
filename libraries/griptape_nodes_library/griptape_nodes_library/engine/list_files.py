@@ -2,7 +2,11 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.events.os_events import ListDirectoryRequest, ListDirectoryResultSuccess
+from griptape_nodes.retained_mode.events.os_events import (
+    ListDirectoryRequest,
+    ListDirectoryResultFailure,
+    ListDirectoryResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
@@ -51,7 +55,7 @@ class ListFiles(SuccessFailureNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 output_type="list",
                 default_value=[],
-                tooltip="List of file paths found in the directory.",
+                tooltip="List of full file paths found in the directory.",
             )
         )
 
@@ -75,14 +79,14 @@ class ListFiles(SuccessFailureNode):
             )
         )
         self._create_status_parameters(
-            result_details_tooltip="Details about the execute python result",
-            result_details_placeholder="Details on the execution attempt will be presented here.",
+            result_details_tooltip="Details about the list file result",
+            result_details_placeholder="Details on the list file attempt will be presented here.",
         )
 
     def process(self) -> None:
         self._clear_execution_status()
-        directory_path = self.parameter_values["directory_path"]
-        show_hidden = self.parameter_values["show_hidden"]
+        directory_path = self.get_parameter_value("directory_path")
+        show_hidden = self.get_parameter_value("show_hidden")
 
         # Create the os_events request
         request = ListDirectoryRequest(
@@ -94,7 +98,12 @@ class ListFiles(SuccessFailureNode):
         # Send request through GriptapeNodes.handle_request
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, ListDirectoryResultSuccess):
+        if isinstance(result, ListDirectoryResultFailure):
+            # Handle failure case
+            error_msg = getattr(result, "error_message", "Unknown error occurred")
+            msg = f"Failed to list directory: {error_msg}"
+            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
+        elif isinstance(result, ListDirectoryResultSuccess):
             # Filter to only include files (not directories)
             file_entries = list(result.entries)
 
@@ -106,9 +115,3 @@ class ListFiles(SuccessFailureNode):
             self.set_parameter_value("file_names", file_names)
             self.set_parameter_value("file_count", len(file_paths))
             self._set_status_results(was_successful=True, result_details="Success")
-        else:
-            # Handle failure case
-            error_msg = getattr(result, "error_message", "Unknown error occurred")
-            msg = f"Failed to list directory: {error_msg}"
-            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
-            self._handle_failure_exception(TypeError(msg))
