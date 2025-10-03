@@ -1,22 +1,27 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, NamedTuple, NewType
+from typing import TYPE_CHECKING, Any, NamedTuple, NewType
 from uuid import uuid4
 
-from griptape_nodes.exe_types.core_types import NodeMessagePayload
-from griptape_nodes.exe_types.node_types import NodeDependencies, NodeResolutionState
+from griptape_nodes.exe_types.node_types import NodeResolutionState
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.exe_types.node_types import NodeDependencies
+    from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+    from griptape_nodes.retained_mode.events.parameter_events import (
+        GetParameterDetailsResultSuccess,
+        GetParameterValueResultSuccess,
+        SetParameterValueRequest,
+    )
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
-)
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
-from griptape_nodes.retained_mode.events.parameter_events import (
-    GetParameterDetailsResultSuccess,
-    GetParameterValueResultSuccess,
-    SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -430,7 +435,7 @@ class SerializedNodeCommands:
         """
 
         set_parameter_value_command: SetParameterValueRequest
-        unique_value_uuid: "SerializedNodeCommands.UniqueParameterValueUUID"
+        unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]

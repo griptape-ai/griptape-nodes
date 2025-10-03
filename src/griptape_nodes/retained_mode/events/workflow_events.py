@@ -278,12 +278,14 @@ class SaveWorkflowRequest(RequestPayload):
     Args:
         file_name: Name of the file to save the workflow to (None for auto-generated)
         image_path: Path to save workflow image/thumbnail (None for no image)
+        pickle_control_flow_result: Whether to use pickle-based serialization for control flow results (None for default behavior)
 
     Results: SaveWorkflowResultSuccess (with file path) | SaveWorkflowResultFailure (save error)
     """
 
     file_name: str | None = None
     image_path: str | None = None
+    pickle_control_flow_result: bool | None = None
 
 
 @dataclass
@@ -388,6 +390,7 @@ class PublishWorkflowRequest(RequestPayload):
     publisher_name: str
     execute_on_publish: bool = False
     published_workflow_file_name: str | None = None
+    pickle_control_flow_result: bool = False
 
 
 @dataclass
@@ -655,6 +658,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
         branched_from: Optional branched from information to preserve workflow lineage
         workflow_shape: Optional workflow shape defining inputs and outputs for external callers
         file_path: Optional specific file path to use (defaults to workspace path if not provided)
+        pickle_control_flow_result: Whether to pickle control flow results in generated execution code (defaults to False)
 
     Results: SaveWorkflowFileFromSerializedFlowResultSuccess (with file path) | SaveWorkflowFileFromSerializedFlowResultFailure (save error)
     """
@@ -667,6 +671,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
     execution_flow_name: str | None = None
     branched_from: str | None = None
     workflow_shape: WorkflowShape | None = None
+    pickle_control_flow_result: bool = False
 
 
 @dataclass

@@ -1128,7 +1128,6 @@ class LibraryManager:
         lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
             del self._library_file_path_to_info[lib_info.library_path]
-
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
