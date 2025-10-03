@@ -6,6 +6,7 @@ from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore
 
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
+    DEFAULT_NUM_INFERENCE_STEPS,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -57,7 +58,7 @@ class Audioldm2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
-                default_value=20,
+                default_value=DEFAULT_NUM_INFERENCE_STEPS,
                 type="int",
                 tooltip="Number of denoising steps for generation",
             )

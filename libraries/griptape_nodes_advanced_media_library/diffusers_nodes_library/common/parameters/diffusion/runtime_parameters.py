@@ -15,6 +15,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
+DEFAULT_NUM_INFERENCE_STEPS = 20
+
+
 class DiffusionPipelineRuntimeParameters(ABC):
     def __init__(self, node: BaseNode):
         self._node = node
@@ -45,7 +48,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
-                default_value=4,
+                default_value=DEFAULT_NUM_INFERENCE_STEPS,
                 type="int",
                 tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality image at the expense of slower inference.",
             )

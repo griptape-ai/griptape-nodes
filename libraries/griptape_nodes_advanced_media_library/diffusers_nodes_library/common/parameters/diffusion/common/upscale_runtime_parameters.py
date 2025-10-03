@@ -19,6 +19,7 @@ from diffusers_nodes_library.common.misc.tiling_image_processor import (
 )
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
+    DEFAULT_NUM_INFERENCE_STEPS,
 )
 from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
@@ -202,7 +203,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
-                default_value=4,
+                default_value=DEFAULT_NUM_INFERENCE_STEPS,
                 type="int",
                 tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality image at the expense of slower inference.",
             )
