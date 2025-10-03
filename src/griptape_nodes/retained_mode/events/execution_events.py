@@ -4,6 +4,7 @@ from typing import Any
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
+    ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -72,6 +73,8 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
+    # If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess.
+    pickle_control_flow_result: bool = False
 
 
 @dataclass
@@ -312,7 +315,8 @@ class ControlFlowResolvedEvent(ExecutionPayload):
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
-    pass
+    result_details: ResultDetails | str | None = None
+    exception: Exception | None = None
 
 
 @dataclass

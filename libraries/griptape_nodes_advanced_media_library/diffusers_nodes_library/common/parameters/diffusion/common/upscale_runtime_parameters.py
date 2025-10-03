@@ -28,6 +28,8 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+OUTPUT_SCALE = 4
+
 
 class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
@@ -92,7 +94,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="max_tile_size",
-                default_value=256,
+                default_value=1024,
                 type="int",
                 tooltip="The maximum size (in pixels) of each tile when processing images.",
             )
@@ -100,7 +102,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="tile_overlap",
-                default_value=16,
+                default_value=64,
                 type="int",
                 tooltip="The amount of overlap (in pixels) between tiles when processing images.",
             )
@@ -136,7 +138,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="resample_strategy",
-                default_value="bicubic",
+                default_value="lanczos",
                 type="str",
                 traits={
                     Options(
@@ -161,6 +163,9 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 tooltip="Higher guidance_scale encourages a model to generate images more aligned with prompt at the expense of lower image quality.",
             )
         )
+
+        self._node.hide_parameter_by_name("prompt_2")
+        self._node.hide_parameter_by_name("negative_prompt_2")
 
     def add_input_parameters(self) -> None:
         self._add_input_parameters()
@@ -202,7 +207,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         return input_image_pil.convert("RGB")
 
     def _get_pipe_kwargs(self) -> dict:
-        return {
+        kwargs = {
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
@@ -211,6 +216,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
         }
+        if kwargs["prompt_2"] is None or kwargs["prompt_2"] == "":
+            del kwargs["prompt_2"]
+        if kwargs["negative_prompt_2"] is None or kwargs["negative_prompt_2"] == "":
+            del kwargs["negative_prompt_2"]
+        return kwargs
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self._upscale_model_repo_parameter.validate_before_node_run()
@@ -227,13 +237,13 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def publish_output_image_preview_placeholder(self) -> None:
         input_image_pil = self.get_image_pil()
         width, height = input_image_pil.size
-        # Immediately set a preview placeholder image to make it react quickly and adjust
-        # the size of the image preview on the node.
 
         # Check to ensure there's enough space in the intermediates directory
         # if that setting is enabled.
         check_cleanup_intermediates_directory()
 
+        # Immediately set a preview placeholder image to make it react quickly and adjust
+        # the size of the image preview on the node.
         preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
         self._node.publish_update_to_parameter(
             "output_image",
@@ -269,8 +279,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         tile_overlap = self._node.get_parameter_value("tile_overlap")
         tile_strategy = self._node.get_parameter_value("tile_strategy")
 
-        output_scale = 4
-
         with self._node.log_params.append_profile_to_logs("Loading model metadata"):  # type: ignore[reportAttributeAccessIssue]
             repo, revision = self._upscale_model_repo_parameter.get_repo_revision()
             filename = self._upscale_model_repo_parameter.get_repo_filename()
@@ -284,19 +292,15 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
-        def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
+        def callback_on_tile_end(i: int, _preview_image_pil: Image) -> None:
             if i < num_tiles:
-                self._node.publish_update_to_parameter(
-                    "output_image",
-                    pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
-                )
                 self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
                 self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
 
         self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
-            output_scale=output_scale,
+            output_scale=OUTPUT_SCALE,
             callback_on_tile_end=callback_on_tile_end,
         )
         self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
@@ -325,7 +329,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         w, h = input_image_pil.size
         output_image_pil = input_image_pil.resize(
-            size=(int(w * scale), int(h * scale)),
+            size=(int(w * scale / OUTPUT_SCALE), int(h * scale / OUTPUT_SCALE)),
             resample=resample,
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/844
         )
@@ -346,28 +350,10 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
 
         num_inference_steps = self.get_num_inference_steps()
 
-        def wrapped_pipe(tile: Image, get_preview_image_with_partial_tile: Any) -> Image:
-            def callback_on_step_end(pipe: DiffusionPipeline, i: int, _t: Any, callback_kwargs: dict) -> dict:
+        def wrapped_pipe(tile: Image, _get_preview_image_with_partial_tile: Any) -> Image:
+            def callback_on_step_end(_pipe: DiffusionPipeline, i: int, _t: Any, _callback_kwargs: dict) -> dict:
                 if i < num_inference_steps - 1:
-                    # Generate a preview image if this is not yet the last step.
-                    # That would be redundant, since the pipeline automatically
-                    # does that for the last step.
-
-                    # Check to ensure there's enough space in the intermediates directory
-                    # if that setting is enabled.
-                    check_cleanup_intermediates_directory()
-
-                    latents = callback_kwargs["latents"]
-                    intermediate_pil_image = self.latents_to_image_pil(pipe, latents)
-
                     # HERE -> need to update the tile by calling something in the tile processor.
-                    preview_image_with_partial_tile = get_preview_image_with_partial_tile(intermediate_pil_image)
-                    self._node.publish_update_to_parameter(
-                        "output_image",
-                        pil_to_image_artifact(
-                            preview_image_with_partial_tile, directory_path=get_intermediates_directory_path()
-                        ),
-                    )
                     self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
                     self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                         f"Starting inference step {i + 2} of {num_inference_steps}...\n"
@@ -399,16 +385,12 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         num_tiles = tiling_image_processor.get_num_tiles(image=input_image_pil)
 
-        def callback_on_tile_end(i: int, preview_image_pil: Image) -> None:
+        def callback_on_tile_end(i: int, _preview_image_pil: Image) -> None:
             if i < num_tiles:
                 # Check to ensure there's enough space in the intermediates directory
                 # if that setting is enabled.
                 check_cleanup_intermediates_directory()
 
-                self._node.publish_update_to_parameter(
-                    "output_image",
-                    pil_to_image_artifact(preview_image_pil, directory_path=get_intermediates_directory_path()),
-                )
                 self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
                 self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
 

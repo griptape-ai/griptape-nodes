@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -22,6 +23,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
+    SetParameterValueResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -164,7 +166,7 @@ class ExecuteNodeState(State):
 
         for parameter in current_node.parameters:
             # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter, direction="upstream")
+            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -175,7 +177,7 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                GriptapeNodes.get_instance().handle_request(
+                result = GriptapeNodes.get_instance().handle_request(
                     SetParameterValueRequest(
                         parameter_name=parameter.name,
                         node_name=current_node.name,
@@ -185,6 +187,10 @@ class ExecuteNodeState(State):
                         incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
                 )
+                if isinstance(result, SetParameterValueResultFailure):
+                    msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
+                    logger.error(msg)
+                    raise RuntimeError(msg)
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:

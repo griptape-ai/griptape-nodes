@@ -3,7 +3,7 @@ from typing import Any
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 
-from diffusers_nodes_library.common.parameters.diffusion.common.runtime_parameters import (
+from diffusers_nodes_library.common.parameters.diffusion.common.upscale_runtime_parameters import (
     UpscalePipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.common import qwen_latents_to_image_pil

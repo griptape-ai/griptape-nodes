@@ -49,6 +49,7 @@ class ControlFlowContext:
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
+    pickle_control_flow_result: bool
     node_to_proxy_map: dict[BaseNode, BaseNode]
 
     def __init__(
@@ -57,6 +58,7 @@ class ControlFlowContext:
         max_nodes_in_parallel: int,
         *,
         execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
+        pickle_control_flow_result: bool = False,
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
@@ -70,6 +72,7 @@ class ControlFlowContext:
         else:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
+        self.pickle_control_flow_result = pickle_control_flow_result
         self.node_to_proxy_map = {}
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
@@ -112,6 +115,7 @@ class ControlFlowContext:
 
         return next_nodes
 
+    # Mirrored in @parallel_resolution.py. if you update one, update the other.
     def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)
@@ -250,9 +254,8 @@ class CompleteState(State):
             # Use pickle-based serialization for complex parameter output values
             from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
-            use_pickling = GriptapeNodes.ConfigManager().get_config_value("pickle_control_flow_result", default=False)
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
-                current_node, use_pickling=use_pickling
+                current_node, use_pickling=context.pickle_control_flow_result
             )
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -275,12 +278,17 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str) -> None:
+    def __init__(self, flow_name: str, *, pickle_control_flow_result: bool = False) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
         max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
-        context = ControlFlowContext(flow_name, max_nodes_in_parallel, execution_type=execution_type)
+        context = ControlFlowContext(
+            flow_name,
+            max_nodes_in_parallel,
+            execution_type=execution_type,
+            pickle_control_flow_result=pickle_control_flow_result,
+        )
         super().__init__(context)
 
     async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002

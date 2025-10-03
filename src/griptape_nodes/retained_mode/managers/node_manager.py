@@ -149,6 +149,18 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 logger = logging.getLogger("griptape_nodes")
 
 
+class SerializedParameterValues(NamedTuple):
+    """Result of serializing parameter output values.
+
+    Attributes:
+        parameter_output_values: Either raw values or UUID references if pickling was used
+        unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+    """
+
+    parameter_output_values: dict[str, Any]
+    unique_parameter_uuid_to_values: dict[Any, Any] | None
+
+
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
 
@@ -1557,6 +1569,7 @@ class NodeManager:
             result = SetParameterValueResultFailure(result_details=details)
             return result
         object_type = request.data_type if request.data_type else parameter.type
+        # If the parameter is control type, we shouldn't check the value being set, since it's just a marker for which path to take, not a real value, and will likely be a string, which doesn't match ControlType.
         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
             object_type
         ):
@@ -2337,9 +2350,10 @@ class NodeManager:
             set_parameter_value_commands=parameter_commands,
             set_lock_commands_per_node=lock_commands,
         )
-        # Set everything in the clipboard!
-        GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
-        GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
+        # Set everything in the clipboard if requested
+        if request.copy_to_clipboard:
+            GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
+            GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
         return SerializeSelectedNodesToCommandsResultSuccess(
             final_result,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
@@ -2603,9 +2617,7 @@ class NodeManager:
         return commands if commands else None
 
     @staticmethod
-    def serialize_parameter_output_values(
-        node: BaseNode, *, use_pickling: bool = False
-    ) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
+    def serialize_parameter_output_values(node: BaseNode, *, use_pickling: bool = False) -> SerializedParameterValues:
         """Serialize parameter output values with optional pickling for complex objects.
 
         Args:
@@ -2613,12 +2625,12 @@ class NodeManager:
             use_pickling: If True, use pickle-based serialization; if False, use TypeValidator.safe_serialize
 
         Returns:
-            Tuple of (parameter_output_values, unique_parameter_uuid_to_values)
+            SerializedParameterValues containing:
             - parameter_output_values: Either raw values or UUID references if pickling was used
             - unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
         """
         if not node.parameters:
-            return {}, None
+            return SerializedParameterValues({}, None)
 
         if not use_pickling:
             return NodeManager._serialize_without_pickling(node)
@@ -2626,14 +2638,14 @@ class NodeManager:
         return NodeManager._serialize_with_pickling(node)
 
     @staticmethod
-    def _serialize_without_pickling(node: BaseNode) -> tuple[dict[str, Any], None]:
+    def _serialize_without_pickling(node: BaseNode) -> SerializedParameterValues:
         """Serialize parameter values using simple TypeValidator serialization.
 
         Args:
             node: The node whose parameter values should be serialized
 
         Returns:
-            Tuple of (serialized_values, None)
+            SerializedParameterValues with no pickling
         """
         param_values = {}
         for param in node.parameters:
@@ -2642,19 +2654,19 @@ class NodeManager:
             else:
                 param_values[param.name] = node.get_parameter_value(param.name)
         simple_values = TypeValidator.safe_serialize(param_values)
-        return simple_values, None
+        return SerializedParameterValues(simple_values, None)
 
     @staticmethod
     def _serialize_with_pickling(
         node: BaseNode,
-    ) -> tuple[dict[str, Any], dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
+    ) -> SerializedParameterValues:
         """Serialize parameter values using pickle-based serialization with UUID references.
 
         Args:
             node: The node whose parameter values should be serialized
 
         Returns:
-            Tuple of (uuid_referenced_values, unique_parameter_uuid_to_values)
+            SerializedParameterValues with pickled values
         """
         unique_parameter_uuid_to_values = {}
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
@@ -2674,7 +2686,9 @@ class NodeManager:
 
             uuid_referenced_values[param_name] = unique_uuid
 
-        return uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+        return SerializedParameterValues(
+            uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+        )
 
     @staticmethod
     def _get_parameter_value_for_serialization(node: BaseNode, param_name: str) -> Any:

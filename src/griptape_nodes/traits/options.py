@@ -26,12 +26,16 @@ class Options(Trait):
 
     _choices: list = field(default_factory=lambda: ["choice 1", "choice 2", "choice 3"])
     element_id: str = field(default_factory=lambda: "Options")
+    show_search: bool = field(default=True)
+    search_filter: str = field(default="")
 
-    def __init__(self, *, choices: list | None = None) -> None:
+    def __init__(self, *, choices: list | None = None, show_search: bool = True, search_filter: str = "") -> None:
         super().__init__()
         # Set choices through property to ensure dual sync from the start
         if choices is not None:
             self.choices = choices
+        self.show_search = show_search
+        self.search_filter = search_filter
 
     @property
     def choices(self) -> list:
@@ -122,4 +126,8 @@ class Options(Trait):
         Using _choices directly breaks this cycle while still providing the correct
         initial choices for UI rendering. The property-based sync handles runtime updates.
         """
-        return {"simple_dropdown": self._choices}
+        return {
+            "simple_dropdown": self._choices,
+            "show_search": self.show_search,
+            "search_filter": self.search_filter,
+        }

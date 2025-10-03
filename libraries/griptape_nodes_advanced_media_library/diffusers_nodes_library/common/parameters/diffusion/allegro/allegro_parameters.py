@@ -30,8 +30,7 @@ class AllegroPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._model_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("huggingface_repo_parameter_message_model")
+        self._model_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
@@ -51,52 +50,24 @@ class AllegroPipelineParameters(DiffusionPipelineTypePipelineParameters):
         return errors or None
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Update dimensions when model selection changes."""
-        if parameter.name == "model" and isinstance(value, str):
-            repo_id, _ = self._model_repo_parameter._key_to_repo_revision(value)
-            recommended_width, recommended_height, num_frames = self._get_model_defaults(repo_id)
+        """Update num_frames when model selection changes."""
 
-            # Update dimensions if they exist on the node
-            try:
-                current_width = self._node.get_parameter_value("width")
-                if current_width != recommended_width:
-                    self._node.set_parameter_value("width", recommended_width)
-            except Exception as e:
-                # Parameter might not exist yet
-                logger.debug("Could not update width parameter: %s", e)
-
-            try:
-                current_height = self._node.get_parameter_value("height")
-                if current_height != recommended_height:
-                    self._node.set_parameter_value("height", recommended_height)
-            except Exception as e:
-                # Parameter might not exist yet
-                logger.debug("Could not update height parameter: %s", e)
-
-            try:
-                current_num_frames = self._node.get_parameter_value("num_frames")
-                if current_num_frames != num_frames:
-                    self._node.set_parameter_value("num_frames", num_frames)
-            except Exception as e:
-                # Parameter might not exist yet
-                logger.debug("Could not update num_frames parameter: %s", e)
-
-    def _get_model_defaults(self, repo_id: str | None = None) -> tuple[int, int, int]:
-        """Get default width, height, and num_frames for a specific model or the default model."""
+    def _get_model_defaults(self, repo_id: str | None = None) -> int:
+        """Get default num_frames for a specific model or the default model."""
         if repo_id is None:
             available_models = self._model_repo_parameter.fetch_repo_revisions()
             if not available_models:
-                return 640, 368, 40  # 40x360P variant
+                return 40  # 40x360P variant
             repo_id = available_models[0][0]
 
-        """Get recommended width and height for a specific model."""
+        """Get recommended num_frames for a specific model."""
         match repo_id:
             case "rhymes-ai/Allegro":
-                return 1280, 720, 88  # Default Allegro model
+                return 88  # Default Allegro model
             case "rhymes-ai/Allegro-T2V-40x360P":
-                return 640, 368, 40  # 40x360P variant
+                return 40  # 40x360P variant
             case "rhymes-ai/Allegro-T2V-40x720P":
-                return 1280, 720, 40  # 40x720P variant
+                return 40  # 40x720P variant
             case _:
                 msg = f"Unsupported model: {repo_id}"
                 raise ValueError(msg)
