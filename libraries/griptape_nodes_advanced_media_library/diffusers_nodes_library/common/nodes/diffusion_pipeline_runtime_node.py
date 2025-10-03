@@ -68,7 +68,9 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             end_params = DiffusionPipelineRuntimeNode.END_PARAMS
             excluded_params = {*start_params, *end_params}
 
-            middle_elements = [element.name for element in self.root_ui_element._children if element.name not in excluded_params]
+            middle_elements = [
+                element.name for element in self.root_ui_element._children if element.name not in excluded_params
+            ]
             sorted_parameters = [*start_params, *middle_elements, *end_params]
 
             self.reorder_elements(sorted_parameters)
