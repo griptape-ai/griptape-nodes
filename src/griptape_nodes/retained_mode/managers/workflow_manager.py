@@ -1260,7 +1260,9 @@ class WorkflowManager:
 
         # Use the standalone request to save the workflow file
         # Use pickle_control_flow_result from request if provided, otherwise use False (default)
-        pickle_control_flow_result = request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
+        pickle_control_flow_result = (
+            request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
+        )
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
             file_name=file_name,
@@ -1404,6 +1406,7 @@ class WorkflowManager:
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
         execution_flow_name: str,
+        *,
         pickle_control_flow_result: bool = False,
     ) -> str:
         """Generate workflow file content from serialized commands and metadata."""
@@ -1606,6 +1609,7 @@ class WorkflowManager:
         flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
+        *,
         pickle_control_flow_result: bool = False,
     ) -> list[ast.AST] | None:
         """Generates execute_workflow(...) and the __main__ guard."""
@@ -1720,7 +1724,10 @@ class WorkflowManager:
                             keywords=[
                                 ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
-                                ast.keyword(arg="pickle_control_flow_result", value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load())),
+                                ast.keyword(
+                                    arg="pickle_control_flow_result",
+                                    value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
+                                ),
                             ],
                         )
                     )
@@ -1771,7 +1778,8 @@ class WorkflowManager:
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
                                     ),
                                     ast.keyword(
-                                        arg="pickle_control_flow_result", value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load())
+                                        arg="pickle_control_flow_result",
+                                        value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
                                     ),
                                 ],
                             )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import pickle
 from typing import Any
 
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
@@ -25,7 +24,7 @@ class LocalWorkflowPublisher(LocalWorkflowExecutor):
         workflow_path: str,
         publisher_name: str,
         published_workflow_file_name: str,
-        **kwargs: Any,  # noqa: ARG002
+        **kwargs: Any,
     ) -> None:
         # Load the workflow into memory
         await self.aprepare_workflow_for_run(workflow_name=workflow_name, flow_input={}, workflow_path=workflow_path)
@@ -35,7 +34,7 @@ class LocalWorkflowPublisher(LocalWorkflowExecutor):
             publisher_name=publisher_name,
             execute_on_publish=False,
             published_workflow_file_name=published_workflow_file_name,
-            pickle_control_flow_result=pickle_control_flow_result
+            pickle_control_flow_result=pickle_control_flow_result,
         )
         publish_workflow_result = await GriptapeNodes.ahandle_request(publish_workflow_request)
 

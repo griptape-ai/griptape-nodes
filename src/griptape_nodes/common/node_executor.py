@@ -290,7 +290,7 @@ class NodeExecutor:
         self,
         published_workflow_filename: Path,
         file_name: str,
-        pickle_control_flow_result: bool = True,
+        pickle_control_flow_result: bool = True,  # noqa: FBT001, FBT002
     ) -> dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Execute the published workflow in a subprocess.
 
@@ -345,7 +345,7 @@ class NodeExecutor:
         for result_dict in subprocess_result.values():
             # Handle backward compatibility: old flat structure
             if not isinstance(result_dict, dict) or "parameter_output_values" not in result_dict:
-                parameter_output_values.update(result_dict)
+                parameter_output_values.update(result_dict)  # type: ignore[arg-type]
                 continue
 
             param_output_vals = result_dict["parameter_output_values"]
@@ -441,20 +441,20 @@ class NodeExecutor:
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
                 WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
 
-        # delete_request = DeleteWorkflowRequest(name=workflow_name)
-        # delete_result = GriptapeNodes.handle_request(delete_request)
-        # if isinstance(delete_result, DeleteWorkflowResultFailure):
-        #     logger.error(
-        #         "Failed to delete workflow '%s'. Error: %s",
-        #         workflow_name,
-        #         delete_result.result_details,
-        #     )
-        # else:
-        #     logger.info(
-        #         "Cleanup result for workflow '%s': %s",
-        #         workflow_name,
-        #         delete_result.result_details,
-        #     )
+        delete_request = DeleteWorkflowRequest(name=workflow_name)
+        delete_result = GriptapeNodes.handle_request(delete_request)
+        if isinstance(delete_result, DeleteWorkflowResultFailure):
+            logger.error(
+                "Failed to delete workflow '%s'. Error: %s",
+                workflow_name,
+                delete_result.result_details,
+            )
+        else:
+            logger.info(
+                "Cleanup result for workflow '%s': %s",
+                workflow_name,
+                delete_result.result_details,
+            )
 
     async def _get_storage_backend(self) -> StorageBackend:
         storage_backend_str = GriptapeNodes.ConfigManager().get_config_value("storage_backend")

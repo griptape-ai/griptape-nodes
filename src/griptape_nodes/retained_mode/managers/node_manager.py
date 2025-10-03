@@ -4,19 +4,6 @@ import pickle
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
-
-class SerializedParameterValues(NamedTuple):
-    """Result of serializing parameter output values.
-
-    Attributes:
-        parameter_output_values: Either raw values or UUID references if pickling was used
-        unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
-    """
-
-    parameter_output_values: dict[str, Any]
-    unique_parameter_uuid_to_values: dict[Any, Any] | None
-
-
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -159,6 +146,18 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class SerializedParameterValues(NamedTuple):
+    """Result of serializing parameter output values.
+
+    Attributes:
+        parameter_output_values: Either raw values or UUID references if pickling was used
+        unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+    """
+
+    parameter_output_values: dict[str, Any]
+    unique_parameter_uuid_to_values: dict[Any, Any] | None
 
 
 class NodeManager:
