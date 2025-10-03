@@ -3323,6 +3323,10 @@ class WorkflowManager:
                 msg = f"No publishing handler found for '{publisher_name}' in request type '{type(request).__name__}'."
                 raise ValueError(msg)  # noqa: TRY301
 
+            # Save the workflow before publishing to ensure the latest changes in memory are included
+            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+            await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=Path(workflow.file_path).stem))
+
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
                 workflow_file = Path(result.published_workflow_file_path)

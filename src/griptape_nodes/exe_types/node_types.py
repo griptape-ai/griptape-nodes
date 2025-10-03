@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
@@ -37,6 +36,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
@@ -140,6 +140,7 @@ class BaseNode(ABC):
         None  # The control input parameter used to enter this node during execution
     )
     lock: bool = False  # When lock is true, the node is locked and can't be modified. When lock is false, the node is unlocked and can be modified.
+    _cancellation_requested: threading.Event  # Event indicating if cancellation has been requested for this node
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -167,6 +168,7 @@ class BaseNode(ABC):
         self.root_ui_element._node_context = self
         self.process_generator = None
         self._tracked_parameters = []
+        self._cancellation_requested = threading.Event()
         self.set_entry_control_parameter(None)
         self.execution_environment = Parameter(
             name="execution_environment",
@@ -208,6 +210,27 @@ class BaseNode(ABC):
             parameter: The control input parameter that triggered this node's execution, or None to clear
         """
         self._entry_control_parameter = parameter
+
+    @property
+    def is_cancellation_requested(self) -> bool:
+        """Check if cancellation has been requested for this node.
+
+        Returns:
+            True if cancellation has been requested, False otherwise
+        """
+        return self._cancellation_requested.is_set()
+
+    def request_cancellation(self) -> None:
+        """Request cancellation of this node's execution.
+
+        Sets a flag that the node can check during long-running operations
+        to cooperatively cancel execution.
+        """
+        self._cancellation_requested.set()
+
+    def clear_cancellation(self) -> None:
+        """Clear the cancellation request flag."""
+        self._cancellation_requested.clear()
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:
@@ -815,20 +838,14 @@ class BaseNode(ABC):
             return
 
         if isinstance(result, Generator):
-            # Handle generator pattern asynchronously using the same logic as before
-            loop = asyncio.get_running_loop()
-
             try:
                 # Start the generator
                 func = next(result)
 
                 while True:
-                    # Run callable in thread pool (preserving existing behavior)
-                    with ThreadPoolExecutor() as executor:
-                        future_result = await loop.run_in_executor(executor, func)
-
                     # Send result back and get next callable
-                    func = result.send(future_result)
+                    func_result = await async_utils.to_thread(func)
+                    func = result.send(func_result)
 
             except StopIteration:
                 # Generator is done
@@ -883,6 +900,8 @@ class BaseNode(ABC):
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
         self.parameter_output_values.clear()
+        # Clear cancellation flag
+        self.clear_cancellation()
         # Clear the spotlight linked list
         # First, clear all next/prev pointers to break the linked list
         current = self.current_spotlight_parameter

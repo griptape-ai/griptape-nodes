@@ -2,7 +2,6 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
-from diffusers_nodes_library.common.utils.option_utils import update_option_choices
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
@@ -32,18 +31,23 @@ class HuggingFaceModelParameter(ABC):
         self._repo_revisions = []
 
     def refresh_parameters(self) -> None:
-        num_repo_revisions_before = len(self.list_repo_revisions())
-        self._repo_revisions = self.fetch_repo_revisions()
-        num_repo_revisions_after = len(self.list_repo_revisions())
+        parameter = self._node.get_parameter_by_name(self._parameter_name)
+        if parameter is None:
+            logger.debug(
+                "Parameter '%s' not found on node '%s'; cannot refresh choices.",
+                self._parameter_name,
+                self._node.name,
+            )
+            return
 
-        if num_repo_revisions_before != num_repo_revisions_after and self._node.get_parameter_by_name(
-            self._parameter_name
-        ):
-            choices = self.get_choices()
-            update_option_choices(self._node, self._parameter_name, choices, choices[0])
+        choices = self.get_choices()
+
+        if parameter.find_elements_by_type(Options):
+            self._node._update_option_choices(self._parameter_name, choices, choices[0])
+        else:
+            parameter.add_trait(Options(choices=choices))
 
     def add_input_parameters(self) -> None:
-        self._repo_revisions = self.fetch_repo_revisions()
         choices = self.get_choices()
 
         if not choices:
@@ -82,6 +86,8 @@ class HuggingFaceModelParameter(ABC):
         self._node.remove_parameter_element_by_name(f"huggingface_repo_parameter_message_{self._parameter_name}")
 
     def get_choices(self) -> list[str]:
+        # Ensure the latest repo revisions are fetched
+        self._repo_revisions = self.fetch_repo_revisions()
         # Count occurrences of each model name
         model_counts = {}
         for repo_id, _ in self.list_repo_revisions():
@@ -97,7 +103,7 @@ class HuggingFaceModelParameter(ABC):
             else:
                 # Only one version, show just the model name
                 choices.append(repo_id)
-
+        logger.debug("Available choices for parameter '%s': %s", self._parameter_name, choices)
         return choices
 
     def validate_before_node_run(self) -> list[Exception] | None:
