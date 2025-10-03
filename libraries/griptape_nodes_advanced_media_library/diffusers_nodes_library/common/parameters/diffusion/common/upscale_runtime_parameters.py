@@ -415,14 +415,14 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 # Check for cancellation request
                 if self._node.is_cancellation_requested:
                     _pipe._interrupt = True
-                    self._node.log_params.append_to_logs(
+                    self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                         "Cancellation requested, stopping after completing this step...\n"
-                    )  # type: ignore[reportAttributeAccessIssue]
+                    )
                     return _callback_kwargs
 
-                self._node.log_params.append_to_logs(
+                self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                     f"Completed inference step {i + 1} of {strength_affected_steps}.\n"
-                )  # type: ignore[reportAttributeAccessIssue]
+                )
                 return {}
 
             img2img_kwargs = self.get_pipe_kwargs()
