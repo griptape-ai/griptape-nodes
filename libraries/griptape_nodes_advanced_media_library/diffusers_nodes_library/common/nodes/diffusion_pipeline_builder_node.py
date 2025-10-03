@@ -13,7 +13,10 @@ from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
-from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    RemoveParameterFromNodeRequest,
+    SetParameterValueRequest,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -134,6 +137,15 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
     def preprocess(self) -> None:
         self.log_params.clear_logs()
+
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.
+        # To avoid updating a ton of callers, we just override this method here.
+        # Long term, all nodes should probably use retained mode rather than direct node methods.
+        if self.does_name_exist(element_name):
+            GriptapeNodes.handle_request(
+                RemoveParameterFromNodeRequest(parameter_name=element_name, node_name=self.name)
+            )
 
     def process(self) -> AsyncResult:
         self.preprocess()

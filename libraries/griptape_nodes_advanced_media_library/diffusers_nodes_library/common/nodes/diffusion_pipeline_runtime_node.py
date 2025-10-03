@@ -12,6 +12,8 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -117,6 +119,15 @@ class DiffusionPipelineRuntimeNode(ControlNode):
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.pipe_params.runtime_parameters.validate_before_node_run()
+
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.
+        # To avoid updating a ton of callers, we just override this method here.
+        # Long term, all nodes should probably use retained mode rather than direct node methods.
+        if self.does_name_exist(element_name):
+            GriptapeNodes.handle_request(
+                RemoveParameterFromNodeRequest(parameter_name=element_name, node_name=self.name)
+            )
 
     def process(self) -> AsyncResult:
         self.preprocess()
