@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterGroup,
+    ParameterMessage,
     ParameterMode,
     ParameterType,
     ParameterTypeBuiltin,
@@ -995,10 +996,17 @@ class NodeManager:
         if isinstance(element, ParameterGroup):
             for child in element.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
-            node.remove_parameter_element_by_name(request.parameter_name)
+            node.remove_node_element(element)
 
             return RemoveParameterFromNodeResultSuccess(
                 result_details=f"Successfully removed parameter group '{request.parameter_name}' and all its children from node '{node_name}'."
+            )
+
+        if isinstance(element, ParameterMessage):
+            node.remove_node_element(element)
+
+            return RemoveParameterFromNodeResultSuccess(
+                result_details=f"Successfully removed parameter message '{request.parameter_name}' from node '{node_name}'."
             )
 
         # No tricky stuff, users!
