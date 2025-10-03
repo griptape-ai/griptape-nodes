@@ -139,7 +139,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.log_params.clear_logs()
 
     def remove_parameter_element_by_name(self, element_name: str) -> None:
-        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.
+        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.  # noqa: FIX004
         # To avoid updating a ton of callers, we just override this method here.
         # Long term, all nodes should probably use retained mode rather than direct node methods.
         if self.does_name_exist(element_name):

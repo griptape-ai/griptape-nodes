@@ -43,7 +43,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         """Save all incoming and outgoing connections for this node, excluding pipeline parameter."""
         result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self.name))
         if isinstance(result, ListConnectionsForNodeResultSuccess):
-            # Exclude pipeline parameter since it never gets removed
+            # Exclude pipeline parameter since restoring it will trigger a cascade of changes
             incoming = [conn for conn in result.incoming_connections if conn.target_parameter_name != "pipeline"]
             return incoming, result.outgoing_connections
         return [], []
@@ -169,7 +169,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         return self.pipe_params.runtime_parameters.validate_before_node_run()
 
     def remove_parameter_element_by_name(self, element_name: str) -> None:
-        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.
+        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.  # noqa: FIX004
         # To avoid updating a ton of callers, we just override this method here.
         # Long term, all nodes should probably use retained mode rather than direct node methods.
         if self.does_name_exist(element_name):
