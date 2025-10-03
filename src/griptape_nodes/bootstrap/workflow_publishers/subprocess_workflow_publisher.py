@@ -41,7 +41,7 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
         workflow_path: str,
         publisher_name: str,
         published_workflow_file_name: str,
-        **kwargs: Any,  # noqa: ARG002
+        **kwargs: Any,
     ) -> None:
         """Publish a workflow in a subprocess and wait for completion."""
         script_path = Path(__file__).parent / "utils" / "subprocess_script.py"
@@ -77,6 +77,8 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
                 "--published-workflow-file-name",
                 published_workflow_file_name,
             ]
+            if kwargs.get("pickle_control_flow_result"):
+                args.append("--pickle-control-flow-result")
             await self.execute_python_script(
                 script_path=tmp_script_path,
                 args=args,

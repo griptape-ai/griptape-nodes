@@ -7,12 +7,13 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.lora_utils import (
-    FluxLorasParameter,  # type: ignore[reportMissingImports]
-)
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.controlnet.union_two_flux_control_net_parameters import (
     UnionTwoFluxControlNetParameters,
 )  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import (
+    FluxLorasParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
@@ -105,4 +106,6 @@ class UnionProTwoFluxControlNetPipeline(ControlNode):
             callback_on_step_end=callback_on_step_end,
         ).images[0]
         self.flux_params.publish_output_image(output_image_pil)
+        self.log_params.append_to_logs("Clearing pipeline from memory...\n")
+        clear_diffusion_pipeline(pipe)
         self.log_params.append_to_logs("Done.\n")

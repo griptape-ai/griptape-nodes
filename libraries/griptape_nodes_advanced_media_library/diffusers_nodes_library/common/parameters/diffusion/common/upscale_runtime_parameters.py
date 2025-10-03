@@ -94,7 +94,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="max_tile_size",
-                default_value=256,
+                default_value=1024,
                 type="int",
                 tooltip="The maximum size (in pixels) of each tile when processing images.",
             )
@@ -102,7 +102,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="tile_overlap",
-                default_value=16,
+                default_value=64,
                 type="int",
                 tooltip="The amount of overlap (in pixels) between tiles when processing images.",
             )
@@ -138,7 +138,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.add_parameter(
             Parameter(
                 name="resample_strategy",
-                default_value="bicubic",
+                default_value="lanczos",
                 type="str",
                 traits={
                     Options(

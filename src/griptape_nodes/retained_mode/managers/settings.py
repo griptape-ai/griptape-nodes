@@ -255,10 +255,3 @@ class Settings(BaseModel):
         default_factory=list,
         description="List of Model Context Protocol server configurations",
     )
-
-    # This is so when we go up for deadline cloud publishing, that the config will be sent up as well, and will pickle those values.
-    pickle_control_flow_result: bool = Field(
-        category=EXECUTION,
-        default=False,
-        description="Whether to pickle control flow results for Cloud Publishing",
-    )

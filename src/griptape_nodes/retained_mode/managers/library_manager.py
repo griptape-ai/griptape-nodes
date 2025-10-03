@@ -1544,9 +1544,6 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-        GriptapeNodes.SessionManager().get_saved_session_id()
-
         # App just got init'd. See if there are library JSONs to load!
         await self.load_all_libraries_from_config()
 

@@ -45,6 +45,7 @@ class HuggingFacePipelineParameter:
                         choices=memory_optimization_strategy_choices,
                     )
                 },
+                allowed_modes={ParameterMode.PROPERTY},
                 tooltip="Memory Optimization Strategy",
             )
         )
@@ -54,6 +55,7 @@ class HuggingFacePipelineParameter:
                 type="bool",
                 output_type="bool",
                 tooltip="Enable attention slicing to reduce memory usage.",
+                allowed_modes={ParameterMode.PROPERTY},
                 default_value=False,
             )
         )
@@ -63,6 +65,7 @@ class HuggingFacePipelineParameter:
                 type="bool",
                 output_type="bool",
                 tooltip="Enable VAE slicing to reduce memory usage.",
+                allowed_modes={ParameterMode.PROPERTY},
                 default_value=False,
             )
         )
@@ -72,6 +75,7 @@ class HuggingFacePipelineParameter:
                 type="bool",
                 output_type="bool",
                 tooltip="Enable transformer layerwise casting to reduce memory usage.",
+                allowed_modes={ParameterMode.PROPERTY},
                 default_value=False,
             )
         )
@@ -87,6 +91,7 @@ class HuggingFacePipelineParameter:
                     )
                 },
                 tooltip="CPU Offload Strategy",
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
         quantization_mode_choices = ["None", "fp8", "int8", "int4"]
