@@ -565,6 +565,10 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             # Add new outgoing index entry with proxy parameter name
             connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
 
+    async def cancel_flow(self) -> None:
+        """Cancel all nodes in the flow by delegating to the resolution machine."""
+        await self.resolution_machine.cancel_all_nodes()
+
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
