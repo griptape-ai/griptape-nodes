@@ -416,11 +416,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     return _callback_kwargs
 
                 if i < num_inference_steps - 1:
-                    # HERE -> need to update the tile by calling something in the tile processor.
-                    self._node.log_params.append_to_logs(f"Finished inference step {i + 1} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
-                    self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
-                        f"Starting inference step {i + 2} of {num_inference_steps}...\n"
-                    )
+                    self._node.log_params.append_to_logs(f"Running inference step {i} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
                 return {}
 
             img2img_kwargs = self.get_pipe_kwargs()
