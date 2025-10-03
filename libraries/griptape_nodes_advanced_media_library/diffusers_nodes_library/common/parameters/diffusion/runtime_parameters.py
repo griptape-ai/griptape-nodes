@@ -110,7 +110,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
                 return callback_kwargs
 
             if i < num_inference_steps - 1 and enable_preview:
-                    self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+                self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
             self._node.log_params.append_to_logs(f"Completed inference step {i + 1} of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
             return {}
 
