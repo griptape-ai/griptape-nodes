@@ -18,8 +18,8 @@ from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
-    DiffusionPipelineRuntimeParameters,
     DEFAULT_NUM_INFERENCE_STEPS,
+    DiffusionPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
@@ -374,7 +374,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         image = pipe.vae.decode(latents, return_dict=False)[0]
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/845
         return pipe.image_processor.postprocess(image, output_type="pil")[0]
-        
+
     @property
     def diffuser_tile_size(self) -> int:
         diffuser_max_tile_size = int(self._node.get_parameter_value("diffuser_max_tile_size"))
