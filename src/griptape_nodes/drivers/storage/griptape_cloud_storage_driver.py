@@ -19,7 +19,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         *,
         bucket_id: str,
         api_key: str | None = None,
-        static_files_directory: str | None = None,
         **kwargs,
     ) -> None:
         """Initialize the GriptapeCloudStorageDriver.
@@ -38,26 +37,11 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         self.headers = kwargs.get("headers") or {"Authorization": f"Bearer {self.api_key}"}
 
         self.bucket_id = bucket_id
-        self.static_files_directory = static_files_directory
-
-    def _get_full_file_path(self, path: Path) -> str:
-        """Get the full file path including workspace directory and static files directory prefix.
-
-        Args:
-            path: The relative path from the workspace directory.
-
-        Returns:
-            The full file path with static files directory prefix if configured.
-        """
-        if self.static_files_directory:
-            return f"{self.static_files_directory}/{path}"
-        return str(path)
 
     def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
-        full_file_path = self._get_full_file_path(path)
-        self._create_asset(full_file_path)
+        self._create_asset(path.as_posix())
 
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{full_file_path}")
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
         try:
             response = httpx.post(url, json={"operation": "PUT"}, headers=self.headers)
             response.raise_for_status()
@@ -71,8 +55,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return {"url": response_data["url"], "headers": response_data.get("headers", {}), "method": "PUT"}
 
     def create_signed_download_url(self, path: Path) -> str:
-        full_file_path = self._get_full_file_path(path)
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{full_file_path}")
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
             response.raise_for_status()
@@ -141,7 +124,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         """
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:
-            response = httpx.get(url, headers=self.headers, params={"prefix": self.static_files_directory or ""})
+            response = httpx.get(url, headers=self.headers, params={"prefix": self.workspace_directory.name or ""})
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             msg = f"Failed to list files in bucket {self.bucket_id}: {e}"
@@ -155,8 +138,8 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         for asset in assets:
             name = asset.get("name", "")
             # Remove the static files directory prefix if it exists
-            if self.static_files_directory and name.startswith(f"{self.static_files_directory}/"):
-                name = name[len(f"{self.static_files_directory}/") :]
+            if self.workspace_directory and name.startswith(f"{self.workspace_directory.name}/"):
+                name = name[len(f"{self.workspace_directory.name}/") :]
             file_names.append(name)
 
         return file_names
@@ -191,8 +174,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Args:
             path: The path of the file to delete.
         """
-        full_file_path = self._get_full_file_path(path)
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{full_file_path}")
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{path.as_posix()}")
 
         try:
             response = httpx.delete(url, headers=self.headers)

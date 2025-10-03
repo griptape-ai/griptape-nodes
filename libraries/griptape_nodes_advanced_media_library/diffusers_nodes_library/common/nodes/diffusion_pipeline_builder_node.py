@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import json
 import logging
@@ -13,7 +12,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -128,12 +127,15 @@ class DiffusionPipelineBuilderNode(ControlNode):
             self.set_config_hash()
 
     def validate_before_node_run(self) -> list[Exception] | None:
+        self.make_node_unresolved(
+            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+        )
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()
 
     def preprocess(self) -> None:
         self.log_params.clear_logs()
 
-    async def aprocess(self) -> None:
+    def process(self) -> AsyncResult:
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
@@ -141,7 +143,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
             return self._build_pipeline()
 
         with self.log_params.append_profile_to_logs("Pipeline building/caching"):
-            await asyncio.to_thread(model_cache.get_or_build_pipeline, self.get_parameter_value("pipeline"), builder)
+            yield lambda: model_cache.get_or_build_pipeline(self.get_parameter_value("pipeline"), builder)
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 

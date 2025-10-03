@@ -116,7 +116,7 @@ class StaticFilesManager:
 
         try:
             url = self.save_static_file(content_bytes, file_name)
-        except ValueError as e:
+        except Exception as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
@@ -142,7 +142,7 @@ class StaticFilesManager:
 
         try:
             response = self.storage_driver.create_signed_upload_url(full_file_path)
-        except ValueError as e:
+        except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
@@ -173,7 +173,7 @@ class StaticFilesManager:
 
         try:
             url = self.storage_driver.create_signed_download_url(full_file_path)
-        except ValueError as e:
+        except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             logger.error(msg)
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
