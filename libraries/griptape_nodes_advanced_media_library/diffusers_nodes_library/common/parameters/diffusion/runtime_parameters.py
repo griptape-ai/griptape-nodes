@@ -1,6 +1,6 @@
 import logging
-from abc import ABC, abstractmethod
 import math
+from abc import ABC, abstractmethod
 from typing import Any
 
 import PIL.Image
@@ -109,10 +109,9 @@ class DiffusionPipelineRuntimeParameters(ABC):
                 self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
                 return callback_kwargs
 
-            if i < num_inference_steps - 1:
-                if enable_preview:
+            if i < num_inference_steps - 1 and enable_preview:
                     self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-            self._node.log_params.append_to_logs(f"Completed inference step {i+1} of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+            self._node.log_params.append_to_logs(f"Completed inference step {i + 1} of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
             return {}
 
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
