@@ -1,4 +1,5 @@
 import logging
+import math
 from abc import ABC
 from typing import Any
 
@@ -190,6 +191,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 default_value=0.3,
                 type="float",
                 tooltip="Indicates extent to transform the reference image.",
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
         self._node.add_parameter(
@@ -406,17 +408,21 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             return input_image_pil
 
         num_inference_steps = self.get_num_inference_steps()
+        strength_affected_steps = math.ceil(num_inference_steps * strength)
 
         def wrapped_pipe(tile: Image, _get_preview_image_with_partial_tile: Any) -> Image:
             def callback_on_step_end(_pipe: DiffusionPipeline, i: int, _t: Any, _callback_kwargs: dict) -> dict:
                 # Check for cancellation request
                 if self._node.is_cancellation_requested:
                     _pipe._interrupt = True
-                    self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
+                    self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                        "Cancellation requested, stopping after completing this step...\n"
+                    )
                     return _callback_kwargs
 
-                if i < num_inference_steps - 1:
-                    self._node.log_params.append_to_logs(f"Running inference step {i} of {num_inference_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                    f"Completed inference step {i + 1} of {strength_affected_steps}.\n"
+                )
                 return {}
 
             img2img_kwargs = self.get_pipe_kwargs()

@@ -1,4 +1,5 @@
 import logging
+import math
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -94,6 +95,8 @@ class DiffusionPipelineRuntimeParameters(ABC):
             "advanced_media_library.enable_image_preview_intermediates", default=False
         )
 
+        strength_affected_steps = math.ceil(num_inference_steps * (self._node.get_parameter_value("strength") or 1))
+
         def callback_on_step_end(
             pipe: DiffusionPipeline,
             i: int,
@@ -106,13 +109,11 @@ class DiffusionPipelineRuntimeParameters(ABC):
                 self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
                 return callback_kwargs
 
-            if i < num_inference_steps - 1:
-                if enable_preview:
-                    self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-                self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
+            if i < num_inference_steps - 1 and enable_preview:
+                self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+            self._node.log_params.append_to_logs(f"Completed inference step {i + 1} of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
             return {}
 
-        self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),
             output_type="pil",
