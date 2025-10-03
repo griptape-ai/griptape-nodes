@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import binascii
 import logging
 import os
@@ -9,6 +10,7 @@ from urllib.parse import urljoin
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
@@ -137,6 +139,38 @@ async def _delete_static_file(file_path: str) -> dict:
     else:
         logger.info("Successfully deleted static file: %s", file_path)
         return {"message": f"File {file_path} deleted successfully"}
+
+
+@app.get("/external-file")
+async def serve_external_file(path: str) -> FileResponse:
+    """Serve file from outside workspace.
+
+    Args:
+        path: Base64-encoded absolute file path
+
+    Returns:
+        FileResponse streaming the file
+
+    Raises:
+        HTTPException: If path invalid, file not found, or not readable
+    """
+    # Decode path
+    try:
+        decoded_path = base64.urlsafe_b64decode(path.encode()).decode()
+        file_path = Path(decoded_path)
+    except Exception as e:
+        msg = f"Invalid path encoding: {e}"
+        raise HTTPException(status_code=400, detail=msg) from e
+
+    # Validate file exists and is readable
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+    if not os.access(file_path, os.R_OK):
+        raise HTTPException(status_code=403, detail="File not readable")
+
+    return FileResponse(file_path)
 
 
 def _setup_app() -> None:

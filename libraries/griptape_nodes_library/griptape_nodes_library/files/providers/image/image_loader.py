@@ -1,7 +1,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple, cast
+from typing import Any, ClassVar, cast
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
@@ -16,11 +16,15 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadata, LoadWorkflowMetadataResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.files.path_utils import PathUtils
 from griptape_nodes_library.files.providers.artifact_load_provider import (
     ArtifactLoadProvider,
     ArtifactLoadProviderValidationResult,
     ArtifactParameterDetails,
+    ExternalFileLocation,
+    FileLocation,
+    OnDiskFileLocation,
+    URLFileLocation,
+    WorkspaceFileLocation,
 )
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
@@ -36,28 +40,6 @@ logger = logging.getLogger("griptape_nodes")
 # - Files outside workspace: Copy to workspace uploads directory with generated filename
 # - URLs: Download to workspace uploads directory
 # - All saved files go to: {workflow_dir}/static_files/uploads/{workflow_name}_{node_name}_{parameter_name}_{file_name}
-
-
-class PathProcessResult(NamedTuple):
-    """Result of processing a file path for serving.
-
-    internal_url: URL for serving the file (relative path for workspace files, cache-busted URL for copied files)
-    saved_path: Full filesystem path where file was saved (None if file was already inside workspace)
-    """
-
-    internal_url: str
-    saved_path: str | None
-
-
-class FileDownloadResult(NamedTuple):
-    """Result of downloading and saving a file from URL.
-
-    internal_url: Cache-busted relative URL for serving the downloaded file
-    saved_path: Full filesystem path where the downloaded file was saved
-    """
-
-    internal_url: str
-    saved_path: str
 
 
 class ImageLoadProvider(ArtifactLoadProvider):
@@ -117,7 +99,6 @@ class ImageLoadProvider(ArtifactLoadProvider):
         """Get image-specific UI options including mask editing."""
         return {
             "display_name": "Image",
-            "clickable_file_browser": True,
             "expander": True,
             "edit_mask": True,
         }
@@ -126,26 +107,30 @@ class ImageLoadProvider(ArtifactLoadProvider):
         """Get image-specific parameters."""
         return [self.mask_channel_parameter, self.output_mask_parameter]
 
-    def can_handle_path(self, path_input: str) -> bool:
-        """Lightweight check if this provider can handle the given file path."""
-        # LoadFile already checks for empty paths, so we assume non-empty here
-        path_str = PathUtils.normalize_path_input(path_input)
-        if not path_str:
-            return False
+    def can_handle_file_location(self, file_location_input: str) -> bool:
+        """Lightweight check if this provider can handle the given file location input."""
+        file_location_type = ArtifactLoadProvider.determine_file_location_type(file_location_input)
 
+        if issubclass(file_location_type, OnDiskFileLocation):
+            return self._can_handle_path(file_location_input)
+        if file_location_type is URLFileLocation:
+            return self._can_handle_url(file_location_input)
+
+        msg = f"Unsupported file location type: {file_location_type}"
+        logger.warning(msg)
+        return False
+
+    def _can_handle_path(self, file_path_str: str) -> bool:
+        """Lightweight check if this provider can handle the given filesystem path."""
         try:
-            file_path = PathUtils.to_path_object(path_str)
-        except (ValueError, OSError, PermissionError):
+            file_path = Path(file_path_str)
+            return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
+        except (ValueError, OSError, AttributeError):
             return False
 
-        if not file_path:
-            return False
-
-        return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
-
-    def can_handle_url(self, url_input: str) -> bool:
+    def _can_handle_url(self, url_input: str) -> bool:
         """Lightweight check if this provider can handle the given URL."""
-        if not PathUtils.is_url(url_input):
+        if not ArtifactLoadProvider.is_url(url_input):
             return False
 
         # Use proper content-type detection
@@ -162,48 +147,93 @@ class ImageLoadProvider(ArtifactLoadProvider):
         url = self._extract_url_from_artifact_input(artifact_input)
         return url is not None
 
-    def attempt_load_from_path(
-        self, path_input: str, current_parameter_values: dict[str, Any]
+    def attempt_load_from_file_location(
+        self,
+        file_location_str: str,
+        current_parameter_values: dict[str, Any],
     ) -> ArtifactLoadProviderValidationResult:
-        """Attempt to load and create image artifact from path input."""
-        path_str = PathUtils.normalize_path_input(path_input)
+        """Attempt to load and create image artifact from an ambiguous file location string.
+
+        This method disambiguates the file location (URL, workspace path, or external path)
+        and routes to the appropriate specialized loader method.
+        """
+        file_location_type = ArtifactLoadProvider.determine_file_location_type(file_location_str)
+
+        if file_location_type is URLFileLocation:
+            return self.attempt_load_from_url(file_location_str, current_parameter_values)
+
+        if issubclass(file_location_type, OnDiskFileLocation):
+            return self.attempt_load_from_filesystem_path(
+                file_location_str=file_location_str,
+                file_location_type=file_location_type,
+                current_parameter_values=current_parameter_values,
+            )
+
+        return ArtifactLoadProviderValidationResult(
+            was_successful=False, result_details=f"Unsupported file location type: {file_location_type}"
+        )
+
+    def attempt_load_from_filesystem_path(  # noqa: C901, PLR0911
+        self,
+        file_location_str: str,
+        file_location_type: type[FileLocation],
+        current_parameter_values: dict[str, Any],
+    ) -> ArtifactLoadProviderValidationResult:
+        """Attempt to load image from filesystem path."""
+        path_str = ArtifactLoadProvider.normalize_path_input(file_location_str)
         if not path_str:
             return ArtifactLoadProviderValidationResult(was_successful=False, result_details="Empty path provided")
 
+        file_path = Path(path_str)
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+        # If path is relative, treat it as relative to workspace
+        if not file_path.is_absolute():
+            file_path = workspace_path / file_path
+
         try:
-            # Process file path for serving (copy to workspace if needed)
-            path_result = self._process_path_to_internal_url(path_str)
+            if file_location_type is WorkspaceFileLocation:
+                resolved_file_path = file_path.resolve()
+                relative_path = resolved_file_path.relative_to(workspace_path.resolve())
+                location = self._process_path_in_workspace(resolved_file_path, relative_path)
+            elif file_location_type is ExternalFileLocation:
+                location = self._process_path_outside_of_workspace(file_path)
+            else:
+                return ArtifactLoadProviderValidationResult(
+                    was_successful=False, result_details=f"Unexpected file location type: {file_location_type}"
+                )
         except FileNotFoundError:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"File not found: {path_input}"
+                was_successful=False, result_details=f"File not found: {file_location_str}"
             )
         except PermissionError:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"Permission denied accessing file: {path_input}"
+                was_successful=False, result_details=f"Permission denied: {file_location_str}"
             )
+        except ValueError as e:
+            return ArtifactLoadProviderValidationResult(was_successful=False, result_details=str(e))
         except Exception as e:
             return ArtifactLoadProviderValidationResult(
                 was_successful=False, result_details=f"Image loading failed: {e}"
             )
 
-        # Create the image artifact
-        artifact = ImageUrlArtifact(value=path_result.internal_url)
+        artifact = ImageUrlArtifact(value=location.get_externally_accessible_url())
 
-        # Process dynamic parameters (mask extraction)
         dynamic_updates = self._finalize_result_with_dynamic_updates(
             artifact=artifact, current_values=current_parameter_values
         )
 
-        # Build result details
-        result_details = f"Image loaded successfully from {path_str}"
-        if path_result.saved_path:
-            result_details += f" and saved to {path_result.saved_path}"
+        if isinstance(location, WorkspaceFileLocation):
+            result_details = f"File loaded: {location.get_source_path()}"
+        elif isinstance(location, ExternalFileLocation):
+            result_details = f"File outside workspace: {location.get_source_path()}"
+        else:
+            result_details = f"File loaded from: {location.get_source_path()}"
 
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=artifact,
-            internal_url=path_result.internal_url,
-            path=path_str,
+            location=location,
             dynamic_parameter_updates=dynamic_updates,
             result_details=result_details,
         )
@@ -228,21 +258,21 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 was_successful=False, result_details=f"URL download failed: {e}"
             )
 
-        # Create the image artifact
-        artifact = ImageUrlArtifact(value=download_result.saved_path)
+        # Create the image artifact using the externally accessible URL
+        artifact = ImageUrlArtifact(value=download_result.get_externally_accessible_url())
 
         # Process dynamic parameters (mask extraction)
         dynamic_updates = self._finalize_result_with_dynamic_updates(
             artifact=artifact, current_values=current_parameter_values
         )
 
+        # Use the WorkspaceFileLocation from download
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=artifact,
-            internal_url=download_result.internal_url,
-            path=url_input,
+            location=download_result,
             dynamic_parameter_updates=dynamic_updates,
-            result_details=f"Image downloaded successfully from {url_input} and saved to {download_result.saved_path}",
+            result_details=f"Image downloaded successfully from {url_input} and saved to {download_result.get_source_path()}",
         )
 
     def attempt_load_from_artifact(
@@ -283,8 +313,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=normalized_artifact,
-            internal_url=url,
-            path=display_path,
+            location=None,
             dynamic_parameter_updates=dynamic_updates,
             result_details=f"Image artifact processed successfully from {display_path}",
         )
@@ -324,26 +353,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         # Return empty string if no URL found (safer than None for display)
         return url or ""
 
-    def _process_path_to_internal_url(self, path_str: str) -> PathProcessResult:
-        """Process file path for serving: use relative path if in workspace, otherwise copy to workspace."""
-        file_path = Path(path_str)
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-
-        # If path is relative, treat it as relative to workspace
-        if not file_path.is_absolute():
-            file_path = workspace_path / file_path
-
-        # Check if file is inside workspace
-        try:
-            resolved_file_path = file_path.resolve()
-            relative_path = resolved_file_path.relative_to(workspace_path.resolve())
-            # File is inside workspace
-            return self._process_path_in_workspace(resolved_file_path, relative_path)
-        except ValueError:
-            # File is outside workspace
-            return self._process_path_outside_of_workspace(file_path)
-
-    def _process_path_in_workspace(self, resolved_file_path: Path, relative_path: Path) -> PathProcessResult:
+    def _process_path_in_workspace(self, resolved_file_path: Path, relative_path: Path) -> FileLocation:
         """Process file that's inside the workspace."""
         # Use workspace file download request (bypasses static files directory logic, since we could be loading from anywhere in the workspace)
         download_request = CreateWorkspaceFileDownloadUrlRequest(file_name=relative_path.as_posix())
@@ -354,15 +364,34 @@ class ImageLoadProvider(ArtifactLoadProvider):
             raise TypeError(msg)
 
         success_result = cast("CreateWorkspaceFileDownloadUrlResultSuccess", download_result)
-        internal_url = success_result.url
-        return PathProcessResult(internal_url=internal_url, saved_path=str(resolved_file_path))
 
-    def _process_path_outside_of_workspace(self, file_path: Path) -> PathProcessResult:
-        """Process file that's outside the workspace by copying it."""
-        copy_result = self._copy_file_to_workspace(file_path=file_path)
-        return PathProcessResult(internal_url=copy_result.saved_path, saved_path=copy_result.saved_path)
+        return WorkspaceFileLocation(
+            externally_accessible_url=success_result.url,
+            workspace_relative_path=relative_path,
+            absolute_path=resolved_file_path,
+        )
 
-    def _copy_file_to_workspace(self, *, file_path: Path) -> FileDownloadResult:
+    def _process_path_outside_of_workspace(self, file_path: Path) -> FileLocation:
+        """Process external file - NO COPYING.
+
+        Args:
+            file_path: Resolved absolute path to external file
+
+        Returns:
+            FileLocation with external file URL
+
+        Raises:
+            ValueError: If storage backend doesn't support external files
+        """
+        # No fallback for cloud storage - just raise
+        external_url = GriptapeNodes.StaticFilesManager().create_external_file_url(file_path=file_path)
+
+        return ExternalFileLocation(
+            externally_accessible_url=external_url,
+            absolute_path=file_path.resolve(),
+        )
+
+    def _copy_file_to_workspace(self, *, file_path: Path) -> WorkspaceFileLocation:
         """Copy file from outside workspace to workspace uploads directory."""
         try:
             file_bytes = file_path.read_bytes()
@@ -381,7 +410,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
             file_bytes=file_bytes, original_filename=file_path.name, parameter_name=self.path_parameter.name
         )
 
-    def _download_url_to_workspace(self, *, url: str) -> FileDownloadResult:
+    def _download_url_to_workspace(self, *, url: str) -> WorkspaceFileLocation:
         """Download URL and save directly to workspace uploads directory."""
         # Download the image (no intermediate disk save)
         try:
@@ -411,7 +440,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
     def _save_bytes_to_workspace(
         self, *, file_bytes: bytes, original_filename: str, parameter_name: str
-    ) -> FileDownloadResult:
+    ) -> WorkspaceFileLocation:
         """Unified method for saving bytes to workspace with proper error handling."""
         # Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}
         filename = self._generate_workspace_filename_only(
@@ -426,10 +455,19 @@ class ImageLoadProvider(ArtifactLoadProvider):
             msg = f"Failed to save file to workspace: {upload_path}"
             raise RuntimeError(msg) from e
 
-        # Return internal URL with cache buster
+        # Return WorkspaceFileLocation with cache buster
         timestamp = int(time.time())
-        internal_url = f"staticfiles/uploads/{filename}?t={timestamp}"
-        return FileDownloadResult(internal_url=internal_url, saved_path=saved_path)
+        externally_accessible_url = f"staticfiles/uploads/{filename}?t={timestamp}"
+
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        saved_path_obj = Path(saved_path)
+        relative_path = saved_path_obj.relative_to(workspace_path)
+
+        return WorkspaceFileLocation(
+            externally_accessible_url=externally_accessible_url,
+            workspace_relative_path=relative_path,
+            absolute_path=saved_path_obj,
+        )
 
     def _generate_workspace_filename_only(self, original_filename: str, parameter_name: str) -> str:
         """Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}."""

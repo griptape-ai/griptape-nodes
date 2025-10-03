@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -244,6 +245,41 @@ class StaticFilesManager:
         url = self.storage_driver.create_signed_download_url(file_path)
 
         return url
+
+    def create_external_file_url(self, file_path: Path) -> str:
+        """Create URL for external file to be accessed by editor.
+
+        Args:
+            file_path: Absolute path to file outside workspace
+
+        Returns:
+            URL string for editor to access the file
+
+        Raises:
+            ValueError: If storage backend is not LOCAL
+            FileNotFoundError: If file doesn't exist
+            PermissionError: If file not readable
+        """
+        if self.storage_backend != StorageBackend.LOCAL:
+            msg = "External file URLs only supported with local storage backend"
+            raise ValueError(msg)
+
+        # Validate file
+        resolved = file_path.resolve()
+        if not resolved.exists():
+            msg = f"File not found: {resolved}"
+            raise FileNotFoundError(msg)
+        if not resolved.is_file():
+            msg = f"Path is not a file: {resolved}"
+            raise ValueError(msg)
+        if not os.access(resolved, os.R_OK):
+            msg = f"File not readable: {resolved}"
+            raise PermissionError(msg)
+
+        # Encode path for URL
+        encoded_path = base64.urlsafe_b64encode(str(resolved).encode()).decode()
+
+        return f"http://localhost:8124/external-file?path={encoded_path}"
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.
