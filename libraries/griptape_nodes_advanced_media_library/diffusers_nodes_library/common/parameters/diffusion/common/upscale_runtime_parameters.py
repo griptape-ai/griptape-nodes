@@ -86,14 +86,6 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         self._node.add_parameter(
             Parameter(
-                name="strength",
-                default_value=0.3,
-                type="float",
-                tooltip="Indicates extent to transform the reference image.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="upscaler_max_tile_size",
                 default_value=256,
                 type="int",
@@ -190,6 +182,14 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                     )
                 },
                 tooltip="The strategy to use when processing image tiles.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="strength",
+                default_value=0.3,
+                type="float",
+                tooltip="Indicates extent to transform the reference image.",
             )
         )
         self._node.add_parameter(
