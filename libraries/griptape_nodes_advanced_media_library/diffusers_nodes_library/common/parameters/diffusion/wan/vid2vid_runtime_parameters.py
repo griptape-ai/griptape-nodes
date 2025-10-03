@@ -60,7 +60,8 @@ class WanVideoToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameter
                 name="strength",
                 default_value=0.8,
                 type="float",
-                tooltip="Higher strength leads to more differences between original image and generated video.",
+                tooltip="Higher strength leads to more differences between original image and generated video.",,
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
 
