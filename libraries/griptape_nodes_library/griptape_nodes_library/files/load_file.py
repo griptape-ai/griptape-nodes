@@ -10,7 +10,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
@@ -18,6 +17,7 @@ from griptape_nodes_library.files.providers.artifact_load_provider import (
     ArtifactLoadProvider,
     ExternalFileLocation,
     FileLocation,
+    URLFileLocation,
 )
 from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
 
@@ -339,6 +339,10 @@ class LoadFile(SuccessFailureNode):
                 self.file_status_info_message.variant = "info"
                 self.file_status_info_message.value = "File outside workspace."
                 self.file_status_info_message.ui_options = {"hide": False}
+            elif isinstance(result.location, URLFileLocation):
+                self.file_status_info_message.variant = "info"
+                self.file_status_info_message.value = f"Loaded from URL: {result.location.get_url_string()}"
+                self.file_status_info_message.ui_options = {"hide": False}
             else:
                 self.file_status_info_message.ui_options = {"hide": True}
 
@@ -369,60 +373,74 @@ class LoadFile(SuccessFailureNode):
         self.publish_update_to_parameter(self.file_location_parameter.name, display_value)
         self.file_location_parameter.tooltip = tooltip
 
-    def _on_copy_to_workspace_clicked(self, button: Button, button_details: Any) -> NodeMessageResult:  # noqa: ARG002
+    def _on_copy_to_workspace_clicked(  # noqa: C901, PLR0911
+        self,
+        button: Button,
+        button_details: Any,  # noqa: ARG002
+    ) -> NodeMessageResult:
         """Handle Copy to Workspace button click with proper state management."""
-        if not isinstance(self._current_location, ExternalFileLocation):
-            return NodeMessageResult(
-                success=False, details="No valid external file to copy", altered_workflow_state=False
-            )
+        if not self._current_provider:
+            return NodeMessageResult(success=False, details="No provider available", altered_workflow_state=False)
 
-        external_file_path = self._current_location.get_filesystem_path()
-        if not external_file_path.exists():
-            return NodeMessageResult(
-                success=False, details=f"File not found: {external_file_path}", altered_workflow_state=False
-            )
+        # Determine source type and extract file bytes + filename
+        if isinstance(self._current_location, ExternalFileLocation):
+            external_file_path = self._current_location.get_filesystem_path()
+            if not external_file_path.exists():
+                return NodeMessageResult(
+                    success=False, details=f"File not found: {external_file_path}", altered_workflow_state=False
+                )
+            try:
+                file_bytes = external_file_path.read_bytes()
+                original_filename = external_file_path.name
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                return NodeMessageResult(
+                    success=False, details=f"Error reading file: {e}", altered_workflow_state=False
+                )
+
+        elif isinstance(self._current_location, URLFileLocation):
+            # Get artifact with data URI
+            from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
+
+            current_artifact = self.artifact_parameter.default_value
+
+            # Convert to ImageUrlArtifact if it's a dict
+            if isinstance(current_artifact, dict):
+                try:
+                    current_artifact = dict_to_image_url_artifact(current_artifact)
+                except Exception as e:
+                    return NodeMessageResult(
+                        success=False, details=f"Failed to convert artifact: {e}", altered_workflow_state=False
+                    )
+
+            # Use Griptape's built-in to_bytes() - handles data URIs, regular URLs, etc.
+            try:
+                file_bytes = current_artifact.to_bytes()
+            except Exception as e:
+                return NodeMessageResult(
+                    success=False, details=f"Failed to get image bytes: {e}", altered_workflow_state=False
+                )
+
+            # Extract filename from URL
+            url_path = Path(self._current_location.get_url_string())
+            original_filename = url_path.name or "downloaded_image.png"
+
+        else:
+            return NodeMessageResult(success=False, details="No valid file to copy", altered_workflow_state=False)
 
         # Set button to loading state
         button.state = "loading"
         button.loading_label = "Copying..."
 
         try:
-            # Read file bytes
-            file_bytes = external_file_path.read_bytes()
-
-            # Generate proper filename using ArtifactLoadProvider protocol
-            original_filename = external_file_path.name
-            generated_filename = ArtifactLoadProvider.generate_upload_filename(
-                workflow_name=GriptapeNodes.ContextManager().get_current_workflow_name(),
-                node_name=self.name,
-                parameter_name=self.file_location_parameter.name,
+            # Use provider's save method to save bytes to workspace
+            workspace_location = self._current_provider.save_bytes_to_workspace(
+                file_bytes=file_bytes,
                 original_filename=original_filename,
+                parameter_name=self.file_location_parameter.name,
             )
 
-            # Save to workspace uploads directory using StaticFilesManager
-            upload_path = f"uploads/{generated_filename}"
-            GriptapeNodes.StaticFilesManager().save_static_file(file_bytes, upload_path)
-
-            # Calculate workspace-relative filesystem path
-            # StaticFilesManager saves relative to workspace + workflow directory
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
-            workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-
-            # Construct workflow filesystem path (same approach as image_loader.py)
-            workflow_file_path = f"{workflow_name}.py"
-            full_workflow_path = workspace_path / workflow_file_path
-
-            if full_workflow_path.exists():
-                # Get workflow directory and make relative to workspace
-                workflow_dir = full_workflow_path.parent
-                relative_workflow_dir = workflow_dir.relative_to(workspace_path)
-                relative_path = relative_workflow_dir / "staticfiles" / "uploads" / generated_filename
-            else:
-                # Fallback: assume staticfiles/uploads from workspace root
-                relative_path = Path("staticfiles") / "uploads" / generated_filename
-
-            # Update file location parameter to workspace-relative filesystem path string
-            file_location_str = str(relative_path)
+            # Update file location parameter to workspace-relative path
+            file_location_str = workspace_location.get_source_path()
             self.set_parameter_value(self.file_location_parameter.name, file_location_str)
             self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
 
@@ -433,7 +451,7 @@ class LoadFile(SuccessFailureNode):
             button.state = "normal"
 
             return NodeMessageResult(
-                success=True, details=f"File copied to workspace: {relative_path}", altered_workflow_state=True
+                success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
             )
 
         except FileNotFoundError as e:

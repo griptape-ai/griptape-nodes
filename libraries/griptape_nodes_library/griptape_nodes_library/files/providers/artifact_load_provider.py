@@ -251,15 +251,36 @@ class ArtifactLoadProvider(ABC):
 
     @abstractmethod
     def attempt_load_from_url(
-        self, url_input: str, current_parameter_values: dict[str, Any]
+        self, url_input: str, current_parameter_values: dict[str, Any], timeout: float | None = None
     ) -> ArtifactLoadProviderValidationResult:
-        """Attempt to load and create artifact from a URL."""
+        """Attempt to load and create artifact from a URL.
+
+        Args:
+            url_input: URL to load from
+            current_parameter_values: Current parameter values for dynamic updates
+            timeout: Optional timeout in seconds for URL download
+        """
 
     @abstractmethod
     def attempt_load_from_artifact(
         self, artifact_input: Any, current_parameter_values: dict[str, Any]
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load and normalize an artifact input."""
+
+    @abstractmethod
+    def save_bytes_to_workspace(
+        self, *, file_bytes: bytes, original_filename: str, parameter_name: str
+    ) -> WorkspaceFileLocation:
+        """Save file bytes to workspace and return location.
+
+        Args:
+            file_bytes: Raw file bytes to save
+            original_filename: Original filename (for extension detection)
+            parameter_name: Parameter name (for filename generation)
+
+        Returns:
+            WorkspaceFileLocation with saved file details
+        """
 
     def _finalize_result_with_dynamic_updates(
         self,

@@ -239,12 +239,17 @@ class ImageLoadProvider(ArtifactLoadProvider):
         )
 
     def attempt_load_from_url(
-        self, url_input: str, current_parameter_values: dict[str, Any]
+        self, url_input: str, current_parameter_values: dict[str, Any], timeout: float | None = None
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load and create image artifact from URL input."""
+        # Use provided timeout or default to 120 seconds
+        timeout_value = timeout if timeout is not None else 120.0
+
         try:
-            # Download directly to workspace (no intermediate disk save)
-            download_result = self._download_url_to_workspace(url=url_input)
+            # Download to memory (no disk write)
+            response = httpx.get(url_input, timeout=timeout_value)
+            response.raise_for_status()
+            image_bytes = response.content
         except httpx.HTTPStatusError as e:
             return ArtifactLoadProviderValidationResult(
                 was_successful=False, result_details=f"HTTP {e.response.status_code} error downloading {url_input}: {e}"
@@ -258,21 +263,33 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 was_successful=False, result_details=f"URL download failed: {e}"
             )
 
-        # Create the image artifact using the externally accessible URL
-        artifact = ImageUrlArtifact(value=download_result.get_externally_accessible_url())
+        # Create data URI for in-memory display
+        import base64
 
-        # Process dynamic parameters (mask extraction)
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Detect format from content-type or URL extension
+        content_type = response.headers.get("content-type", "")
+        if "image/" in content_type:
+            format_type = content_type.split("/")[-1]
+        else:
+            format_type = Path(url_input).suffix.lstrip(".") or "png"
+
+        data_uri = f"data:image/{format_type};base64,{encoded}"
+        artifact = ImageUrlArtifact(value=data_uri)
+
+        # Process dynamic parameters (mask extraction - deferred for URLs)
         dynamic_updates = self._finalize_result_with_dynamic_updates(
             artifact=artifact, current_values=current_parameter_values
         )
 
-        # Use the WorkspaceFileLocation from download
+        # Return URLFileLocation to indicate this came from a URL (not saved to disk yet)
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=artifact,
-            location=download_result,
+            location=URLFileLocation(url=url_input),
             dynamic_parameter_updates=dynamic_updates,
-            result_details=f"Image downloaded successfully from {url_input} and saved to {download_result.get_source_path()}",
+            result_details=f"Image loaded from URL: {url_input}",
         )
 
     def attempt_load_from_artifact(
@@ -406,7 +423,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
             raise OSError(msg) from e
 
         # Use unified save method
-        return self._save_bytes_to_workspace(
+        return self.save_bytes_to_workspace(
             file_bytes=file_bytes, original_filename=file_path.name, parameter_name=self.path_parameter.name
         )
 
@@ -434,14 +451,14 @@ class ImageLoadProvider(ArtifactLoadProvider):
             original_filename = f"{url_path.stem or 'downloaded_image'}.png"
 
         # Use unified save method
-        return self._save_bytes_to_workspace(
+        return self.save_bytes_to_workspace(
             file_bytes=file_bytes, original_filename=original_filename, parameter_name=self.path_parameter.name
         )
 
-    def _save_bytes_to_workspace(
+    def save_bytes_to_workspace(
         self, *, file_bytes: bytes, original_filename: str, parameter_name: str
     ) -> WorkspaceFileLocation:
-        """Unified method for saving bytes to workspace with proper error handling."""
+        """Public method for saving bytes to workspace with proper error handling."""
         # Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}
         filename = self._generate_workspace_filename_only(
             original_filename=original_filename, parameter_name=parameter_name
