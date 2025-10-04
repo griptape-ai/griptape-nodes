@@ -96,7 +96,7 @@ class ExecutePython(SuccessFailureNode):
             self.set_parameter_value("result", "")
         elif not isinstance(
             response, RunArbitraryPythonStringResultSuccess
-        ):  # if it's not a succcess either, it is some response type we don't know
+        ):  # if it's not a success either, it is some response type we don't know
             # Fallback for unexpected response type
             self._set_status_results(
                 was_successful=False,

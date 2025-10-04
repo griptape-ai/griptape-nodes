@@ -41,7 +41,7 @@ class ArbitraryCodeExecManager:
             string_buffer = io.StringIO()
             with redirect_stdout(string_buffer):
                 # passing globals allows recursion to work with exec()
-                global_scope_variables_for_exec = globals()
+                globals()
                 python_output = exec(request.python_string)  # noqa: S102
 
             captured_output = strip_ansi_codes(string_buffer.getvalue())
