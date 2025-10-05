@@ -7,105 +7,30 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 
 
-class FileLocation(ABC):
-    """Base class for file location transport - carries location type and paths.
+@dataclass
+class WorkspaceFileLocation:
+    """Lightweight marker for a file in the workspace."""
 
-    This is a pure data transport mechanism with no business logic.
-    Business logic (UI decisions, copy buttons, etc.) belongs in nodes/providers.
-    """
-
-    @abstractmethod
-    def get_externally_accessible_url(self) -> str:
-        """Return URL that can be used to access this file from the frontend."""
-
-    @abstractmethod
-    def get_display_path(self) -> str:
-        """Return user-facing path string shown in UI."""
-
-    @abstractmethod
-    def get_source_path(self) -> str:
-        """Return the original source path/URL provided by user."""
-
-    @abstractmethod
-    def get_filesystem_path(self) -> Path:
-        """Return Path for filesystem locations.
-
-        Raises:
-            TypeError: If this is not a filesystem location (e.g., URL)
-        """
-
-    @abstractmethod
-    def get_url_string(self) -> str:
-        """Return URL string for URL locations.
-
-        Raises:
-            TypeError: If this is not a URL location (e.g., filesystem path)
-        """
+    workspace_relative_path: Path
+    absolute_path: Path
 
 
-class OnDiskFileLocation(FileLocation):
-    """Base class for files on local filesystem (workspace or external)."""
+@dataclass
+class ExternalFileLocation:
+    """Lightweight marker for a file outside the workspace."""
 
-    def __init__(self, externally_accessible_url: str, absolute_path: Path):
-        self.externally_accessible_url = externally_accessible_url
-        self.absolute_path = absolute_path
-
-    def get_externally_accessible_url(self) -> str:
-        return self.externally_accessible_url
-
-    def get_filesystem_path(self) -> Path:
-        return self.absolute_path
-
-    def get_url_string(self) -> str:
-        msg = f"{self.__class__.__name__} is not a URL"
-        raise TypeError(msg)
+    absolute_path: Path
 
 
-class WorkspaceFileLocation(OnDiskFileLocation):
-    """File located inside the workspace directory."""
+@dataclass
+class URLFileLocation:
+    """Lightweight marker for a file from a URL."""
 
-    def __init__(self, externally_accessible_url: str, workspace_relative_path: Path, absolute_path: Path):
-        super().__init__(externally_accessible_url, absolute_path)
-        self.workspace_relative_path = workspace_relative_path
-
-    def get_display_path(self) -> str:
-        return str(self.workspace_relative_path)
-
-    def get_source_path(self) -> str:
-        return str(self.workspace_relative_path)
+    url: str
 
 
-class ExternalFileLocation(OnDiskFileLocation):
-    """File located outside workspace on local filesystem."""
-
-    def get_display_path(self) -> str:
-        return str(self.absolute_path)
-
-    def get_source_path(self) -> str:
-        return str(self.absolute_path)
-
-
-class URLFileLocation(FileLocation):
-    """File accessed via HTTP(S) URL."""
-
-    def __init__(self, url: str):
-        self.url = url
-
-    def get_externally_accessible_url(self) -> str:
-        return self.url
-
-    def get_display_path(self) -> str:
-        return self.url
-
-    def get_source_path(self) -> str:
-        return self.url
-
-    def get_filesystem_path(self) -> Path:
-        msg = "URLFileLocation is not a filesystem path"
-        raise TypeError(msg)
-
-    def get_url_string(self) -> str:
-        return self.url
+# Type alias for all file location types
+FileLocation = WorkspaceFileLocation | ExternalFileLocation | URLFileLocation
 
 
 @dataclass
@@ -221,10 +146,6 @@ class ArtifactLoadProvider(ABC):
         """Lightweight check if this provider can handle the given file location input."""
 
     @abstractmethod
-    def can_handle_artifact(self, artifact_input: Any) -> bool:
-        """Lightweight check if this provider can handle the given artifact."""
-
-    @abstractmethod
     def attempt_load_from_file_location(
         self, file_location_str: str, current_parameter_values: dict[str, Any]
     ) -> ArtifactLoadProviderValidationResult:
@@ -262,24 +183,91 @@ class ArtifactLoadProvider(ABC):
         """
 
     @abstractmethod
-    def attempt_load_from_artifact(
-        self, artifact_input: Any, current_parameter_values: dict[str, Any]
-    ) -> ArtifactLoadProviderValidationResult:
-        """Attempt to load and normalize an artifact input."""
-
-    @abstractmethod
-    def save_bytes_to_workspace(
-        self, *, file_bytes: bytes, original_filename: str, parameter_name: str
-    ) -> WorkspaceFileLocation:
+    def save_bytes_to_workspace(self, *, file_bytes: bytes, workspace_relative_path: str) -> WorkspaceFileLocation:
         """Save file bytes to workspace and return location.
 
         Args:
             file_bytes: Raw file bytes to save
-            original_filename: Original filename (for extension detection)
-            parameter_name: Parameter name (for filename generation)
+            workspace_relative_path: Relative path within workspace (e.g., "uploads/my_file.png")
 
         Returns:
             WorkspaceFileLocation with saved file details
+        """
+
+    @abstractmethod
+    def get_externally_accessible_url(self, location: FileLocation) -> str:
+        """Convert file location to URL the frontend can fetch.
+
+        Args:
+            location: File location instance
+
+        Returns:
+            URL string that frontend can use to fetch the file
+        """
+
+    @abstractmethod
+    def get_display_path(self, location: FileLocation) -> str:
+        """Get user-facing path string for UI display.
+
+        Args:
+            location: File location instance
+
+        Returns:
+            Display path string for UI
+        """
+
+    @abstractmethod
+    def get_source_path(self, location: FileLocation) -> str:
+        """Get the original source path/URL provided by user.
+
+        Args:
+            location: File location instance
+
+        Returns:
+            Original source path or URL string
+        """
+
+    @abstractmethod
+    def is_location_external_to_workspace(self, location: FileLocation) -> bool:
+        """Returns True if location is outside workspace and can be copied.
+
+        Args:
+            location: File location instance
+
+        Returns:
+            True if location is external (can be copied to workspace), False otherwise
+        """
+
+    @abstractmethod
+    def get_location_display_detail(self, location: FileLocation) -> str:
+        """Get the URL or path detail to show user.
+
+        Args:
+            location: File location instance
+
+        Returns:
+            String detail to display (URL, path, etc.)
+        """
+
+    @abstractmethod
+    def copy_location_to_workspace(
+        self,
+        location: FileLocation,
+        artifact: Any,
+        parameter_name: str,
+    ) -> WorkspaceFileLocation:
+        """Copy file from location to workspace.
+
+        Args:
+            location: The file location to copy
+            artifact: The current artifact (for extracting bytes if needed)
+            parameter_name: Parameter name for filename generation
+
+        Returns:
+            WorkspaceFileLocation with the saved file details
+
+        Raises:
+            TypeError: If the location type is not supported for copying
         """
 
     def _finalize_result_with_dynamic_updates(
@@ -367,20 +355,20 @@ class ArtifactLoadProvider(ABC):
         return f"{safe_workflow}_{safe_node}_{safe_param}_{safe_filename}"
 
     @staticmethod
-    def determine_file_location_type(file_location_str: str) -> type[FileLocation]:
-        """Determine file location type from string (URL, workspace path, or external path).
+    def determine_file_location(file_location_str: str) -> FileLocation:
+        """Factory that creates a FileLocation instance from a string.
 
         Args:
             file_location_str: String representing a file location (URL or filesystem path)
 
         Returns:
-            FileLocation type (URLFileLocation, WorkspaceFileLocation, or ExternalFileLocation)
+            FileLocation instance (WorkspaceFileLocation, ExternalFileLocation, or URLFileLocation)
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Check if URL
         if ArtifactLoadProvider.is_url(file_location_str):
-            return URLFileLocation
+            return URLFileLocation(url=file_location_str)
 
         # Otherwise it's a filesystem path
         file_path = Path(file_location_str)
@@ -392,8 +380,7 @@ class ArtifactLoadProvider(ABC):
         resolved_file_path = file_path.resolve()
 
         try:
-            resolved_file_path.relative_to(workspace_path)
+            relative_path = resolved_file_path.relative_to(workspace_path)
+            return WorkspaceFileLocation(workspace_relative_path=relative_path, absolute_path=resolved_file_path)
         except ValueError:
-            return ExternalFileLocation
-        else:
-            return WorkspaceFileLocation
+            return ExternalFileLocation(absolute_path=resolved_file_path)

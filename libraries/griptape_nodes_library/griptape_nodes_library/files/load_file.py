@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -13,12 +12,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.files.providers.artifact_load_provider import (
-    ArtifactLoadProvider,
-    ExternalFileLocation,
-    FileLocation,
-    URLFileLocation,
-)
+from griptape_nodes_library.files.providers.artifact_load_provider import ArtifactLoadProvider, FileLocation
 from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
 
 logger = logging.getLogger("griptape_nodes")
@@ -63,7 +57,6 @@ class LoadFile(SuccessFailureNode):
 
         self.artifact_parameter = Parameter(
             name="artifact",
-            input_types=[ParameterTypeBuiltin.ANY.value],
             type=ParameterTypeBuiltin.ANY.value,
             output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
@@ -145,8 +138,6 @@ class LoadFile(SuccessFailureNode):
                 self._handle_provider_change(value)
             elif param_name == self.file_location_parameter.name:
                 self._handle_file_location_change(value)
-            elif param_name == self.artifact_parameter.name:
-                self._handle_artifact_change(value)
         finally:
             # Always clear the triggering parameter lock
             self._triggering_parameter_lock = None
@@ -182,28 +173,6 @@ class LoadFile(SuccessFailureNode):
         # Use current provider
         self._load_file_location_with_current_provider(file_location_input=file_location_value)
 
-    def _handle_artifact_change(self, artifact_value: Any) -> None:
-        """Process artifact input, detecting provider if needed."""
-        if artifact_value is None:
-            self._reset_all_parameters()
-            return
-
-        # If no current provider, try automatic detection
-        if not self._current_provider:
-            candidate_providers = self._get_candidate_providers_for_artifact_input(artifact_value)
-            if candidate_providers:
-                self._try_providers_for_artifact_input(
-                    candidate_providers=candidate_providers, artifact_input=artifact_value
-                )
-            else:
-                self._set_status_results(
-                    was_successful=False, result_details="No suitable provider found for this artifact type"
-                )
-            return
-
-        # Use current provider
-        self._load_artifact_with_current_provider(artifact_input=artifact_value)
-
     def _switch_to_automatic_detection(self) -> None:
         """Enable automatic provider detection for all input types."""
         # Configure artifact for maximum flexibility
@@ -224,14 +193,10 @@ class LoadFile(SuccessFailureNode):
 
         self._set_current_provider(provider_instance)
 
-        # Process existing inputs with the new provider
+        # Process existing file location with the new provider
         current_file_location = self.file_location_parameter.default_value
-        current_artifact = self.artifact_parameter.default_value
-
         if current_file_location:
             self._load_file_location_with_current_provider(file_location_input=current_file_location)
-        elif current_artifact:
-            self._load_artifact_with_current_provider(artifact_input=current_artifact)
 
     def _get_candidate_providers_for_file_location_input(self, file_location_input: str) -> list[ArtifactLoadProvider]:
         """Find providers capable of loading from this file location."""
@@ -240,17 +205,6 @@ class LoadFile(SuccessFailureNode):
 
         for provider in providers:
             if provider.can_handle_file_location(file_location_input):
-                candidates.append(provider)  # noqa: PERF401
-
-        return candidates
-
-    def _get_candidate_providers_for_artifact_input(self, artifact_input: Any) -> list[ArtifactLoadProvider]:
-        """Find providers capable of processing this artifact."""
-        candidates = []
-        providers = self._get_all_providers()
-
-        for provider in providers:
-            if provider.can_handle_artifact(artifact_input):
                 candidates.append(provider)  # noqa: PERF401
 
         return candidates
@@ -278,25 +232,6 @@ class LoadFile(SuccessFailureNode):
             was_successful=False, result_details="No provider could successfully process this file location input"
         )
 
-    def _try_providers_for_artifact_input(
-        self, *, candidate_providers: list[ArtifactLoadProvider], artifact_input: Any
-    ) -> None:
-        """Attempt processing with each provider until success."""
-        current_values = self._get_current_parameter_values()
-
-        for provider in candidate_providers:
-            result = provider.attempt_load_from_artifact(artifact_input, current_values)
-            if result.was_successful:
-                # Success! Set this provider as current and apply the result
-                self._set_current_provider(provider)
-                self._apply_validation_result(result)
-                return
-
-        # All providers failed
-        self._set_status_results(
-            was_successful=False, result_details="No provider could successfully process this artifact input"
-        )
-
     def _load_file_location_with_current_provider(self, *, file_location_input: str) -> None:
         """Process file location using the configured provider."""
         if not self._current_provider:
@@ -306,26 +241,20 @@ class LoadFile(SuccessFailureNode):
         result = self._current_provider.attempt_load_from_file_location(file_location_input, current_values)
         self._apply_validation_result(result)
 
-    def _load_artifact_with_current_provider(self, *, artifact_input: Any) -> None:
-        """Process artifact input using the configured provider."""
-        if not self._current_provider:
-            return
-
-        current_values = self._get_current_parameter_values()
-        result = self._current_provider.attempt_load_from_artifact(artifact_input, current_values)
-        self._apply_validation_result(result)
-
     def _apply_validation_result(self, result: Any) -> None:
         """Update node parameters from provider result."""
+        if not self._current_provider:
+            msg = "_apply_validation_result called without a current provider"
+            raise RuntimeError(msg)
+
         if result.was_successful:
             self._current_location = result.location
 
             self.set_parameter_value(self.artifact_parameter.name, result.artifact)
             self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
 
-            self._update_file_location_display(
-                result.location.get_source_path() if result.location else "", result.location
-            )
+            file_location_str = self._current_provider.get_source_path(result.location) if result.location else ""
+            self._update_file_location_display(file_location_str, result.location, self._current_provider)
 
             for param_name, value in result.dynamic_parameter_updates.items():
                 param = self.get_parameter_by_name(param_name)
@@ -335,13 +264,11 @@ class LoadFile(SuccessFailureNode):
                 self.set_parameter_value(param_name, value)
                 self.publish_update_to_parameter(param_name, value)
 
-            if isinstance(result.location, ExternalFileLocation):
+            # Show info box for files external to workspace
+            if self._current_provider.is_location_external_to_workspace(result.location):
+                detail = self._current_provider.get_location_display_detail(result.location)
                 self.file_status_info_message.variant = "info"
-                self.file_status_info_message.value = "File outside workspace."
-                self.file_status_info_message.ui_options = {"hide": False}
-            elif isinstance(result.location, URLFileLocation):
-                self.file_status_info_message.variant = "info"
-                self.file_status_info_message.value = f"Loaded from URL: {result.location.get_url_string()}"
+                self.file_status_info_message.value = f"File not in workspace: {detail}"
                 self.file_status_info_message.ui_options = {"hide": False}
             else:
                 self.file_status_info_message.ui_options = {"hide": True}
@@ -360,20 +287,22 @@ class LoadFile(SuccessFailureNode):
 
             self._set_status_results(was_successful=False, result_details=result.result_details)
 
-    def _update_file_location_display(self, file_location_str: str, location: FileLocation | None) -> None:
+    def _update_file_location_display(
+        self, file_location_str: str, location: FileLocation | None, provider: ArtifactLoadProvider
+    ) -> None:
         """Update file location parameter value and tooltip based on location."""
         if location is None:
             display_value = file_location_str
             tooltip = file_location_str
         else:
-            display_value = location.get_display_path()
-            tooltip = location.get_source_path()
+            display_value = provider.get_display_path(location)
+            tooltip = provider.get_source_path(location)
 
         self.set_parameter_value(self.file_location_parameter.name, display_value)
         self.publish_update_to_parameter(self.file_location_parameter.name, display_value)
         self.file_location_parameter.tooltip = tooltip
 
-    def _on_copy_to_workspace_clicked(  # noqa: C901, PLR0911
+    def _on_copy_to_workspace_clicked(
         self,
         button: Button,
         button_details: Any,  # noqa: ARG002
@@ -382,70 +311,25 @@ class LoadFile(SuccessFailureNode):
         if not self._current_provider:
             return NodeMessageResult(success=False, details="No provider available", altered_workflow_state=False)
 
-        # Determine source type and extract file bytes + filename
-        if isinstance(self._current_location, ExternalFileLocation):
-            external_file_path = self._current_location.get_filesystem_path()
-            if not external_file_path.exists():
-                return NodeMessageResult(
-                    success=False, details=f"File not found: {external_file_path}", altered_workflow_state=False
-                )
-            try:
-                file_bytes = external_file_path.read_bytes()
-                original_filename = external_file_path.name
-            except (FileNotFoundError, PermissionError, OSError) as e:
-                return NodeMessageResult(
-                    success=False, details=f"Error reading file: {e}", altered_workflow_state=False
-                )
-
-        elif isinstance(self._current_location, URLFileLocation):
-            # Get artifact with data URI
-            from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
-            current_artifact = self.artifact_parameter.default_value
-
-            # Convert to ImageUrlArtifact if it's a dict
-            if isinstance(current_artifact, dict):
-                try:
-                    current_artifact = dict_to_image_url_artifact(current_artifact)
-                except Exception as e:
-                    return NodeMessageResult(
-                        success=False, details=f"Failed to convert artifact: {e}", altered_workflow_state=False
-                    )
-
-            # Use Griptape's built-in to_bytes() - handles data URIs, regular URLs, etc.
-            try:
-                file_bytes = current_artifact.to_bytes()
-            except Exception as e:
-                return NodeMessageResult(
-                    success=False, details=f"Failed to get image bytes: {e}", altered_workflow_state=False
-                )
-
-            # Extract filename from URL
-            url_path = Path(self._current_location.get_url_string())
-            original_filename = url_path.name or "downloaded_image.png"
-
-        else:
-            return NodeMessageResult(success=False, details="No valid file to copy", altered_workflow_state=False)
+        if not self._current_location:
+            return NodeMessageResult(success=False, details="No file location to copy", altered_workflow_state=False)
 
         # Set button to loading state
         button.state = "loading"
         button.loading_label = "Copying..."
 
         try:
-            # Use provider's save method to save bytes to workspace
-            workspace_location = self._current_provider.save_bytes_to_workspace(
-                file_bytes=file_bytes,
-                original_filename=original_filename,
+            # Let provider handle all the details - it will error if location type is not supported
+            workspace_location = self._current_provider.copy_location_to_workspace(
+                location=self._current_location,
+                artifact=self.artifact_parameter.default_value,
                 parameter_name=self.file_location_parameter.name,
             )
 
             # Update file location parameter to workspace-relative path
-            file_location_str = workspace_location.get_source_path()
+            file_location_str = self._current_provider.get_source_path(workspace_location)
             self.set_parameter_value(self.file_location_parameter.name, file_location_str)
             self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
-
-            # Trigger re-processing with new location (will update artifact, hide message)
-            # This happens automatically via set_parameter_value triggering _handle_file_location_change
 
             # Reset button state
             button.state = "normal"
@@ -454,16 +338,6 @@ class LoadFile(SuccessFailureNode):
                 success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
             )
 
-        except FileNotFoundError as e:
-            button.state = "normal"
-            self.file_status_info_message.variant = "error"
-            self.file_status_info_message.value = f"File not found: {e}"
-            return NodeMessageResult(success=False, details=f"File not found: {e}", altered_workflow_state=False)
-        except PermissionError as e:
-            button.state = "normal"
-            self.file_status_info_message.variant = "error"
-            self.file_status_info_message.value = f"Permission denied: {e}"
-            return NodeMessageResult(success=False, details=f"Permission denied: {e}", altered_workflow_state=False)
         except Exception as e:
             button.state = "normal"
             self.file_status_info_message.variant = "error"
@@ -478,6 +352,10 @@ class LoadFile(SuccessFailureNode):
 
         # Set new provider
         self._current_provider = provider
+
+        # Update provider dropdown to reflect the selected provider
+        self.set_parameter_value(self.provider_parameter.name, provider.provider_name)
+        self.publish_update_to_parameter(self.provider_parameter.name, provider.provider_name)
 
         # Configure artifact parameter for this provider
         details = provider.get_artifact_parameter_details()
