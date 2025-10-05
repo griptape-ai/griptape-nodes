@@ -20,6 +20,7 @@ from griptape_nodes_library.files.providers.artifact_load_provider import (
     ArtifactParameterDetails,
     ExternalFileLocation,
     FileLocation,
+    OnDiskFileLocation,
     URLFileLocation,
     WorkspaceFileLocation,
 )
@@ -152,11 +153,10 @@ class ImageLoadProvider(ArtifactLoadProvider):
         location = ArtifactLoadProvider.determine_file_location(file_location_str)
 
         if isinstance(location, URLFileLocation):
-            return self.attempt_load_from_url(file_location_str, current_parameter_values)
+            return self.attempt_load_from_url(location, current_parameter_values)
 
         if isinstance(location, (WorkspaceFileLocation, ExternalFileLocation)):
             return self.attempt_load_from_filesystem_path(
-                file_location_str=file_location_str,
                 location=location,
                 current_parameter_values=current_parameter_values,
             )
@@ -165,17 +165,12 @@ class ImageLoadProvider(ArtifactLoadProvider):
             was_successful=False, result_details=f"Unsupported file location type: {type(location)}"
         )
 
-    def attempt_load_from_filesystem_path(  # noqa: PLR0911
+    def attempt_load_from_filesystem_path(
         self,
-        file_location_str: str,
-        location: WorkspaceFileLocation | ExternalFileLocation,
+        location: OnDiskFileLocation,
         current_parameter_values: dict[str, Any],
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load image from filesystem path."""
-        path_str = ArtifactLoadProvider.normalize_path_input(file_location_str)
-        if not path_str:
-            return ArtifactLoadProviderValidationResult(was_successful=False, result_details="Empty path provided")
-
         try:
             # Validate file exists
             if not location.absolute_path.exists():
@@ -184,11 +179,11 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 )
         except FileNotFoundError:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"File not found: {file_location_str}"
+                was_successful=False, result_details=f"File not found: {location.absolute_path}"
             )
         except PermissionError:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"Permission denied: {file_location_str}"
+                was_successful=False, result_details=f"Permission denied: {location.absolute_path}"
             )
         except ValueError as e:
             return ArtifactLoadProviderValidationResult(was_successful=False, result_details=str(e))
@@ -219,24 +214,25 @@ class ImageLoadProvider(ArtifactLoadProvider):
         )
 
     def attempt_load_from_url(
-        self, url_input: str, current_parameter_values: dict[str, Any], timeout: float | None = None
+        self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
     ) -> ArtifactLoadProviderValidationResult:
-        """Attempt to load and create image artifact from URL input."""
+        """Attempt to load and create image artifact from URL."""
         # Use provided timeout or default to 120 seconds
         timeout_value = timeout if timeout is not None else 120.0
 
         try:
             # Download to memory (no disk write)
-            response = httpx.get(url_input, timeout=timeout_value)
+            response = httpx.get(location.url, timeout=timeout_value)
             response.raise_for_status()
             image_bytes = response.content
         except httpx.HTTPStatusError as e:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"HTTP {e.response.status_code} error downloading {url_input}: {e}"
+                was_successful=False,
+                result_details=f"HTTP {e.response.status_code} error downloading {location.url}: {e}",
             )
         except httpx.RequestError as e:
             return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"Network error downloading {url_input}: {e}"
+                was_successful=False, result_details=f"Network error downloading {location.url}: {e}"
             )
         except Exception as e:
             return ArtifactLoadProviderValidationResult(
@@ -253,7 +249,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         if "image/" in content_type:
             format_type = content_type.split("/")[-1]
         else:
-            format_type = Path(url_input).suffix.lstrip(".") or "png"
+            format_type = Path(location.url).suffix.lstrip(".") or "png"
 
         data_uri = f"data:image/{format_type};base64,{encoded}"
         artifact = ImageUrlArtifact(value=data_uri)
@@ -263,13 +259,13 @@ class ImageLoadProvider(ArtifactLoadProvider):
             artifact=artifact, current_values=current_parameter_values
         )
 
-        # Return URLFileLocation to indicate this came from a URL (not saved to disk yet)
+        # Return the location passed in
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=artifact,
-            location=URLFileLocation(url=url_input),
+            location=location,
             dynamic_parameter_updates=dynamic_updates,
-            result_details=f"Image loaded from URL: {url_input}",
+            result_details=f"Image loaded from URL: {location.url}",
         )
 
     def _extract_url_from_artifact_for_display(self, artifact_value: Any) -> str:
@@ -307,23 +303,29 @@ class ImageLoadProvider(ArtifactLoadProvider):
         # Return empty string if no URL found (safer than None for display)
         return url or ""
 
-    def save_bytes_to_workspace(self, *, file_bytes: bytes, workspace_relative_path: str) -> WorkspaceFileLocation:
-        """Save bytes to workspace at specified relative path."""
-        try:
-            saved_path = GriptapeNodes.StaticFilesManager().save_static_file(file_bytes, workspace_relative_path)
-        except Exception as e:
-            msg = f"Failed to save file to workspace: {workspace_relative_path}"
-            raise RuntimeError(msg) from e
+    def save_bytes_to_disk(self, *, file_bytes: bytes, location: OnDiskFileLocation) -> OnDiskFileLocation:
+        """Save file bytes to disk at the specified location."""
+        if isinstance(location, WorkspaceFileLocation):
+            # Use StaticFilesManager for workspace files
+            workspace_relative_path = str(location.workspace_relative_path)
+            try:
+                GriptapeNodes.StaticFilesManager().save_static_file(file_bytes, workspace_relative_path)
+            except Exception as e:
+                msg = f"Failed to save file to workspace: {workspace_relative_path}"
+                raise RuntimeError(msg) from e
+        elif isinstance(location, ExternalFileLocation):
+            # Write directly to filesystem for external files
+            try:
+                location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+                location.absolute_path.write_bytes(file_bytes)
+            except Exception as e:
+                msg = f"Failed to save file to disk: {location.absolute_path}"
+                raise RuntimeError(msg) from e
+        else:
+            msg = f"Cannot save to location type: {type(location)}"
+            raise TypeError(msg)
 
-        # Return WorkspaceFileLocation
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        saved_path_obj = Path(saved_path)
-        relative_path = saved_path_obj.relative_to(workspace_path)
-
-        return WorkspaceFileLocation(
-            workspace_relative_path=relative_path,
-            absolute_path=saved_path_obj,
-        )
+        return location
 
     def _generate_workspace_filename_only(self, original_filename: str, parameter_name: str) -> str:
         """Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}."""
@@ -548,10 +550,21 @@ class ImageLoadProvider(ArtifactLoadProvider):
         filename = self._generate_workspace_filename_only(
             original_filename=original_filename, parameter_name=parameter_name
         )
-        workspace_relative_path = f"uploads/{filename}"
+        workspace_relative_path = Path("uploads") / filename
 
-        # Save to workspace
-        return self.save_bytes_to_workspace(
-            file_bytes=file_bytes,
+        # Get absolute path for the workspace location
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        absolute_path = workspace_path / "static_files" / workspace_relative_path
+
+        # Create WorkspaceFileLocation
+        workspace_location = WorkspaceFileLocation(
             workspace_relative_path=workspace_relative_path,
+            absolute_path=absolute_path,
         )
+
+        # Save to disk and return the workspace location
+        self.save_bytes_to_disk(
+            file_bytes=file_bytes,
+            location=workspace_location,
+        )
+        return workspace_location

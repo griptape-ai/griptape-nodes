@@ -8,29 +8,34 @@ from griptape_nodes.exe_types.node_types import BaseNode
 
 
 @dataclass
-class WorkspaceFileLocation:
-    """Lightweight marker for a file in the workspace."""
+class FileLocation:
+    """Base class for all file location types."""
+
+
+@dataclass
+class OnDiskFileLocation(FileLocation):
+    """Base class for files that exist on disk."""
+
+    absolute_path: Path
+
+
+@dataclass
+class WorkspaceFileLocation(OnDiskFileLocation):
+    """File in the workspace."""
 
     workspace_relative_path: Path
-    absolute_path: Path
 
 
 @dataclass
-class ExternalFileLocation:
-    """Lightweight marker for a file outside the workspace."""
-
-    absolute_path: Path
+class ExternalFileLocation(OnDiskFileLocation):
+    """File outside the workspace."""
 
 
 @dataclass
-class URLFileLocation:
-    """Lightweight marker for a file from a URL."""
+class URLFileLocation(FileLocation):
+    """File from a URL."""
 
     url: str
-
-
-# Type alias for all file location types
-FileLocation = WorkspaceFileLocation | ExternalFileLocation | URLFileLocation
 
 
 @dataclass
@@ -158,40 +163,38 @@ class ArtifactLoadProvider(ABC):
     @abstractmethod
     def attempt_load_from_filesystem_path(
         self,
-        file_location_str: str,
-        file_location_type: type[FileLocation],
+        location: OnDiskFileLocation,
         current_parameter_values: dict[str, Any],
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load and create artifact from a filesystem path.
 
         Args:
-            file_location_str: String representing a filesystem path
-            file_location_type: The determined type (WorkspaceFileLocation or ExternalFileLocation)
+            location: The OnDiskFileLocation (WorkspaceFileLocation or ExternalFileLocation)
             current_parameter_values: Current parameter values for dynamic updates
         """
 
     @abstractmethod
     def attempt_load_from_url(
-        self, url_input: str, current_parameter_values: dict[str, Any], timeout: float | None = None
+        self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
     ) -> ArtifactLoadProviderValidationResult:
         """Attempt to load and create artifact from a URL.
 
         Args:
-            url_input: URL to load from
+            location: URLFileLocation with the URL to load from
             current_parameter_values: Current parameter values for dynamic updates
             timeout: Optional timeout in seconds for URL download
         """
 
     @abstractmethod
-    def save_bytes_to_workspace(self, *, file_bytes: bytes, workspace_relative_path: str) -> WorkspaceFileLocation:
-        """Save file bytes to workspace and return location.
+    def save_bytes_to_disk(self, *, file_bytes: bytes, location: OnDiskFileLocation) -> OnDiskFileLocation:
+        """Save file bytes to disk at the specified location.
 
         Args:
             file_bytes: Raw file bytes to save
-            workspace_relative_path: Relative path within workspace (e.g., "uploads/my_file.png")
+            location: OnDiskFileLocation specifying where to save (can be WorkspaceFileLocation or ExternalFileLocation)
 
         Returns:
-            WorkspaceFileLocation with saved file details
+            The location that was passed in (for chaining/confirmation)
         """
 
     @abstractmethod
