@@ -319,31 +319,35 @@ class LoadFile(SuccessFailureNode):
         button.loading_label = "Copying..."
 
         try:
-            # Let provider handle all the details - it will error if location type is not supported
             workspace_location = self._current_provider.copy_location_to_workspace(
                 location=self._current_location,
                 artifact=self.artifact_parameter.default_value,
                 parameter_name=self.file_location_parameter.name,
             )
-
-            # Update file location parameter to workspace-relative path
-            file_location_str = self._current_provider.get_source_path(workspace_location)
-            self.set_parameter_value(self.file_location_parameter.name, file_location_str)
-            self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
-
-            # Reset button state
-            button.state = "normal"
-
-            return NodeMessageResult(
-                success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
-            )
-
         except Exception as e:
             button.state = "normal"
             self.file_status_info_message.variant = "error"
             self.file_status_info_message.value = f"Copy failed: {e}"
             logger.exception("Copy to workspace failed")
             return NodeMessageResult(success=False, details=f"Copy failed: {e}", altered_workflow_state=False)
+
+        # Update current location to the new workspace location
+        self._current_location = workspace_location
+
+        # Update file location parameter to workspace-relative path
+        file_location_str = self._current_provider.get_source_path(workspace_location)
+        self.set_parameter_value(self.file_location_parameter.name, file_location_str)
+        self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
+
+        # Hide info box since file is now in workspace
+        self.file_status_info_message.ui_options = {"hide": True}
+
+        # Reset button state
+        button.state = "normal"
+
+        return NodeMessageResult(
+            success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
+        )
 
     def _set_current_provider(self, provider: ArtifactLoadProvider) -> None:
         """Install provider and configure its dynamic parameters."""
