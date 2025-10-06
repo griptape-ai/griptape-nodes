@@ -16,7 +16,8 @@ class HuggingFaceRepoParameter(HuggingFaceModelParameter):
 
     def fetch_repo_revisions(self) -> list[tuple[str, str]]:
         if self._list_all_models:
-            return list_all_repo_revisions_in_cache()
+            all_revisions = list_all_repo_revisions_in_cache()
+            return sorted(all_revisions, key=lambda x: x[0] not in self._repo_ids)
         else:
             return [repo_revision for repo in self._repo_ids for repo_revision in list_repo_revisions_in_cache(repo)]
 
