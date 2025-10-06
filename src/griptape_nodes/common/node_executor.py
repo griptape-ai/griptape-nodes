@@ -247,14 +247,21 @@ class NodeExecutor:
             start_node_type = start_node_type[0] if len(start_node_type) > 0 else "StartFlow"
             end_node_type = end_node_type[0] if len(end_node_type) > 0 else "EndFlow"
         if isinstance(node, NodeGroupProxyNode):
-            # TODO: Get the start node request.
-            request = PackageNodesAsSerializedFlowRequest(
-                node_names=node.node_group_data.nodes.keys(),
-                start_node_type=start_node_type,
-                end_node_type=end_node_type,
-                start_end_specific_library_name=library_name,
-                output_parameter_prefix=output_parameter_prefix,
-            )
+            # Temporarily restore connections to original nodes for packaging
+            self._restore_proxy_connections_temporarily(node)
+
+            try:
+                request = PackageNodesAsSerializedFlowRequest(
+                    node_names=node.node_group_data.nodes.keys(),
+                    start_node_type=start_node_type,
+                    end_node_type=end_node_type,
+                    start_end_specific_library_name=library_name,
+                    output_parameter_prefix=output_parameter_prefix,
+                )
+                package_result = GriptapeNodes.handle_request(request)
+            finally:
+                # Restore connections back to proxy node
+                self._restore_connections_to_proxy(node)
         else:
             request = PackageNodeAsSerializedFlowRequest(
                 node_name=node.name,
@@ -266,8 +273,7 @@ class NodeExecutor:
                 else None,
                 output_parameter_prefix=output_parameter_prefix,
             )
-
-        package_result = GriptapeNodes.handle_request(request)
+            package_result = GriptapeNodes.handle_request(request)
         if not isinstance(
             package_result, (PackageNodesAsSerializedFlowResultSuccess, PackageNodeAsSerializedFlowResultSuccess)
         ):
@@ -452,7 +458,7 @@ class NodeExecutor:
 
         for param_name, param_value in parameter_output_values.items():
             # We are grabbing all of the parameters on our end nodes that align with the node being published.
-                # For multi-node packages, use the parameter mapping to find the original node and parameter
+            # For multi-node packages, use the parameter mapping to find the original node and parameter
             if parameter_name_mappings is not None:
                 if param_name in parameter_name_mappings:
                     original_node_param = parameter_name_mappings[param_name]
@@ -463,7 +469,7 @@ class NodeExecutor:
                     if target_node_name in node.node_group_data.nodes:
                         target_node = node.node_group_data.nodes[target_node_name]
                         target_param = target_node.get_parameter_by_name(target_param_name)
-                        if target_param is not None and target_param != target_node.execution_environment:
+                        if target_param is not None and target_param not in (target_node.execution_environment, target_node.node_group):
                             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                                 target_node.set_parameter_value(target_param_name, param_value)
                             target_node.parameter_output_values[target_param_name] = param_value
