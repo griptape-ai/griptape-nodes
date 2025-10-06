@@ -161,7 +161,7 @@ class Connections:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/859
         if not len(connection_id):
             return None
-        # Right now, our special case is that it is ok to have multiple inputs to a CONTROL_TYPE parameter, so if we're going upstream, it's ok. And it's ok to have multipe downstream outputs from a data type parameter.
+        # Right now, our special case is that it is ok to have multiple inputs to a CONTROL_TYPE parameter, so if we're going upstream, it's ok. And it's ok to have multiple downstream outputs from a data type parameter.
         if (
             len(connection_id) > 1
             and not (

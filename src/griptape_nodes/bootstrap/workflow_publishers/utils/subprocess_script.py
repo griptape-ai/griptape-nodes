@@ -14,7 +14,8 @@ async def _main(
     workflow_path: str,
     publisher_name: str,
     published_workflow_file_name: str,
-    pickle_control_flow_result: bool,  # noqa: FBT001
+    *,
+    pickle_control_flow_result: bool,
 ) -> None:
     local_publisher = LocalWorkflowPublisher()
     async with local_publisher as publisher:

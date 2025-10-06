@@ -1545,8 +1545,6 @@ class NodeManager:
         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
             object_type
         ):
-            # Well this seems kind of stupid
-            # Is this value kosher for the types allowed?
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
 
             result = SetParameterValueResultFailure(result_details=details)

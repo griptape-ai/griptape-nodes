@@ -80,7 +80,8 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         workflow_name: str,  # noqa: ARG002
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
-        pickle_control_flow_result: bool = False,  # noqa: FBT001, FBT002
+        *,
+        pickle_control_flow_result: bool = False,
         **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Execute a workflow in a subprocess and wait for completion."""
