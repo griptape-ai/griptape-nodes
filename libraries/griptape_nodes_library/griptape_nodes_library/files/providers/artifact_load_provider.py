@@ -347,38 +347,6 @@ class ArtifactLoadProvider(ABC):
         return path_str
 
     @staticmethod
-    def generate_upload_filename(
-        workflow_name: str,
-        node_name: str,
-        parameter_name: str,
-        original_filename: str,
-    ) -> str:
-        """Generate a collision-free filename for uploaded files.
-
-        Args:
-            workflow_name: Name of the current workflow
-            node_name: Name of the node
-            parameter_name: Name of the parameter
-            original_filename: Original filename
-
-        Returns:
-            Generated collision-free filename
-        """
-        import re
-
-        # Sanitize components for filename safety
-        def sanitize(name: str) -> str:
-            """Replace unsafe characters with underscores."""
-            return re.sub(r'[<>:"/\\|?*]', "_", name)
-
-        safe_workflow = sanitize(workflow_name)
-        safe_node = sanitize(node_name)
-        safe_param = sanitize(parameter_name)
-        safe_filename = sanitize(original_filename)
-
-        return f"{safe_workflow}_{safe_node}_{safe_param}_{safe_filename}"
-
-    @staticmethod
     def get_workflow_directory() -> Path:
         """Get the workflow's directory, or workspace if workflow cannot be determined.
 

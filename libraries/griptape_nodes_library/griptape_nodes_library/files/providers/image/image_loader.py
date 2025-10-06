@@ -323,41 +323,6 @@ class ImageLoadProvider(ArtifactLoadProvider):
             result_details=f"Image downloaded from URL: {location.url}",
         )
 
-    def _extract_url_from_artifact_for_display(self, artifact_value: Any) -> str:
-        """Extract URL from artifact value for display purposes.
-
-        Handles dict, ImageUrlArtifact, and str formats with robust error handling.
-
-        Returns:
-            The extracted URL string
-
-        Raises:
-            ValueError: If the artifact value type is not supported
-        """
-        if not artifact_value:
-            return ""
-
-        match artifact_value:
-            # Handle dictionary format (most common from UI)
-            case dict():
-                url = artifact_value.get("value")
-            # Handle ImageUrlArtifact objects
-            case ImageUrlArtifact():
-                url = artifact_value.value
-            # Handle raw strings
-            case str():
-                url = artifact_value
-            case _:
-                # Generate error message for unsupported types
-                expected_types = "dict, ImageUrlArtifact, or str"
-                error_msg = (
-                    f"Unsupported artifact value type: {type(artifact_value).__name__}. Expected: {expected_types}"
-                )
-                raise ValueError(error_msg)
-
-        # Return empty string if no URL found (safer than None for display)
-        return url or ""
-
     def save_bytes_to_disk(self, *, file_bytes: bytes, location: OnDiskFileLocation) -> OnDiskFileLocation:
         """Save file bytes to disk at the specified location using direct file I/O."""
         try:
@@ -384,14 +349,6 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
         # Generate filename: <node_name>_<parameter_name>_<file_name>
         return f"{self.node.name}_{parameter_name}_{base_name}{extension}"
-
-    def _extract_display_path_from_url(self, url: str) -> str:
-        """Extract user-friendly display path from internal URL."""
-        # For file:// URLs, extract the file path
-        if url.startswith("file://"):
-            return url[7:]  # Remove "file://" prefix
-        # For HTTP URLs, return as-is for display
-        return url
 
     def _finalize_result_with_dynamic_updates(self, *, artifact: Any, current_values: dict[str, Any]) -> dict[str, Any]:
         """Process image-specific dynamic parameter updates (mask extraction)."""
