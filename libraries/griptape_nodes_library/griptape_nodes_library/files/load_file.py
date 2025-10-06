@@ -10,7 +10,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
@@ -316,7 +315,10 @@ class LoadFile(SuccessFailureNode):
     def _generate_filename(self, source_location: FileLocation) -> str:
         """Generate filename using standard naming convention.
 
-        Format: {workflow_name}_{node_name}_{parameter_name}_{original_base_name}{extension}
+        Format: {node_name}_{parameter_name}_{original_base_name}{extension}
+
+        Workflow name is not included since files are already organized under
+        workflow-specific directories (e.g., workspace/project_a/shot_1/uploads/).
 
         Args:
             source_location: Source file location to extract original filename from
@@ -328,8 +330,6 @@ class LoadFile(SuccessFailureNode):
             RuntimeError: If filename cannot be determined
             ValueError: If file has no extension
         """
-        workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-
         # Get original filename from location
         try:
             original_filename = source_location.get_filename()
@@ -345,8 +345,8 @@ class LoadFile(SuccessFailureNode):
             msg = f"Cannot generate filename without extension: {original_filename}"
             raise ValueError(msg)
 
-        # Generate filename: {workflow_name}_{node_name}_{parameter_name}_{file_name}
-        return f"{workflow_name}_{self.name}_{self.file_location_parameter.name}_{base_name}{extension}"
+        # Generate filename: {node_name}_{parameter_name}_{file_name}
+        return f"{self.name}_{self.file_location_parameter.name}_{base_name}{extension}"
 
     def _on_copy_to_workspace_clicked(
         self,

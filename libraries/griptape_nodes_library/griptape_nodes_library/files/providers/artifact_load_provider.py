@@ -380,7 +380,11 @@ class ArtifactLoadProvider(ABC):
 
     @staticmethod
     def get_workflow_directory() -> Path:
-        """Get the workflow's directory relative to workspace.
+        """Get the workflow's directory, or workspace if workflow cannot be determined.
+
+        Returns directory where workflow files should be stored. For saved workflows,
+        uses the workflow's actual directory. For unsaved workflows, falls back to
+        workspace root with a warning.
 
         Returns:
             Path relative to workspace (e.g., Path("myworkflow")), or absolute path if outside workspace
@@ -391,16 +395,19 @@ class ArtifactLoadProvider(ABC):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-        except KeyError as e:
-            msg = f"Workflow not found in registry: {workflow_name}"
-            raise RuntimeError(msg) from e
-
-        workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
-        workflow_directory = workflow_file_path.parent
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+            workflow_directory = workflow_file_path.parent
+        except KeyError:
+            # Workflow not in registry (unsaved) - use workspace root
+            logger.warning(
+                "Workflow '%s' not saved yet, using workspace directory. Files will be stored at workspace root.",
+                workflow_name,
+            )
+            workflow_directory = workspace_path
 
         try:
             final_dir = workflow_directory.relative_to(workspace_path)
@@ -414,12 +421,12 @@ class ArtifactLoadProvider(ABC):
     def generate_workflow_file_location(*, subdirectory: str, filename: str) -> OnDiskFileLocation:
         """Generate file location in workflow subdirectory.
 
-        Places files in {workflow_dir}/{subdirectory}/{filename}. The workflow directory
-        may be inside or outside the workspace.
+        Places files in {workflow_dir}/{workflow_name}/{subdirectory}/{filename}.
+        This keeps all workflow files packaged together under a workflow-specific directory.
 
         Args:
             subdirectory: Subdirectory within workflow directory (e.g., "downloads", "uploads", "thumbnails")
-            filename: Filename to use (e.g., "myflow_LoadFile_file_location_cat.jpg")
+            filename: Filename to use (e.g., "cdn_example_com_image.jpg")
 
         Returns:
             WorkspaceFileLocation if workflow is inside workspace, ExternalFileLocation if outside
@@ -427,22 +434,23 @@ class ArtifactLoadProvider(ABC):
         Example:
             location = ArtifactLoadProvider.generate_workflow_file_location(
                 subdirectory="downloads",
-                filename="myflow_LoadFile_file_location_image.png"
+                filename="cdn_example_com_image.png"
             )
-            # Result: workspace/myflow/downloads/myflow_LoadFile_file_location_image.png
+            # Result: workspace/myworkflow/myworkflow/downloads/cdn_example_com_image.png
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
         workflow_directory = ArtifactLoadProvider.get_workflow_directory()
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         if workflow_directory.is_absolute():
             # Workflow is outside workspace - return ExternalFileLocation
-            absolute_path = workflow_directory / subdirectory / filename
+            absolute_path = workflow_directory / workflow_name / subdirectory / filename
             return ExternalFileLocation(absolute_path=absolute_path)
 
         # Workflow is inside workspace - return WorkspaceFileLocation
-        workspace_relative_path = workflow_directory / subdirectory / filename
+        workspace_relative_path = workflow_directory / workflow_name / subdirectory / filename
         absolute_path = workspace_path / workspace_relative_path
 
         return WorkspaceFileLocation(
