@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
+    BaseNode,
     EndNode,
     NodeGroupProxyNode,
     StartNode,
@@ -23,7 +24,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
     PackageNodesAsSerializedFlowRequest,
-    PackageNodesAsSerializedFlowResultSuccess
+    PackageNodesAsSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
@@ -37,7 +38,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -50,6 +50,7 @@ class PublishLocalWorkflowResult(NamedTuple):
     workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess
     file_name: str
     output_parameter_prefix: str
+    package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess
 
 
 class NodeExecutor:
@@ -85,6 +86,7 @@ class NodeExecutor:
         workflow_path: Path,
         file_name: str,
         output_parameter_prefix: str,
+        package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Execute workflow in subprocess and apply results to node.
 
@@ -93,10 +95,11 @@ class NodeExecutor:
             workflow_path: Path to workflow file to execute
             file_name: Name of workflow for logging
             output_parameter_prefix: Prefix for output parameters
+            package_result: The packaging result containing parameter mappings
         """
         my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
+        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix, package_result)
 
     async def _execute_private_workflow(self, node: BaseNode) -> None:
         """Execute node in private subprocess environment.
@@ -119,7 +122,11 @@ class NodeExecutor:
 
         try:
             await self._execute_and_apply_workflow(
-                node, Path(workflow_result.file_path), result.file_name, result.output_parameter_prefix
+                node,
+                Path(workflow_result.file_path),
+                result.file_name,
+                result.output_parameter_prefix,
+                result.package_result,
             )
         except RuntimeError:
             raise
@@ -191,7 +198,11 @@ class NodeExecutor:
 
         try:
             await self._execute_and_apply_workflow(
-                node, published_workflow_filename, result.file_name, result.output_parameter_prefix
+                node,
+                published_workflow_filename,
+                result.file_name,
+                result.output_parameter_prefix,
+                result.package_result,
             )
         except RuntimeError:
             raise
@@ -257,7 +268,9 @@ class NodeExecutor:
             )
 
         package_result = GriptapeNodes.handle_request(request)
-        if not isinstance(package_result, (PackageNodesAsSerializedFlowResultSuccess, PackageNodeAsSerializedFlowResultSuccess)):
+        if not isinstance(
+            package_result, (PackageNodesAsSerializedFlowResultSuccess, PackageNodeAsSerializedFlowResultSuccess)
+        ):
             msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
@@ -275,7 +288,10 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: TRY004
 
         return PublishLocalWorkflowResult(
-            workflow_result=workflow_result, file_name=file_name, output_parameter_prefix=output_parameter_prefix
+            workflow_result=workflow_result,
+            file_name=file_name,
+            output_parameter_prefix=output_parameter_prefix,
+            package_result=package_result,
         )
 
     async def _publish_library_workflow(
@@ -412,22 +428,58 @@ class NodeExecutor:
         return stored_value
 
     def _apply_parameter_values_to_node(
-        self, node: BaseNode, parameter_output_values: dict[str, Any], output_parameter_prefix: str
+        self,
+        node: BaseNode,
+        parameter_output_values: dict[str, Any],
+        output_parameter_prefix: str,
+        package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Apply deserialized parameter values back to the node.
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
+        Uses parameter_name_mappings from package_result for PackageNodesAsSerializedFlowResultSuccess.
         """
         # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'. That means that running the node failed, but was caught by the published flow.
         # In this case, we should fail the node, since it didn't complete properly.
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
             msg = f"Failed to execute node: {node.name}, with exception: {parameter_output_values.get('result_details', 'No result details were returned.')}"
             raise RuntimeError(msg)
+
+        # Get parameter mappings if this is a multi-node package
+        parameter_name_mappings = None
+        if isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            parameter_name_mappings = package_result.parameter_name_mappings
+
         for param_name, param_value in parameter_output_values.items():
             # We are grabbing all of the parameters on our end nodes that align with the node being published.
-            if param_name.startswith(output_parameter_prefix):
+                # For multi-node packages, use the parameter mapping to find the original node and parameter
+            if parameter_name_mappings is not None:
+                if param_name in parameter_name_mappings:
+                    original_node_param = parameter_name_mappings[param_name]
+                    target_node_name = original_node_param.node_name
+                    target_param_name = original_node_param.parameter_name
+
+                    # Get the original node from ObjectManager
+                    if target_node_name in node.node_group_data.nodes:
+                        target_node = node.node_group_data.nodes[target_node_name]
+                        target_param = target_node.get_parameter_by_name(target_param_name)
+                        if target_param is not None and target_param != target_node.execution_environment:
+                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                target_node.set_parameter_value(target_param_name, param_value)
+                            target_node.parameter_output_values[target_param_name] = param_value
+                            logger.info(
+                                "Set parameter '%s' on node '%s' to value: %s",
+                                target_param_name,
+                                target_node_name,
+                                param_value,
+                            )
+                    else:
+                        logger.warning("Target node '%s' not found in flow", target_node_name)
+                else:
+                    logger.warning("Proxy parameter '%s' not in mapping", param_name)
+            elif param_name.startswith(output_parameter_prefix):
                 clean_param_name = param_name[len(output_parameter_prefix) :]
-                # If the parameter exists on the node, then we need to set those values on the node.
+                # Single node package - use the original logic
                 parameter = node.get_parameter_by_name(clean_param_name)
                 # Don't set execution_environment, since that will be set to Local Execution on any published flow.
                 if parameter is None:
