@@ -41,9 +41,9 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         self._initializing = False
 
-    # Override state property to check model_cache for pipeline's existence, ensuring pipeline rebuild if missing.
     @property
     def state(self) -> NodeResolutionState:
+        """Overrides BaseNode.state @property to compute state based on pipeline's existence in model_cache, ensuring pipeline rebuild if missing."""
         if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(
             self.get_parameter_value("pipeline")
         ):

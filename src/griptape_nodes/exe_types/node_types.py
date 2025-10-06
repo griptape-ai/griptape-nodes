@@ -183,9 +183,11 @@ class BaseNode(ABC):
         )
         self.add_parameter(self.execution_environment)
 
-    # state property to facilitate subclasses overriding the getter for dynamic/computed state
     @property
     def state(self) -> NodeResolutionState:
+        """Get the current resolution state of the node.
+        Existence as @property facilitates subclasses overriding the getter for dynamic/computed state.
+        """
         return self._state
 
     @state.setter
