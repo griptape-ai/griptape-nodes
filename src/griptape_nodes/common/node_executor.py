@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
     PackageNodesAsSerializedFlowRequest,
-    PackageNodesAsSerializedFlowRequest
+    PackageNodesAsSerializedFlowResultSuccess
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
