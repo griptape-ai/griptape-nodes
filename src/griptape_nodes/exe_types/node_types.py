@@ -1027,7 +1027,10 @@ class BaseNode(ABC):
 
         # Verify we have all elements
         if len(ordered_elements) != len(current_elements):
-            msg = "Element order must include all elements exactly once"
+            ordered_names = {e.name for e in ordered_elements}
+            current_names = {e.name for e in current_elements}
+            diff = current_names - ordered_names
+            msg = f"Element order must include all elements exactly once. Missing from new order: {diff}"
             raise ValueError(msg)
 
         # Remove all elements from root_ui_element

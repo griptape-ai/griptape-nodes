@@ -12,11 +12,21 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    IncomingConnection,
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
+    OutgoingConnection,
+)
+from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineRuntimeNode(ControlNode):
+    STATIC_PARAMS: ClassVar = ["pipeline"]
     START_PARAMS: ClassVar = ["pipeline"]
     END_PARAMS: ClassVar = ["logs"]
 
@@ -57,7 +67,10 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             skip_before_value_set=skip_before_value_set,
         )
 
+        saved_incoming = []
+        saved_outgoing = []
         if did_pipeline_change:
+            saved_incoming, saved_outgoing = self._save_connections()
             self.pipe_params.runtime_parameters.remove_input_parameters()
             self.pipe_params.runtime_parameters.remove_output_parameters()
 
@@ -68,12 +81,17 @@ class DiffusionPipelineRuntimeNode(ControlNode):
             end_params = DiffusionPipelineRuntimeNode.END_PARAMS
             excluded_params = {*start_params, *end_params}
 
-            middle_params = [param.name for param in self.parameters if param.name not in excluded_params]
-            sorted_parameters = [*start_params, *middle_params, *end_params]
+            middle_elements = [
+                element.name for element in self.root_ui_element._children if element.name not in excluded_params
+            ]
+            sorted_parameters = [*start_params, *middle_elements, *end_params]
 
             self.reorder_elements(sorted_parameters)
 
         self.pipe_params.runtime_parameters.after_value_set(parameter, value)
+
+        if did_pipeline_change:
+            self._restore_connections(saved_incoming, saved_outgoing)
 
     def add_parameter(self, parameter: Parameter) -> None:
         """Add a parameter to the node.
@@ -116,9 +134,58 @@ class DiffusionPipelineRuntimeNode(ControlNode):
     def validate_before_node_run(self) -> list[Exception] | None:
         return self.pipe_params.runtime_parameters.validate_before_node_run()
 
+    def remove_parameter_element_by_name(self, element_name: str) -> None:
+        # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.  # noqa: FIX004
+        # To avoid updating a ton of callers, we just override this method here.
+        # TODO: Remove after https://github.com/griptape-ai/griptape-nodes/issues/2511
+        if self.does_name_exist(element_name):
+            GriptapeNodes.handle_request(
+                RemoveParameterFromNodeRequest(parameter_name=element_name, node_name=self.name)
+            )
+
     def process(self) -> AsyncResult:
         self.preprocess()
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
         yield lambda: self.pipe_params.runtime_parameters.process_pipeline(pipe)
+
+    def _save_connections(self) -> tuple[list[IncomingConnection], list[OutgoingConnection]]:
+        """Save all incoming and outgoing connections for this node, excluding pipeline parameter."""
+        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self.name))
+        if not isinstance(result, ListConnectionsForNodeResultSuccess):
+            logger.error("Failed to list connections for node '%s'", self.name)
+            return [], []
+        # Exclude pipeline parameter since restoring it will trigger a cascade of changes
+        incoming = [
+            conn
+            for conn in result.incoming_connections
+            if conn.target_parameter_name not in DiffusionPipelineRuntimeNode.STATIC_PARAMS
+        ]
+        return incoming, result.outgoing_connections
+
+    def _restore_connections(
+        self, saved_incoming: list[IncomingConnection], saved_outgoing: list[OutgoingConnection]
+    ) -> None:
+        """Restore connections for parameters that still exist after parameter changes."""
+        for conn in saved_incoming:
+            if self.does_name_exist(conn.target_parameter_name):
+                GriptapeNodes.handle_request(
+                    CreateConnectionRequest(
+                        source_node_name=conn.source_node_name,
+                        source_parameter_name=conn.source_parameter_name,
+                        target_node_name=self.name,
+                        target_parameter_name=conn.target_parameter_name,
+                    )
+                )
+
+        for conn in saved_outgoing:
+            if self.does_name_exist(conn.source_parameter_name):
+                GriptapeNodes.handle_request(
+                    CreateConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name=conn.source_parameter_name,
+                        target_node_name=conn.target_node_name,
+                        target_parameter_name=conn.target_parameter_name,
+                    )
+                )

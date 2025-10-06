@@ -36,6 +36,7 @@ DEFAULT_MODEL = "llama3.2"
 REFRESH_MODELS_MESSAGE = "🔄 Refresh Models..."
 # Common Ollama models - users can type their own model name as well
 MODEL_CHOICES = [
+    "llama4",
     "llama3.2",
     "llama3.2:1b",
     "llama3.2:3b",

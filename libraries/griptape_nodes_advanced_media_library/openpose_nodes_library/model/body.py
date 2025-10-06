@@ -145,7 +145,7 @@ class Body:
                 [22, 23],
                 [19, 20],
             ]
-            # the middle joints heatmap correpondence
+            # the middle joints heatmap correspondence
             map_idx = [
                 [30, 31],
                 [14, 15],
@@ -195,7 +195,7 @@ class Body:
                 [2, 16],
                 [5, 17],
             ]
-            # the middle joints heatmap correpondence
+            # the middle joints heatmap correspondence
             map_idx = [
                 [12, 13],
                 [20, 21],
