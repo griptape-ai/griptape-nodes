@@ -165,7 +165,10 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         )
 
         # Send the run command to actually execute it (fire and forget)
-        start_flow_request = StartFlowRequest(flow_name=flow_name)
+        pickle_control_flow_result = kwargs.get("pickle_control_flow_result", False)
+        start_flow_request = StartFlowRequest(
+            flow_name=flow_name, pickle_control_flow_result=pickle_control_flow_result
+        )
         start_flow_task = asyncio.create_task(GriptapeNodes.ahandle_request(start_flow_request))
 
         is_flow_finished = False

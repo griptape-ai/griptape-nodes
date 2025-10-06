@@ -104,6 +104,8 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         for node_name, node in nodes.items():
             if isinstance(node, EndNode):
                 output[node_name] = node.parameter_values
+                # Parameter_output_values should also be included, and should take priority over parameter_values
+                output[node_name].update(node.parameter_output_values)
 
         return output
 
@@ -216,7 +218,10 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         )
 
         # Now send the run command to actually execute it
-        start_flow_request = StartFlowRequest(flow_name=flow_name)
+        pickle_control_flow_result = kwargs.get("pickle_control_flow_result", False)
+        start_flow_request = StartFlowRequest(
+            flow_name=flow_name, pickle_control_flow_result=pickle_control_flow_result
+        )
         start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
 
         if start_flow_result.failed():

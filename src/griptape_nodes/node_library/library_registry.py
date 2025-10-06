@@ -359,3 +359,18 @@ class Library:
             The AdvancedNodeLibrary instance, or None if not set
         """
         return self._advanced_library
+
+    def get_nodes_by_base_type(self, base_type: type) -> list[str]:
+        """Get all node types in this library that are subclasses of the specified base type.
+
+        Args:
+            base_type: The base class to filter by (e.g., StartNode, ControlNode)
+
+        Returns:
+            List of node type names that extend the base type
+        """
+        matching_nodes = []
+        for node_type, node_class in self._node_types.items():
+            if issubclass(node_class, base_type):
+                matching_nodes.append(node_type)
+        return matching_nodes

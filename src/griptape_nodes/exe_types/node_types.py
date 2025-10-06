@@ -30,10 +30,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-    ParameterValueUpdateEvent,
-)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -53,6 +49,8 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+PRIVATE_EXECUTION = "Private Execution"
+CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
 class ImportDependency(NamedTuple):
@@ -116,8 +114,8 @@ def get_library_names_with_publish_handlers() -> list[str]:
     library_manager = GriptapeNodes.LibraryManager()
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" as the first option
-    library_names = [LOCAL_EXECUTION]
+    # Always include "local" and "private" as the first options
+    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -192,6 +190,7 @@ class BaseNode(ABC):
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
+            from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent
 
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -965,6 +964,7 @@ class BaseNode(ABC):
         )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         parameter = self.get_parameter_by_name(parameter_name)
@@ -1498,13 +1498,16 @@ class EndNode(BaseNode):
             case self.succeeded_control:
                 was_successful = True
                 status_prefix = "[SUCCEEDED]"
+                logger.debug("End Node '%s': Matched succeeded_control path", self.name)
             case self.failed_control:
                 was_successful = False
                 status_prefix = "[FAILED]"
+                logger.debug("End Node '%s': Matched failed_control path", self.name)
             case _:
                 # No specific success/failure connection provided, assume success
                 was_successful = True
                 status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+                logger.debug("End Node '%s': No specific control connection, assuming success", self.name)
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")
@@ -1522,10 +1525,10 @@ class EndNode(BaseNode):
             if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 value = self.get_parameter_value(param.name)
                 self.parameter_output_values[param.name] = value
-        next_control_output = self.get_next_control_output()
+        entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
-        if next_control_output is not None:
-            self.parameter_output_values[next_control_output.name] = 1
+        if entry_parameter is not None:
+            self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
 class StartLoopNode(BaseNode):

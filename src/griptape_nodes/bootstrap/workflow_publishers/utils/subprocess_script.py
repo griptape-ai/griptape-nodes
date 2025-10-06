@@ -9,7 +9,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def _main(workflow_name: str, workflow_path: str, publisher_name: str, published_workflow_file_name: str) -> None:
+async def _main(
+    workflow_name: str,
+    workflow_path: str,
+    publisher_name: str,
+    published_workflow_file_name: str,
+    *,
+    pickle_control_flow_result: bool,
+) -> None:
     local_publisher = LocalWorkflowPublisher()
     async with local_publisher as publisher:
         await publisher.arun(
@@ -17,6 +24,7 @@ async def _main(workflow_name: str, workflow_path: str, publisher_name: str, pub
             workflow_path=workflow_path,
             publisher_name=publisher_name,
             published_workflow_file_name=published_workflow_file_name,
+            pickle_control_flow_result=pickle_control_flow_result,
         )
 
     msg = f"Published workflow to file: {published_workflow_file_name}"
@@ -43,6 +51,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--published-workflow-file-name", help="Name to use for the published workflow file", required=True
     )
+    parser.add_argument(
+        "--pickle-control-flow-result",
+        action="store_true",
+        default=False,
+        help="Whether to pickle control flow results",
+    )
     args = parser.parse_args()
     asyncio.run(
         _main(
@@ -50,5 +64,6 @@ if __name__ == "__main__":
             workflow_path=args.workflow_path,
             publisher_name=args.publisher_name,
             published_workflow_file_name=args.published_workflow_file_name,
+            pickle_control_flow_result=args.pickle_control_flow_result,
         )
     )

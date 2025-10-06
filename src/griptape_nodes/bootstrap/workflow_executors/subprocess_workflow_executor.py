@@ -79,6 +79,8 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         workflow_name: str,  # noqa: ARG002
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
+        *,
+        pickle_control_flow_result: bool = False,
         **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Execute a workflow in a subprocess and wait for completion."""
@@ -115,6 +117,9 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
                 "--workflow-path",
                 str(tmp_workflow_path),
             ]
+
+            if pickle_control_flow_result:
+                args.append("--pickle-control-flow-result")
 
             try:
                 await self.execute_python_script(
@@ -256,7 +261,12 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
         if isinstance(ex_event.payload, ControlFlowResolvedEvent):
             logger.info("Workflow execution completed successfully")
-            self.output = {ex_event.payload.end_node_name: ex_event.payload.parameter_output_values}
+            # Store both parameter output values and unique UUID values for deserialization
+            result = {
+                "parameter_output_values": ex_event.payload.parameter_output_values,
+                "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values,
+            }
+            self.output = {ex_event.payload.end_node_name: result}
 
         if isinstance(ex_event.payload, ControlFlowCancelledEvent):
             logger.error("Workflow execution cancelled")
