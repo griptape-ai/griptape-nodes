@@ -503,68 +503,45 @@ class ImageLoadProvider(ArtifactLoadProvider):
         msg = f"Unsupported location type: {type(location)}"
         raise TypeError(msg)
 
-    def copy_location_to_workspace(
+    def copy_file_location_to_disk(
         self,
-        location: FileLocation,
+        source_location: FileLocation,
+        destination_location: OnDiskFileLocation,
         artifact: Any,
-        parameter_name: str,
-    ) -> WorkspaceFileLocation:
-        """Copy file from location to workspace."""
-        if isinstance(location, ExternalFileLocation):
-            # Read bytes from external file
-            try:
-                file_bytes = location.absolute_path.read_bytes()
-            except FileNotFoundError as e:
-                msg = f"Source file not found: {location.absolute_path}"
-                raise FileNotFoundError(msg) from e
-            except PermissionError as e:
-                msg = f"Permission denied reading file: {location.absolute_path}"
-                raise PermissionError(msg) from e
+    ) -> OnDiskFileLocation:
+        """Copy file from source location to destination location on disk."""
+        match source_location:
+            case OnDiskFileLocation():
+                # Read bytes from disk (handles both WorkspaceFileLocation and ExternalFileLocation)
+                try:
+                    file_bytes = source_location.absolute_path.read_bytes()
+                except FileNotFoundError as e:
+                    msg = f"Source file not found: {source_location.absolute_path}"
+                    raise FileNotFoundError(msg) from e
+                except PermissionError as e:
+                    msg = f"Permission denied reading file: {source_location.absolute_path}"
+                    raise PermissionError(msg) from e
 
-            original_filename = location.absolute_path.name
+            case URLFileLocation():
+                # Extract bytes from artifact
+                # Convert to ImageUrlArtifact if it's a dict
+                if isinstance(artifact, dict):
+                    artifact = dict_to_image_url_artifact(artifact)
 
-        elif isinstance(location, URLFileLocation):
-            # Extract bytes from artifact
-            from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
+                # Use Griptape's built-in to_bytes()
+                try:
+                    file_bytes = artifact.to_bytes()
+                except Exception as e:
+                    msg = f"Failed to get image bytes from artifact: {e}"
+                    raise RuntimeError(msg) from e
 
-            # Convert to ImageUrlArtifact if it's a dict
-            if isinstance(artifact, dict):
-                artifact = dict_to_image_url_artifact(artifact)
+            case _:
+                msg = f"Cannot copy from location type: {type(source_location)}"
+                raise TypeError(msg)
 
-            # Use Griptape's built-in to_bytes()
-            try:
-                file_bytes = artifact.to_bytes()
-            except Exception as e:
-                msg = f"Failed to get image bytes from artifact: {e}"
-                raise RuntimeError(msg) from e
-
-            # Extract filename from URL
-            url_path = Path(location.url)
-            original_filename = url_path.name or "downloaded_image.png"
-
-        else:
-            msg = f"Cannot copy workspace location to workspace: {type(location)}"
-            raise TypeError(msg)
-
-        # Generate workspace filename
-        filename = self._generate_workspace_filename_only(
-            original_filename=original_filename, parameter_name=parameter_name
-        )
-        workspace_relative_path = Path("uploads") / filename
-
-        # Get absolute path for the workspace location
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        absolute_path = workspace_path / "static_files" / workspace_relative_path
-
-        # Create WorkspaceFileLocation
-        workspace_location = WorkspaceFileLocation(
-            workspace_relative_path=workspace_relative_path,
-            absolute_path=absolute_path,
-        )
-
-        # Save to disk and return the workspace location
+        # Save to destination
         self.save_bytes_to_disk(
             file_bytes=file_bytes,
-            location=workspace_location,
+            location=destination_location,
         )
-        return workspace_location
+        return destination_location

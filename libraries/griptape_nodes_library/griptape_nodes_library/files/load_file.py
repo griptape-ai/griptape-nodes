@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -9,10 +10,15 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.files.providers.artifact_load_provider import ArtifactLoadProvider, FileLocation
+from griptape_nodes_library.files.providers.artifact_load_provider import (
+    ArtifactLoadProvider,
+    FileLocation,
+    WorkspaceFileLocation,
+)
 from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
 
 logger = logging.getLogger("griptape_nodes")
@@ -302,6 +308,43 @@ class LoadFile(SuccessFailureNode):
         self.publish_update_to_parameter(self.file_location_parameter.name, display_value)
         self.file_location_parameter.tooltip = tooltip
 
+    def _generate_workspace_destination_location(self, source_location: FileLocation) -> WorkspaceFileLocation:
+        """Generate a WorkspaceFileLocation for copying a file to workspace."""
+        # Get workflow name
+        try:
+            workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
+        except Exception as e:
+            msg = "Cannot generate workspace filename: no current workflow context"
+            raise RuntimeError(msg) from e
+
+        # Get original filename from location
+        try:
+            original_filename = source_location.get_filename()
+        except (ValueError, NotImplementedError) as e:
+            msg = f"Cannot determine filename from location: {e}"
+            raise RuntimeError(msg) from e
+
+        # Extract base name and extension
+        base_name = Path(original_filename).stem
+        extension = Path(original_filename).suffix
+
+        if not extension:
+            msg = f"Cannot copy file without extension: {original_filename}"
+            raise ValueError(msg)
+
+        # Generate filename: {workflow_name}_{node_name}_{parameter_name}_{file_name}
+        filename = f"{workflow_name}_{self.name}_{self.file_location_parameter.name}_{base_name}{extension}"
+        workspace_relative_path = Path("uploads") / filename
+
+        # Get absolute path
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        absolute_path = workspace_path / "static_files" / workspace_relative_path
+
+        return WorkspaceFileLocation(
+            workspace_relative_path=workspace_relative_path,
+            absolute_path=absolute_path,
+        )
+
     def _on_copy_to_workspace_clicked(
         self,
         button: Button,
@@ -318,11 +361,21 @@ class LoadFile(SuccessFailureNode):
         button.state = "loading"
         button.loading_label = "Copying..."
 
+        # Generate destination location in workspace
         try:
-            workspace_location = self._current_provider.copy_location_to_workspace(
-                location=self._current_location,
+            destination_location = self._generate_workspace_destination_location(self._current_location)
+        except Exception as e:
+            button.state = "normal"
+            return NodeMessageResult(
+                success=False, details=f"Failed to generate destination: {e}", altered_workflow_state=False
+            )
+
+        # Copy file to workspace
+        try:
+            workspace_location = self._current_provider.copy_file_location_to_disk(
+                source_location=self._current_location,
+                destination_location=destination_location,
                 artifact=self.artifact_parameter.default_value,
-                parameter_name=self.file_location_parameter.name,
             )
         except Exception as e:
             button.state = "normal"

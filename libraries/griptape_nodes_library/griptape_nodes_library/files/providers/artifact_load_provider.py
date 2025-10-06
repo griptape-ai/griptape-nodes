@@ -11,12 +11,20 @@ from griptape_nodes.exe_types.node_types import BaseNode
 class FileLocation:
     """Base class for all file location types."""
 
+    def get_filename(self) -> str:
+        """Get the filename from this location."""
+        raise NotImplementedError
+
 
 @dataclass
 class OnDiskFileLocation(FileLocation):
     """Base class for files that exist on disk."""
 
     absolute_path: Path
+
+    def get_filename(self) -> str:
+        """Get the filename from the absolute path."""
+        return self.absolute_path.name
 
 
 @dataclass
@@ -36,6 +44,15 @@ class URLFileLocation(FileLocation):
     """File from a URL."""
 
     url: str
+
+    def get_filename(self) -> str:
+        """Get the filename from the URL, or raise if not determinable."""
+        url_path = Path(self.url)
+        filename = url_path.name
+        if not filename or not Path(filename).suffix:
+            msg = f"Cannot determine filename with extension from URL: {self.url}"
+            raise ValueError(msg)
+        return filename
 
 
 @dataclass
@@ -253,24 +270,24 @@ class ArtifactLoadProvider(ABC):
         """
 
     @abstractmethod
-    def copy_location_to_workspace(
+    def copy_file_location_to_disk(
         self,
-        location: FileLocation,
+        source_location: FileLocation,
+        destination_location: OnDiskFileLocation,
         artifact: Any,
-        parameter_name: str,
-    ) -> WorkspaceFileLocation:
-        """Copy file from location to workspace.
+    ) -> OnDiskFileLocation:
+        """Copy file from source location to destination location on disk.
 
         Args:
-            location: The file location to copy
-            artifact: The current artifact (for extracting bytes if needed)
-            parameter_name: Parameter name for filename generation
+            source_location: The source file location to copy from (any FileLocation type)
+            destination_location: Where to save the file (WorkspaceFileLocation or ExternalFileLocation)
+            artifact: The current artifact (for extracting bytes from URLs)
 
         Returns:
-            WorkspaceFileLocation with the saved file details
+            The destination_location passed in (for confirmation)
 
         Raises:
-            TypeError: If the location type is not supported for copying
+            TypeError: If the source location type is not supported for copying
         """
 
     def _finalize_result_with_dynamic_updates(
