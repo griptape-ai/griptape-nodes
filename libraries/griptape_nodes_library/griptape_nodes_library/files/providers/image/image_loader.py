@@ -1,6 +1,8 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
@@ -11,7 +13,6 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateWorkspaceFileDownloadUrlRequest,
     CreateWorkspaceFileDownloadUrlResultSuccess,
 )
-from griptape_nodes.retained_mode.events.workflow_events import LoadWorkflowMetadata, LoadWorkflowMetadataResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.files.providers.artifact_load_provider import (
@@ -213,15 +214,68 @@ class ImageLoadProvider(ArtifactLoadProvider):
             result_details=result_details,
         )
 
+    def _generate_unique_filename_from_url(self, url: str) -> str:
+        """Generate a unique filename from URL by sanitizing domain and path.
+
+        Sanitizes domain and path separately (rather than the entire URL) to create
+        shorter, more readable filenames while maintaining uniqueness.
+
+        Examples:
+            https://example.com/images/cat.jpg -> example_com_images_cat.jpg
+            https://cdn.site.com/assets/output.png -> cdn_site_com_assets_output.png
+
+        Compare to sanitizing entire URL which would produce:
+            https___example_com_images_cat_jpg (less readable, includes protocol)
+
+        Args:
+            url: URL to generate filename from
+
+        Returns:
+            Sanitized filename like "example_com_path_to_image.png"
+
+        Raises:
+            ValueError: If filename cannot be determined from URL
+        """
+        parsed = urlparse(url)
+
+        # Get domain without port or protocol (e.g., "example.com" -> "example_com")
+        domain = parsed.netloc.split(":")[0]
+        domain_sanitized = re.sub(r"[^a-zA-Z0-9]", "_", domain)
+
+        # Get path and extract filename
+        url_path = Path(parsed.path)
+        if not url_path.name or not url_path.suffix:
+            msg = f"Cannot determine filename with extension from URL: {url}"
+            raise ValueError(msg)
+
+        # Sanitize the path (parent directories) (e.g., "/images/assets/" -> "images_assets")
+        path_parts = url_path.parent.parts
+        path_sanitized = "_".join(re.sub(r"[^a-zA-Z0-9]", "_", part) for part in path_parts if part != "/")
+
+        # Get original filename with extension
+        stem = url_path.stem
+        extension = url_path.suffix
+
+        # Combine: domain_path_filename (e.g., "example_com_images_cat.jpg")
+        if path_sanitized:
+            unique_filename = f"{domain_sanitized}_{path_sanitized}_{stem}{extension}"
+        else:
+            unique_filename = f"{domain_sanitized}_{stem}{extension}"
+
+        return unique_filename
+
     def attempt_load_from_url(
         self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
     ) -> ArtifactLoadProviderValidationResult:
-        """Attempt to load and create image artifact from URL."""
-        # Use provided timeout or default to 120 seconds
+        """Attempt to load and create image artifact from URL.
+
+        Downloads the URL to {workflow_dir}/downloads/ to avoid bloating workflow files with base64 data.
+        Returns URLFileLocation so the user still sees the original URL in the parameter.
+        """
         timeout_value = timeout if timeout is not None else 120.0
 
+        # Download URL bytes to memory
         try:
-            # Download to memory (no disk write)
             response = httpx.get(location.url, timeout=timeout_value)
             response.raise_for_status()
             image_bytes = response.content
@@ -239,33 +293,40 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 was_successful=False, result_details=f"URL download failed: {e}"
             )
 
-        # Create data URI for in-memory display
-        import base64
+        # Generate unique filename from URL (sanitizes domain and path)
+        try:
+            filename = self._generate_unique_filename_from_url(location.url)
+        except ValueError as e:
+            return ArtifactLoadProviderValidationResult(was_successful=False, result_details=str(e))
 
-        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        # Determine download location in workflow's downloads/ directory
+        download_location = ArtifactLoadProvider.generate_workflow_file_location(
+            subdirectory="downloads", filename=filename
+        )
 
-        # Detect format from content-type or URL extension
-        content_type = response.headers.get("content-type", "")
-        if "image/" in content_type:
-            format_type = content_type.split("/")[-1]
-        else:
-            format_type = Path(location.url).suffix.lstrip(".") or "png"
+        # Save downloaded bytes to disk
+        try:
+            self.save_bytes_to_disk(file_bytes=image_bytes, location=download_location)
+        except Exception as e:
+            return ArtifactLoadProviderValidationResult(
+                was_successful=False, result_details=f"Failed to save downloaded file: {e}"
+            )
 
-        data_uri = f"data:image/{format_type};base64,{encoded}"
-        artifact = ImageUrlArtifact(value=data_uri)
+        # Create artifact with URL to the downloaded file (not base64 data)
+        artifact = ImageUrlArtifact(value=self.get_externally_accessible_url(download_location))
 
-        # Process dynamic parameters (mask extraction - deferred for URLs)
+        # Process dynamic parameters (e.g., mask extraction)
         dynamic_updates = self._finalize_result_with_dynamic_updates(
             artifact=artifact, current_values=current_parameter_values
         )
 
-        # Return the location passed in
+        # Return URLFileLocation so user still sees original URL in parameter
         return ArtifactLoadProviderValidationResult(
             was_successful=True,
             artifact=artifact,
             location=location,
             dynamic_parameter_updates=dynamic_updates,
-            result_details=f"Image loaded from URL: {location.url}",
+            result_details=f"Image downloaded from URL: {location.url}",
         )
 
     def _extract_url_from_artifact_for_display(self, artifact_value: Any) -> str:
@@ -304,26 +365,13 @@ class ImageLoadProvider(ArtifactLoadProvider):
         return url or ""
 
     def save_bytes_to_disk(self, *, file_bytes: bytes, location: OnDiskFileLocation) -> OnDiskFileLocation:
-        """Save file bytes to disk at the specified location."""
-        if isinstance(location, WorkspaceFileLocation):
-            # Use StaticFilesManager for workspace files
-            workspace_relative_path = str(location.workspace_relative_path)
-            try:
-                GriptapeNodes.StaticFilesManager().save_static_file(file_bytes, workspace_relative_path)
-            except Exception as e:
-                msg = f"Failed to save file to workspace: {workspace_relative_path}"
-                raise RuntimeError(msg) from e
-        elif isinstance(location, ExternalFileLocation):
-            # Write directly to filesystem for external files
-            try:
-                location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-                location.absolute_path.write_bytes(file_bytes)
-            except Exception as e:
-                msg = f"Failed to save file to disk: {location.absolute_path}"
-                raise RuntimeError(msg) from e
-        else:
-            msg = f"Cannot save to location type: {type(location)}"
-            raise TypeError(msg)
+        """Save file bytes to disk at the specified location using direct file I/O."""
+        try:
+            location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+            location.absolute_path.write_bytes(file_bytes)
+        except Exception as e:
+            msg = f"Failed to save file to disk: {location.absolute_path}"
+            raise RuntimeError(msg) from e
 
         return location
 
@@ -346,44 +394,6 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
         # Generate filename: <workflow_name>_<node_name>_<parameter_name>_<file_name>
         return f"{workflow_name}_{self.node.name}_{parameter_name}_{base_name}{extension}"
-
-    def _generate_workspace_filename(self, original_filename: str, parameter_name: str) -> str:
-        """Generate absolute file path for workspace uploads: {workflow_dir}/static_files/uploads/{workflow_name}_{node_name}_{parameter_name}_{file_name}."""
-        # Get workflow name - this MUST succeed for the protocol to work
-        try:
-            workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-        except Exception as e:
-            msg = "Cannot generate workspace filename: no current workflow context"
-            raise RuntimeError(msg) from e
-
-        # Get workflow directory - use the workflow name to construct the path
-        # LoadWorkflowMetadata validates the workflow exists, so we can construct the path
-        load_metadata_request = LoadWorkflowMetadata(file_name=f"{workflow_name}.py")
-        load_metadata_result = GriptapeNodes.handle_request(load_metadata_request)
-
-        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-            msg = f"Failed to load workflow metadata for {workflow_name}"
-            raise RuntimeError(msg)  # noqa: TRY004
-
-        # Use the workflow name to construct the path since metadata validation succeeded
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        workflow_file_path = f"{workflow_name}.py"
-        full_workflow_path = workspace_path / workflow_file_path
-        workflow_dir = full_workflow_path.parent
-
-        # Extract base name and extension
-        base_name = Path(original_filename).stem
-        extension = Path(original_filename).suffix
-
-        if not extension:
-            logger.warning("No extension found in filename %s, defaulting to .png", original_filename)
-            extension = ".png"
-
-        # Generate filename: <workflow_name>_<node_name>_<parameter_name>_<file_name>
-        filename = f"{workflow_name}_{self.node.name}_{parameter_name}_{base_name}{extension}"
-
-        # Return full path: {workflow_dir}/static_files/uploads/{filename}
-        return str(workflow_dir / "static_files" / "uploads" / filename)
 
     def _extract_display_path_from_url(self, url: str) -> str:
         """Extract user-friendly display path from internal URL."""
@@ -503,6 +513,63 @@ class ImageLoadProvider(ArtifactLoadProvider):
         msg = f"Unsupported location type: {type(location)}"
         raise TypeError(msg)
 
+    def _read_bytes_from_on_disk_location(self, location: OnDiskFileLocation) -> bytes:
+        """Read bytes from an on-disk file location with comprehensive error handling."""
+        try:
+            return location.absolute_path.read_bytes()
+        except FileNotFoundError as e:
+            msg = f"Source file not found: {location.absolute_path}"
+            raise FileNotFoundError(msg) from e
+        except PermissionError as e:
+            msg = f"Permission denied reading file: {location.absolute_path}"
+            raise PermissionError(msg) from e
+        except OSError as e:
+            msg = f"Failed to read file: {location.absolute_path}"
+            raise OSError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error reading file: {location.absolute_path}"
+            raise RuntimeError(msg) from e
+
+    def _read_bytes_from_url_location(self, artifact: Any) -> bytes:
+        """Read bytes from a downloaded URL file with comprehensive error handling.
+
+        Args:
+            artifact: The artifact containing the URL to the downloaded file
+
+        Returns:
+            File bytes from the downloaded file
+        """
+        # Extract filename from the artifact's URL (which points to the downloaded file)
+        if isinstance(artifact, dict):
+            artifact = dict_to_image_url_artifact(artifact)
+
+        artifact_url = artifact.value
+
+        # Parse URL and strip query string to get just the filename
+        parsed = urlparse(artifact_url)
+        filename = Path(parsed.path).name
+
+        download_location = ArtifactLoadProvider.generate_workflow_file_location(
+            subdirectory="downloads", filename=filename
+        )
+
+        try:
+            return download_location.absolute_path.read_bytes()
+        except FileNotFoundError as e:
+            msg = (
+                f"Downloaded file not found at {download_location.absolute_path}. Please reload the URL to re-download."
+            )
+            raise FileNotFoundError(msg) from e
+        except PermissionError as e:
+            msg = f"Permission denied reading downloaded file: {download_location.absolute_path}"
+            raise PermissionError(msg) from e
+        except OSError as e:
+            msg = f"Failed to read downloaded file: {download_location.absolute_path}"
+            raise OSError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error reading downloaded file: {download_location.absolute_path}"
+            raise RuntimeError(msg) from e
+
     def copy_file_location_to_disk(
         self,
         source_location: FileLocation,
@@ -512,36 +579,12 @@ class ImageLoadProvider(ArtifactLoadProvider):
         """Copy file from source location to destination location on disk."""
         match source_location:
             case OnDiskFileLocation():
-                # Read bytes from disk (handles both WorkspaceFileLocation and ExternalFileLocation)
-                try:
-                    file_bytes = source_location.absolute_path.read_bytes()
-                except FileNotFoundError as e:
-                    msg = f"Source file not found: {source_location.absolute_path}"
-                    raise FileNotFoundError(msg) from e
-                except PermissionError as e:
-                    msg = f"Permission denied reading file: {source_location.absolute_path}"
-                    raise PermissionError(msg) from e
-
+                file_bytes = self._read_bytes_from_on_disk_location(source_location)
             case URLFileLocation():
-                # Extract bytes from artifact
-                # Convert to ImageUrlArtifact if it's a dict
-                if isinstance(artifact, dict):
-                    artifact = dict_to_image_url_artifact(artifact)
-
-                # Use Griptape's built-in to_bytes()
-                try:
-                    file_bytes = artifact.to_bytes()
-                except Exception as e:
-                    msg = f"Failed to get image bytes from artifact: {e}"
-                    raise RuntimeError(msg) from e
-
+                file_bytes = self._read_bytes_from_url_location(artifact)
             case _:
                 msg = f"Cannot copy from location type: {type(source_location)}"
                 raise TypeError(msg)
 
-        # Save to destination
-        self.save_bytes_to_disk(
-            file_bytes=file_bytes,
-            location=destination_location,
-        )
+        self.save_bytes_to_disk(file_bytes=file_bytes, location=destination_location)
         return destination_location

@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -5,6 +6,9 @@ from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+
+logger = logging.getLogger("griptape_nodes")
 
 
 @dataclass
@@ -281,7 +285,7 @@ class ArtifactLoadProvider(ABC):
         Args:
             source_location: The source file location to copy from (any FileLocation type)
             destination_location: Where to save the file (WorkspaceFileLocation or ExternalFileLocation)
-            artifact: The current artifact (for extracting bytes from URLs)
+            artifact: The current artifact (for extracting download info from URLs)
 
         Returns:
             The destination_location passed in (for confirmation)
@@ -373,6 +377,78 @@ class ArtifactLoadProvider(ABC):
         safe_filename = sanitize(original_filename)
 
         return f"{safe_workflow}_{safe_node}_{safe_param}_{safe_filename}"
+
+    @staticmethod
+    def get_workflow_directory() -> Path:
+        """Get the workflow's directory relative to workspace.
+
+        Returns:
+            Path relative to workspace (e.g., Path("myworkflow")), or absolute path if outside workspace
+
+        Raises:
+            RuntimeError: If workflow context cannot be determined
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
+
+        try:
+            workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+        except KeyError as e:
+            msg = f"Workflow not found in registry: {workflow_name}"
+            raise RuntimeError(msg) from e
+
+        workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+        workflow_directory = workflow_file_path.parent
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+        try:
+            final_dir = workflow_directory.relative_to(workspace_path)
+        except ValueError:
+            logger.warning("Workflow directory is outside workspace: %s", workflow_directory)
+            final_dir = workflow_directory
+
+        return final_dir
+
+    @staticmethod
+    def generate_workflow_file_location(*, subdirectory: str, filename: str) -> OnDiskFileLocation:
+        """Generate file location in workflow subdirectory.
+
+        Places files in {workflow_dir}/{subdirectory}/{filename}. The workflow directory
+        may be inside or outside the workspace.
+
+        Args:
+            subdirectory: Subdirectory within workflow directory (e.g., "downloads", "uploads", "thumbnails")
+            filename: Filename to use (e.g., "myflow_LoadFile_file_location_cat.jpg")
+
+        Returns:
+            WorkspaceFileLocation if workflow is inside workspace, ExternalFileLocation if outside
+
+        Example:
+            location = ArtifactLoadProvider.generate_workflow_file_location(
+                subdirectory="downloads",
+                filename="myflow_LoadFile_file_location_image.png"
+            )
+            # Result: workspace/myflow/downloads/myflow_LoadFile_file_location_image.png
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        workflow_directory = ArtifactLoadProvider.get_workflow_directory()
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+        if workflow_directory.is_absolute():
+            # Workflow is outside workspace - return ExternalFileLocation
+            absolute_path = workflow_directory / subdirectory / filename
+            return ExternalFileLocation(absolute_path=absolute_path)
+
+        # Workflow is inside workspace - return WorkspaceFileLocation
+        workspace_relative_path = workflow_directory / subdirectory / filename
+        absolute_path = workspace_path / workspace_relative_path
+
+        return WorkspaceFileLocation(
+            workspace_relative_path=workspace_relative_path,
+            absolute_path=absolute_path,
+        )
 
     @staticmethod
     def determine_file_location(file_location_str: str) -> FileLocation:
