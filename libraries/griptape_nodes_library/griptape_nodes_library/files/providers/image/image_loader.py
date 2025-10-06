@@ -34,12 +34,6 @@ from griptape_nodes_library.utils.image_utils import (
 
 logger = logging.getLogger("griptape_nodes")
 
-# File handling strategy:
-# - Files inside workspace: Use relative path from workspace root for serving
-# - Files outside workspace: Copy to workspace uploads directory with generated filename
-# - URLs: Download to workspace uploads directory
-# - All saved files go to: {workflow_dir}/static_files/uploads/{workflow_name}_{node_name}_{parameter_name}_{file_name}
-
 
 class ImageLoadProvider(ArtifactLoadProvider):
     def __init__(self, node: BaseNode, *, path_parameter: Parameter) -> None:
@@ -376,14 +370,10 @@ class ImageLoadProvider(ArtifactLoadProvider):
         return location
 
     def _generate_workspace_filename_only(self, original_filename: str, parameter_name: str) -> str:
-        """Generate filename using protocol: {workflow_name}_{node_name}_{parameter_name}_{file_name}."""
-        # Get workflow name - this MUST succeed for the protocol to work
-        try:
-            workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-        except Exception as e:
-            msg = "Cannot generate workspace filename: no current workflow context"
-            raise RuntimeError(msg) from e
+        """Generate filename using protocol: {node_name}_{parameter_name}_{file_name}.
 
+        Workflow name is not included since files are organized under workflow-specific directories.
+        """
         # Extract base name and extension
         base_name = Path(original_filename).stem
         extension = Path(original_filename).suffix
@@ -392,8 +382,8 @@ class ImageLoadProvider(ArtifactLoadProvider):
             logger.warning("No extension found in filename %s, defaulting to .png", original_filename)
             extension = ".png"
 
-        # Generate filename: <workflow_name>_<node_name>_<parameter_name>_<file_name>
-        return f"{workflow_name}_{self.node.name}_{parameter_name}_{base_name}{extension}"
+        # Generate filename: <node_name>_<parameter_name>_<file_name>
+        return f"{self.node.name}_{parameter_name}_{base_name}{extension}"
 
     def _extract_display_path_from_url(self, url: str) -> str:
         """Extract user-friendly display path from internal URL."""
