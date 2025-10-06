@@ -49,7 +49,7 @@ class DiffusionPipelineBuilderNode(ControlNode):
         ):
             logger.debug("Pipeline not found in cache, marking node as UNRESOLVED")
             return NodeResolutionState.UNRESOLVED
-        return self._state
+        return super().state
 
     @state.setter
     def state(self, new_state: NodeResolutionState) -> None:
