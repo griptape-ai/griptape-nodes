@@ -197,7 +197,7 @@
       "file_path": "diffusers_nodes_library/pipelines/flux/diptych_flux_fill_pipeline.py",
       "metadata": {
         "category": "image/flux",
-        "description": "Generate a pompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
+        "description": "Generate a prompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
         "display_name": "Flux ICEdit "
       }
     },
