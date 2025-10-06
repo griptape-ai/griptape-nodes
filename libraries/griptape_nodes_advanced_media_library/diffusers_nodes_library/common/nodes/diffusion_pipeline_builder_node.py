@@ -40,6 +40,18 @@ class DiffusionPipelineBuilderNode(ControlNode):
         self.log_params.add_output_parameters()
 
         self._initializing = False
+    
+    @property
+    def state(self) -> NodeResolutionState:
+        # If resolved but pipeline not in cache, mark as unresolved to trigger rebuild
+        if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(self.get_parameter_value("pipeline")):
+            logger.debug("Pipeline not found in cache, marking node as UNRESOLVED")
+            return NodeResolutionState.UNRESOLVED
+        return self._state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
 
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
