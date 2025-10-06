@@ -45,11 +45,13 @@ class CustomPipelineTypeParameters(DiffusionPipelineTypeParameters):
 
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
         try:
-            self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](self._node, list_all_models=True)
-        except KeyError:
+            self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](
+                self._node, list_all_models=True
+            )
+        except KeyError as e:
             msg = f"Unsupported pipeline type: {pipeline_type}"
             logger.error(msg)
-            raise ValueError(msg)
+            raise ValueError(msg) from e
 
     def add_input_parameters(self) -> None:
         self._node.add_node_element(
