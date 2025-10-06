@@ -41,7 +41,7 @@ class CustomPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
         return AllPipelineTypes
-    
+
     def add_input_parameters(self) -> None:
         self._node.add_node_element(
             ParameterMessage(
