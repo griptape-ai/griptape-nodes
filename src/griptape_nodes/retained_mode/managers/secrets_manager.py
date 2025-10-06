@@ -2,6 +2,7 @@ import logging
 import re
 from os import getenv
 from pathlib import Path
+from typing import Literal, overload
 
 from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key
 from dotenv.main import DotEnv
@@ -126,6 +127,12 @@ class SecretsManager:
         logger.info("Secret '%s' deleted.", secret_name)
 
         return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
+
+    @overload
+    def get_secret(self, secret_name: str, *, should_error_on_not_found: Literal[True] = True) -> str: ...
+
+    @overload
+    def get_secret(self, secret_name: str, *, should_error_on_not_found: Literal[False]) -> str | None: ...
 
     def get_secret(self, secret_name: str, *, should_error_on_not_found: bool = True) -> str | None:
         """Return the secret value with the following search precedence (highest to lowest priority).

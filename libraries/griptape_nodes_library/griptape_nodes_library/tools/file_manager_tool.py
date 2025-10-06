@@ -21,7 +21,7 @@ class FileManager(BaseTool):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        self.api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         self.bucket_list = self.get_bucket_list()
         self.bucket_map = dict(self.bucket_list)
         self.workdir = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")
@@ -103,7 +103,7 @@ class FileManager(BaseTool):
             if not bucket_id:
                 msg = f"Invalid bucket name: {bucket_name}"
                 raise ValueError(msg)
-            driver = GriptapeCloudFileManagerDriver(api_key=self.api_key, bucket_id=bucket_id)
+            driver = GriptapeCloudFileManagerDriver(api_key=self.api_key, bucket_id=bucket_id)  # type: ignore[arg-type]
         else:
             msg = f"Invalid file location: {file_location}"
             raise ValueError(msg)

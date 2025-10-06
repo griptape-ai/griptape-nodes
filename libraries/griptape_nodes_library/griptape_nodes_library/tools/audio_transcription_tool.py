@@ -2,6 +2,7 @@ import openai
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
 from griptape.tools.audio_transcription.tool import AudioTranscriptionTool as GtAudioTranscriptionTool
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
@@ -28,7 +29,7 @@ class AudioTranscription(BaseTool):
         exceptions = []
         if self.parameter_values.get("driver", None):
             return exceptions
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

@@ -4,6 +4,7 @@ from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStru
 from griptape.structures import Agent, Structure
 
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -17,7 +18,9 @@ class BaseTask(ControlNode):
 
     def create_driver(self, model: str = "gpt-4.1") -> GriptapeCloudPromptDriver:
         return GriptapeCloudPromptDriver(
-            model=model, api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR), stream=True
+            model=model,
+            api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
+            stream=True,
         )
 
     def _process(self, agent: Agent, prompt: BaseArtifact | str) -> Structure:
