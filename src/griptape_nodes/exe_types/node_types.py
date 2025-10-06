@@ -186,6 +186,7 @@ class BaseNode(ABC):
     @property
     def state(self) -> NodeResolutionState:
         """Get the current resolution state of the node.
+
         Existence as @property facilitates subclasses overriding the getter for dynamic/computed state.
         """
         return self._state
