@@ -131,12 +131,12 @@ class BaseNode(ABC):
     metadata: dict[Any, Any]
 
     # Node Context Fields
-    state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
     parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
@@ -158,7 +158,7 @@ class BaseNode(ABC):
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
         self.name = name
-        self.state = state
+        self._state = state
         if metadata is None:
             self.metadata = {}
         else:
@@ -182,6 +182,14 @@ class BaseNode(ABC):
             ui_options={"hide": True},
         )
         self.add_parameter(self.execution_environment)
+
+    @property
+    def state(self) -> NodeResolutionState:
+        return self._state
+    
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
