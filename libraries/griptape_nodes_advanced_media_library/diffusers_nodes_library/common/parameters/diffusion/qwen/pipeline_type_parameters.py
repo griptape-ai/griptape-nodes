@@ -15,12 +15,16 @@ from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_parameters im
 from diffusers_nodes_library.common.parameters.diffusion.qwen.upscale_parameters import (
     QwenUpscalePipelineParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"QwenPipeline": QwenPipelineParameters, "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters, "QwenUpscalePipeline": QwenUpscalePipelineParameters}
+QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
+    "QwenPipeline": QwenPipelineParameters,
+    "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters,
+    "QwenUpscalePipeline": QwenUpscalePipelineParameters,
+}
+
 
 class QwenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property

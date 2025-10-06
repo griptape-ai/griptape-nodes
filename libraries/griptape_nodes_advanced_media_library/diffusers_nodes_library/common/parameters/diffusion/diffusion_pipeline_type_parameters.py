@@ -35,10 +35,10 @@ class DiffusionPipelineTypeParameters(ABC):
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
         try:
             self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](self._node)
-        except KeyError:
+        except KeyError as e:
             msg = f"Unsupported pipeline type: {pipeline_type}"
             logger.error(msg)
-            raise ValueError(msg)
+            raise ValueError(msg) from e
 
     @property
     def pipeline_type_pipeline_params(self) -> DiffusionPipelineTypePipelineParameters:

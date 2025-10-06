@@ -18,12 +18,17 @@ from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.sd3_pa
 from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion.sd_parameters import (
     StableDiffusionPipelineParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-StableDiffusionPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"StableDiffusionPipeline": StableDiffusionPipelineParameters, "StableDiffusion3Pipeline": StableDiffusion3PipelineParameters, "StableDiffusionAttendAndExcitePipeline": StableDiffusionAttendAndExcitePipelineParameters, "StableDiffusionDiffEditPipeline": StableDiffusionDiffEditPipelineParameters}
+StableDiffusionPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
+    "StableDiffusionPipeline": StableDiffusionPipelineParameters,
+    "StableDiffusion3Pipeline": StableDiffusion3PipelineParameters,
+    "StableDiffusionAttendAndExcitePipeline": StableDiffusionAttendAndExcitePipelineParameters,
+    "StableDiffusionDiffEditPipeline": StableDiffusionDiffEditPipelineParameters,
+}
+
 
 class StableDiffusionPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property

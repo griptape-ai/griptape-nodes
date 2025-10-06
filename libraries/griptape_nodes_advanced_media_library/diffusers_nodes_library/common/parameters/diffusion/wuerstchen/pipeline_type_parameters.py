@@ -9,12 +9,14 @@ from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameter
 from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.wuerstchen_parameters import (
     WuerstchenPipelineParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-WuerstchenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WuerstchenPipeline": WuerstchenPipelineParameters}
+WuerstchenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
+    "WuerstchenPipeline": WuerstchenPipelineParameters
+}
+
 
 class WuerstchenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property

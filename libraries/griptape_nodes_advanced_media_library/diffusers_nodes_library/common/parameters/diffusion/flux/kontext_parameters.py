@@ -14,7 +14,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class FluxKontextPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode, list_all_models: bool = False):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,

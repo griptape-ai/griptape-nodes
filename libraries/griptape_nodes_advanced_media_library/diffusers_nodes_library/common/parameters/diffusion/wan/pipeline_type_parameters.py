@@ -18,12 +18,17 @@ from diffusers_nodes_library.common.parameters.diffusion.wan.vid2vid_parameters 
 from diffusers_nodes_library.common.parameters.diffusion.wan.wan_parameters import (
     WanPipelineParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-WanPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WanPipeline": WanPipelineParameters, "WanImageToVideoPipeline": WanImageToVideoPipelineParameters, "WanVideoToVideoPipeline": WanVideoToVideoPipelineParameters, "WanVacePipeline": WanVacePipelineParameters}
+WanPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
+    "WanPipeline": WanPipelineParameters,
+    "WanImageToVideoPipeline": WanImageToVideoPipelineParameters,
+    "WanVideoToVideoPipeline": WanVideoToVideoPipelineParameters,
+    "WanVacePipeline": WanVacePipelineParameters,
+}
+
 
 class WanPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property

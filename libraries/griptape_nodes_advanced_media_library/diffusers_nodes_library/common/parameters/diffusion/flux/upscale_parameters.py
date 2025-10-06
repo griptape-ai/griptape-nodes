@@ -5,7 +5,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class FluxUpscalePipelineParameters(FluxImg2ImgPipelineParameters):
-    def __init__(self, node: BaseNode, list_all_models: bool = False):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node, list_all_models=list_all_models)
 
     @property

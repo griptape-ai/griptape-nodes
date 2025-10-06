@@ -9,12 +9,14 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-AudioldmPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"AudioLDMPipeline": AudioldmPipelineParameters}
+AudioldmPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
+    "AudioLDMPipeline": AudioldmPipelineParameters
+}
+
 
 class AudioldmPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
