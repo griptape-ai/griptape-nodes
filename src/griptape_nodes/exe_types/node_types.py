@@ -186,7 +186,7 @@ class BaseNode(ABC):
     @property
     def state(self) -> NodeResolutionState:
         return self._state
-    
+
     @state.setter
     def state(self, new_state: NodeResolutionState) -> None:
         self._state = new_state
