@@ -139,9 +139,6 @@ class DiffusionPipelineBuilderNode(ControlNode):
             self.set_config_hash()
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()
 
     def preprocess(self) -> None:
