@@ -60,7 +60,7 @@ class URLFileLocation(FileLocation):
 
 
 @dataclass
-class ArtifactLoadProviderValidationResult:
+class ArtifactProviderValidationResult:
     """Result of provider validation containing all updates or error information.
 
     Always contains all fields - LoadFile uses was_successful to determine
@@ -112,7 +112,7 @@ class ArtifactParameterDetails(NamedTuple):
     output_type: str
 
 
-class ArtifactLoadProvider(ABC):
+class ArtifactProvider(ABC):
     """Abstract base class for artifact load providers.
 
     Each provider handles loading and processing of a specific artifact type
@@ -174,7 +174,7 @@ class ArtifactLoadProvider(ABC):
     @abstractmethod
     def attempt_load_from_file_location(
         self, file_location_str: str, current_parameter_values: dict[str, Any]
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load and create artifact from an ambiguous file location string.
 
         This method disambiguates the file location (URL, workspace path, or external path)
@@ -186,7 +186,7 @@ class ArtifactLoadProvider(ABC):
         self,
         location: OnDiskFileLocation,
         current_parameter_values: dict[str, Any],
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load and create artifact from a filesystem path.
 
         Args:
@@ -197,7 +197,7 @@ class ArtifactLoadProvider(ABC):
     @abstractmethod
     def attempt_load_from_url(
         self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load and create artifact from a URL.
 
         Args:
@@ -400,7 +400,7 @@ class ArtifactLoadProvider(ABC):
             WorkspaceFileLocation if workflow is inside workspace, ExternalFileLocation if outside
 
         Example:
-            location = ArtifactLoadProvider.generate_workflow_file_location(
+            location = ArtifactProvider.generate_workflow_file_location(
                 subdirectory="downloads",
                 filename="cdn_example_com_image.png"
             )
@@ -409,7 +409,7 @@ class ArtifactLoadProvider(ABC):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-        workflow_directory = ArtifactLoadProvider.get_workflow_directory()
+        workflow_directory = ArtifactProvider.get_workflow_directory()
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         if workflow_directory.is_absolute():
@@ -439,7 +439,7 @@ class ArtifactLoadProvider(ABC):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Check if URL
-        if ArtifactLoadProvider.is_url(file_location_str):
+        if ArtifactProvider.is_url(file_location_str):
             return URLFileLocation(url=file_location_str)
 
         # Otherwise it's a filesystem path

@@ -15,10 +15,10 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.files.providers.artifact_load_provider import (
-    ArtifactLoadProvider,
-    ArtifactLoadProviderValidationResult,
+from griptape_nodes_library.files.providers.artifact_provider import (
     ArtifactParameterDetails,
+    ArtifactProvider,
+    ArtifactProviderValidationResult,
     ExternalFileLocation,
     FileLocation,
     OnDiskFileLocation,
@@ -35,7 +35,7 @@ from griptape_nodes_library.utils.image_utils import (
 logger = logging.getLogger("griptape_nodes")
 
 
-class ImageLoadProvider(ArtifactLoadProvider):
+class ImageProvider(ArtifactProvider):
     def __init__(self, node: BaseNode, *, path_parameter: Parameter) -> None:
         """Initialize image provider with required parameters."""
         super().__init__(node, path_parameter=path_parameter)
@@ -102,7 +102,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
     def can_handle_file_location(self, file_location_input: str) -> bool:
         """Lightweight check if this provider can handle the given file location input."""
-        location = ArtifactLoadProvider.determine_file_location(file_location_input)
+        location = ArtifactProvider.determine_file_location(file_location_input)
 
         if isinstance(location, (WorkspaceFileLocation, ExternalFileLocation)):
             return self._can_handle_path(file_location_input)
@@ -123,7 +123,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
     def _can_handle_url(self, url_input: str) -> bool:
         """Lightweight check if this provider can handle the given URL."""
-        if not ArtifactLoadProvider.is_url(url_input):
+        if not ArtifactProvider.is_url(url_input):
             return False
 
         # Use proper content-type detection
@@ -139,13 +139,13 @@ class ImageLoadProvider(ArtifactLoadProvider):
         self,
         file_location_str: str,
         current_parameter_values: dict[str, Any],
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load and create image artifact from an ambiguous file location string.
 
         This method disambiguates the file location (URL, workspace path, or external path)
         and routes to the appropriate specialized loader method.
         """
-        location = ArtifactLoadProvider.determine_file_location(file_location_str)
+        location = ArtifactProvider.determine_file_location(file_location_str)
 
         if isinstance(location, URLFileLocation):
             return self.attempt_load_from_url(location, current_parameter_values)
@@ -156,7 +156,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
                 current_parameter_values=current_parameter_values,
             )
 
-        return ArtifactLoadProviderValidationResult(
+        return ArtifactProviderValidationResult(
             was_successful=False, result_details=f"Unsupported file location type: {type(location)}"
         )
 
@@ -164,28 +164,26 @@ class ImageLoadProvider(ArtifactLoadProvider):
         self,
         location: OnDiskFileLocation,
         current_parameter_values: dict[str, Any],
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load image from filesystem path."""
         try:
             # Validate file exists
             if not location.absolute_path.exists():
-                return ArtifactLoadProviderValidationResult(
+                return ArtifactProviderValidationResult(
                     was_successful=False, result_details=f"File not found: {location.absolute_path}"
                 )
         except FileNotFoundError:
-            return ArtifactLoadProviderValidationResult(
+            return ArtifactProviderValidationResult(
                 was_successful=False, result_details=f"File not found: {location.absolute_path}"
             )
         except PermissionError:
-            return ArtifactLoadProviderValidationResult(
+            return ArtifactProviderValidationResult(
                 was_successful=False, result_details=f"Permission denied: {location.absolute_path}"
             )
         except ValueError as e:
-            return ArtifactLoadProviderValidationResult(was_successful=False, result_details=str(e))
+            return ArtifactProviderValidationResult(was_successful=False, result_details=str(e))
         except Exception as e:
-            return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"Image loading failed: {e}"
-            )
+            return ArtifactProviderValidationResult(was_successful=False, result_details=f"Image loading failed: {e}")
 
         artifact = ImageUrlArtifact(value=self.get_externally_accessible_url(location))
 
@@ -200,7 +198,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         else:
             result_details = f"File loaded from: {self.get_source_path(location)}"
 
-        return ArtifactLoadProviderValidationResult(
+        return ArtifactProviderValidationResult(
             was_successful=True,
             artifact=artifact,
             location=location,
@@ -260,7 +258,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
 
     def attempt_load_from_url(
         self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
-    ) -> ArtifactLoadProviderValidationResult:
+    ) -> ArtifactProviderValidationResult:
         """Attempt to load and create image artifact from URL.
 
         Downloads the URL to {workflow_dir}/downloads/ to avoid bloating workflow files with base64 data.
@@ -274,27 +272,25 @@ class ImageLoadProvider(ArtifactLoadProvider):
             response.raise_for_status()
             image_bytes = response.content
         except httpx.HTTPStatusError as e:
-            return ArtifactLoadProviderValidationResult(
+            return ArtifactProviderValidationResult(
                 was_successful=False,
                 result_details=f"HTTP {e.response.status_code} error downloading {location.url}: {e}",
             )
         except httpx.RequestError as e:
-            return ArtifactLoadProviderValidationResult(
+            return ArtifactProviderValidationResult(
                 was_successful=False, result_details=f"Network error downloading {location.url}: {e}"
             )
         except Exception as e:
-            return ArtifactLoadProviderValidationResult(
-                was_successful=False, result_details=f"URL download failed: {e}"
-            )
+            return ArtifactProviderValidationResult(was_successful=False, result_details=f"URL download failed: {e}")
 
         # Generate unique filename from URL (sanitizes domain and path)
         try:
             filename = self._generate_unique_filename_from_url(location.url)
         except ValueError as e:
-            return ArtifactLoadProviderValidationResult(was_successful=False, result_details=str(e))
+            return ArtifactProviderValidationResult(was_successful=False, result_details=str(e))
 
         # Determine download location in workflow's downloads/ directory
-        download_location = ArtifactLoadProvider.generate_workflow_file_location(
+        download_location = ArtifactProvider.generate_workflow_file_location(
             subdirectory="downloads", filename=filename
         )
 
@@ -302,7 +298,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         try:
             self.save_bytes_to_disk(file_bytes=image_bytes, location=download_location)
         except Exception as e:
-            return ArtifactLoadProviderValidationResult(
+            return ArtifactProviderValidationResult(
                 was_successful=False, result_details=f"Failed to save downloaded file: {e}"
             )
 
@@ -315,7 +311,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         )
 
         # Return URLFileLocation so user still sees original URL in parameter
-        return ArtifactLoadProviderValidationResult(
+        return ArtifactProviderValidationResult(
             was_successful=True,
             artifact=artifact,
             location=location,
@@ -496,7 +492,7 @@ class ImageLoadProvider(ArtifactLoadProvider):
         parsed = urlparse(artifact_url)
         filename = Path(parsed.path).name
 
-        download_location = ArtifactLoadProvider.generate_workflow_file_location(
+        download_location = ArtifactProvider.generate_workflow_file_location(
             subdirectory="downloads", filename=filename
         )
 

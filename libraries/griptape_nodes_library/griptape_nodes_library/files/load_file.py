@@ -13,11 +13,11 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.files.providers.artifact_load_provider import (
-    ArtifactLoadProvider,
+from griptape_nodes_library.files.providers.artifact_provider import (
+    ArtifactProvider,
     FileLocation,
 )
-from griptape_nodes_library.files.providers.image.image_loader import ImageLoadProvider
+from griptape_nodes_library.files.providers.image.image_provider import ImageProvider
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -29,7 +29,7 @@ class LoadFile(SuccessFailureNode):
 
     def __init__(self, **kwargs) -> None:
         # Current provider instance
-        self._current_provider: ArtifactLoadProvider | None = None
+        self._current_provider: ArtifactProvider | None = None
         # Dynamic parameters added by current provider
         self._dynamic_parameters: list[Parameter] = []
         # Track current file location (for copy button, display)
@@ -202,7 +202,7 @@ class LoadFile(SuccessFailureNode):
         if current_file_location:
             self._load_file_location_with_current_provider(file_location_input=current_file_location)
 
-    def _get_candidate_providers_for_file_location_input(self, file_location_input: str) -> list[ArtifactLoadProvider]:
+    def _get_candidate_providers_for_file_location_input(self, file_location_input: str) -> list[ArtifactProvider]:
         """Find providers capable of loading from this file location."""
         candidates = []
         providers = self._get_all_providers()
@@ -216,7 +216,7 @@ class LoadFile(SuccessFailureNode):
     def _try_providers_for_file_location_input(
         self,
         *,
-        candidate_providers: list[ArtifactLoadProvider],
+        candidate_providers: list[ArtifactProvider],
         file_location_input: str,
     ) -> None:
         """Attempt loading with each provider until success."""
@@ -298,7 +298,7 @@ class LoadFile(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=result.result_details)
 
     def _update_file_location_display(
-        self, file_location_str: str, location: FileLocation | None, provider: ArtifactLoadProvider
+        self, file_location_str: str, location: FileLocation | None, provider: ArtifactProvider
     ) -> None:
         """Update file location parameter value and tooltip based on location."""
         if location is None:
@@ -367,7 +367,7 @@ class LoadFile(SuccessFailureNode):
         # Generate destination location in uploads/
         try:
             filename = self._generate_filename(self._current_location)
-            destination_location = ArtifactLoadProvider.generate_workflow_file_location(
+            destination_location = ArtifactProvider.generate_workflow_file_location(
                 subdirectory="uploads", filename=filename
             )
         except Exception as e:
@@ -409,7 +409,7 @@ class LoadFile(SuccessFailureNode):
             success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
         )
 
-    def _set_current_provider(self, provider: ArtifactLoadProvider) -> None:
+    def _set_current_provider(self, provider: ArtifactProvider) -> None:
         """Install provider and configure its dynamic parameters."""
         # Remove old provider parameters
         self._clear_current_provider()
@@ -481,7 +481,7 @@ class LoadFile(SuccessFailureNode):
         choices.extend(provider.provider_name for provider in providers)
         return choices
 
-    def _create_provider_instance(self, provider_name: str) -> ArtifactLoadProvider | None:
+    def _create_provider_instance(self, provider_name: str) -> ArtifactProvider | None:
         """Instantiate provider matching the given name."""
         providers = self._get_all_providers()
         for provider in providers:
@@ -489,9 +489,9 @@ class LoadFile(SuccessFailureNode):
                 return provider
         return None
 
-    def _get_all_providers(self) -> list[ArtifactLoadProvider]:
+    def _get_all_providers(self) -> list[ArtifactProvider]:
         """Create instances of all supported providers."""
         # Explicit provider list - add new providers here
         return [
-            ImageLoadProvider(node=self, path_parameter=self.file_location_parameter),
+            ImageProvider(node=self, path_parameter=self.file_location_parameter),
         ]
