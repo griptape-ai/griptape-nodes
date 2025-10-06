@@ -9,8 +9,9 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineTypePipelineParameters(ABC):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         self._node = node
+        self._list_all_models = list_all_models
 
     @abstractmethod
     def add_input_parameters(self) -> None:

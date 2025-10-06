@@ -48,10 +48,18 @@ class CustomPipelineTypeParameters(DiffusionPipelineTypeParameters):
                 name="custom_pipeline_type_parameter_notice",
                 title="Custom Pipelines",
                 variant="info",
-                value="In 'Custom' mode all guardrails are off. Ensure you are selecting compatible pipeline types and models.",
+                value="In 'Custom' mode all compatibility guardrails are off. Ensure you are selecting compatible pipeline types and models.",
             )
         )
         super().add_input_parameters()
+
+    def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
+        try:
+            self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](self._node, list_all_models=True)
+        except KeyError:
+            msg = f"Unsupported pipeline type: {pipeline_type}"
+            logger.error(msg)
+            raise ValueError(msg)
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("custom_pipeline_type_parameter_notice")
