@@ -27,6 +27,7 @@ class AudioldmPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
                 "cvssp/audioldm-m-full",
                 "cvssp/audioldm-l-full",
             ],
+            list_all_models=list_all_models,
         )
 
     def _add_input_parameters(self) -> None:

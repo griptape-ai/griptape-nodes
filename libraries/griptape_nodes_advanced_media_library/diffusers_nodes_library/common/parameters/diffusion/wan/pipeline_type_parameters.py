@@ -23,9 +23,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-WanPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WanPipeline": WanPipelineParameters, "WanImageToVideoPipeline": WanImageToVideoPipelineParameters, "WanVideoToVideoPipeline": WanVideoToVideoPipelineParameters, "WanVacePipeline": WanVacePipelineParameters}
+WanPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WanPipeline": WanPipelineParameters, "WanImageToVideoPipeline": WanImageToVideoPipelineParameters, "WanVideoToVideoPipeline": WanVideoToVideoPipelineParameters, "WanVacePipeline": WanVacePipelineParameters}
 
 class WanPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return WanPipelineTypes
+        return WanPipelineTypeDict

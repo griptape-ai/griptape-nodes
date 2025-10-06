@@ -29,9 +29,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-FluxPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"FluxPipeline": FluxPipelineParameters, "FluxFillPipeline": FluxFillPipelineParameters, "FluxKontextPipeline": FluxKontextPipelineParameters, "FluxImg2ImgPipeline": FluxImg2ImgPipelineParameters, "FluxControlNetPipeline": FluxControlNetPipelineParameters, "FluxUpscalePipeline": FluxUpscalePipelineParameters}
+FluxPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"FluxPipeline": FluxPipelineParameters, "FluxFillPipeline": FluxFillPipelineParameters, "FluxKontextPipeline": FluxKontextPipelineParameters, "FluxImg2ImgPipeline": FluxImg2ImgPipelineParameters, "FluxControlNetPipeline": FluxControlNetPipelineParameters, "FluxUpscalePipeline": FluxUpscalePipelineParameters}
 
 class FluxPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return FluxPipelineTypes
+        return FluxPipelineTypeDict

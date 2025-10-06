@@ -10,6 +10,9 @@ from diffusers_nodes_library.common.parameters.diffusion.amused.pipeline_type_pa
 from diffusers_nodes_library.common.parameters.diffusion.audioldm.pipeline_type_parameters import (
     AudioldmPipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.custom.pipeline_type_parameters import (
+    CustomPipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
@@ -46,6 +49,7 @@ class DiffusionPipelineBuilderParameters:
             "Stable Diffusion",
             "WAN",
             "Wuerstchen",
+            "Custom",
         ]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
@@ -93,6 +97,8 @@ class DiffusionPipelineBuilderParameters:
                 self._pipeline_type_parameters = WanPipelineTypeParameters(self._node)
             case "Wuerstchen":
                 self._pipeline_type_parameters = WuerstchenPipelineTypeParameters(self._node)
+            case "Custom":
+                self._pipeline_type_parameters = CustomPipelineTypeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline provider: {provider}"
                 logger.error(msg)

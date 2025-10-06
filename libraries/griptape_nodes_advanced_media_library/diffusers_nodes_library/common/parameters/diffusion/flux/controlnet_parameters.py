@@ -14,7 +14,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -24,6 +24,7 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "black-forest-labs/FLUX.1-Krea-dev",
             ],
             parameter_name="model",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_repo_parameter = HuggingFaceRepoParameter(
@@ -32,6 +33,7 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "openai/clip-vit-large-patch14",
             ],
             parameter_name="text_encoder",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_2_repo_parameter = HuggingFaceRepoParameter(
@@ -40,6 +42,7 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "google/t5-v1_1-xxl",
             ],
             parameter_name="text_encoder_2",
+            list_all_models=list_all_models,
         )
 
         self._controlnet_repo_parameter = HuggingFaceRepoParameter(
@@ -50,6 +53,7 @@ class FluxControlNetPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
             ],
             parameter_name="controlnet_model",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:

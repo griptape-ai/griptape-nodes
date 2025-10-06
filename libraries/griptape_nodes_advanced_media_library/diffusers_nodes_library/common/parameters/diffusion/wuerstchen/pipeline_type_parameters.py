@@ -14,9 +14,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-WuerstchenPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WuerstchenPipeline": WuerstchenPipelineParameters}
+WuerstchenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"WuerstchenPipeline": WuerstchenPipelineParameters}
 
 class WuerstchenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return WuerstchenPipelineTypes
+        return WuerstchenPipelineTypeDict

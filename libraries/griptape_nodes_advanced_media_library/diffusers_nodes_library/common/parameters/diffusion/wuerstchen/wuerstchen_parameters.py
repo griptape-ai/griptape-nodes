@@ -13,7 +13,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class WuerstchenPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, list_all_models: bool = False):
         super().__init__(node)
         self._prior_model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -21,6 +21,7 @@ class WuerstchenPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "warp-ai/wuerstchen-prior",
             ],
             parameter_name="prior_model",
+            list_all_models=list_all_models,
         )
         self._decoder_model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -28,6 +29,7 @@ class WuerstchenPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "warp-ai/wuerstchen",
             ],
             parameter_name="decoder_model",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:

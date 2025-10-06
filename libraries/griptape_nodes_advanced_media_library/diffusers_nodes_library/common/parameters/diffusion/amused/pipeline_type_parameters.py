@@ -20,9 +20,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-AmusedPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"AmusedPipeline": AmusedPipelineParameters, "AmusedImg2ImgPipeline": AmusedImg2ImgPipelineParameters, "AmusedInpaintPipeline": AmusedInpaintPipelineParameters}
+AmusedPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"AmusedPipeline": AmusedPipelineParameters, "AmusedImg2ImgPipeline": AmusedImg2ImgPipelineParameters, "AmusedInpaintPipeline": AmusedInpaintPipelineParameters}
 
 class AmusedPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return AmusedPipelineTypes
+        return AmusedPipelineTypeDict

@@ -20,9 +20,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-QwenPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"QwenPipeline": QwenPipelineParameters, "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters, "QwenUpscalePipeline": QwenUpscalePipelineParameters}
+QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"QwenPipeline": QwenPipelineParameters, "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters, "QwenUpscalePipeline": QwenUpscalePipelineParameters}
 
 class QwenPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return QwenPipelineTypes
+        return QwenPipelineTypeDict

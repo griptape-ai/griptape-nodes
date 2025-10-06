@@ -14,9 +14,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-AudioldmPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"AudioLDMPipeline": AudioldmPipelineParameters}
+AudioldmPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {"AudioLDMPipeline": AudioldmPipelineParameters}
 
 class AudioldmPipelineTypeParameters(DiffusionPipelineTypeParameters):
     @property
     def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
-        return AudioldmPipelineTypes
+        return AudioldmPipelineTypeDict

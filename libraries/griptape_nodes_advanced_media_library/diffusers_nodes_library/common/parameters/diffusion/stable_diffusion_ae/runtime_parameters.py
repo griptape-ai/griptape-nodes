@@ -25,6 +25,7 @@ class StableDiffusionAttendAndExcitePipelineRuntimeParameters(DiffusionPipelineR
                 "CompVis/stable-diffusion-v1-2",
                 "CompVis/stable-diffusion-v1-1",
             ],
+            list_all_models=list_all_models,
         )
 
     def _add_input_parameters(self) -> None:

@@ -14,7 +14,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -22,6 +22,7 @@ class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "Qwen/Qwen-Image",
             ],
             parameter_name="model",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_repo_parameter = HuggingFaceRepoParameter(
@@ -30,6 +31,7 @@ class QwenPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "Qwen/Qwen2.5-VL-7B-Instruct",
             ],
             parameter_name="text_encoder",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:
