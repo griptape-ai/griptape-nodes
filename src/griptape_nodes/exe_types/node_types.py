@@ -1931,7 +1931,10 @@ class NodeGroupProxyNode(BaseNode):
 
         # Track mapping from proxy parameter name to (original_node, original_param_name)
         self._proxy_param_to_node_param: dict[str, tuple[BaseNode, str]] = {}
-
+        for node_name, node in node_group.nodes.items():
+            execution_type = node.get_parameter_value(node.execution_environment.name)
+            self.set_parameter_value(self.execution_environment.name, execution_type)
+            break
         # Note: Proxy parameters are created AFTER connection remapping in control_flow.py
         # via explicit call to _create_proxy_parameters()
 

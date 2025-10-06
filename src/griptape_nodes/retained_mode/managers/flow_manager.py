@@ -3267,6 +3267,8 @@ class FlowManager:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
+                # Cleanup proxy nodes before canceling flow
+                await self._global_control_flow_machine.cleanup_proxy_nodes()
                 await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
@@ -3294,6 +3296,10 @@ class FlowManager:
         # Request cancellation on all nodes and wait for them to complete
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
+
+        # Cleanup proxy nodes and restore connections
+        if self._global_control_flow_machine is not None:
+            await self._global_control_flow_machine.cleanup_proxy_nodes()
 
         # Reset control flow machine
         if self._global_control_flow_machine is not None:

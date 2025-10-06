@@ -11,12 +11,9 @@ from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
-   
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
-   
     EndNode,
-   
     NodeGroupProxyNode,
     StartNode,
 )
@@ -25,6 +22,8 @@ from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
+    PackageNodesAsSerializedFlowRequest,
+    PackageNodesAsSerializedFlowRequest
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
@@ -65,7 +64,7 @@ class NodeExecutor:
         msg = f"Could not find PublishWorkflowRequest handler for library {library_name}"
         raise ValueError(msg)
 
-    async def execute(self, node: BaseNode, library_name: str | None = None) -> None:  # noqa: C901, PLR0912, PLR0915
+    async def execute(self, node: BaseNode) -> None:
         """Execute the given node.
 
         Args:
@@ -73,58 +72,6 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
-        if isinstance(node, NodeGroupProxyNode):
-            logger.info("Handling Group")
-            # TEST CASE: Simulate subprocess execution result for node group
-            # Dictionary mapping proxy parameter names to (node_name, parameter_name)
-            proxy_param_mapping = {
-                "Agent__output": ("Agent", "output"),
-                "Agent__prompt": ("Agent", "prompt"),
-                "Display_Text__value": ("Text Input", "value"),
-            }
-
-            # Simulated subprocess result with random test values
-            test_subprocess_result = {
-                "workflow_output": {
-                    "parameter_output_values": {
-                        "Agent__output": "This is a test agent response",
-                        "Agent__prompt": "Test prompt for the agent",
-                        "Display_Text__value": "Test input value",
-                    },
-                    "unique_parameter_uuid_to_values": {},
-                }
-            }
-
-            # Extract parameter values using the existing method
-            parameter_output_values = self._extract_parameter_output_values(test_subprocess_result)
-            logger.info("Extracted parameter values: %s", parameter_output_values)
-
-            for proxy_param_name, param_value in parameter_output_values.items():
-                if proxy_param_name in proxy_param_mapping:
-                    target_node_name, target_param_name = proxy_param_mapping[proxy_param_name]
-                    # Get the target node from the flow
-                    if target_node_name in node.node_group_data.nodes:
-                        target_node = node.node_group_data.nodes[target_node_name]
-                        target_param = target_node.get_parameter_by_name(target_param_name)
-
-                        if target_param is not None and target_param != target_node.execution_environment:
-                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                                target_node.set_parameter_value(target_param_name, param_value)
-                            target_node.parameter_output_values[target_param_name] = param_value
-                            logger.info(
-                                "Set parameter '%s' on node '%s' to value: %s",
-                                target_param_name,
-                                target_node_name,
-                                param_value,
-                            )
-                    else:
-                        logger.warning("Target node '%s' not found in flow", target_node_name)
-                else:
-                    logger.warning("Proxy parameter '%s' not in mapping", proxy_param_name)
-
-            logger.info("Completed test case for NodeGroupProxyNode")
-            return
-
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
         elif execution_type == PRIVATE_EXECUTION:
@@ -204,44 +151,67 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: B904
 
         library_name = library.get_library_data().name
-        workflow_handler = self.get_workflow_handler(library_name)
-        if workflow_handler is None:
-            logger.error("Could not find workflow handler for node '%s', defaulting to local execution.", node.name)
-            await node.aprocess()
-            return
+
+        try:
+            self.get_workflow_handler(library_name)
+        except ValueError as e:
+            logger.error("Library execution failed for node '%s' via library '%s': %s", node.name, library_name, e)
+            msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
+
         workflow_result = None
         published_workflow_filename = None
 
         try:
-            (
-                workflow_result,
-                published_workflow_filename,
-                file_name,
-                output_parameter_prefix,
-            ) = await self._publish_workflow(node, library, library_name)
-            my_subprocess_result = await self._execute_subprocess(published_workflow_filename, file_name)
-            parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-            self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
-
+            result = await self._publish_local_workflow(node, library=library)
+            workflow_result = result.workflow_result
         except Exception as e:
             logger.exception(
-                "Failed to execute node '%s' via library executor '%s'. Node type: %s",
+                "Failed to publish local workflow for node '%s' via library '%s'. Node type: %s",
                 node.name,
                 library_name,
                 node.__class__.__name__,
             )
-            msg = f"Library executor failed for node '{node.name}': {e}"
+            msg = f"Failed to publish workflow for node '{node.name}' via library '{library_name}': {e}"
             raise RuntimeError(msg) from e
 
+        try:
+            published_workflow_filename = await self._publish_library_workflow(
+                workflow_result, library_name, result.file_name
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to publish library workflow for node '%s' via library '%s'. Node type: %s",
+                node.name,
+                library_name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to publish library workflow for node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
+
+        try:
+            await self._execute_and_apply_workflow(
+                node, published_workflow_filename, result.file_name, result.output_parameter_prefix
+            )
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.exception(
+                "Subprocess execution failed for node '%s' via library '%s'. Node type: %s",
+                node.name,
+                library_name,
+                node.__class__.__name__,
+            )
+            msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
+            raise RuntimeError(msg) from e
         finally:
-            GriptapeNodes.ConfigManager().set_config_value("pickle_control_flow_result", False)
-            if workflow_result is not None and published_workflow_filename is not None:
-                published_filename = Path(published_workflow_filename).stem
-                for workflow in [
-                    (workflow_result.workflow_metadata.name, Path(workflow_result.file_path)),
-                    (published_filename, Path(published_workflow_filename)),
-                ]:
-                    await self._delete_workflow(workflow_name=workflow[0], workflow_path=workflow[1])
+            if workflow_result is not None:
+                await self._delete_workflow(
+                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+                )
+            if published_workflow_filename is not None:
+                published_filename = published_workflow_filename.stem
+                await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
 
     async def _publish_local_workflow(
         self, node: BaseNode, library: Library | None = None
@@ -265,19 +235,29 @@ class NodeExecutor:
             end_node_type = library.get_nodes_by_base_type(EndNode)
             start_node_type = start_node_type[0] if len(start_node_type) > 0 else "StartFlow"
             end_node_type = end_node_type[0] if len(end_node_type) > 0 else "EndFlow"
-        request = PackageNodeAsSerializedFlowRequest(
-            node_name=node.name,
-            start_node_type=start_node_type,
-            end_node_type=end_node_type,
-            start_end_specific_library_name=library_name,
-            entry_control_parameter_name=node._entry_control_parameter.name
-            if node._entry_control_parameter is not None
-            else None,
-            output_parameter_prefix=output_parameter_prefix,
-        )
+        if isinstance(node, NodeGroupProxyNode):
+            # TODO: Get the start node request.
+            request = PackageNodesAsSerializedFlowRequest(
+                node_names=node.node_group_data.nodes.keys(),
+                start_node_type=start_node_type,
+                end_node_type=end_node_type,
+                start_end_specific_library_name=library_name,
+                output_parameter_prefix=output_parameter_prefix,
+            )
+        else:
+            request = PackageNodeAsSerializedFlowRequest(
+                node_name=node.name,
+                start_node_type=start_node_type,
+                end_node_type=end_node_type,
+                start_end_specific_library_name=library_name,
+                entry_control_parameter_name=node._entry_control_parameter.name
+                if node._entry_control_parameter is not None
+                else None,
+                output_parameter_prefix=output_parameter_prefix,
+            )
 
         package_result = GriptapeNodes.handle_request(request)
-        if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
+        if not isinstance(package_result, (PackageNodesAsSerializedFlowResultSuccess, PackageNodeAsSerializedFlowResultSuccess)):
             msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
