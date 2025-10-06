@@ -76,7 +76,7 @@ class LoadFile(SuccessFailureNode):
             type="str",
             default_value=LoadFile.AUTOMATIC_DETECTION,
             tooltip="File type provider to use for loading",
-            ui_options={"display_name": "Provider Type"},
+            ui_options={"display_name": "File Type"},
         )
         self.provider_parameter.add_trait(Options(choices=self._get_provider_choices()))
 
@@ -259,6 +259,9 @@ class LoadFile(SuccessFailureNode):
             self.set_parameter_value(self.artifact_parameter.name, result.artifact)
             self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
 
+            # Lock provider selection when artifact is successfully loaded
+            self.provider_parameter.settable = False
+
             file_location_str = self._current_provider.get_source_path(result.location) if result.location else ""
             self._update_file_location_display(file_location_str, result.location, self._current_provider)
 
@@ -286,6 +289,9 @@ class LoadFile(SuccessFailureNode):
             # Clear artifact on failure
             self.set_parameter_value(self.artifact_parameter.name, None)
             self.publish_update_to_parameter(self.artifact_parameter.name, None)
+
+            # Unlock provider selection when artifact is cleared due to error
+            self.provider_parameter.settable = True
 
             self.file_status_info_message.variant = "error"
             self.file_status_info_message.value = result.result_details
@@ -452,6 +458,9 @@ class LoadFile(SuccessFailureNode):
         """Clear file inputs and dynamic parameter values."""
         self.artifact_parameter.default_value = None
         self.file_location_parameter.default_value = ""
+
+        # Unlock provider selection when artifact is cleared
+        self.provider_parameter.settable = True
 
         # Clear dynamic parameter values
         for param in self._dynamic_parameters:
