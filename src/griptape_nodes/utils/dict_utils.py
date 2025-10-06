@@ -122,7 +122,7 @@ def _convert_sequence_to_dict(sequence: list | tuple) -> dict:
     return result
 
 
-def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = True) -> dict:
+def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = True, merge_lists: bool = False) -> dict:
     """Recursive dict merge.
 
     Inspired by :meth:``dict.update()``, instead of
@@ -137,10 +137,14 @@ def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = Tr
     present in ``merge_dict`` but not ``dct`` should be included in the
     new dict.
 
+    The optional argument ``merge_lists``, determines whether list values
+    should be merged (combined) instead of replaced.
+
     Args:
         dct: onto which the merge is executed
         merge_dct: dct merged into dct
         add_keys: whether to add new keys
+        merge_lists: whether to merge list values instead of replacing them
 
     Returns:
         dict: updated dict
@@ -155,7 +159,9 @@ def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = Tr
 
     for key in merge_dct:
         if key in dct and isinstance(dct[key], dict):
-            dct[key] = merge_dicts(dct[key], merge_dct[key], add_keys=add_keys)
+            dct[key] = merge_dicts(dct[key], merge_dct[key], add_keys=add_keys, merge_lists=merge_lists)
+        elif merge_lists and key in dct and isinstance(dct[key], list) and isinstance(merge_dct[key], list):
+            dct[key] = list(set(dct[key] + merge_dct[key]))
         else:
             dct[key] = merge_dct[key]
 

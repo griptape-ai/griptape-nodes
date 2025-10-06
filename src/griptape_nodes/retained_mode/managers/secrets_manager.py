@@ -51,6 +51,26 @@ class SecretsManager:
     def workspace_env_path(self) -> Path:
         return self.config_manager.workspace_path / ".env"
 
+    def register_all_secrets(self) -> None:
+        """Register all secrets from config and library settings.
+
+        This should be called after libraries are loaded and their settings
+        are merged into the config.
+        """
+        secret_names = set()
+
+        # Check root level for secrets_to_register
+        root_secrets = self.config_manager.merged_config.get(
+            "app_events.on_app_initialization_complete.secrets_to_register", []
+        )
+        if isinstance(root_secrets, list):
+            secret_names.update(root_secrets)
+
+        # Register each secret (create blank entry if doesn't exist)
+        for secret_name in secret_names:
+            if self.get_secret(secret_name, should_error_on_not_found=False) is None:
+                self.set_secret(secret_name, "")
+
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = SecretsManager._apply_secret_name_compliance(request.key)
         secret_value = self.get_secret(secret_key, should_error_on_not_found=request.should_error_on_not_found)
