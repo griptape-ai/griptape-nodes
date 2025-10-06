@@ -27,17 +27,6 @@ class BaseStorageDriver(ABC):
         """
         self.workspace_directory = workspace_directory
 
-    def _get_full_path(self, path: Path) -> Path:
-        """Get the full path by joining workspace directory with the given path.
-
-        Args:
-            path: The relative path to join with workspace directory.
-
-        Returns:
-            The full path as workspace_directory / path.
-        """
-        return self.workspace_directory / path
-
     @abstractmethod
     def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
         """Create a signed upload URL for the given path.

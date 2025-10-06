@@ -58,7 +58,7 @@ class LocalStorageDriver(BaseStorageDriver):
 
     def create_signed_download_url(self, path: Path) -> str:
         # The base_url already includes the /static path, so just append the path
-        url = f"{self.base_url}/{path}"
+        url = f"{self.base_url}/{path.as_posix()}"
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
@@ -70,7 +70,7 @@ class LocalStorageDriver(BaseStorageDriver):
             path: The path of the file to delete.
         """
         # Use the static server's delete endpoint
-        delete_url = urljoin(self.base_url, f"/static-files/{path}")
+        delete_url = urljoin(self.base_url, f"/static-files/{path.as_posix()}")
 
         try:
             response = httpx.delete(delete_url)

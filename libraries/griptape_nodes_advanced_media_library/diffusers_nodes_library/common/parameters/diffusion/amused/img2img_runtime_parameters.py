@@ -55,6 +55,7 @@ class AmusedImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters)
                 default_value=0.8,
                 type="float",
                 tooltip="Strength of transformation (0.0 to 1.0)",
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
         self._node.add_parameter(

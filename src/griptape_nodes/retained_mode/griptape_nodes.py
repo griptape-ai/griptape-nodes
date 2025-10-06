@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
-    AppConnectionEstablished,
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
     EngineHeartbeatResultSuccess,
@@ -204,7 +203,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersionRequest, self.handle_engine_version_request
             )
-            self._event_manager.add_listener_to_app_event(AppConnectionEstablished, self.on_app_connection_established)
             self._event_manager.assign_manager_to_request_type(
                 EngineHeartbeatRequest, self.handle_engine_heartbeat_request
             )
@@ -388,27 +386,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         if GriptapeNodes.ObjectManager()._name_to_objects:
             msg = "Failed to successfully delete all objects"
             raise ValueError(msg)
-
-    async def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
-        from griptape_nodes.app.app import subscribe_to_topic
-
-        # Subscribe to request topic (engine discovery)
-        await subscribe_to_topic("request")
-
-        # Get engine ID and subscribe to engine_id/request
-        engine_id = GriptapeNodes.get_engine_id()
-        if engine_id:
-            await subscribe_to_topic(f"engines/{engine_id}/request")
-        else:
-            logger.warning("Engine ID not available for subscription")
-
-        # Get session ID and subscribe to session_id/request if available
-        session_id = GriptapeNodes.get_session_id()
-        if session_id:
-            topic = f"sessions/{session_id}/request"
-            await subscribe_to_topic(topic)
-        else:
-            logger.info("No session ID available for subscription")
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
