@@ -20,16 +20,33 @@ class DiffusionPipelineTypeParameters(ABC):
     def __init__(self, node: BaseNode):
         self._node: BaseNode = node
         self.did_pipeline_type_change = False
+        self._pipeline_type_pipeline_params: DiffusionPipelineTypePipelineParameters
         self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
 
     @property
     @abstractmethod
-    def pipeline_types(self) -> list[str]:
+    def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
         raise NotImplementedError
 
-    @abstractmethod
+    @property
+    def pipeline_types(self) -> list[str]:
+        return list(self.pipeline_type_dict.keys())
+
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
-        raise NotImplementedError
+        try:
+            self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](self._node)
+        except KeyError:
+            msg = f"Unsupported pipeline type: {pipeline_type}"
+            logger.error(msg)
+            raise ValueError(msg)
+
+    @property
+    def pipeline_type_pipeline_params(self) -> DiffusionPipelineTypePipelineParameters:
+        if self._pipeline_type_pipeline_params is None:
+            msg = "Pipeline type builder parameters not initialized. Ensure provider parameter is set."
+            logger.error(msg)
+            raise ValueError(msg)
+        return self._pipeline_type_pipeline_params
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -74,11 +91,6 @@ class DiffusionPipelineTypeParameters(ABC):
         sorted_parameters = [*start_params, *middle_params, *end_params]
 
         self._node.reorder_elements(sorted_parameters)
-
-    @property
-    @abstractmethod
-    def pipeline_type_pipeline_params(self) -> DiffusionPipelineTypePipelineParameters:
-        raise NotImplementedError
 
     def get_config_kwargs(self) -> dict:
         return self.pipeline_type_pipeline_params.get_config_kwargs()
