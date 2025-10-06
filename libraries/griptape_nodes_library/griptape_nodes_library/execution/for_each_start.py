@@ -9,10 +9,11 @@ from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeS
 
 
 class ForEachStartNode(BaseIterativeStartNode):
-    """For Each Start Node that runs a connected flow for each item in a parameter list.
+    """For Each Start Node that runs a connected flow for each item in a list or dictionary.
 
-    This node iterates through each item in the input list and runs the connected flow for each item.
-    It provides the current item to the next node in the flow and keeps track of the iteration state.
+    This node iterates through each item in the input list or dictionary and runs the connected flow for each item.
+    For lists, it provides each item directly. For dictionaries, it provides {"key": k, "value": v} for each entry.
+    It keeps track of the iteration state and current index.
     """
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -24,8 +25,8 @@ class ForEachStartNode(BaseIterativeStartNode):
         # Add ForEach-specific parameters
         self.items_list = Parameter(
             name="items",
-            tooltip="List of items to iterate through",
-            input_types=["list"],
+            tooltip="List or dictionary to iterate through",
+            input_types=["list", "dict"],
             allowed_modes={ParameterMode.INPUT},
         )
         self.add_parameter(self.items_list)
@@ -59,27 +60,36 @@ class ForEachStartNode(BaseIterativeStartNode):
 
     def _get_exec_out_tooltip(self) -> str:
         """Return the tooltip for the exec_out parameter."""
-        return "Execute for each item in the list"
+        return "Execute for each item in the list or dictionary"
 
     def _get_iteration_items(self) -> list[Any]:
-        """Get the list of items to iterate over."""
-        list_values = self.get_parameter_value("items")
+        """Get the list of items to iterate over.
+
+        Accepts either a list or dict. If dict, converts to list of {"key": k, "value": v} dicts.
+        """
+        items = self.get_parameter_value("items")
 
         # Handle case where items parameter is not connected or has no value
-        if list_values is None:
+        if items is None:
             self._logger.info("ForEach Start '%s': No items provided, skipping loop execution", self.name)
             return []
 
-        if not isinstance(list_values, list):
-            error_msg = (
-                f"ForEach Start '{self.name}' expected a list but got {type(list_values).__name__}: {list_values}"
-            )
-            raise TypeError(error_msg)
+        # Handle dict input - convert to list of {"key": k, "value": v} dicts
+        if isinstance(items, dict):
+            if len(items) == 0:
+                self._logger.info("ForEach Start '%s': Empty dictionary provided, skipping loop execution", self.name)
+                return []
+            return [{"key": k, "value": v} for k, v in items.items()]
 
-        if len(list_values) == 0:
-            self._logger.info("ForEach Start '%s': Empty list provided, skipping loop execution", self.name)
+        # Handle list input
+        if isinstance(items, list):
+            if len(items) == 0:
+                self._logger.info("ForEach Start '%s': Empty list provided, skipping loop execution", self.name)
+            return items
 
-        return list_values
+        # Invalid type
+        error_msg = f"ForEach Start '{self.name}' expected a list or dict but got {type(items).__name__}: {items}"
+        raise TypeError(error_msg)
 
     def _initialize_iteration_data(self) -> None:
         """Initialize iteration-specific data and state."""

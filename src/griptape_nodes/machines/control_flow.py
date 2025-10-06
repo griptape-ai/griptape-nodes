@@ -50,7 +50,6 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
     pickle_control_flow_result: bool
-    node_to_proxy_map: dict[BaseNode, BaseNode]
 
     def __init__(
         self,
@@ -73,7 +72,6 @@ class ControlFlowContext:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
-        self.node_to_proxy_map = {}
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
