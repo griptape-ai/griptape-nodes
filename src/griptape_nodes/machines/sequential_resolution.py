@@ -267,10 +267,11 @@ class ExecuteNodeState(State):
             )
             logger.info("Node '%s' is processing.", current_node.name)
             current_node = current_focus.node
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            try:
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
                 executor = GriptapeNodes.FlowManager().node_executor
-            try:
                 # Create and track task in Focus for cancellation support
                 execution_task = asyncio.create_task(executor.execute(current_node))
                 current_focus.task = execution_task
