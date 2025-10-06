@@ -13,7 +13,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class AudioldmPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -24,6 +24,7 @@ class AudioldmPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "cvssp/audioldm-l-full",
             ],
             parameter_name="model",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:

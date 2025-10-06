@@ -10,6 +10,26 @@ from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_
 logger = logging.getLogger("griptape_nodes")
 
 
+def list_all_repo_revisions_in_cache() -> list[tuple[str, str]]:
+    """Returns a list of (repo_id, revision) tuples for all repos in the huggingface cache."""
+    # Use quick scan for diffuser repos, fallback to scan_cache_dir only on errors
+    try:
+        repos = quick_scan_diffuser_repos(HF_HUB_CACHE)
+        results = [(repo["name"], repo["hash"]) for repo in repos]
+    except Exception:
+        logger.exception("Failed to quick scan diffuser repos, falling back to scan_cache_dir.")
+    else:
+        return results
+
+    # Fallback to original implementation
+    cache_info = scan_cache_dir()
+    results = []
+    for repo in cache_info.repos:
+        for revision in repo.revisions:
+            results.append((repo.repo_id, revision.commit_hash))
+    return results
+
+
 def list_repo_revisions_in_cache(repo_id: str) -> list[tuple[str, str]]:
     """Returns a list of (repo_id, revision) tuples matching repo_id in the huggingface cache."""
     # Use quick scan for diffuser repos, fallback to scan_cache_dir only on errors
