@@ -70,48 +70,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-@dataclass
-class Version:
-    major: int
-    minor: int
-    patch: int
-
-    @classmethod
-    def from_string(cls, version_string: str) -> Version | None:
-        match = re.match(r"(\d+)\.(\d+)\.(\d+)", version_string)
-        if match:
-            major, minor, patch = map(int, match.groups())
-            return cls(major, minor, patch)
-        return None
-
-    def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
-
-    def __lt__(self, other: Version) -> bool:
-        """Less than comparison."""
-        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
-
-    def __le__(self, other: Version) -> bool:
-        """Less than or equal comparison."""
-        return (self.major, self.minor, self.patch) <= (other.major, other.minor, other.patch)
-
-    def __gt__(self, other: Version) -> bool:
-        """Greater than comparison."""
-        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
-
-    def __ge__(self, other: Version) -> bool:
-        """Greater than or equal comparison."""
-        return (self.major, self.minor, self.patch) >= (other.major, other.minor, other.patch)
-
-    def __eq__(self, other: Version) -> bool:  # type: ignore[override]
-        """Equality comparison."""
-        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
-
-    def __hash__(self) -> int:
-        """Hash function for Version."""
-        return hash((self.major, self.minor, self.patch))
-
-
 class GriptapeNodes(metaclass=SingletonMeta):
     _event_manager: EventManager
     _os_manager: OSManager

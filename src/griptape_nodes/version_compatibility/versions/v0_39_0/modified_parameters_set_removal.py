@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import semver
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     LibraryVersionCompatibilityCheck,
@@ -22,8 +23,8 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
 
     def applies_to_library(self, library_data: LibrarySchema) -> bool:
         """Check applies to libraries with engine_version < 0.39.0."""
-        library_version = Version.from_string(library_data.metadata.engine_version)
-        return library_version is not None and library_version < Version(0, 39, 0)
+        library_version = semver.VersionInfo.parse(library_data.metadata.engine_version)
+        return library_version is not None and library_version < semver.VersionInfo(0, 39, 0)
 
     def check_library(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
         """Perform the modified_parameters_set deprecation check."""
@@ -33,14 +34,14 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
             # If we can't get current engine version, skip version-specific warnings
             return []
 
-        current_engine_version = Version(
+        current_engine_version = semver.VersionInfo(
             engine_version_result.major, engine_version_result.minor, engine_version_result.patch
         )
 
         # Determine which phase we're in based on current engine version
         library_version_str = library_data.metadata.engine_version
 
-        if current_engine_version >= Version(0, 39, 0):
+        if current_engine_version >= semver.VersionInfo(0, 39, 0):
             # 0.39+ Release: Parameter removed, reject incompatible libraries
             return [
                 LibraryVersionCompatibilityIssue(
@@ -56,7 +57,7 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
                     severity=LibraryStatus.UNUSABLE,
                 ),
             ]
-        if current_engine_version >= Version(0, 38, 0):
+        if current_engine_version >= semver.VersionInfo(0, 38, 0):
             # 0.38 Release: Warning about upcoming removal in 0.39
             return [
                 LibraryVersionCompatibilityIssue(
