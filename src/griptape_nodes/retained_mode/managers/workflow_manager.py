@@ -256,7 +256,6 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
-        self._workflows_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -347,7 +346,6 @@ class WorkflowManager:
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
-        self._workflows_loading_complete.clear()
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
         config_mgr = GriptapeNodes.ConfigManager()
 
@@ -381,8 +379,6 @@ class WorkflowManager:
                     workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
                 ]
                 config_mgr.set_config_value(default_workflow_section, workflows_to_register)
-
-        self._workflows_loading_complete.set()
 
     def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
         """Get the workflow metadata for a given workflow file path.
@@ -604,9 +600,7 @@ class WorkflowManager:
         logger.error(execution_result.execution_details)
         return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
-    async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
-        await self._workflows_loading_complete.wait()
-
+    def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         # get workflow from registry
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -714,9 +708,7 @@ class WorkflowManager:
             ),
         )
 
-    async def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
-        await self._workflows_loading_complete.wait()
-
+    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
         try:
             workflows = WorkflowRegistry.list_workflows()
         except Exception:
