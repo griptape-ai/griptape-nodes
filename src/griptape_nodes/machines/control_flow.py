@@ -50,6 +50,7 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
     pickle_control_flow_result: bool
+    node_to_proxy_map: dict[BaseNode, BaseNode]
 
     def __init__(
         self,
@@ -72,6 +73,7 @@ class ControlFlowContext:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
+        self.node_to_proxy_map = {}
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
@@ -445,8 +447,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         for node in flow.nodes.values():
             group_id = node.get_parameter_value("job_group")
 
-            # Skip nodes without group assignment or empty group ID
-            if not group_id or group_id == "":
+            # Skip nodes without group assignment, empty group ID, or locked nodes
+            if not group_id or group_id == "" or node.lock:
                 continue
 
             # Create group if it doesn't exist

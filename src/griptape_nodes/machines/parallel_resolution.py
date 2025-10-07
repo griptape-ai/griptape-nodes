@@ -624,10 +624,6 @@ class ExecuteDagState(State):
 
             executor = GriptapeNodes.FlowManager().node_executor
             await executor.execute(current_node.node_reference)
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            executor = GriptapeNodes.FlowManager().node_executor
-            await executor.execute(current_node.node_reference)
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
@@ -719,12 +715,6 @@ class ExecuteDagState(State):
             for task in done:
                 if task.cancelled():
                     # Task was cancelled - this is expected during flow cancellation
-                    dag_node = context.task_to_node.get(task)
-
-                    # Cleanup proxy node if this task was executing one
-                    if dag_node:
-                        await ExecuteDagState._cleanup_proxy_node(dag_node.node_reference)
-
                     context.task_to_node.pop(task)
                     logger.info("Task execution was cancelled.")
                     return ErrorState
@@ -753,10 +743,6 @@ class ExecuteDagState(State):
                         context.flow_name,
                         exc,
                     )
-
-                    # Cleanup proxy node if this task was executing one
-                    if dag_node:
-                        await ExecuteDagState._cleanup_proxy_node(dag_node.node_reference)
 
                     context.task_to_node.pop(task)
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"

@@ -278,12 +278,6 @@ class ExecuteNodeState(State):
                 await execution_task
             except asyncio.CancelledError:
                 logger.info("Node '%s' processing was cancelled.", current_node.name)
-
-                # Cleanup proxy node if this was a proxy node
-                from griptape_nodes.machines.parallel_resolution import ExecuteDagState
-
-                await ExecuteDagState._cleanup_proxy_node(current_node)
-
                 current_node.make_node_unresolved(
                     current_states_to_trigger_change_event=set(
                         {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
@@ -298,12 +292,6 @@ class ExecuteNodeState(State):
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
-
-                # Cleanup proxy node if this was a proxy node
-                from griptape_nodes.machines.parallel_resolution import ExecuteDagState
-
-                await ExecuteDagState._cleanup_proxy_node(current_node)
-
                 # Mark the node as unresolved, broadcasting to everyone.
                 current_node.make_node_unresolved(
                     current_states_to_trigger_change_event=set(
