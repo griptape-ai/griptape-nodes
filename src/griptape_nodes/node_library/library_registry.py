@@ -50,6 +50,13 @@ class IconVariant(BaseModel):
     dark: str
 
 
+class NodeDeprecationMetadata(BaseModel):
+    """Metadata about a deprecated node."""
+
+    deprecation_message: str | None = None
+    removal_version: str | None = None
+
+
 class NodeMetadata(BaseModel):
     """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
 
@@ -60,6 +67,7 @@ class NodeMetadata(BaseModel):
     icon: str | IconVariant | None = None
     color: str | None = None
     group: str | None = None
+    deprecation: NodeDeprecationMetadata | None = None
 
 
 class CategoryDefinition(BaseModel):
@@ -99,7 +107,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     library_schema_version: str
