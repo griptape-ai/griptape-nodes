@@ -42,8 +42,14 @@ class HuggingFaceModelParameter(ABC):
 
         choices = self.get_choices()
 
+        current_value = self._node.get_parameter_value(self._parameter_name)
+        if current_value in choices:
+            default_value = current_value
+        else:
+            default_value = choices[0]
+
         if parameter.find_elements_by_type(Options):
-            self._node._update_option_choices(self._parameter_name, choices, choices[0])
+            self._node._update_option_choices(self._parameter_name, choices, default_value)
         else:
             parameter.add_trait(Options(choices=choices))
 
