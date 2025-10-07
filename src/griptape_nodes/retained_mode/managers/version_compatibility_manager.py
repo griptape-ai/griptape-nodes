@@ -151,14 +151,14 @@ class VersionCompatibilityManager:
                     self._workflow_compatibility_checks.append(check_instance)
                     logger.debug("Registered workflow version compatibility check: %s", attr_name)
 
-    def _check_for_deprecated_nodes(self, nodes: list[NodeDefinition]) -> list[LibraryVersionCompatibilityIssue]:
-        """Check for deprecated nodes."""
+    def _check_library_for_deprecated_nodes(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
+        """Check a library for deprecated nodes."""
         return [
             LibraryVersionCompatibilityIssue(
                 message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and may be removed in future versions. {node.metadata.deprecation_message}",
                 severity=LibraryStatus.FLAWED,
             )
-            for node in nodes
+            for node in library_data.nodes
             if node.metadata.deprecation_message
         ] or []
 
@@ -174,7 +174,7 @@ class VersionCompatibilityManager:
                 issues = check_instance.check_library(library_data)
                 version_issues.extend(issues)
 
-        version_issues.extend(self._check_for_deprecated_nodes(library_data.nodes))
+        version_issues.extend(self._check_library_for_deprecated_nodes(library_data))
 
         return version_issues
 
