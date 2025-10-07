@@ -52,6 +52,7 @@ class IconVariant(BaseModel):
 
 class NodeDeprecationMetadata(BaseModel):
     """Metadata about a deprecated node."""
+
     is_deprecated: bool = False
     deprecation_message: str | None = None
     removal_version: str | None = None
