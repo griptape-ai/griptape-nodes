@@ -719,6 +719,12 @@ class ExecuteDagState(State):
             for task in done:
                 if task.cancelled():
                     # Task was cancelled - this is expected during flow cancellation
+                    dag_node = context.task_to_node.get(task)
+
+                    # Cleanup proxy node if this task was executing one
+                    if dag_node:
+                        await ExecuteDagState._cleanup_proxy_node(dag_node.node_reference)
+
                     context.task_to_node.pop(task)
                     logger.info("Task execution was cancelled.")
                     return ErrorState
@@ -747,6 +753,10 @@ class ExecuteDagState(State):
                         context.flow_name,
                         exc,
                     )
+
+                    # Cleanup proxy node if this task was executing one
+                    if dag_node:
+                        await ExecuteDagState._cleanup_proxy_node(dag_node.node_reference)
 
                     context.task_to_node.pop(task)
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"
@@ -868,10 +878,6 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
-
-    def get_last_resolved_node(self) -> BaseNode | None:
-        """Get the last node that was resolved in the DAG execution."""
-        return self._context.last_resolved_node
 
     def get_last_resolved_node(self) -> BaseNode | None:
         """Get the last node that was resolved in the DAG execution."""

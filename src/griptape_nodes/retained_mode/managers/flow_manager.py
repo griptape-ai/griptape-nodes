@@ -3438,6 +3438,8 @@ class FlowManager:
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
+                    if self._global_control_flow_machine is not None:
+                        await self._global_control_flow_machine.cleanup_proxy_nodes()
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
             if resolution_machine.is_complete():
