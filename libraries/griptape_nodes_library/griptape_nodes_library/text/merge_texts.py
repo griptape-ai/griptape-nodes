@@ -88,8 +88,8 @@ class MergeTexts(DataNode):
         # Get the separator string and replace \n with actual newlines
         separator = self.parameter_values.get("merge_string", "\\n\\n").replace("\\n", "\n")
 
-        # Create a list of input texts, filtering out None values and converting to strings
-        input_texts = [str(text) for text in [input_1, input_2, input_3, input_4] if text is not None]
+        # Create a list of input texts, filtering out None and empty strings but keeping falsey values like 0, False, 0.0
+        input_texts = [str(text) for text in [input_1, input_2, input_3, input_4] if text is not None and text != ""]
 
         # Join all the inputs with the separator
         merged_text = separator.join(input_texts).strip()

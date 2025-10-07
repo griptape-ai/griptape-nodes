@@ -1,6 +1,7 @@
 import logging
 import math
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 import PIL.Image
@@ -97,21 +98,31 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
         strength_affected_steps = math.ceil(num_inference_steps * (self._node.get_parameter_value("strength") or 1))
 
+        first_iteration_time = None
+
         def callback_on_step_end(
             pipe: DiffusionPipeline,
             i: int,
-            _t: Any,
+            _t: int,
             callback_kwargs: dict,
         ) -> dict:
+            nonlocal first_iteration_time
             # Check for cancellation request
             if self._node.is_cancellation_requested:
                 pipe._interrupt = True
                 self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
                 return callback_kwargs
 
+            if first_iteration_time is None:
+                first_iteration_time = datetime.now(tz=UTC)
             if i < num_inference_steps - 1 and enable_preview:
                 self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-            self._node.log_params.append_to_logs(f"Completed inference step {i + 1} of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+            if i == 0:
+                self._node.log_params.append_to_logs(f"Completed inference step 1 of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+            else:
+                self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                    f"Completed inference step {i + 1} of {strength_affected_steps}. {f'{(datetime.now(tz=UTC) - first_iteration_time).total_seconds() / i:.2f}'} s/it\n"
+                )
             return {}
 
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
