@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.node_types import NodeDependencies
-from griptape_nodes.node_library.workflow_registry import WorkflowShape
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -201,6 +201,8 @@ class SerializedFlowCommands:
         node_dependencies (NodeDependencies): Aggregated dependencies from all nodes in this flow and its sub-flows.
             Includes referenced workflows, static files, Python imports, and libraries. Used for workflow packaging,
             dependency resolution, and deployment planning.
+        node_types_used (set[LibraryNameAndNodeType]): Set of all node types used in this flow and its sub-flows.
+            Each entry contains the library name and node type name pair, used for tracking which node types are utilized.
     """
 
     @dataclass
@@ -231,6 +233,7 @@ class SerializedFlowCommands:
     set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
     sub_flows_commands: list["SerializedFlowCommands"]
     node_dependencies: NodeDependencies
+    node_types_used: set[LibraryNameAndNodeType]
 
 
 @dataclass
