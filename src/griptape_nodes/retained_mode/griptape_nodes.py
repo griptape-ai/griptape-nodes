@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
@@ -347,7 +347,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
-            engine_ver = Version.from_string(engine_version)
+            engine_ver = semver.VersionInfo.parse(engine_version)
             if engine_ver:
                 return GetEngineVersionResultSuccess(
                     major=engine_ver.major,

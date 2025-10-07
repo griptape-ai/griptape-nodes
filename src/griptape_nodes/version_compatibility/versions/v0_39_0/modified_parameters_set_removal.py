@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import semver
 from typing import TYPE_CHECKING
+
+import semver
 
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,

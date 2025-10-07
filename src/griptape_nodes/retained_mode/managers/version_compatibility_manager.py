@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import importlib
 import logging
-import semver
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
+
+import semver
 
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,

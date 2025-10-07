@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import asyncio
 import logging
-import semver
 import pickle
 import re
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -13,6 +12,7 @@ from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
+import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
 from rich.console import Console
