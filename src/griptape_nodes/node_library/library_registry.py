@@ -53,7 +53,6 @@ class IconVariant(BaseModel):
 class NodeDeprecationMetadata(BaseModel):
     """Metadata about a deprecated node."""
 
-    is_deprecated: bool = False
     deprecation_message: str | None = None
     removal_version: str | None = None
 
@@ -68,7 +67,7 @@ class NodeMetadata(BaseModel):
     icon: str | IconVariant | None = None
     color: str | None = None
     group: str | None = None
-    deprecation: NodeDeprecationMetadata = NodeDeprecationMetadata()
+    deprecation: NodeDeprecationMetadata | None = None
 
 
 class CategoryDefinition(BaseModel):

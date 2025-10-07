@@ -161,7 +161,7 @@ class VersionCompatibilityManager:
                 severity=LibraryStatus.FLAWED,
             )
             for node in library_data.nodes
-            if node.metadata.deprecation.is_deprecated
+            if node.metadata.deprecation is not None
         ] or []
 
     def check_library_version_compatibility(
