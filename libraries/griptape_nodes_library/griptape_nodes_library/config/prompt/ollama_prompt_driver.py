@@ -10,7 +10,7 @@ from typing import Any
 
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage
+from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterGroup, ParameterMessage
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
@@ -80,6 +80,11 @@ class OllamaPrompt(BasePrompt):
 
         # Replace the model parameter with one that has Button trait
         self.remove_parameter_element_by_name("model")
+
+        # Ensure we have at least one choice (fallback to error message if needed)
+        if not available_models:
+            available_models = ["⚠️ No models found"]
+
         self.model_param = Parameter(
             name="model",
             input_types=["str"],
@@ -106,47 +111,70 @@ class OllamaPrompt(BasePrompt):
         self.remove_parameter_element_by_name("top_k")
 
         # Add Ollama-specific parameters
-        self.add_parameter(
+        with ParameterGroup(name="connection_settings", ui_options={"collapsed": True}) as ollama_group:
             Parameter(
                 name="base_url", default_value=DEFAULT_BASE_URL, type="str", tooltip="Base URL for the Ollama server"
             )
-        )
-        self.add_parameter(
             Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip="Port for the Ollama server")
-        )
-        self.ollama_message_param = ParameterMessage(
-            name="ollama_message",
-            title="Ollama Prompt Models",
+        self.add_node_element(ollama_group)
+        self.move_element_to_position(ollama_group.name, 5)
+
+        # Message for when Ollama server is not installed/running
+        self.install_ollama_message = ParameterMessage(
+            name="install_ollama_message",
+            title="Install Ollama",
             value="To use the Ollama Prompt Models, you will need to have the Ollama server running.\nYou can download the Ollama server from https://ollama.com/download.",
             variant="warning",
             button_link="https://ollama.com/download",
             button_text="Download Ollama",
             button_icon="download",
         )
-        self.add_node_element(self.ollama_message_param)
-        self.move_element_to_position(self.ollama_message_param.name, "first")
+        self.add_node_element(self.install_ollama_message)
+        self.move_element_to_position(self.install_ollama_message.name, "first")
 
-        # Initially hide the message - we'll show it if needed
-        self.hide_message_by_name("ollama_message")
+        # Message for when Ollama is running but no models are available
+        self.install_models_message = ParameterMessage(
+            name="install_models_message",
+            title="Install Models",
+            value="Ollama is running but no models are available.\nInstall models using 'ollama pull <model>' command or visit the Ollama documentation for more information.",
+            variant="info",
+            button_link="https://docs.ollama.com/",
+            button_text="Ollama Documentation",
+            button_icon="book",
+        )
+        self.add_node_element(self.install_models_message)
+        self.move_element_to_position(self.install_models_message.name, "first")
+
+        # Initially hide both messages - we'll show the appropriate one if needed
+        self.hide_message_by_name("install_ollama_message")
+        self.hide_message_by_name("install_models_message")
 
         # Check Ollama status and show/hide message accordingly
         self._update_ollama_message_visibility()
 
     def _update_ollama_message_visibility(self) -> None:
-        """Update the visibility of the Ollama message based on Ollama status."""
+        """Update the visibility of the appropriate message based on Ollama status."""
         try:
-            # Try to get models to check if Ollama is running
-            models = self._get_base_models()
-            if not models or (len(models) == 1 and models[0].startswith("⚠️")):
-                # No models found or only error message - show the message
-                # This covers both "not running" and "running but no models" cases
-                self.show_message_by_name("ollama_message")
+            # Try to connect to Ollama server and get models
+            models = self._get_models(include_refresh=False, raise_on_error=True)
+
+            if not models:
+                # Server is running but no models available
+                self.hide_message_by_name("install_ollama_message")
+                self.show_message_by_name("install_models_message")
             else:
-                # Models are available - hide the message
-                self.hide_message_by_name("ollama_message")
+                # Models are available - hide both messages
+                self.hide_message_by_name("install_ollama_message")
+                self.hide_message_by_name("install_models_message")
+
+        except OllamaConnectionError:
+            # Server is not running or not accessible
+            self.show_message_by_name("install_ollama_message")
+            self.hide_message_by_name("install_models_message")
         except Exception:
-            # If we can't check status, show the message to be safe
-            self.show_message_by_name("ollama_message")
+            # Other error - assume server not running
+            self.show_message_by_name("install_ollama_message")
+            self.hide_message_by_name("install_models_message")
 
     def _get_models(self, *, include_refresh: bool = True, raise_on_error: bool = True) -> list[str]:
         """Get the list of available models from the Ollama server.
