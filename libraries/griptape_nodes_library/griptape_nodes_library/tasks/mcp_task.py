@@ -129,8 +129,14 @@ class MCPTaskNode(SuccessFailureNode):
 
             # Update the parameter's choices using the proper method
             if mcp_servers:
+                current_value = self.get_parameter_value("mcp_server_name")
+                if current_value in mcp_servers:
+                    default_value = current_value
+                else:
+                    default_value = mcp_servers[0]
+
                 # Use _update_option_choices to properly update both trait and UI options
-                self._update_option_choices("mcp_server_name", mcp_servers, mcp_servers[0])
+                self._update_option_choices("mcp_server_name", mcp_servers, default_value)
                 msg = f"{self.name}: Refreshed MCP servers: {len(mcp_servers)} servers available"
                 logger.info(f"Refreshed MCP servers: {len(mcp_servers)} servers available")
             else:

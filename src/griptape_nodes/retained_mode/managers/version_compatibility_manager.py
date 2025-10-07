@@ -6,17 +6,19 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+import semver
+
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -151,11 +153,24 @@ class VersionCompatibilityManager:
                     self._workflow_compatibility_checks.append(check_instance)
                     logger.debug("Registered workflow version compatibility check: %s", attr_name)
 
+    def _check_library_for_deprecated_nodes(
+        self, library_data: LibrarySchema
+    ) -> list[LibraryVersionCompatibilityIssue]:
+        """Check a library for deprecated nodes."""
+        return [
+            LibraryVersionCompatibilityIssue(
+                message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and {'will be removed in version ' + node.metadata.deprecation.removal_version if node.metadata.deprecation.removal_version else 'may be removed in future versions'}. {node.metadata.deprecation.deprecation_message or ''}".strip(),
+                severity=LibraryStatus.FLAWED,
+            )
+            for node in library_data.nodes
+            if node.metadata.deprecation is not None
+        ] or []
+
     def check_library_version_compatibility(
         self, library_data: LibrarySchema
     ) -> list[LibraryVersionCompatibilityIssue]:
         """Check a library for version compatibility issues."""
-        version_issues = []
+        version_issues: list[LibraryVersionCompatibilityIssue] = []
 
         # Run all discovered compatibility checks
         for check_instance in self._compatibility_checks:
@@ -163,13 +178,15 @@ class VersionCompatibilityManager:
                 issues = check_instance.check_library(library_data)
                 version_issues.extend(issues)
 
+        version_issues.extend(self._check_library_for_deprecated_nodes(library_data))
+
         return version_issues
 
     def check_workflow_version_compatibility(
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for version compatibility issues."""
-        version_issues = []
+        version_issues: list[WorkflowVersionCompatibilityIssue] = []
 
         # Run all discovered workflow compatibility checks
         for check_instance in self._workflow_compatibility_checks:
@@ -179,10 +196,10 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def _get_current_engine_version(self) -> Version:
+    def _get_current_engine_version(self) -> semver.VersionInfo:
         """Get the current engine version."""
         result = GriptapeNodes.handle_request(GetEngineVersionRequest())
         if isinstance(result, GetEngineVersionResultSuccess):
-            return Version(major=result.major, minor=result.minor, patch=result.patch)
+            return semver.VersionInfo(major=result.major, minor=result.minor, patch=result.patch)
         msg = "Failed to get engine version"
         raise RuntimeError(msg)
