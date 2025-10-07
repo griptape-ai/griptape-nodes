@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
@@ -14,6 +14,12 @@ from griptape_nodes.node_library.library_registry import (
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class LibraryNameAndNodeType(NamedTuple):
+    library_name: str
+    node_type: str
+
 
 # Type aliases for clarity
 type NodeName = str
@@ -39,12 +45,13 @@ class WorkflowShape(BaseModel):
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.8.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.9.0"
 
     name: str
     schema_version: str
     engine_version_created_with: str
     node_libraries_referenced: list[LibraryNameAndVersion]
+    node_types_used: set[LibraryNameAndNodeType] = Field(default_factory=set)
     workflows_referenced: list[str] | None = None
     description: str | None = None
     image: str | None = None
@@ -54,6 +61,35 @@ class WorkflowMetadata(BaseModel):
     last_modified_date: datetime | None = Field(default=None)
     branched_from: str | None = Field(default=None)
     workflow_shape: WorkflowShape | None = Field(default=None)
+
+    @field_serializer("node_types_used")
+    def serialize_node_types_used(self, node_types_used: set[LibraryNameAndNodeType]) -> list[list[str]]:
+        """Serialize node_types_used as list of tuples for TOML compatibility.
+
+        Sets and NamedTuples are not directly supported by TOML, so we convert the set
+        to a list of lists (each inner list represents [library_name, node_type]).
+        """
+        return [[nt.library_name, nt.node_type] for nt in sorted(node_types_used)]
+
+    @field_validator("node_types_used", mode="before")
+    @classmethod
+    def validate_node_types_used(cls, value: Any) -> set[LibraryNameAndNodeType]:
+        """Deserialize node_types_used from list of lists during TOML loading.
+
+        When loading workflow metadata from TOML files, the node_types_used field
+        is stored as a list of [library_name, node_type] pairs that needs to be
+        converted back to a set of LibraryNameAndNodeType objects. This validator
+        handles the expected input formats:
+        - List of lists (from TOML deserialization)
+        - Set of LibraryNameAndNodeType (from direct Python construction)
+        - Empty list (for workflows with no nodes)
+        """
+        if isinstance(value, set):
+            return value
+        if isinstance(value, list):
+            return {LibraryNameAndNodeType(library_name=item[0], node_type=item[1]) for item in value}
+        msg = f"Expected list or set for node_types_used, got {type(value)}"
+        raise ValueError(msg)
 
     @field_serializer("workflow_shape")
     def serialize_workflow_shape(self, workflow_shape: WorkflowShape | None) -> str | None:

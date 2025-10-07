@@ -41,6 +41,20 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         self._initializing = False
 
+    @property
+    def state(self) -> NodeResolutionState:
+        """Overrides BaseNode.state @property to compute state based on pipeline's existence in model_cache, ensuring pipeline rebuild if missing."""
+        if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(
+            self.get_parameter_value("pipeline")
+        ):
+            logger.debug("Pipeline not found in cache, marking node as UNRESOLVED")
+            return NodeResolutionState.UNRESOLVED
+        return super().state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
+
     def set_config_hash(self) -> None:
         config_hash = self._config_hash
         self.log_params.append_to_logs(f"Pipeline configuration hash: {config_hash}\n")
@@ -127,9 +141,6 @@ class DiffusionPipelineBuilderNode(ControlNode):
             self.set_config_hash()
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
         return self.params.pipeline_type_parameters.pipeline_type_pipeline_params.validate_before_node_run()
 
     def preprocess(self) -> None:

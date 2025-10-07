@@ -30,6 +30,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -1596,6 +1597,11 @@ class FlowManager:
         )
         packaged_dependencies.libraries.add(start_end_library_dependency)
 
+        # Aggregate node types used
+        packaged_node_types_used = self._aggregate_node_types_used(
+            serialized_node_commands=all_serialized_nodes, sub_flows_commands=[]
+        )
+
         # Build the complete SerializedFlowCommands
         return SerializedFlowCommands(
             flow_initialization_command=create_packaged_flow_request,
@@ -1609,6 +1615,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=packaged_dependencies,
+            node_types_used=packaged_node_types_used,
         )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911
@@ -1749,6 +1756,11 @@ class FlowManager:
             metadata=packaged_flow_metadata,
         )
 
+        # Aggregate node types used
+        combined_node_types_used = self._aggregate_node_types_used(
+            serialized_node_commands=all_serialized_nodes, sub_flows_commands=[]
+        )
+
         # Build the complete serialized flow
         final_serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_packaged_flow_request,
@@ -1759,6 +1771,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=combined_dependencies,
+            node_types_used=combined_node_types_used,
         )
 
         return PackageNodesAsSerializedFlowResultSuccess(
@@ -2936,6 +2949,38 @@ class FlowManager:
 
         return aggregated_deps
 
+    def _aggregate_node_types_used(
+        self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]
+    ) -> set[LibraryNameAndNodeType]:
+        """Aggregate node types used from nodes and sub-flows.
+
+        Args:
+            serialized_node_commands: List of serialized node commands to aggregate from
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Set of LibraryNameAndNodeType with all node types used
+
+        Raises:
+            ValueError: If a node command has no library name specified
+        """
+        node_types_used: set[LibraryNameAndNodeType] = set()
+
+        # Collect node types from all nodes in this flow
+        for node_cmd in serialized_node_commands:
+            node_type = node_cmd.create_node_command.node_type
+            library_name = node_cmd.create_node_command.specific_library_name
+            if library_name is None:
+                msg = f"Node type '{node_type}' has no library name specified during serialization"
+                raise ValueError(msg)
+            node_types_used.add(LibraryNameAndNodeType(library_name=library_name, node_type=node_type))
+
+        # Aggregate node types from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            node_types_used.update(sub_flow_cmd.node_types_used)
+
+        return node_types_used
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -3081,6 +3126,7 @@ class FlowManager:
                         set_lock_commands_per_node={},
                         sub_flows_commands=[],
                         node_dependencies=sub_flow_dependencies,
+                        node_types_used=set(),
                     )
                     sub_flow_commands.append(serialized_flow)
                 else:
@@ -3097,6 +3143,13 @@ class FlowManager:
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
+        # Aggregate all node types used from nodes and sub-flows
+        try:
+            aggregated_node_types_used = self._aggregate_node_types_used(serialized_node_commands, sub_flow_commands)
+        except ValueError as e:
+            details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
+            return SerializeFlowToCommandsResultFailure(result_details=details)
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
@@ -3106,6 +3159,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
+            node_types_used=aggregated_node_types_used,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)

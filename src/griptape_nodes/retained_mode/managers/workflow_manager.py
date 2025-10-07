@@ -12,6 +12,7 @@ from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
+import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
 from rich.console import Console
@@ -23,7 +24,12 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry, WorkflowShape
+from griptape_nodes.node_library.workflow_registry import (
+    Workflow,
+    WorkflowMetadata,
+    WorkflowRegistry,
+    WorkflowShape,
+)
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -108,7 +114,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
-    Version,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
@@ -256,7 +261,6 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
-        self._workflows_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -347,7 +351,6 @@ class WorkflowManager:
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
-        self._workflows_loading_complete.clear()
         default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
         config_mgr = GriptapeNodes.ConfigManager()
 
@@ -381,8 +384,6 @@ class WorkflowManager:
                     workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
                 ]
                 config_mgr.set_config_value(default_workflow_section, workflows_to_register)
-
-        self._workflows_loading_complete.set()
 
     def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
         """Get the workflow metadata for a given workflow file path.
@@ -604,9 +605,7 @@ class WorkflowManager:
         logger.error(execution_result.execution_details)
         return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
-    async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
-        await self._workflows_loading_complete.wait()
-
+    def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         # get workflow from registry
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -714,9 +713,7 @@ class WorkflowManager:
             ),
         )
 
-    async def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
-        await self._workflows_loading_complete.wait()
-
+    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
         try:
             workflows = WorkflowRegistry.list_workflows()
         except Exception:
@@ -956,8 +953,9 @@ class WorkflowManager:
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
             library_name = node_library_referenced.library_name
             desired_version_str = node_library_referenced.library_version
-            desired_version = Version.from_string(desired_version_str)
-            if desired_version is None:
+            try:
+                desired_version = semver.VersionInfo.parse(desired_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Workflow cited an invalid version string '{desired_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -1001,8 +999,9 @@ class WorkflowManager:
             # Attempt to parse out the version string.
             library_metadata = library_metadata_result.metadata
             library_version_str = library_metadata.library_version
-            library_version = Version.from_string(version_string=library_version_str)
-            if library_version is None:
+            try:
+                library_version = semver.VersionInfo.parse(library_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Library an invalid version string '{library_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -1476,6 +1475,7 @@ class WorkflowManager:
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
+            node_types_used=serialized_flow_commands.node_types_used,
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
@@ -3577,9 +3577,13 @@ class WorkflowManager:
 
         # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
         # (workflow schema was fixed in 0.6.0 to support importing workflows)
-        required_version = Version(major=0, minor=6, patch=0)
-        workflow_version = Version.from_string(workflow.metadata.schema_version)
-        if workflow_version is None or workflow_version < required_version:
+        required_version = semver.VersionInfo(major=0, minor=6, patch=0)
+        try:
+            workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
+        except Exception as e:
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' caused an error: {e}"
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+        if workflow_version < required_version:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
@@ -3694,6 +3698,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3777,6 +3782,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3864,6 +3870,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,

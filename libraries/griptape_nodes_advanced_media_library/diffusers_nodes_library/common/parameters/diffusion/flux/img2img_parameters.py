@@ -14,7 +14,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class FluxImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -24,6 +24,7 @@ class FluxImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "black-forest-labs/FLUX.1-Krea-dev",
             ],
             parameter_name="model",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_repo_parameter = HuggingFaceRepoParameter(
@@ -32,6 +33,7 @@ class FluxImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "openai/clip-vit-large-patch14",
             ],
             parameter_name="text_encoder",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_2_repo_parameter = HuggingFaceRepoParameter(
@@ -40,6 +42,7 @@ class FluxImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "google/t5-v1_1-xxl",
             ],
             parameter_name="text_encoder_2",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:

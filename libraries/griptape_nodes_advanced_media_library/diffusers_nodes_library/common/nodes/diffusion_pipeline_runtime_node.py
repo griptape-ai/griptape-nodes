@@ -138,7 +138,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         # HACK: `node.remove_parameter_element_by_name` does not remove connections so we need to use the retained mode request which does.  # noqa: FIX004
         # To avoid updating a ton of callers, we just override this method here.
         # TODO: Remove after https://github.com/griptape-ai/griptape-nodes/issues/2511
-        if self.does_name_exist(element_name):
+        if self.get_element_by_name_and_type(element_name):
             GriptapeNodes.handle_request(
                 RemoveParameterFromNodeRequest(parameter_name=element_name, node_name=self.name)
             )

@@ -6,11 +6,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+import semver
+
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
@@ -179,10 +181,10 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def _get_current_engine_version(self) -> Version:
+    def _get_current_engine_version(self) -> semver.VersionInfo:
         """Get the current engine version."""
         result = GriptapeNodes.handle_request(GetEngineVersionRequest())
         if isinstance(result, GetEngineVersionResultSuccess):
-            return Version(major=result.major, minor=result.minor, patch=result.patch)
+            return semver.VersionInfo(major=result.major, minor=result.minor, patch=result.patch)
         msg = "Failed to get engine version"
         raise RuntimeError(msg)
