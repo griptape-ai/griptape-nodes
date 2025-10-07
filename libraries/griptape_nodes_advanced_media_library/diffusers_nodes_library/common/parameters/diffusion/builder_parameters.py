@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from diffusers_nodes_library.common.parameters.diffusion.allegro.pipeline_type_parameters import (
     AllegroPipelineTypeParameters,
@@ -12,9 +14,6 @@ from diffusers_nodes_library.common.parameters.diffusion.audioldm.pipeline_type_
 )
 from diffusers_nodes_library.common.parameters.diffusion.custom.pipeline_type_parameters import (
     CustomPipelineTypeParameters,
-)
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
-    DiffusionPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.pipeline_type_parameters import (
     FluxPipelineTypeParameters,
@@ -32,14 +31,19 @@ from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.pipeline_typ
     WuerstchenPipelineTypeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
+
+if TYPE_CHECKING:
+    from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
+    from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
+        DiffusionPipelineTypeParameters,
+    )
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineBuilderParameters:
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: DiffusionPipelineBuilderNode):
         self.provider_choices = [
             "Flux",
             "Allegro",
@@ -116,6 +120,8 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
+        self._node._save_ui_options()
+
         self.pipeline_type_parameters.remove_input_parameters()
         self.set_pipeline_type_parameters(provider)
         self.pipeline_type_parameters.add_input_parameters()

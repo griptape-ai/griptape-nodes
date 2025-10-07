@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
-    DiffusionPipelineTypePipelineParameters,
-)
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
+
+if TYPE_CHECKING:
+    from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
+    from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
+        DiffusionPipelineTypePipelineParameters,
+    )
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -17,8 +21,8 @@ class DiffusionPipelineTypeParameters(ABC):
     START_PARAMS: ClassVar = ["pipeline", "provider", "pipeline_type"]
     END_PARAMS: ClassVar = ["loras", "logs"]
 
-    def __init__(self, node: BaseNode):
-        self._node: BaseNode = node
+    def __init__(self, node: DiffusionPipelineBuilderNode):
+        self._node = node
         self.did_pipeline_type_change = False
         self._pipeline_type_pipeline_params: DiffusionPipelineTypePipelineParameters
         self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
@@ -73,6 +77,8 @@ class DiffusionPipelineTypeParameters(ABC):
             self.regenerate_elements_for_pipeline_type(value)
 
     def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
+        self._node._save_ui_options()
+
         self.pipeline_type_pipeline_params.remove_input_parameters()
         self.set_pipeline_type_pipeline_params(pipeline_type)
         self.pipeline_type_pipeline_params.add_input_parameters()
