@@ -8,9 +8,6 @@ from typing import TYPE_CHECKING
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
-from griptape_nodes.exe_types.connections import Direction
-from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -25,10 +22,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     InvolvedNodesEvent,
     NodeResolvedEvent,
     ParameterValueUpdateEvent,
-)
-from griptape_nodes.retained_mode.events.parameter_events import (
-    SetParameterValueRequest,
-    SetParameterValueResultFailure,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
@@ -765,10 +758,23 @@ class ErrorState(State):
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
+
+        # Clean up any proxy nodes that failed before completion
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
         for node in context.node_to_reference.values():
+            # Clean up proxy nodes that were processing or queued
+            if isinstance(node.node_reference, NodeGroupProxyNode) and node.node_state in (
+                NodeState.PROCESSING,
+                NodeState.QUEUED,
+            ):
+                logger.info("Cleaning up proxy node '%s' that failed during execution", node.node_reference.name)
+                await ExecuteDagState._cleanup_proxy_node(node.node_reference)
+
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
+
         # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
         # Cancel async tasks
         for task in list(context.task_to_node.keys()):
