@@ -6,18 +6,19 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from griptape_nodes.node_library.library_registry import NodeDefinition
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
+from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -151,6 +152,21 @@ class VersionCompatibilityManager:
                     self._workflow_compatibility_checks.append(check_instance)
                     logger.debug("Registered workflow version compatibility check: %s", attr_name)
 
+    def _check_for_deprecated_nodes(self, nodes: list[NodeDefinition]) -> list[WorkflowVersionCompatibilityIssue]:
+        """Check a workflow for deprecated nodes."""
+        issues = []
+
+        for node in nodes:
+            if node.metadata.deprecated:
+                issues.append(
+                    WorkflowVersionCompatibilityIssue(
+                        message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and may be removed in future versions. Please consider replacing it with a supported alternative.",
+                        severity=WorkflowManager.WorkflowStatus.FLAWED,
+                    )
+                )
+
+        return issues
+
     def check_library_version_compatibility(
         self, library_data: LibrarySchema
     ) -> list[LibraryVersionCompatibilityIssue]:
@@ -162,6 +178,8 @@ class VersionCompatibilityManager:
             if check_instance.applies_to_library(library_data):
                 issues = check_instance.check_library(library_data)
                 version_issues.extend(issues)
+        
+        version_issues.extend(self._check_for_deprecated_nodes(library_data.nodes))
 
         return version_issues
 

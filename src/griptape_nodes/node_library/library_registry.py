@@ -60,6 +60,7 @@ class NodeMetadata(BaseModel):
     icon: str | IconVariant | None = None
     color: str | None = None
     group: str | None = None
+    deprecated: bool = False
 
 
 class CategoryDefinition(BaseModel):
