@@ -20,10 +20,6 @@ API_KEY_ENV_VAR = "NVIDIA_API_KEY"
 MODEL_CHOICES = [
     "deepseek-ai/deepseek-v3.1",
     "google/gemma-3-1b-it",
-    "meta/llama-4-maverick-17b-128e-instruct",
-    "meta/llama-4-scout-17b-16e-instruct",
-    "meta/llama-3.2-11b-vision-instruct",
-    "meta/llama-3.2-90b-vision-instruct",
     "meta/llama3-8b-instruct",
     "nvidia/llama-3.3-nemotron-super-49b-v1.5",
     "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
