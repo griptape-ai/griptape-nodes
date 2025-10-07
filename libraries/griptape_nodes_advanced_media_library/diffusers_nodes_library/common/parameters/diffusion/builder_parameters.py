@@ -120,7 +120,7 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
-        self._node._save_ui_options()
+        self._node.save_ui_options()
 
         self.pipeline_type_parameters.remove_input_parameters()
         self.set_pipeline_type_parameters(provider)
@@ -128,6 +128,8 @@ class DiffusionPipelineBuilderParameters:
 
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
         self._node.set_parameter_value("pipeline_type", first_pipeline_type)
+
+        self._node.clear_ui_options_cache()
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:

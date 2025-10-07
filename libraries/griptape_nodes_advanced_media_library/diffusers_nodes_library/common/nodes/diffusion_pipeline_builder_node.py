@@ -25,7 +25,7 @@ UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         self._initializing = True
-        self._ui_options_cache: dict[str, dict] = {}
+        self.ui_options_cache: dict[str, dict] = {}
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
@@ -115,8 +115,8 @@ class DiffusionPipelineBuilderNode(ControlNode):
             super().add_parameter(parameter)
 
             # Restore cached ui_options if available
-            if parameter.name in self._ui_options_cache:
-                parameter.ui_options = self._ui_options_cache[parameter.name]
+            if parameter.name in self.ui_options_cache:
+                parameter.ui_options = self.ui_options_cache[parameter.name]
 
     def set_parameter_value(
         self,
@@ -151,12 +151,16 @@ class DiffusionPipelineBuilderNode(ControlNode):
     def preprocess(self) -> None:
         self.log_params.clear_logs()
 
-    def _save_ui_options(self) -> None:
+    def save_ui_options(self) -> None:
         """Save ui_options for all current parameters to cache."""
         for element in self.root_ui_element.children:
             parameter = self.get_parameter_by_name(element.name)
             if parameter is not None and parameter.ui_options:
-                self._ui_options_cache[parameter.name] = parameter.ui_options.copy()
+                self.ui_options_cache[parameter.name] = parameter.ui_options.copy()
+
+    def clear_ui_options_cache(self) -> None:
+        """Clear the ui_options cache."""
+        self.ui_options_cache.clear()
 
     def process(self) -> AsyncResult:
         self.preprocess()
