@@ -1,8 +1,8 @@
 import logging
 import math
 from abc import ABC, abstractmethod
-from typing import Any
 from datetime import UTC, datetime
+from typing import Any
 
 import PIL.Image
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
@@ -120,7 +120,9 @@ class DiffusionPipelineRuntimeParameters(ABC):
             if i == 0:
                 self._node.log_params.append_to_logs(f"Completed inference step 1 of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
             else:
-                self._node.log_params.append_to_logs(f"Completed inference step {i + 1} of {strength_affected_steps}. {"{:.2f}".format((datetime.now(tz=UTC) - first_iteration_time).total_seconds() / i)} s/it\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.log_params.append_to_logs(
+                    f"Completed inference step {i + 1} of {strength_affected_steps}. {f'{(datetime.now(tz=UTC) - first_iteration_time).total_seconds() / i:.2f}'} s/it\n"
+                )  # type: ignore[reportAttributeAccessIssue]
             return {}
 
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
