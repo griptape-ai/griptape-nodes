@@ -21,16 +21,22 @@ class LocalExecutorArgumentAddition(WorkflowVersionCompatibilityCheck):
 
     def applies_to_workflow(self, workflow_metadata: WorkflowMetadata) -> bool:
         """Apply this check to workflows with schema version < 0.7.0."""
-        workflow_version = semver.VersionInfo.parse(workflow_metadata.schema_version)
-        return workflow_version is not None and workflow_version < semver.VersionInfo(0, 7, 0)
+        try:
+            workflow_version = semver.VersionInfo.parse(workflow_metadata.schema_version)
+            return workflow_version < semver.VersionInfo(0, 7, 0)
+        except Exception:
+            return False
 
     def check_workflow(self, workflow_metadata: WorkflowMetadata) -> list[WorkflowVersionCompatibilityIssue]:
         """Check workflow schema version compatibility."""
         issues = []
 
-        workflow_schema_version = semver.VersionInfo.parse(workflow_metadata.schema_version)
+        try:
+            workflow_schema_version = semver.VersionInfo.parse(workflow_metadata.schema_version)
+        except Exception:
+            return issues
 
-        if workflow_schema_version is not None and workflow_schema_version < semver.VersionInfo(0, 7, 0):
+        if workflow_schema_version < semver.VersionInfo(0, 7, 0):
             issues.append(
                 WorkflowVersionCompatibilityIssue(
                     message=f"Workflow schema version {workflow_metadata.schema_version} is older than version 0.7.0. "

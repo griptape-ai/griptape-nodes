@@ -348,16 +348,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
             engine_ver = semver.VersionInfo.parse(engine_version)
-            if engine_ver:
-                return GetEngineVersionResultSuccess(
-                    major=engine_ver.major,
-                    minor=engine_ver.minor,
-                    patch=engine_ver.patch,
-                    result_details="Engine version retrieved successfully.",
-                )
-            details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
-            logger.error(details)
-            return GetEngineVersionResultFailure(result_details=details)
+            return GetEngineVersionResultSuccess(
+                major=engine_ver.major,
+                minor=engine_ver.minor,
+                patch=engine_ver.patch,
+                result_details="Engine version retrieved successfully.",
+            )
         except Exception as err:
             details = f"Attempted to get engine version. Failed due to '{err}'."
             logger.error(details)

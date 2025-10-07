@@ -24,8 +24,11 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
 
     def applies_to_library(self, library_data: LibrarySchema) -> bool:
         """Check applies to libraries with engine_version < 0.39.0."""
-        library_version = semver.VersionInfo.parse(library_data.metadata.engine_version)
-        return library_version is not None and library_version < semver.VersionInfo(0, 39, 0)
+        try:
+            library_version = semver.VersionInfo.parse(library_data.metadata.engine_version)
+            return library_version < semver.VersionInfo(0, 39, 0)
+        except Exception:
+            return False
 
     def check_library(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
         """Perform the modified_parameters_set deprecation check."""

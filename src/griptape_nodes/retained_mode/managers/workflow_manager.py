@@ -948,8 +948,9 @@ class WorkflowManager:
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
             library_name = node_library_referenced.library_name
             desired_version_str = node_library_referenced.library_version
-            desired_version = semver.VersionInfo.parse(desired_version_str)
-            if desired_version is None:
+            try:
+                desired_version = semver.VersionInfo.parse(desired_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Workflow cited an invalid version string '{desired_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -993,8 +994,9 @@ class WorkflowManager:
             # Attempt to parse out the version string.
             library_metadata = library_metadata_result.metadata
             library_version_str = library_metadata.library_version
-            library_version = semver.VersionInfo.parse(library_version_str)
-            if library_version is None:
+            try:
+                library_version = semver.VersionInfo.parse(library_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Library an invalid version string '{library_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -3570,8 +3572,12 @@ class WorkflowManager:
         # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
         # (workflow schema was fixed in 0.6.0 to support importing workflows)
         required_version = semver.VersionInfo(major=0, minor=6, patch=0)
-        workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
-        if workflow_version is None or workflow_version < required_version:
+        try:
+            workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
+        except Exception as e:
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' caused an error: {e}"
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+        if workflow_version < required_version:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
