@@ -155,11 +155,11 @@ class VersionCompatibilityManager:
         """Check a library for deprecated nodes."""
         return [
             LibraryVersionCompatibilityIssue(
-                message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and may be removed in future versions. {node.metadata.deprecation_message}",
+                message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and {'will be removed in version ' + node.metadata.deprecation.removal_version if node.metadata.deprecation.removal_version else 'may be removed in future versions'}. {node.metadata.deprecation.deprecation_message or ''}".strip(),
                 severity=LibraryStatus.FLAWED,
             )
             for node in library_data.nodes
-            if node.metadata.deprecation_message
+            if node.metadata.deprecation.is_deprecated
         ] or []
 
     def check_library_version_compatibility(
