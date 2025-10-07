@@ -24,7 +24,12 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry, WorkflowShape
+from griptape_nodes.node_library.workflow_registry import (
+    Workflow,
+    WorkflowMetadata,
+    WorkflowRegistry,
+    WorkflowShape,
+)
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -1470,6 +1475,7 @@ class WorkflowManager:
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
+            node_types_used=serialized_flow_commands.node_types_used,
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
@@ -3692,6 +3698,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3775,6 +3782,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3862,6 +3870,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
