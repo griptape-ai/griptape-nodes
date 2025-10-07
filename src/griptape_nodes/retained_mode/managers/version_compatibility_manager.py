@@ -11,13 +11,13 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
-from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema, NodeDefinition
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
 
