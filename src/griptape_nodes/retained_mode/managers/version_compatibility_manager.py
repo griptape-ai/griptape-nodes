@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, Version
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
-    from griptape_nodes.node_library.library_registry import LibrarySchema, NodeDefinition
+    from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
@@ -151,7 +151,9 @@ class VersionCompatibilityManager:
                     self._workflow_compatibility_checks.append(check_instance)
                     logger.debug("Registered workflow version compatibility check: %s", attr_name)
 
-    def _check_library_for_deprecated_nodes(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
+    def _check_library_for_deprecated_nodes(
+        self, library_data: LibrarySchema
+    ) -> list[LibraryVersionCompatibilityIssue]:
         """Check a library for deprecated nodes."""
         return [
             LibraryVersionCompatibilityIssue(
