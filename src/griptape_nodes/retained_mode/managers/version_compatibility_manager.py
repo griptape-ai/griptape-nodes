@@ -157,10 +157,10 @@ class VersionCompatibilityManager:
         issues = []
 
         for node in nodes:
-            if node.metadata.deprecated:
+            if node.metadata.deprecation_message:
                 issues.append(
                     WorkflowVersionCompatibilityIssue(
-                        message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and may be removed in future versions. Please consider replacing it with a supported alternative.",
+                        message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and may be removed in future versions. {node.metadata.deprecation_message}",
                         severity=WorkflowManager.WorkflowStatus.FLAWED,
                     )
                 )

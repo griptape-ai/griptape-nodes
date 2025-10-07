@@ -60,7 +60,7 @@ class NodeMetadata(BaseModel):
     icon: str | IconVariant | None = None
     color: str | None = None
     group: str | None = None
-    deprecated: bool = False
+    deprecation_message: str | None = None
 
 
 class CategoryDefinition(BaseModel):
@@ -100,7 +100,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     library_schema_version: str
