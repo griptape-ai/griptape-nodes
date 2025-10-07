@@ -10,17 +10,16 @@ from typing import Any
 
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
+from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 try:
     import ollama  # pyright: ignore[reportMissingImports]
-
-    OLLAMA_INSTALLED = True
 except ImportError as e:
-    OLLAMA_INSTALLED = False
-    logger.warning(f"Ollama not installed: {e}")
+    logger.warning(f"Ollama Python package not available: {e}")
     ollama = None  # type: ignore[assignment]
 
 
@@ -78,7 +77,28 @@ class OllamaPrompt(BasePrompt):
         # Update the 'model' parameter for Ollama specifics.
         # Try to get actual available models, fallback to static list
         available_models = self._get_available_models()
-        self._update_option_choices(param="model", choices=available_models, default=available_models[0])
+
+        # Replace the model parameter with one that has Button trait
+        self.remove_parameter_element_by_name("model")
+        self.model_param = Parameter(
+            name="model",
+            input_types=["str"],
+            type="str",
+            output_type="str",
+            default_value=available_models[0],
+            tooltip="Select the model you want to use from the available options.",
+            traits={
+                Options(choices=available_models),
+                Button(
+                    icon="list-restart",
+                    size="icon",
+                    variant="secondary",
+                    on_click=self._refresh_models,
+                ),
+            },
+        )
+        self.add_parameter(self.model_param)
+        self.move_element_to_position(self.model_param.name, 4)
 
         # Remove parameters not typically used by Ollama
         self.remove_parameter_element_by_name("seed")
@@ -94,16 +114,39 @@ class OllamaPrompt(BasePrompt):
         self.add_parameter(
             Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip="Port for the Ollama server")
         )
-        self.add_node_element(
-            ParameterMessage(
-                name="ollama_message",
-                title="Ollama Prompt Models",
-                value="To use the Ollama Prompt Models, you will need to have the Ollama server running.\nYou can download the Ollama server from https://ollama.com/download.",
-                variant="info",
-                button_link="https://ollama.com/download",
-                button_text="Download Ollama",
-            )
+        self.ollama_message_param = ParameterMessage(
+            name="ollama_message",
+            title="Ollama Prompt Models",
+            value="To use the Ollama Prompt Models, you will need to have the Ollama server running.\nYou can download the Ollama server from https://ollama.com/download.",
+            variant="warning",
+            button_link="https://ollama.com/download",
+            button_text="Download Ollama",
+            button_icon="download",
         )
+        self.add_node_element(self.ollama_message_param)
+        self.move_element_to_position(self.ollama_message_param.name, "first")
+
+        # Initially hide the message - we'll show it if needed
+        self.hide_message_by_name("ollama_message")
+
+        # Check Ollama status and show/hide message accordingly
+        self._update_ollama_message_visibility()
+
+    def _update_ollama_message_visibility(self) -> None:
+        """Update the visibility of the Ollama message based on Ollama status."""
+        try:
+            # Try to get models to check if Ollama is running
+            models = self._get_base_models()
+            if not models or (len(models) == 1 and models[0].startswith("⚠️")):
+                # No models found or only error message - show the message
+                # This covers both "not running" and "running but no models" cases
+                self.show_message_by_name("ollama_message")
+            else:
+                # Models are available - hide the message
+                self.hide_message_by_name("ollama_message")
+        except Exception:
+            # If we can't check status, show the message to be safe
+            self.show_message_by_name("ollama_message")
 
     def _get_models(self, *, include_refresh: bool = True, raise_on_error: bool = True) -> list[str]:
         """Get the list of available models from the Ollama server.
@@ -133,7 +176,7 @@ class OllamaPrompt(BasePrompt):
                     # Use default client
                     response = ollama.list()
             else:
-                # This should never happen since we check OLLAMA_INSTALLED first
+                # This should never happen since we check OLLAMA_PACKAGE_AVAILABLE first
                 msg = "Ollama module not available"
                 raise OllamaConnectionError(msg)  # noqa: TRY301
 
@@ -164,9 +207,17 @@ class OllamaPrompt(BasePrompt):
         """Get the list of available models from the Ollama server.
 
         Returns:
-            List of available model names with refresh option.
+            List of available model names.
         """
-        return self._get_models(include_refresh=True, raise_on_error=True)
+        try:
+            return self._get_models(include_refresh=False, raise_on_error=True)
+        except OllamaConnectionError:
+            # If we can't connect to Ollama, it means Ollama server is not running
+            # or no models are available - return the models message
+            return ["⚠️ No models found"]
+        except Exception:
+            # For any other error, also return the models message
+            return ["⚠️ No models found"]
 
     def _get_base_models(self) -> list[str]:
         """Get the list of available models from the Ollama server (without refresh option).
@@ -176,66 +227,101 @@ class OllamaPrompt(BasePrompt):
         """
         return self._get_models(include_refresh=False, raise_on_error=False)
 
+    def _refresh_models(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
+        """Refresh models when the refresh button is clicked."""
+        try:
+            # Get fresh model list (without refresh option for counting)
+            base_models = self._get_base_models()
+            available_models = base_models.copy()
+
+            # Update the model parameter with new choices
+            model_param = self.get_parameter_by_name("model")
+            if model_param:
+                # Store current value to preserve user's selection if still valid
+                current_value = self.get_parameter_value("model")
+
+                # Update choices
+                self._update_option_choices(param="model", choices=available_models, default=available_models[0])
+
+                # Restore previous value if it's still available, otherwise use new default
+                if current_value and current_value in base_models:  # Don't restore if it was the refresh option
+                    self.set_parameter_value("model", current_value)
+                else:
+                    # Don't auto-select the helpful message - pick first real model if available
+                    first_real_model = next(
+                        (model for model in available_models if not model.startswith("⚠️")),
+                        None,
+                    )
+                    if first_real_model:
+                        self.set_parameter_value("model", first_real_model)
+                    else:
+                        # Only helpful message and refresh option available
+                        self.set_parameter_value("model", available_models[0])
+        except Exception:
+            # If refresh fails, ensure we still have a working model list
+            fallback_models = ["⚠️ No models found"]
+            self._update_option_choices(param="model", choices=fallback_models, default=fallback_models[0])
+            self.set_parameter_value("model", fallback_models[0])
+
+        # Update message visibility based on new status
+        self._update_ollama_message_visibility()
+        return None
+
     def _refresh_model_list(self) -> None:
         """Refresh the model list and update the model parameter choices.
 
         Queries the Ollama server for available models and updates the model
         parameter's choices and default value accordingly.
         """
-        # Get fresh model list (without refresh option for counting)
-        base_models = self._get_base_models()
-        available_models = base_models.copy()
-        available_models.append(REFRESH_MODELS_MESSAGE)
+        try:
+            # Get fresh model list (without refresh option for counting)
+            base_models = self._get_base_models()
+            available_models = base_models.copy()
+            available_models.append(REFRESH_MODELS_MESSAGE)
 
-        # Update the model parameter with new choices
-        model_param = self.get_parameter_by_name("model")
-        if model_param:
-            # Store current value to preserve user's selection if still valid
-            current_value = self.get_parameter_value("model")
+            # Update the model parameter with new choices
+            model_param = self.get_parameter_by_name("model")
+            if model_param:
+                # Store current value to preserve user's selection if still valid
+                current_value = self.get_parameter_value("model")
 
-            # Update choices
-            self._update_option_choices(param="model", choices=available_models, default=available_models[0])
+                # Update choices
+                self._update_option_choices(param="model", choices=available_models, default=available_models[0])
 
-            # Restore previous value if it's still available, otherwise use new default
-            if current_value and current_value in base_models:  # Don't restore if it was the refresh option
-                self.set_parameter_value("model", current_value)
-            else:
-                # Don't auto-select the helpful message - pick first real model if available
-                first_real_model = next(
-                    (
-                        model
-                        for model in available_models
-                        if not model.startswith("📝") and model != "REFRESH_MODELS_MESSAGE"
-                    ),
-                    None,
-                )
-                if first_real_model:
-                    self.set_parameter_value("model", first_real_model)
+                # Restore previous value if it's still available, otherwise use new default
+                if current_value and current_value in base_models:  # Don't restore if it was the refresh option
+                    self.set_parameter_value("model", current_value)
                 else:
-                    # Only helpful message and refresh option available
-                    self.set_parameter_value("model", available_models[0])
+                    # Don't auto-select the helpful message - pick first real model if available
+                    first_real_model = next(
+                        (model for model in available_models if not model.startswith("⚠️")),
+                        None,
+                    )
+                    if first_real_model:
+                        self.set_parameter_value("model", first_real_model)
+                    else:
+                        # Only helpful message and refresh option available
+                        self.set_parameter_value("model", available_models[0])
+        except Exception:
+            # If refresh fails, ensure we still have a working model list
+            fallback_models = ["⚠️ No models found"]
+            self._update_option_choices(param="model", choices=fallback_models, default=fallback_models[0])
+            self.set_parameter_value("model", fallback_models[0])
+
+        # Update message visibility based on new status
+        self._update_ollama_message_visibility()
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes.
 
         Refreshes model list when:
-        - User selects REFRESH_MODELS_MESSAGE from the model dropdown
         - Base URL or port changes (indicating different Ollama server)
         """
-        if parameter.name == "model" and value == "REFRESH_MODELS_MESSAGE":
-            # User selected refresh option - refresh models and keep refresh option
-            self._refresh_model_list()
-            # Reset to first available model (not the refresh option)
-            base_models = self._get_base_models()
-            if base_models:
-                self.set_parameter_value("model", base_models[0])
-        elif parameter.name == "model" and value.startswith("📝"):
-            # User selected the helpful message - refresh to see if models are now available
-            self._refresh_model_list()
-
-        elif parameter.name in ["base_url", "port"]:
+        if parameter.name in ["base_url", "port"]:
             # Server settings changed, auto-refresh model list
             self._refresh_model_list()
+            # Update message visibility based on new server settings
+            self._update_ollama_message_visibility()
 
         return super().after_value_set(parameter, value)
 
@@ -249,12 +335,6 @@ class OllamaPrompt(BasePrompt):
         """
         exceptions = []
 
-        # Check if Ollama is installed
-        if not OLLAMA_INSTALLED:
-            msg = f"{self.name}: Ollama is not installed. Please install ollama from https://ollama.com/download"
-            exceptions.append(ValueError(msg))
-            return exceptions
-
         # Check if the selected model is available
         try:
             selected_model = self.get_parameter_value("model")
@@ -264,7 +344,7 @@ class OllamaPrompt(BasePrompt):
                 return exceptions
 
             # Skip validation for special UI messages
-            if selected_model.startswith("📝") or selected_model == REFRESH_MODELS_MESSAGE:
+            if selected_model.startswith("⚠️"):
                 return exceptions if exceptions else None
 
             # Get available models
