@@ -10,7 +10,6 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
-from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -123,13 +122,15 @@ class DiffusionPipelineRuntimeNode(ControlNode):
                 connections = GriptapeNodes.FlowManager().get_connections()
                 node_connections = connections.incoming_index.get(self.name)
                 pipeline_connection_id = node_connections.get("pipeline") if node_connections else None
-                pipeline_connection = connections.connections.get(pipeline_connection_id[0]) if pipeline_connection_id else None
+                pipeline_connection = (
+                    connections.connections.get(pipeline_connection_id[0]) if pipeline_connection_id else None
+                )
                 builder_node = pipeline_connection.source_node if pipeline_connection else None
-                return model_cache.get_or_build_pipeline(diffusion_pipeline_hash, builder_node._build_pipeline)
+                return model_cache.get_or_build_pipeline(diffusion_pipeline_hash, builder_node._build_pipeline)  # type: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
             except Exception as e:
                 logger.error("Error while attempting to rebuild pipeline from builder node: %s", e)
                 error_msg = f"Pipeline with config hash '{diffusion_pipeline_hash}' not found in cache and could not be rebuilt: {model_cache._pipeline_cache.keys()}"
-                raise RuntimeError(error_msg)
+                raise RuntimeError(error_msg) from e
         return pipeline
 
     def after_incoming_connection_removed(
