@@ -175,7 +175,7 @@ class DescribeImage(ControlNode):
         default_prompt_driver = GriptapeCloudPromptDriver(
             model=DEFAULT_MODEL,
             api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
-            stream=True,
+            stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
         )
 
         # If an agent is provided, we'll use and ensure it's using a PromptTask
@@ -196,7 +196,7 @@ class DescribeImage(ControlNode):
             prompt_driver = GriptapeCloudPromptDriver(
                 model=model_input,
                 api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
-                stream=True,
+                stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
             )
             agent = GtAgent(prompt_driver=prompt_driver)
         else:
