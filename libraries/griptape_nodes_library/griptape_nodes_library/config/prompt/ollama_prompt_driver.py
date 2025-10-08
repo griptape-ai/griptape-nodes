@@ -33,6 +33,7 @@ DEFAULT_PORT = "11434"
 DEFAULT_BASE_URL = "http://127.0.0.1"
 DEFAULT_MODEL = "llama3.2"
 REFRESH_MODELS_MESSAGE = "🔄 Refresh Models..."
+WARNING_EMOJI = "⚠️"
 # Common Ollama models - users can type their own model name as well
 MODEL_CHOICES = [
     "llama4",
@@ -83,7 +84,7 @@ class OllamaPrompt(BasePrompt):
 
         # Ensure we have at least one choice (fallback to error message if needed)
         if not available_models:
-            available_models = ["⚠️ No models found"]
+            available_models = [f"{WARNING_EMOJI} No models found"]
 
         self.model_param = Parameter(
             name="model",
@@ -103,7 +104,8 @@ class OllamaPrompt(BasePrompt):
             },
         )
         self.add_parameter(self.model_param)
-        self.move_element_to_position(self.model_param.name, 4)
+
+        self.move_element_to_position(self.model_param.name, self.get_element_index("prompt_model_config") + 1)
 
         # Remove parameters not typically used by Ollama
         self.remove_parameter_element_by_name("seed")
@@ -117,7 +119,7 @@ class OllamaPrompt(BasePrompt):
             )
             Parameter(name="port", default_value=DEFAULT_PORT, type="str", tooltip="Port for the Ollama server")
         self.add_node_element(ollama_group)
-        self.move_element_to_position(ollama_group.name, 5)
+        self.move_element_to_position(ollama_group.name, self.get_element_index("model") + 1)
 
         # Message for when Ollama server is not installed/running
         self.install_ollama_message = ParameterMessage(
@@ -241,11 +243,11 @@ class OllamaPrompt(BasePrompt):
             return self._get_models(include_refresh=False, raise_on_error=True)
         except OllamaConnectionError:
             # If we can't connect to Ollama, it means Ollama server is not running
-            # or no models are available - return the models message
-            return ["⚠️ No models found"]
+            # or there's a connection issue - return a connection error message
+            return [f"{WARNING_EMOJI} Ollama connection error"]
         except Exception:
             # For any other error, also return the models message
-            return ["⚠️ No models found"]
+            return [f"{WARNING_EMOJI} No models found"]
 
     def _get_base_models(self) -> list[str]:
         """Get the list of available models from the Ollama server (without refresh option).
@@ -277,7 +279,7 @@ class OllamaPrompt(BasePrompt):
                 else:
                     # Don't auto-select the helpful message - pick first real model if available
                     first_real_model = next(
-                        (model for model in available_models if not model.startswith("⚠️")),
+                        (model for model in available_models if not model.startswith(WARNING_EMOJI)),
                         None,
                     )
                     if first_real_model:
@@ -287,7 +289,7 @@ class OllamaPrompt(BasePrompt):
                         self.set_parameter_value("model", available_models[0])
         except Exception:
             # If refresh fails, ensure we still have a working model list
-            fallback_models = ["⚠️ No models found"]
+            fallback_models = [f"{WARNING_EMOJI} No models found"]
             self._update_option_choices(param="model", choices=fallback_models, default=fallback_models[0])
             self.set_parameter_value("model", fallback_models[0])
 
@@ -322,7 +324,7 @@ class OllamaPrompt(BasePrompt):
                 else:
                     # Don't auto-select the helpful message - pick first real model if available
                     first_real_model = next(
-                        (model for model in available_models if not model.startswith("⚠️")),
+                        (model for model in available_models if not model.startswith(f"{WARNING_EMOJI}")),
                         None,
                     )
                     if first_real_model:
@@ -332,7 +334,7 @@ class OllamaPrompt(BasePrompt):
                         self.set_parameter_value("model", available_models[0])
         except Exception:
             # If refresh fails, ensure we still have a working model list
-            fallback_models = ["⚠️ No models found"]
+            fallback_models = ["f{WARNING_EMOJI} No models found"]
             self._update_option_choices(param="model", choices=fallback_models, default=fallback_models[0])
             self.set_parameter_value("model", fallback_models[0])
 
@@ -372,7 +374,7 @@ class OllamaPrompt(BasePrompt):
                 return exceptions
 
             # Skip validation for special UI messages
-            if selected_model.startswith("⚠️"):
+            if selected_model.startswith(f"{WARNING_EMOJI}"):
                 return exceptions if exceptions else None
 
             # Get available models
