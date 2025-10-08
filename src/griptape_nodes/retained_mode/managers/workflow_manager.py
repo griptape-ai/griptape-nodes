@@ -2877,6 +2877,7 @@ class WorkflowManager:
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
+        import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeDeprecationMetadata")
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
         import_recorder.add_from_import(
