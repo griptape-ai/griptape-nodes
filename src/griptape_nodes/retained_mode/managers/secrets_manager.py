@@ -60,12 +60,11 @@ class SecretsManager:
         """
         secret_names = set()
 
-        # Check root level for secrets_to_register
-        root_secrets = self.config_manager.merged_config.get(
-            "app_events.on_app_initialization_complete.secrets_to_register", []
+        secrets_to_register = self.config_manager.get_config_value(
+            "app_events.on_app_initialization_complete.secrets_to_register", default=[]
         )
-        if isinstance(root_secrets, list):
-            secret_names.update(root_secrets)
+
+        secret_names.update(secrets_to_register)
 
         # Register each secret (create blank entry if doesn't exist)
         for secret_name in secret_names:
