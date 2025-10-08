@@ -112,11 +112,16 @@ class DiffusionPipelineBuilderNode(ControlNode):
         # Dynamic mode: prevent duplicates and mark as user-defined
         if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
-            super().add_parameter(parameter)
 
             # Restore cached ui_options if available
+            ui_options_to_restore = {"hide"}
             if parameter.name in self.ui_options_cache:
-                parameter.ui_options = self.ui_options_cache[parameter.name]
+                parameter.ui_options = {
+                    **parameter.ui_options,
+                    **{k: v for k, v in self.ui_options_cache[parameter.name].items() if k in ui_options_to_restore},
+                }
+
+            super().add_parameter(parameter)
 
     def set_parameter_value(
         self,
