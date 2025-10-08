@@ -217,10 +217,7 @@ nav:
         - Web Scraper: nodes/tools/web_scraper_tool.md
         - Web Search: nodes/tools/web_search_tool.md
     - Advanced Media Library:
-        - Flux Pipeline: nodes/advanced_media_library/flux_pipeline.md
-        - Pillow Resize: nodes/advanced_media_library/pillow_resize.md
-        - Tiling Flux img2img: nodes/advanced_media_library/tiling_flux_img_2_img_pipeline.md
-        - Tiling Spandrel Pipeline: nodes/advanced_media_library/tiling_spandrel_pipeline.md
+        - Diffusion Pipelines: nodes/advanced_media_library/diffusion_pipelines.md
     - Workflows:
         - Start Flow: nodes/execution/start_flow.md
         - End Flow: nodes/execution/end_flow.md
