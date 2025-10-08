@@ -9,6 +9,7 @@ node configuration, and instantiates the `OpenAiChatPromptDriver`.
 
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver as GtOpenAiChatPromptDriver
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -101,7 +102,7 @@ class NimPrompt(BasePrompt):
         specific_args = {}
 
         # Retrieve the mandatory API key.
-        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        specific_args["api_key"] = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
 
         # Set the base URL for the NVIDIA API.
         specific_args["base_url"] = BASE_URL

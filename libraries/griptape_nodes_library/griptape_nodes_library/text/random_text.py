@@ -224,7 +224,7 @@ class RandomText(DataNode):
 
     def _initialize_agent(self) -> None:
         """Initialize the Griptape Agent for text generation."""
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             raise KeyError(msg)

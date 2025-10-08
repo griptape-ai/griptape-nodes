@@ -6,6 +6,7 @@ from griptape.tasks import AudioTranscriptionTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
@@ -87,7 +88,7 @@ class TranscribeAudio(ControlNode):
         # Check to see if the API key is set, if not we'll show the message
         # TODO(jason): Implement a better way to check for the API key after https://github.com/griptape-ai/griptape-nodes/issues/1309
         message_name = "openai_api_key_message"
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if api_key:
             self.hide_message_by_name(message_name)
             return True
@@ -97,7 +98,7 @@ class TranscribeAudio(ControlNode):
     def validate_before_workflow_run(self) -> list[Exception] | None:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         self.clear_api_key_check()
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
@@ -167,7 +168,7 @@ class TranscribeAudio(ControlNode):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
             driver = OpenAiAudioTranscriptionDriver(
-                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+                model=model_input, api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
             )
         audio = self.get_parameter_value("audio")
         if audio is None:

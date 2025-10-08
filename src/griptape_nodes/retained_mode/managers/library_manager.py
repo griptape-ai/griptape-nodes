@@ -100,6 +100,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
+from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -881,10 +882,9 @@ class LibraryManager:
                         continue  # SKIP IT
                 else:
                     # We had an existing category. Union our changes into it (not replacing anything that matched).
-                    existing_category_contents = get_category_result.contents
-                    existing_category_contents |= {
-                        k: v for k, v in library_data_setting.contents.items() if k not in existing_category_contents
-                    }
+                    existing_category_contents = merge_dicts(
+                        library_data_setting.contents, get_category_result.contents, add_keys=True, merge_lists=True
+                    )
                     set_category_request = SetConfigCategoryRequest(
                         category=library_data_setting.category, contents=existing_category_contents
                     )
@@ -1546,6 +1546,9 @@ class LibraryManager:
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
         await self.load_all_libraries_from_config()
+
+        # Register all secrets now that libraries are loaded and settings are merged
+        GriptapeNodes.SecretsManager().register_all_secrets()
 
         # We have to load all libraries before we attempt to load workflows.
 
