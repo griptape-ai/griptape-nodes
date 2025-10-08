@@ -1589,8 +1589,14 @@ class NodeManager:
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                # Skip propagation for Control Parameters as they should not receive values
-                if ParameterType.attempt_get_builtin(parameter.output_type) != ParameterTypeBuiltin.CONTROL_TYPE:
+                # Skip propagation for:
+                # 1. Control Parameters as they should not receive values
+                # 2. Locked nodes
+                is_control_parameter = (
+                    ParameterType.attempt_get_builtin(parameter.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+                )
+                is_dest_node_locked = target_node.lock
+                if (not is_control_parameter) and (not is_dest_node_locked):
                     GriptapeNodes.handle_request(
                         SetParameterValueRequest(
                             parameter_name=target_parameter.name,
