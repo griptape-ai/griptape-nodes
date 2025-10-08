@@ -264,10 +264,10 @@ class ExecuteDagState(State):
 
         # Cleanup: restore connections and deregister proxy
         ExecuteDagState.get_next_control_graph(context, proxy_node, network_name)
-        await ExecuteDagState._cleanup_proxy_node(proxy_node)
+        ExecuteDagState._cleanup_proxy_node(proxy_node)
 
     @staticmethod
-    async def _cleanup_proxy_node(proxy_node: BaseNode) -> None:
+    def _cleanup_proxy_node(proxy_node: BaseNode) -> None:
         """Clean up a NodeGroupProxyNode after execution completes.
 
         Restores original connections from proxy back to grouped nodes and
@@ -633,7 +633,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0915
         # Check if execution is paused
         if context.paused:
             return None
@@ -769,7 +769,7 @@ class ErrorState(State):
                 NodeState.QUEUED,
             ):
                 logger.info("Cleaning up proxy node '%s' that failed during execution", node.node_reference.name)
-                await ExecuteDagState._cleanup_proxy_node(node.node_reference)
+                ExecuteDagState._cleanup_proxy_node(node.node_reference)
 
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:

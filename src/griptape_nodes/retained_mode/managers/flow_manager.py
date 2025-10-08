@@ -3333,7 +3333,7 @@ class FlowManager:
         except Exception:
             if self.check_for_existing_running_flow():
                 # Cleanup proxy nodes before canceling flow
-                await self._global_control_flow_machine.cleanup_proxy_nodes()
+                self._global_control_flow_machine.cleanup_proxy_nodes()
                 await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
@@ -3364,7 +3364,7 @@ class FlowManager:
 
         # Cleanup proxy nodes and restore connections
         if self._global_control_flow_machine is not None:
-            await self._global_control_flow_machine.cleanup_proxy_nodes()
+            self._global_control_flow_machine.cleanup_proxy_nodes()
 
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
@@ -3383,8 +3383,12 @@ class FlowManager:
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
+
+        # Cleanup proxy nodes and restore connections before resetting machine
         if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.cleanup_proxy_nodes()
             self._global_control_flow_machine.reset_machine()
+
         # Reset control flow machine
         self._global_single_node_resolution = False
 
@@ -3493,7 +3497,7 @@ class FlowManager:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
                     if self._global_control_flow_machine is not None:
-                        await self._global_control_flow_machine.cleanup_proxy_nodes()
+                        self._global_control_flow_machine.cleanup_proxy_nodes()
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
             if resolution_machine.is_complete():

@@ -252,7 +252,7 @@ class NodeExecutor:
 
             try:
                 request = PackageNodesAsSerializedFlowRequest(
-                    node_names=node.node_group_data.nodes.keys(),
+                    node_names=list(node.node_group_data.nodes.keys()),
                     start_node_type=start_node_type,
                     end_node_type=end_node_type,
                     start_end_specific_library_name=library_name,
@@ -433,7 +433,7 @@ class NodeExecutor:
             return stored_value
         return stored_value
 
-    def _apply_parameter_values_to_node(
+    def _apply_parameter_values_to_node(  # noqa: C901, PLR0912
         self,
         node: BaseNode,
         parameter_output_values: dict[str, Any],
@@ -466,7 +466,8 @@ class NodeExecutor:
                     target_param_name = original_node_param.parameter_name
 
                     # Get the original node from the group
-                    if target_node_name in node.node_group_data.nodes:
+                    # Cast to NodeGroupProxyNode for type checking
+                    if isinstance(node, NodeGroupProxyNode) and target_node_name in node.node_group_data.nodes:
                         target_node = node.node_group_data.nodes[target_node_name]
                         target_param = target_node.get_parameter_by_name(target_param_name)
                         if target_param is not None and target_param not in (

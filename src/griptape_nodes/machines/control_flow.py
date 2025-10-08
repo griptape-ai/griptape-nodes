@@ -573,7 +573,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.reset(cancel=cancel)
         self._current_state = None
 
-    async def cleanup_proxy_nodes(self) -> None:
+    def cleanup_proxy_nodes(self) -> None:
         """Cleanup all proxy nodes and restore original connections."""
         from griptape_nodes.machines.parallel_resolution import ExecuteDagState
 
@@ -585,7 +585,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Cleanup each proxy node using the existing method
         for proxy_node in proxy_nodes:
-            await ExecuteDagState._cleanup_proxy_node(proxy_node)
+            ExecuteDagState._cleanup_proxy_node(proxy_node)
 
         # Clear the proxy mapping
         self._context.node_to_proxy_map.clear()
