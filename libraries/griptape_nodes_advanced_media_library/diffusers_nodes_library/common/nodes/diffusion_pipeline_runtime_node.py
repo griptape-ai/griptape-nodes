@@ -117,7 +117,7 @@ class DiffusionPipelineRuntimeNode(ControlNode):
         diffusion_pipeline_hash = self.get_parameter_value("pipeline")
         pipeline = model_cache.get_pipeline(diffusion_pipeline_hash)
         if pipeline is None:
-            # Attempt to rebuild the pipeline from the connected builder node if not in the cache, this should only happen in exceptional cases
+            # Attempt to rebuild the pipeline from the connected builder node if not in the cache, this should only happen in exceptional cases: https://github.com/griptape-ai/griptape-nodes/issues/2578
             try:
                 connections = GriptapeNodes.FlowManager().get_connections()
                 node_connections = connections.incoming_index.get(self.name)
