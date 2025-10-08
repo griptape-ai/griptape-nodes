@@ -6,20 +6,23 @@ Nodes framework. It inherits common prompt parameters from `BasePrompt` and
 instantiates the `OllamaPromptDriver`.
 """
 
+import logging
 from typing import Any
 
 from griptape.drivers.prompt.ollama import OllamaPromptDriver as GtOllamaPromptDriver
 
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterGroup, ParameterMessage
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
+logger = logging.getLogger("griptape_nodes")
+
 try:
     import ollama  # pyright: ignore[reportMissingImports]
 except ImportError as e:
-    logger.warning(f"Ollama Python package not available: {e}")
+    msg = f"Ollama Python package not available: {e}"
+    logger.warning(msg)
     ollama = None  # type: ignore[assignment]
 
 
