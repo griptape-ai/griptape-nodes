@@ -2,7 +2,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 
 class ApiCheck(BaseNode):
@@ -66,7 +66,7 @@ class ApiCheck(BaseNode):
     def clear_api_key_check(self) -> bool:
         # Check to see if the API key is set, if not we'll show the message
         message_name = "api_key_message"
-        api_key = self.get_config_value("Exa", "EXA_API_KEY")
+        api_key = GriptapeNodes.SecretsManager().get_secret("EXA_API_KEY")
         if api_key:
             self.hide_message_by_name(message_name)
             logger.info("Found it")

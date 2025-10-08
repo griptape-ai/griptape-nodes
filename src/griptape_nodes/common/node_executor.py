@@ -236,16 +236,17 @@ class NodeExecutor:
         output_parameter_prefix = f"{sanitized_node_name}_packaged_node_"
         # We have to make our defaults strings because the PackageNodeAsSerializedFlowRequest doesn't accept None types.
         library_name = "Griptape Nodes Library"
-        sanitized_library_name = ""
         start_node_type = "StartFlow"
         end_node_type = "EndFlow"
+        end_node_type = "EndFlow"
         if library is not None:
-            library_name = library.get_library_data().name
-            sanitized_library_name = library_name.replace(" ", "_")
-            start_node_type = library.get_nodes_by_base_type(StartNode)
-            end_node_type = library.get_nodes_by_base_type(EndNode)
-            start_node_type = start_node_type[0] if len(start_node_type) > 0 else "StartFlow"
-            end_node_type = end_node_type[0] if len(end_node_type) > 0 else "EndFlow"
+            start_nodes = library.get_nodes_by_base_type(StartNode)
+            end_nodes = library.get_nodes_by_base_type(EndNode)
+            if len(start_nodes) > 0 and len(end_nodes) > 0:
+                start_node_type = start_nodes[0]
+                end_node_type = end_nodes[0]
+                library_name = library.get_library_data().name
+        sanitized_library_name = library_name.replace(" ", "_")
         if isinstance(node, NodeGroupProxyNode):
             # Temporarily restore control connections to original nodes for packaging
             self._restore_control_connections_for_packaging(node)

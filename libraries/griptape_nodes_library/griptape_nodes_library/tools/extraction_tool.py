@@ -3,6 +3,7 @@ from griptape.engines import CsvExtractionEngine, JsonExtractionEngine
 from griptape.rules import Rule
 from griptape.tools import ExtractionTool as GtExtractionTool
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.tools.base_tool import BaseTool
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -41,7 +42,7 @@ class StructuredDataExtractor(BaseTool):
         exceptions = []
         if self.parameter_values.get("prompt_driver", None):
             return exceptions
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             msg = f"{API_KEY_ENV_VAR} is not defined"
             exceptions.append(KeyError(msg))

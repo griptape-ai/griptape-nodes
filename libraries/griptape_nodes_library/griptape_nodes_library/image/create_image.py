@@ -118,7 +118,7 @@ class GenerateImage(ControlNode):
     def validate_before_workflow_run(self) -> list[Exception] | None:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             # If we have an agent or a driver, the lack of API key will be surfaced on them, not us.
             agent_val = self.parameter_values.get("agent", None)
@@ -177,7 +177,9 @@ class GenerateImage(ControlNode):
         agent = self.get_parameter_value("agent")
         if not agent:
             prompt_driver = GriptapeCloudPromptDriver(
-                model="gpt-4o", api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                model="gpt-4o",
+                api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
+                stream=True,
             )
             agent = GtAgent(prompt_driver=prompt_driver)
         else:
@@ -228,7 +230,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             driver = GriptapeCloudImageGenerationDriver(
                 model=model_input,
                 image_size=self.get_parameter_value("image_size"),
-                api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+                api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
                 # Don't retry on HTTP errors, we want to fail fast.
                 ignored_exception_types=(requests.exceptions.HTTPError,),
             )
@@ -236,7 +238,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             driver = GriptapeCloudImageGenerationDriver(
                 model=DEFAULT_MODEL,
                 image_size=self.get_parameter_value("image_size"),
-                api_key=self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR),
+                api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
                 ignored_exception_types=(requests.HTTPError,),
             )
 

@@ -2,6 +2,7 @@ from griptape.drivers.image_generation.openai_image_generation_driver import (
     OpenAiImageGenerationDriver as GtGrokImageGenerationDriver,
 )
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.config.image.base_image_driver import BaseImageDriver
 
 # --- Constants ---
@@ -45,7 +46,7 @@ class GrokImage(BaseImageDriver):
         specific_args["base_url"] = "https://api.x.ai/v1"
 
         # Retrieve the mandatory API key.
-        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        specific_args["api_key"] = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
 
         all_kwargs = {**common_args, **specific_args}
 

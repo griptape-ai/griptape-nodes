@@ -392,7 +392,9 @@ class MCPTaskNode(SuccessFailureNode):
     def _create_driver(self, model: str = "gpt-4.1") -> GriptapeCloudPromptDriver:
         """Create a GriptapeCloudPromptDriver."""
         return GriptapeCloudPromptDriver(
-            model=model, api_key=self.get_config_value(service="Griptape", value="GT_CLOUD_API_KEY"), stream=True
+            model=model,
+            api_key=GriptapeNodes.SecretsManager().get_secret("GT_CLOUD_API_KEY"),
+            stream=True,
         )
 
     def _set_success_output_values(self, prompt: str, result: Agent) -> None:

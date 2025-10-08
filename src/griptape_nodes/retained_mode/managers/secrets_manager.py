@@ -2,6 +2,7 @@ import logging
 import re
 from os import getenv
 from pathlib import Path
+from typing import Literal, overload
 
 from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key
 from dotenv.main import DotEnv
@@ -50,6 +51,25 @@ class SecretsManager:
     @property
     def workspace_env_path(self) -> Path:
         return self.config_manager.workspace_path / ".env"
+
+    def register_all_secrets(self) -> None:
+        """Register all secrets from config and library settings.
+
+        This should be called after libraries are loaded and their settings
+        are merged into the config.
+        """
+        secret_names = set()
+
+        secrets_to_register = self.config_manager.get_config_value(
+            "app_events.on_app_initialization_complete.secrets_to_register", default=[]
+        )
+
+        secret_names.update(secrets_to_register)
+
+        # Register each secret (create blank entry if doesn't exist)
+        for secret_name in secret_names:
+            if self.get_secret(secret_name, should_error_on_not_found=False) is None:
+                self.set_secret(secret_name, "")
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = SecretsManager._apply_secret_name_compliance(request.key)
@@ -106,6 +126,12 @@ class SecretsManager:
         logger.info("Secret '%s' deleted.", secret_name)
 
         return DeleteSecretValueResultSuccess(result_details=f"Successfully deleted secret: {secret_name}")
+
+    @overload
+    def get_secret(self, secret_name: str, *, should_error_on_not_found: Literal[True] = True) -> str: ...
+
+    @overload
+    def get_secret(self, secret_name: str, *, should_error_on_not_found: Literal[False]) -> str | None: ...
 
     def get_secret(self, secret_name: str, *, should_error_on_not_found: bool = True) -> str | None:
         """Return the secret value with the following search precedence (highest to lowest priority).
