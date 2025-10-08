@@ -44,16 +44,18 @@ Use these nodes when you need to:
 The Diffusion Pipeline system uses a two-node workflow:
 
 1. **Configure the Builder**:
-   - Add a "Diffusion Pipeline Builder" node to your workflow
-   - Select your desired provider (Flux, Stable Diffusion, etc.)
-   - Configure provider-specific parameters (model, LoRAs, optimizations)
-   - Run the builder to cache the pipeline
 
-2. **Generate Images**:
-   - Add a "Generate Image (Diffusion Pipeline)" node
-   - Connect the pipeline output from the builder to the runtime node
-   - Configure generation parameters (prompt, dimensions, steps, etc.)
-   - Run the runtime node to generate images
+    - Add a "Diffusion Pipeline Builder" node to your workflow
+    - Select your desired provider (Flux, Stable Diffusion, etc.)
+    - Configure provider-specific parameters (model, LoRAs, optimizations)
+    - Run the builder to cache the pipeline
+
+1. **Generate Images**:
+
+    - Add a "Generate Image (Diffusion Pipeline)" node
+    - Connect the pipeline output from the builder to the runtime node
+    - Configure generation parameters (prompt, dimensions, steps, etc.)
+    - Run the runtime node to generate images
 
 ### Pipeline Builder Parameters
 
@@ -74,6 +76,7 @@ The runtime node parameters are dynamically generated based on the connected pip
 - **logs**: Detailed logs of the generation process
 
 !!! note "Dynamic Parameters"
+
     Both nodes use dynamic parameters that automatically adjust based on your selections. The available parameters will change when you select different providers or connect different pipelines.
 
 ### Advanced Features
