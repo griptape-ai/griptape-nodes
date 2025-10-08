@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -14,6 +15,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import pygit2
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -41,7 +43,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -49,6 +51,9 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigCategoryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
+    DownloadLibraryResultFailure,
+    DownloadLibraryResultSuccess,
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
@@ -212,6 +217,7 @@ class LibraryManager:
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
         event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
+        event_manager.assign_manager_to_request_type(DownloadLibraryRequest, self.download_library_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -993,6 +999,98 @@ class LibraryManager:
         return RegisterLibraryFromRequirementSpecifierResultSuccess(
             library_name=request.requirement_specifier,
             result_details=f"Successfully registered library from requirement specifier: {request.requirement_specifier}",
+        )
+
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911
+        """Download a library from a GitHub repository URL.
+
+        Args:
+            request: The download library request containing the GitHub URL
+
+        Returns:
+            DownloadLibraryResultSuccess or DownloadLibraryResultFailure
+        """
+        original_url = request.url
+        result_details_list = []
+
+        # Normalize the URL
+        url, normalize_problems = self._normalize_github_url(original_url)
+        if normalize_problems:
+            primary_message = f"Download failed for URL '{original_url}': Invalid URL format"
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+            result_details_list.extend(
+                ResultDetail(level=logging.ERROR, message=problem) for problem in normalize_problems
+            )
+            return DownloadLibraryResultFailure(url=original_url, result_details=ResultDetails(*result_details_list))
+
+        # Validate the URL
+        validation_problems = self._validate_github_url(url)
+        if validation_problems:
+            primary_message = f"Download failed for URL '{url}': Tree/blob URLs not supported"
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+            result_details_list.extend(
+                ResultDetail(level=logging.ERROR, message=problem) for problem in validation_problems
+            )
+            return DownloadLibraryResultFailure(url=original_url, result_details=ResultDetails(*result_details_list))
+
+        # Extract repository name
+        repo_name, extract_problems = self._extract_repo_name_from_url(url)
+        if extract_problems or not repo_name:
+            primary_message = f"Download failed for URL '{url}': Could not extract repository name"
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+            result_details_list.extend(
+                ResultDetail(level=logging.ERROR, message=problem) for problem in extract_problems
+            )
+            return DownloadLibraryResultFailure(url=original_url, result_details=ResultDetails(*result_details_list))
+
+        # Get libraries directory
+        libraries_dir = self._get_or_init_libraries_directory()
+        clone_destination = libraries_dir / repo_name
+
+        # Check if directory already exists
+        if clone_destination.exists():
+            if not request.override_existing:
+                primary_message = f"Download failed for URL '{url}': Directory already exists"
+                result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+                result_details_list.append(
+                    ResultDetail(level=logging.ERROR, message=f"Directory already exists at {clone_destination}")
+                )
+                result_details_list.append(
+                    ResultDetail(
+                        level=logging.ERROR,
+                        message="Retry with override_existing=True to replace the existing library",
+                    )
+                )
+                return DownloadLibraryResultFailure(
+                    url=original_url, result_details=ResultDetails(*result_details_list)
+                )
+            # Remove existing directory
+            logger.info("Removing existing library directory at %s", clone_destination)
+            shutil.rmtree(clone_destination)
+
+        # Clone the repository
+        try:
+            logger.info("Cloning repository from %s to %s", url, clone_destination)
+            await asyncio.to_thread(pygit2.clone_repository, url, str(clone_destination))
+            logger.info("Successfully cloned repository to %s", clone_destination)
+        except pygit2.GitError as e:
+            primary_message = f"Download failed for URL '{url}': Git error - {e}"
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=f"Git clone failed: {e}"))
+            return DownloadLibraryResultFailure(url=original_url, result_details=ResultDetails(*result_details_list))
+        except Exception as e:
+            primary_message = f"Download failed for URL '{url}': {e}"
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=primary_message))
+            result_details_list.append(ResultDetail(level=logging.ERROR, message=f"Unexpected error during clone: {e}"))
+            return DownloadLibraryResultFailure(url=original_url, result_details=ResultDetails(*result_details_list))
+
+        # Success!
+        details = f"Successfully downloaded library from {url} to {clone_destination}"
+        return DownloadLibraryResultSuccess(
+            library_path=str(clone_destination.absolute()),
+            library_name=repo_name,
+            clone_url=url,
+            result_details=details,
         )
 
     async def _init_library_venv(self, library_venv_path: Path) -> Path:
@@ -2058,3 +2156,104 @@ class LibraryManager:
                 process_path(library_path)
 
         return list(discovered_libraries)
+
+    def _normalize_github_url(self, url: str) -> tuple[str, list[str]]:
+        """Normalize a GitHub URL to full HTTPS format.
+
+        Args:
+            url: Raw URL input (can be user/repo or full URL)
+
+        Returns:
+            Tuple of (normalized_url, problems_list)
+        """
+        problems = []
+        url = url.strip()
+
+        # Handle implicit GitHub URLs (e.g., "user/repo" -> "https://github.com/user/repo")
+        short_form_parts_count = 2
+        if not url.startswith("http://") and not url.startswith("https://"):
+            parts = url.split("/")
+            if len(parts) == short_form_parts_count and all(part.strip() for part in parts):
+                url = f"https://github.com/{url}"
+                logger.debug("Converted short-form URL to full GitHub URL: %s", url)
+            else:
+                problems.append(f"Invalid URL format: {url}")
+                problems.append("Supported formats: https://github.com/org/repo or org/repo")
+                return url, problems
+
+        # Validate it's a GitHub URL
+        if not url.startswith("https://github.com/") and not url.startswith("http://github.com/"):
+            problems.append(f"Invalid GitHub URL format: {url}")
+            problems.append("Only GitHub repository URLs are supported (e.g., https://github.com/org/repo or org/repo)")
+            return url, problems
+
+        # Upgrade to HTTPS if HTTP
+        if url.startswith("http://"):
+            url = url.replace("http://", "https://")
+
+        # Remove trailing slashes
+        url = url.rstrip("/")
+
+        return url, problems
+
+    def _validate_github_url(self, url: str) -> list[str]:
+        """Validate that the GitHub URL is a direct repository URL.
+
+        Args:
+            url: Normalized GitHub URL
+
+        Returns:
+            List of problems (empty if valid)
+        """
+        problems = []
+
+        # Check for tree/blob style URLs
+        if "/tree/" in url or "/blob/" in url:
+            problems.append("Tree and blob style URLs are not supported")
+            problems.append("Please use the direct repository URL (e.g., https://github.com/org/repo)")
+
+        return problems
+
+    def _extract_repo_name_from_url(self, url: str) -> tuple[str | None, list[str]]:
+        """Extract repository name from GitHub URL.
+
+        Args:
+            url: Normalized GitHub URL
+
+        Returns:
+            Tuple of (repo_name, problems_list)
+        """
+        problems = []
+        min_url_parts_count = 5
+
+        try:
+            url_parts = url.split("/")
+            if len(url_parts) < min_url_parts_count:
+                problems.append("Invalid GitHub URL: Could not extract repository information")
+                return None, problems
+
+            repo_name = url_parts[-1]
+            # Remove .git suffix if present
+            repo_name = repo_name.removesuffix(".git")
+        except Exception as e:
+            problems.append(f"Failed to parse repository URL: {e}")
+            return None, problems
+        else:
+            return repo_name, problems
+
+    def _get_or_init_libraries_directory(self) -> Path:
+        """Get the libraries directory path from config.
+
+        Returns:
+            Path to libraries directory
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_subdir = config_mgr.get_config_value("libraries_directory")
+        if not libraries_subdir:
+            libraries_subdir = "libraries"
+
+        # Resolve libraries directory path (handle both absolute and relative paths)
+        libraries_dir = config_mgr.workspace_path / libraries_subdir
+        libraries_dir.mkdir(parents=True, exist_ok=True)
+
+        return libraries_dir

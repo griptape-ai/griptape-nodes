@@ -27,6 +27,7 @@ dependencies = [
   "huggingface-hub[xf_xet]>=0.28.0",
   "rich>=14.1.0",
   "semver>=3.0.4",
+  "pygit2>=1.18.2",
 ]
 
 [project.optional-dependencies]
@@ -67,9 +68,7 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120
-
-[tool.ruff.format]
-exclude = [".venv"]
+extend-exclude = ["GriptapeNodes"]
 
 [tool.ruff.lint]
 select = ["ALL"]

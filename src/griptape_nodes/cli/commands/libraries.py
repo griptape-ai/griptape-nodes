@@ -16,6 +16,11 @@ from griptape_nodes.cli.shared import (
     NODES_TARBALL_URL,
     console,
 )
+from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
+    DownloadLibraryResultFailure,
+    DownloadLibraryResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
@@ -26,6 +31,55 @@ app = typer.Typer(help="Manage local libraries.")
 def sync() -> None:
     """Sync libraries with your current engine version."""
     asyncio.run(_sync_libraries())
+
+
+@app.command()
+def download(
+    url: str, *, force: bool = typer.Option(False, "--force", "-f", help="Override existing library if it exists")
+) -> None:
+    """Download a library from a GitHub repository URL.
+
+    Args:
+        url: GitHub repository URL (e.g., https://github.com/org/repo or org/repo)
+        force: If True, override existing library directory
+    """
+    console.print(f"[bold cyan]Downloading library from {url}...[/bold cyan]")
+
+    request = DownloadLibraryRequest(url=url, override_existing=force)
+    result = GriptapeNodes.handle_request(request)
+
+    if isinstance(result, DownloadLibraryResultSuccess):
+        console.print(f"[bold green]Successfully downloaded library: {result.library_name}[/bold green]")
+        console.print(f"[green]Location: {result.library_path}[/green]")
+    elif isinstance(result, DownloadLibraryResultFailure):
+        # Extract messages from result details
+        detail_messages = [detail.message for detail in result.result_details.result_details]
+
+        # Check if failure is due to existing directory
+        is_existing_dir_error = any("Directory already exists" in message for message in detail_messages)
+
+        console.print(f"[bold red]Failed to download library from {url}[/bold red]")
+        for message in detail_messages:
+            console.print(f"[red]- {message}[/red]")
+
+        # If it's an existing directory error and we didn't use --force, prompt the user
+        if is_existing_dir_error and not force:
+            should_override = typer.confirm("\nDo you want to override the existing library?", default=False)
+            if should_override:
+                console.print("[bold cyan]Retrying download with override...[/bold cyan]")
+                retry_request = DownloadLibraryRequest(url=url, override_existing=True)
+                retry_result = GriptapeNodes.handle_request(retry_request)
+
+                if isinstance(retry_result, DownloadLibraryResultSuccess):
+                    console.print(
+                        f"[bold green]Successfully downloaded library: {retry_result.library_name}[/bold green]"
+                    )
+                    console.print(f"[green]Location: {retry_result.library_path}[/green]")
+                elif isinstance(retry_result, DownloadLibraryResultFailure):
+                    retry_messages = [detail.message for detail in retry_result.result_details.result_details]
+                    console.print(f"[bold red]Failed to download library from {url}[/bold red]")
+                    for message in retry_messages:
+                        console.print(f"[red]- {message}[/red]")
 
 
 async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:

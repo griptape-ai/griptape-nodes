@@ -510,3 +510,50 @@ class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
     """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryRequest(RequestPayload):
+    """Download a library from a GitHub repository URL.
+
+    Use when: Installing libraries from GitHub, adding third-party libraries,
+    downloading community libraries, managing library installations.
+
+    Args:
+        url: Direct GitHub repository URL (e.g., https://github.com/org/repo)
+        override_existing: If True, remove existing library directory before downloading
+
+    Results: DownloadLibraryResultSuccess (with library path and name) | DownloadLibraryResultFailure (download error)
+    """
+
+    url: str
+    override_existing: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library downloaded successfully from GitHub.
+
+    Args:
+        library_path: Absolute path to the downloaded library directory
+        library_name: Name of the downloaded library (repository name)
+        clone_url: The Git clone URL that was used
+    """
+
+    library_path: str
+    library_name: str
+    clone_url: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library download failed. Common causes: invalid URL, network error, Git error, repository not found.
+
+    Args:
+        url: The URL that failed to download
+    """
+
+    url: str
