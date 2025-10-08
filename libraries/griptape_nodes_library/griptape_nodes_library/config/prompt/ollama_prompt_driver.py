@@ -241,10 +241,12 @@ class OllamaPrompt(BasePrompt):
         """
         try:
             return self._get_models(include_refresh=False, raise_on_error=True)
-        except OllamaConnectionError:
+        except OllamaConnectionError as e:
             # If we can't connect to Ollama, it means Ollama server is not running
             # or there's a connection issue - return a connection error message
-            return [f"{WARNING_EMOJI} Ollama connection error"]
+            msg = f"{self.name}: Ollama connection error: {e}"
+            logger.error(msg)
+            return [f"{WARNING_EMOJI} Ollama connection error\n{e}"]
         except Exception:
             # For any other error, also return the models message
             return [f"{WARNING_EMOJI} No models found"]

@@ -1216,11 +1216,12 @@ class BaseNode(ABC):
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
 
-    def get_element_index(self, element: str | BaseNodeElement) -> int:
+    def get_element_index(self, element: str | BaseNodeElement, root: BaseNodeElement | None = None) -> int:
         """Get the current index of an element in the element list.
 
         Args:
             element: The element to get the index for, specified by name or element object
+            root: The root element to search within. If None, uses root_ui_element
 
         Returns:
             The current index of the element (0-based)
@@ -1229,15 +1230,23 @@ class BaseNode(ABC):
             ValueError: If element is not found
 
         Example:
-            # Get index by name
+            # Get index by name in root container
             index = node.get_element_index("element1")
+
+            # Get index within a specific parameter group
+            group = node.get_element_by_name_and_type("my_group", ParameterGroup)
+            index = node.get_element_index("parameter1", root=group)
 
             # Get index of a parameter to position another element relative to it
             reference_index = node.get_element_index("some_parameter")
             node.move_element_to_position("new_parameter", reference_index + 1)
         """
-        # Get list of all element names
-        element_names = [child.name for child in self.root_ui_element._children]
+        # Use root_ui_element if no root specified
+        if root is None:
+            root = self.root_ui_element
+
+        # Get list of all element names in the root
+        element_names = [child.name for child in root._children]
 
         # Get element name
         if isinstance(element, str):
