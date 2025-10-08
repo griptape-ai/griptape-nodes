@@ -301,6 +301,15 @@ wheels = [
 ]
 
 [[package]]
+name = "griptape-cloud-client"
+version = "0.1.0"
+source = { git = "https://github.com/griptape-ai/griptape-cloud-python-client?rev=main#c582d9648eafe420685677d15b7d7d195fa3f1ed" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+]
+
+[[package]]
 name = "griptape-nodes"
 version = "0.58.1"
 source = { editable = "." }
@@ -335,6 +344,7 @@ profiling = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "griptape-cloud-client" },
     { name = "mdformat" },
     { name = "mdformat-footnote" },
     { name = "mdformat-frontmatter" },
@@ -388,6 +398,7 @@ provides-extras = ["profiling"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "griptape-cloud-client", git = "https://github.com/griptape-ai/griptape-cloud-python-client?rev=main" },
     { name = "mdformat", specifier = ">=0.7.22" },
     { name = "mdformat-footnote", specifier = ">=0.1.1" },
     { name = "mdformat-frontmatter", specifier = ">=2.0.8" },
