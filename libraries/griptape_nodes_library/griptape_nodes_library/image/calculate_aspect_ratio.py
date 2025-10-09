@@ -449,18 +449,26 @@ class CalculateAspectRatio(SuccessFailureNode):
 
     def _handle_preset_change(self, preset_name: str) -> None:
         """Handle preset parameter changes - update ALL working parameters."""
+        # Normalize preset name for case-insensitive comparison
+        # Find matching preset key (case-insensitive)
+        matched_preset_name = None
+        for key in ASPECT_RATIO_PRESETS:
+            if key.lower() == preset_name.lower():
+                matched_preset_name = key
+                break
+
         # Custom preset means user is manually setting values - nothing to do
-        if preset_name == CUSTOM_PRESET_NAME:
+        if matched_preset_name == CUSTOM_PRESET_NAME:
             return
 
         # Validate preset exists - user could provide any string via input connection
-        if preset_name not in ASPECT_RATIO_PRESETS:
+        if matched_preset_name is None:
             error_msg = f"Unknown preset '{preset_name}'."
             raise ValueError(error_msg)
 
-        preset_value = ASPECT_RATIO_PRESETS[preset_name]
+        preset_value = ASPECT_RATIO_PRESETS[matched_preset_name]
         if preset_value is None:
-            error_msg = f"Preset '{preset_name}' cannot be applied (only '{CUSTOM_PRESET_NAME}' can be None)."
+            error_msg = f"Preset '{matched_preset_name}' cannot be applied (only '{CUSTOM_PRESET_NAME}' can be None)."
             raise ValueError(error_msg)
 
         # Cast to AspectRatioPreset for named field access
@@ -672,47 +680,51 @@ class CalculateAspectRatio(SuccessFailureNode):
         height = self.get_parameter_value(self._height_parameter.name)
 
         # Early out for invalid inputs
-        if width is None or height is None or width <= 0 or height <= 0:
-            self.set_parameter_value(self._preset_parameter.name, "Custom")
+        if width is None or height is None or width < 0 or height < 0:
+            self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
             return
 
         # Calculate current ratio
         current_ratio = self._calculate_ratio(width, height)
 
         # Tier 1: Exact pixel match
-        for preset_name, preset in ASPECT_RATIO_PRESETS.items():
-            if preset is None:
+        for preset_name, preset_value in ASPECT_RATIO_PRESETS.items():
+            # Skip Custom - it's not a matchable preset
+            if preset_name == CUSTOM_PRESET_NAME or preset_value is None:
                 continue
-            preset_width, preset_height, _preset_aspect_width, _preset_aspect_height = preset
+            preset = AspectRatioPreset(*preset_value)
             if (
-                preset_width is not None
-                and preset_height is not None
-                and preset_width == width
-                and preset_height == height
+                preset.width is not None
+                and preset.height is not None
+                and preset.width == width
+                and preset.height == height
             ):
+                # Perfect match. Use this preset.
                 self.set_parameter_value(self._preset_parameter.name, preset_name)
                 return
 
         # Tier 2: Ratio-only match (only for presets WITHOUT pixel dimensions)
         if current_ratio is not None:
-            for preset_name, preset in ASPECT_RATIO_PRESETS.items():
-                if preset is None:
+            for preset_name, preset_value in ASPECT_RATIO_PRESETS.items():
+                # Skip Custom - it's not a matchable preset
+                if preset_name == CUSTOM_PRESET_NAME or preset_value is None:
                     continue
-                preset_width, preset_height, preset_aspect_width, preset_aspect_height = preset
+                preset = AspectRatioPreset(*preset_value)
                 # Only match ratio-only presets (no pixel dimensions)
                 if (
-                    preset_width is None
-                    and preset_height is None
-                    and preset_aspect_width is not None
-                    and preset_aspect_height is not None
+                    preset.width is None
+                    and preset.height is None
+                    and preset.aspect_width is not None
+                    and preset.aspect_height is not None
                 ):
-                    preset_ratio = (preset_aspect_width, preset_aspect_height)
+                    preset_ratio = (preset.aspect_width, preset.aspect_height)
                     if current_ratio == preset_ratio:
+                        # Found it.
                         self.set_parameter_value(self._preset_parameter.name, preset_name)
                         return
 
         # Tier 3: No match - set to Custom (success path)
-        self.set_parameter_value(self._preset_parameter.name, "Custom")
+        self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
 
     def _calculate_ratio(self, width: int, height: int) -> tuple[int, int] | None:
         """Calculate GCD-reduced ratio from width and height."""
