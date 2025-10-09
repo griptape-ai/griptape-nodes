@@ -1,9 +1,19 @@
 from math import gcd
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.options import Options
+
+
+class AspectRatioPreset(NamedTuple):
+    """Represents an aspect ratio preset with optional pixel dimensions and aspect ratio."""
+
+    width: int | None
+    height: int | None
+    aspect_width: int | None
+    aspect_height: int | None
+
 
 # Custom preset constant
 CUSTOM_PRESET_NAME = "Custom"
@@ -12,27 +22,28 @@ CUSTOM_PRESET_NAME = "Custom"
 PRESET_TUPLE_SIZE = 4
 
 # Aspect ratio presets dictionary
-# Format: preset_name -> (width | None, height | None, aspect_width | None, aspect_height | None)
+# Format: preset_name -> AspectRatioPreset(width, height, aspect_width, aspect_height)
 # - If width/height are set: pixel-based preset with specific dimensions
 # - If only aspect_width/aspect_height are set: ratio-only preset
 # - Custom has all None
+# Note: Regular tuples are used but type checker sees them as AspectRatioPreset (NamedTuples are tuple-compatible)
 ASPECT_RATIO_PRESETS: dict[str, tuple[int | None, int | None, int | None, int | None] | None] = {
     # Custom option - all None
     CUSTOM_PRESET_NAME: None,
-    # Pixel presets from sandbox (with calculated ratios)
-    "1024x1024": (1024, 1024, 1, 1),
-    "896x1152": (896, 1152, 3, 4),
-    "832x1216": (832, 1216, 13, 19),
-    "768x1344": (768, 1344, 9, 16),
-    "640x1536": (640, 1536, 5, 12),
-    "1152x896": (1152, 896, 4, 3),
-    "1216x832": (1216, 832, 19, 13),
-    "1344x768": (1344, 768, 16, 9),
-    "1536x640": (1536, 640, 12, 5),
+    # Pixel presets (with calculated ratios)
+    "1024x1024 (1:1)": (1024, 1024, 1, 1),
+    "896x1152 (3:4)": (896, 1152, 3, 4),
+    "832x1216 (13:19)": (832, 1216, 13, 19),
+    "768x1344 (9:16)": (768, 1344, 9, 16),
+    "640x1536 (5:12)": (640, 1536, 5, 12),
+    "1152x896 (4:3)": (1152, 896, 4, 3),
+    "1216x832 (19:13)": (1216, 832, 19, 13),
+    "1344x768 (16:9)": (1344, 768, 16, 9),
+    "1536x640 (12:5)": (1536, 640, 12, 5),
     # Model-native presets from sandbox
-    "SD15_512x512": (512, 512, 1, 1),
-    "SDXL_1024x1024": (1024, 1024, 1, 1),
-    "Flux_768x768": (768, 768, 1, 1),
+    "SD15_512x512 (1:1)": (512, 512, 1, 1),
+    "SDXL_1024x1024 (1:1)": (1024, 1024, 1, 1),
+    "Flux_768x768 (1:1)": (768, 768, 1, 1),
     # Ratio-only presets (no pixel dimensions specified)
     "1:1": (None, None, 1, 1),
     "2:1": (None, None, 2, 1),
@@ -220,47 +231,62 @@ class CalculateAspectRatio(SuccessFailureNode):
         if preset_value is None:
             return f"Preset '{preset_name}' cannot be None (only '{CUSTOM_PRESET_NAME}' can be None)."
 
-        return self._validate_preset_tuple(preset_name, preset_value)
+        # Cast to AspectRatioPreset for named field access
+        preset = AspectRatioPreset(*preset_value)
+        return self._validate_preset_tuple(preset_name, preset)
 
-    def _validate_preset_tuple(
-        self, preset_name: str, preset_value: tuple[int | None, int | None, int | None, int | None]
-    ) -> str | None:
+    def _validate_preset_tuple(self, preset_name: str, preset: AspectRatioPreset) -> str | None:
         """Validate the structure and values of a preset tuple."""
-        if len(preset_value) != PRESET_TUPLE_SIZE:
+        if len(preset) != PRESET_TUPLE_SIZE:
             return f"Preset '{preset_name}' must be a tuple with exactly {PRESET_TUPLE_SIZE} elements."
 
-        width, height, aspect_w, aspect_h = preset_value
+        # Check for invalid values (zero or negative)
+        error = self._validate_preset_values(preset_name, preset)
+        if error:
+            return error
 
         # Check for partial specifications
-        error = self._validate_preset_completeness(preset_name, width, height, aspect_w, aspect_h)
+        error = self._validate_preset_completeness(preset_name, preset)
         if error:
             return error
 
         # Verify math if both pixels and ratio are specified
-        if width is not None and height is not None and aspect_w is not None and aspect_h is not None:
-            return self._validate_preset_math(preset_name, width, height, aspect_w, aspect_h)
+        if (
+            preset.width is not None
+            and preset.height is not None
+            and preset.aspect_width is not None
+            and preset.aspect_height is not None
+        ):
+            return self._validate_preset_math(
+                preset_name, preset.width, preset.height, preset.aspect_width, preset.aspect_height
+            )
 
         return None
 
-    def _validate_preset_completeness(
-        self,
-        preset_name: str,
-        width: int | None,
-        height: int | None,
-        aspect_w: int | None,
-        aspect_h: int | None,
-    ) -> str | None:
+    def _validate_preset_values(self, preset_name: str, preset: AspectRatioPreset) -> str | None:
+        """Validate that preset values are positive."""
+        if preset.width is not None and preset.width <= 0:
+            return f"Preset '{preset_name}' has invalid width {preset.width} (must be positive)."
+        if preset.height is not None and preset.height <= 0:
+            return f"Preset '{preset_name}' has invalid height {preset.height} (must be positive)."
+        if preset.aspect_width is not None and preset.aspect_width <= 0:
+            return f"Preset '{preset_name}' has invalid aspect width {preset.aspect_width} (must be positive)."
+        if preset.aspect_height is not None and preset.aspect_height <= 0:
+            return f"Preset '{preset_name}' has invalid aspect height {preset.aspect_height} (must be positive)."
+        return None
+
+    def _validate_preset_completeness(self, preset_name: str, preset: AspectRatioPreset) -> str | None:
         """Validate that preset dimensions are complete (both or neither for pixels and ratio)."""
         # Check for partial pixel dimensions
-        if (width is None) != (height is None):
+        if (preset.width is None) != (preset.height is None):
             return f"Preset '{preset_name}' has only one pixel dimension specified (need both or neither)."
 
         # Check for partial ratio dimensions
-        if (aspect_w is None) != (aspect_h is None):
+        if (preset.aspect_width is None) != (preset.aspect_height is None):
             return f"Preset '{preset_name}' has only one aspect ratio dimension specified (need both or neither)."
 
         # Must have at least pixels OR ratio
-        if width is None and aspect_w is None:
+        if preset.width is None and preset.aspect_width is None:
             return f"Preset '{preset_name}' must specify either pixel dimensions or aspect ratio."
 
         return None
@@ -433,33 +459,38 @@ class CalculateAspectRatio(SuccessFailureNode):
             error_msg = f"Unknown preset '{preset_name}'."
             raise ValueError(error_msg)
 
-        preset = ASPECT_RATIO_PRESETS[preset_name]
-        if preset is None:
+        preset_value = ASPECT_RATIO_PRESETS[preset_name]
+        if preset_value is None:
             error_msg = f"Preset '{preset_name}' cannot be applied (only '{CUSTOM_PRESET_NAME}' can be None)."
             raise ValueError(error_msg)
 
-        preset_width, preset_height, preset_aspect_width, preset_aspect_height = preset
+        # Cast to AspectRatioPreset for named field access
+        preset = AspectRatioPreset(*preset_value)
 
         # Case 1: Preset has pixel dimensions specified - use them directly
-        if preset_width is not None and preset_height is not None:
-            self._apply_pixel_preset(preset_width, preset_height)
+        if preset.width is not None and preset.height is not None:
+            self._apply_pixel_preset(preset.width, preset.height)
         # Case 2: Preset has only ratio specified - calculate pixels from current dimensions
-        elif preset_aspect_width is not None and preset_aspect_height is not None:
-            self._apply_ratio_preset(preset_aspect_width, preset_aspect_height)
+        elif preset.aspect_width is not None and preset.aspect_height is not None:
+            self._apply_ratio_preset(preset.aspect_width, preset.aspect_height)
 
     def _apply_pixel_preset(self, preset_width: int, preset_height: int) -> None:
         """Apply a preset with pixel dimensions specified."""
+        # Calculate ratio from pixels first
+        ratio = self._calculate_ratio(preset_width, preset_height)
+        if ratio is None:
+            error_msg = f"Failed to calculate ratio from preset dimensions {preset_width}x{preset_height}."
+            raise ValueError(error_msg)
+
+        # Update all parameters
         self.set_parameter_value(self._width_parameter.name, preset_width)
         self.set_parameter_value(self._height_parameter.name, preset_height)
 
-        # Calculate and update ratio from pixels
-        ratio = self._calculate_ratio(preset_width, preset_height)
-        if ratio is not None:
-            ratio_str = f"{ratio[0]}:{ratio[1]}"
-            self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
+        ratio_str = f"{ratio[0]}:{ratio[1]}"
+        self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
 
-            ratio_decimal = ratio[0] / ratio[1]
-            self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
+        ratio_decimal = ratio[0] / ratio[1]
+        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
 
     def _apply_ratio_preset(self, preset_aspect_width: int, preset_aspect_height: int) -> None:
         """Apply a preset with only ratio specified - calculate pixels from current dimensions."""
