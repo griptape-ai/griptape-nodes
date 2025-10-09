@@ -1,5 +1,5 @@
 from math import gcd
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -364,7 +364,7 @@ class CalculateAspectRatio(SuccessFailureNode):
         if param_name not in managed_param_names:
             return
 
-        # Acquire lock
+        # Acquire lock and handle parameter changes
         self._updating_lock = True
         try:
             # Handle parameter changes based on which parameter was set
@@ -378,10 +378,9 @@ class CalculateAspectRatio(SuccessFailureNode):
                 case self._ratio_str_parameter.name:
                     self._handle_ratio_str_change(value)
                 case self._upscale_value_parameter.name | self._swap_dimensions_parameter.name:
-                    pass  # Modifiers just need outputs recalculated, which always happens in here.
-
+                    pass  # Modifiers just need outputs recalculated, which always happens in finally.
         finally:
-            # Always recalculate final outputs (even if handlers throw)
+            # Always recalculate final outputs and release lock
             try:
                 self._calculate_outputs()
                 # Success - set status
@@ -389,7 +388,7 @@ class CalculateAspectRatio(SuccessFailureNode):
                 final_height = self.parameter_output_values[self._final_height_parameter.name]
                 self._set_status_results(was_successful=True, result_details=f"{final_width}x{final_height}")
             except ValueError as e:
-                # Validation error - set failure status
+                # Handler or validation error - set failure status
                 self._set_status_results(was_successful=False, result_details=str(e))
             finally:
                 # Always release lock
@@ -412,13 +411,13 @@ class CalculateAspectRatio(SuccessFailureNode):
 
         if width is None:
             errors.append(f"Parameter '{self._width_parameter.name}' was missing or could not be calculated.")
-        elif width <= 0:
-            errors.append(f"Parameter '{self._width_parameter.name}' must be positive (got {width}).")
+        elif width < 0:
+            errors.append(f"Parameter '{self._width_parameter.name}' must be non-negative (got {width}).")
 
         if height is None:
             errors.append(f"Parameter '{self._height_parameter.name}' was missing or could not be calculated.")
-        elif height <= 0:
-            errors.append(f"Parameter '{self._height_parameter.name}' must be positive (got {height}).")
+        elif height < 0:
+            errors.append(f"Parameter '{self._height_parameter.name}' must be non-negative (got {height}).")
 
         if upscale_value is None:
             errors.append(f"Parameter '{self._upscale_value_parameter.name}' was missing or could not be calculated.")
@@ -498,94 +497,90 @@ class CalculateAspectRatio(SuccessFailureNode):
         current_width = self.get_parameter_value(self._width_parameter.name)
         current_height = self.get_parameter_value(self._height_parameter.name)
 
-        # Calculate new dimensions based on which dimension is primary in the ratio
+        # Determine which dimension is primary based on aspect ratio
         width_is_primary = preset_aspect_width >= preset_aspect_height
-        new_width, new_height = self._calculate_dimensions_from_ratio(
-            current_width, current_height, preset_aspect_width, preset_aspect_height, width_is_primary=width_is_primary
-        )
 
-        # Update pixel dimensions
+        # Calculate new dimensions - swap dimensions and ratio if height is primary
+        if width_is_primary:
+            new_width, new_height = self._calculate_dimensions_from_primary(
+                current_width, current_height, preset_aspect_width, preset_aspect_height
+            )
+        else:
+            # Height is primary - swap everything
+            new_height, new_width = self._calculate_dimensions_from_primary(
+                current_height, current_width, preset_aspect_height, preset_aspect_width
+            )
+
+        # Validate calculated dimensions before updating (negative values are invalid)
+        if new_width < 0 or new_height < 0:
+            error_msg = (
+                f"Failed to calculate valid dimensions from ratio {preset_aspect_width}:{preset_aspect_height}. "
+                f"Got {new_width}x{new_height}."
+            )
+            raise ValueError(error_msg)
+
+        # Update all parameters
         self.set_parameter_value(self._width_parameter.name, new_width)
         self.set_parameter_value(self._height_parameter.name, new_height)
 
-        # Update ratio string and decimal
         ratio_str = f"{preset_aspect_width}:{preset_aspect_height}"
         self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
 
         ratio_decimal = preset_aspect_width / preset_aspect_height
         self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
 
-    def _calculate_dimensions_from_ratio(
-        self,
-        current_width: int | None,
-        current_height: int | None,
-        aspect_width: int,
-        aspect_height: int,
-        *,
-        width_is_primary: bool,
+    def _calculate_dimensions_from_primary(
+        self, primary_dimension: int | None, secondary_dimension: int | None, primary_aspect: int, secondary_aspect: int
     ) -> tuple[int, int]:
-        """Calculate new dimensions from ratio, using available current dimensions."""
-        # Calculate new dimensions based on which is primary
-        if width_is_primary:
-            return self._calculate_width_primary_dimensions(current_width, current_height, aspect_width, aspect_height)
+        """Calculate dimensions using primary dimension and aspect ratio.
 
-        return self._calculate_height_primary_dimensions(current_width, current_height, aspect_width, aspect_height)
+        Args:
+            primary_dimension: The primary dimension value (e.g., width if width is primary)
+            secondary_dimension: The secondary dimension value (e.g., height if width is primary)
+            primary_aspect: The primary aspect ratio value (e.g., 4 in 4:3 if width is primary)
+            secondary_aspect: The secondary aspect ratio value (e.g., 3 in 4:3 if width is primary)
 
-    def _calculate_width_primary_dimensions(
-        self, current_width: int | None, current_height: int | None, aspect_width: int, aspect_height: int
-    ) -> tuple[int, int]:
-        """Calculate dimensions when width is primary in ratio."""
-        has_valid_width = current_width is not None and current_width > 0
-        has_valid_height = current_height is not None and current_height > 0
-        default_size = 1024
+        Returns:
+            Tuple of (primary_result, secondary_result) in the same order as inputs
+        """
+        has_valid_primary = primary_dimension is not None and primary_dimension >= 0
+        has_valid_secondary = secondary_dimension is not None and secondary_dimension >= 0
 
-        if has_valid_width and has_valid_height:
-            width_val = cast("int", current_width)
-            height_val = cast("int", current_height)
-            larger_dimension = max(width_val, height_val)
-            new_width = larger_dimension
-            new_height = int(new_width * aspect_height / aspect_width)
-        elif has_valid_width:
-            width_val = cast("int", current_width)
-            new_width = width_val
-            new_height = int(new_width * aspect_height / aspect_width)
-        elif has_valid_height:
-            height_val = cast("int", current_height)
-            new_height = height_val
-            new_width = int(new_height * aspect_width / aspect_height)
-        else:
-            new_width = default_size
-            new_height = int(new_width * aspect_height / aspect_width)
+        # Failure case: Neither dimension available
+        if not has_valid_primary and not has_valid_secondary:
+            error_msg = "Cannot calculate dimensions: both current width and height are missing or invalid."
+            raise ValueError(error_msg)
 
-        return (new_width, new_height)
+        # Calculate dimensions based on what's available
+        match (has_valid_primary, has_valid_secondary):
+            case (True, True):
+                # Both dimensions available - use the larger one as the primary
+                if primary_dimension is None or secondary_dimension is None:
+                    error_msg = "Internal error: dimensions should not be None after validation."
+                    raise ValueError(error_msg)
+                larger_dimension = max(primary_dimension, secondary_dimension)
+                new_primary = larger_dimension
+                new_secondary = round(new_primary * secondary_aspect / primary_aspect)
+            case (True, False):
+                # Only primary dimension available - use it directly
+                if primary_dimension is None:
+                    error_msg = "Internal error: primary dimension should not be None after validation."
+                    raise ValueError(error_msg)
+                new_primary = primary_dimension
+                new_secondary = round(new_primary * secondary_aspect / primary_aspect)
+            case (False, True):
+                # Only secondary dimension available - calculate primary from it
+                if secondary_dimension is None:
+                    error_msg = "Internal error: secondary dimension should not be None after validation."
+                    raise ValueError(error_msg)
+                new_secondary = secondary_dimension
+                new_primary = round(new_secondary * primary_aspect / secondary_aspect)
+            case _:
+                # This should be unreachable due to early-out above
+                error_msg = "Internal error: unreachable case in dimension calculation."
+                raise ValueError(error_msg)
 
-    def _calculate_height_primary_dimensions(
-        self, current_width: int | None, current_height: int | None, aspect_width: int, aspect_height: int
-    ) -> tuple[int, int]:
-        """Calculate dimensions when height is primary in ratio."""
-        has_valid_width = current_width is not None and current_width > 0
-        has_valid_height = current_height is not None and current_height > 0
-        default_size = 1024
-
-        if has_valid_width and has_valid_height:
-            width_val = cast("int", current_width)
-            height_val = cast("int", current_height)
-            larger_dimension = max(width_val, height_val)
-            new_height = larger_dimension
-            new_width = int(new_height * aspect_width / aspect_height)
-        elif has_valid_height:
-            height_val = cast("int", current_height)
-            new_height = height_val
-            new_width = int(new_height * aspect_width / aspect_height)
-        elif has_valid_width:
-            width_val = cast("int", current_width)
-            new_width = width_val
-            new_height = int(new_width * aspect_height / aspect_width)
-        else:
-            new_height = default_size
-            new_width = int(new_height * aspect_width / aspect_height)
-
-        return (new_width, new_height)
+        return (new_primary, new_secondary)
 
     def _handle_width_change(self, width: int) -> None:
         """Handle width parameter changes - update ratio and match preset."""
