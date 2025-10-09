@@ -7,13 +7,13 @@ from typing import Any, ClassVar
 # static_ffmpeg is dynamically installed by the library loader at runtime
 # into the library's own virtual environment, but not available during type checking
 import static_ffmpeg.run  # type: ignore[import-untyped]
+from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact, validate_url
-from griptape.artifacts import VideoUrlArtifact
 
 
 class BaseVideoProcessor(ControlNode, ABC):

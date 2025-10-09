@@ -8,7 +8,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-
 from griptape.artifacts import VideoUrlArtifact
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -70,8 +69,9 @@ def detect_video_format(video: Any | dict) -> str | None:
 
 def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None) -> VideoUrlArtifact:
     """Convert a dictionary representation of video to a VideoUrlArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
     from griptape.artifacts import VideoUrlArtifact
+
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
     value = video_dict["value"]
 
