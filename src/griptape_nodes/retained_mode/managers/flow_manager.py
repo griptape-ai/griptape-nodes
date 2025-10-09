@@ -2748,7 +2748,7 @@ class FlowManager:
         details = f"Successfully got flow state for flow with name {flow_name}."
         return GetFlowStateResultSuccess(
             control_nodes=control_nodes,
-            resolving_node=resolving_nodes,
+            resolving_nodes=resolving_nodes,
             result_details=details,
         )
 
