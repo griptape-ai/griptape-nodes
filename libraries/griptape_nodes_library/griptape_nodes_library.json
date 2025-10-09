@@ -1349,6 +1349,17 @@
       }
     },
     {
+      "class_name": "CalculateAspectRatio",
+      "file_path": "griptape_nodes_library/image/calculate_aspect_ratio.py",
+      "metadata": {
+        "category": "image",
+        "description": "Calculate aspect ratios with preset selection and dimension modifiers",
+        "display_name": "Calculate Aspect Ratio",
+        "icon": "aspect-ratio",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "CropImage",
       "file_path": "griptape_nodes_library/image/crop_image.py",
       "metadata": {
