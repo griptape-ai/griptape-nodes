@@ -31,6 +31,7 @@ dependencies = [
   "aioshutil>=1.5",
   "ruamel.yaml>=0.18.15",
   "asyncio-thread-runner>=1.0",
+  "pygit2>=1.18.2",
 ]
 
 [project.optional-dependencies]

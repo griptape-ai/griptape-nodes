@@ -227,6 +227,11 @@ class Settings(BaseModel):
         default=True,
         description="Enable file watching for synced workflows directory",
     )
+    libraries_directory: str = Field(
+        category=FILE_SYSTEM,
+        default="libraries",
+        description="Path to the libraries directory where git repositories are cloned, relative to the workspace directory.",
+    )
     mcp_servers: list[MCPServerConfig] = Field(
         category=MCP_SERVERS,
         default_factory=list,

@@ -101,6 +101,8 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_status impo
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
+from griptape_nodes.utils.file_utils import find_file_in_directory
+from griptape_nodes.utils.git_utils import clone_or_update_git_library, get_repo_name_from_url, is_git_url
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -2046,6 +2048,8 @@ class LibraryManager:
     def _discover_library_files(self) -> list[Path]:
         """Discover library JSON files from config and workspace recursively.
 
+        Supports both local file paths and git repository URLs.
+
         Returns:
             List of library file paths found
         """
@@ -2062,11 +2066,37 @@ class LibraryManager:
             elif path.suffix == ".json":
                 discovered_libraries.add(path)
 
+        # Get libraries directory for git clones
+        libraries_dir = config_mgr.workspace_path / config_mgr.get_config_value("libraries_directory")
+
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
         for library_path_str in config_libraries:
-            library_path = Path(library_path_str)
-            if library_path.exists():
-                process_path(library_path)
+            # Check if this is a git URL
+            if is_git_url(library_path_str):
+                # Extract repository name and create target directory
+                repo_name = get_repo_name_from_url(library_path_str)
+                target_dir = libraries_dir / repo_name
+
+                try:
+                    # Clone or update the repository
+                    cloned_dir = clone_or_update_git_library(library_path_str, target_dir)
+
+                    # Find the library JSON in the cloned repository
+                    library_json = find_file_in_directory(cloned_dir, LibraryManager.LIBRARY_CONFIG_FILENAME)
+                    if library_json:
+                        discovered_libraries.add(library_json)
+                        logger.info("Found library JSON in git repository %s: %s", library_path_str, library_json)
+                    else:
+                        logger.warning(
+                            "No %s found in git repository %s", LibraryManager.LIBRARY_CONFIG_FILENAME, library_path_str
+                        )
+                except Exception as e:
+                    logger.error("Failed to process git repository %s: %s", library_path_str, e)
+            else:
+                # Process as local path
+                library_path = Path(library_path_str)
+                if library_path.exists():
+                    process_path(library_path)
 
         return list(discovered_libraries)
