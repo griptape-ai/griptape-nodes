@@ -13,7 +13,9 @@ from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
+    BaseNode,
     EndNode,
+    NodeGroupProxyNode,
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
@@ -21,6 +23,8 @@ from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodeAsSerializedFlowRequest,
     PackageNodeAsSerializedFlowResultSuccess,
+    PackageNodesAsSerializedFlowRequest,
+    PackageNodesAsSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
@@ -34,7 +38,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -47,6 +50,7 @@ class PublishLocalWorkflowResult(NamedTuple):
     workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess
     file_name: str
     output_parameter_prefix: str
+    package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess
 
 
 class NodeExecutor:
@@ -82,6 +86,7 @@ class NodeExecutor:
         workflow_path: Path,
         file_name: str,
         output_parameter_prefix: str,
+        package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Execute workflow in subprocess and apply results to node.
 
@@ -90,10 +95,11 @@ class NodeExecutor:
             workflow_path: Path to workflow file to execute
             file_name: Name of workflow for logging
             output_parameter_prefix: Prefix for output parameters
+            package_result: The packaging result containing parameter mappings
         """
         my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix)
+        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix, package_result)
 
     async def _execute_private_workflow(self, node: BaseNode) -> None:
         """Execute node in private subprocess environment.
@@ -116,7 +122,11 @@ class NodeExecutor:
 
         try:
             await self._execute_and_apply_workflow(
-                node, Path(workflow_result.file_path), result.file_name, result.output_parameter_prefix
+                node,
+                Path(workflow_result.file_path),
+                result.file_name,
+                result.output_parameter_prefix,
+                result.package_result,
             )
         except RuntimeError:
             raise
@@ -188,7 +198,11 @@ class NodeExecutor:
 
         try:
             await self._execute_and_apply_workflow(
-                node, published_workflow_filename, result.file_name, result.output_parameter_prefix
+                node,
+                published_workflow_filename,
+                result.file_name,
+                result.output_parameter_prefix,
+                result.package_result,
             )
         except RuntimeError:
             raise
@@ -224,6 +238,7 @@ class NodeExecutor:
         library_name = "Griptape Nodes Library"
         start_node_type = "StartFlow"
         end_node_type = "EndFlow"
+        end_node_type = "EndFlow"
         if library is not None:
             start_nodes = library.get_nodes_by_base_type(StartNode)
             end_nodes = library.get_nodes_by_base_type(EndNode)
@@ -232,19 +247,37 @@ class NodeExecutor:
                 end_node_type = end_nodes[0]
                 library_name = library.get_library_data().name
         sanitized_library_name = library_name.replace(" ", "_")
-        request = PackageNodeAsSerializedFlowRequest(
-            node_name=node.name,
-            start_node_type=start_node_type,
-            end_node_type=end_node_type,
-            start_end_specific_library_name=library_name,
-            entry_control_parameter_name=node._entry_control_parameter.name
-            if node._entry_control_parameter is not None
-            else None,
-            output_parameter_prefix=output_parameter_prefix,
-        )
+        if isinstance(node, NodeGroupProxyNode):
+            # Temporarily restore control connections to original nodes for packaging
+            self._restore_control_connections_for_packaging(node)
 
-        package_result = GriptapeNodes.handle_request(request)
-        if not isinstance(package_result, PackageNodeAsSerializedFlowResultSuccess):
+            try:
+                request = PackageNodesAsSerializedFlowRequest(
+                    node_names=list(node.node_group_data.nodes.keys()),
+                    start_node_type=start_node_type,
+                    end_node_type=end_node_type,
+                    start_end_specific_library_name=library_name,
+                    output_parameter_prefix=output_parameter_prefix,
+                )
+                package_result = GriptapeNodes.handle_request(request)
+            finally:
+                # Remove control connections from original nodes after packaging
+                self._remove_control_connections_after_packaging(node)
+        else:
+            request = PackageNodeAsSerializedFlowRequest(
+                node_name=node.name,
+                start_node_type=start_node_type,
+                end_node_type=end_node_type,
+                start_end_specific_library_name=library_name,
+                entry_control_parameter_name=node._entry_control_parameter.name
+                if node._entry_control_parameter is not None
+                else None,
+                output_parameter_prefix=output_parameter_prefix,
+            )
+            package_result = GriptapeNodes.handle_request(request)
+        if not isinstance(
+            package_result, (PackageNodesAsSerializedFlowResultSuccess, PackageNodeAsSerializedFlowResultSuccess)
+        ):
             msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
@@ -262,7 +295,10 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: TRY004
 
         return PublishLocalWorkflowResult(
-            workflow_result=workflow_result, file_name=file_name, output_parameter_prefix=output_parameter_prefix
+            workflow_result=workflow_result,
+            file_name=file_name,
+            output_parameter_prefix=output_parameter_prefix,
+            package_result=package_result,
         )
 
     async def _publish_library_workflow(
@@ -398,23 +434,76 @@ class NodeExecutor:
             return stored_value
         return stored_value
 
-    def _apply_parameter_values_to_node(
-        self, node: BaseNode, parameter_output_values: dict[str, Any], output_parameter_prefix: str
+    def _apply_parameter_values_to_node(  # noqa: C901, PLR0912
+        self,
+        node: BaseNode,
+        parameter_output_values: dict[str, Any],
+        output_parameter_prefix: str,
+        package_result: PackageNodeAsSerializedFlowResultSuccess | PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Apply deserialized parameter values back to the node.
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
+        Uses parameter_name_mappings from package_result for PackageNodesAsSerializedFlowResultSuccess.
         """
         # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'. That means that running the node failed, but was caught by the published flow.
         # In this case, we should fail the node, since it didn't complete properly.
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
             msg = f"Failed to execute node: {node.name}, with exception: {parameter_output_values.get('result_details', 'No result details were returned.')}"
             raise RuntimeError(msg)
+
+        # Get parameter mappings if this is a multi-node package
+        parameter_name_mappings = None
+        if isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            parameter_name_mappings = package_result.parameter_name_mappings
+
         for param_name, param_value in parameter_output_values.items():
             # We are grabbing all of the parameters on our end nodes that align with the node being published.
-            if param_name.startswith(output_parameter_prefix):
+            # For multi-node packages, use the parameter mapping to find the original node and parameter
+            if parameter_name_mappings is not None:
+                if param_name in parameter_name_mappings:
+                    original_node_param = parameter_name_mappings[param_name]
+                    target_node_name = original_node_param.node_name
+                    target_param_name = original_node_param.parameter_name
+
+                    # Get the original node from the group
+                    # Cast to NodeGroupProxyNode for type checking
+                    if isinstance(node, NodeGroupProxyNode) and target_node_name in node.node_group_data.nodes:
+                        target_node = node.node_group_data.nodes[target_node_name]
+                        target_param = target_node.get_parameter_by_name(target_param_name)
+                        if target_param is not None and target_param not in (
+                            target_node.execution_environment,
+                            target_node.node_group,
+                        ):
+                            # Set the value on the original node in the group
+                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                target_node.set_parameter_value(target_param_name, param_value)
+                            target_node.parameter_output_values[target_param_name] = param_value
+
+                            # Also set the value on the proxy node's corresponding output parameter
+                            # Proxy param name format: {sanitized_node_name}__{param_name}
+                            sanitized_node_name = target_node_name.replace(" ", "_")
+                            proxy_param_name = f"{sanitized_node_name}__{target_param_name}"
+                            proxy_param = node.get_parameter_by_name(proxy_param_name)
+                            if proxy_param is not None:
+                                if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                                    node.set_parameter_value(proxy_param_name, param_value)
+                                node.parameter_output_values[proxy_param_name] = param_value
+
+                            logger.info(
+                                "Set parameter '%s' on node '%s' and proxy param '%s' to value: %s",
+                                target_param_name,
+                                target_node_name,
+                                proxy_param_name,
+                                param_value,
+                            )
+                    else:
+                        logger.warning("Target node '%s' not found in group", target_node_name)
+                else:
+                    logger.warning("Proxy parameter '%s' not in mapping", param_name)
+            elif param_name.startswith(output_parameter_prefix):
                 clean_param_name = param_name[len(output_parameter_prefix) :]
-                # If the parameter exists on the node, then we need to set those values on the node.
+                # Single node package - use the original logic
                 parameter = node.get_parameter_by_name(clean_param_name)
                 # Don't set execution_environment, since that will be set to Local Execution on any published flow.
                 if parameter is None:
@@ -464,3 +553,118 @@ class NodeExecutor:
         except ValueError:
             storage_backend = StorageBackend.LOCAL
         return storage_backend
+
+    def _restore_control_connections_for_packaging(self, proxy_node: NodeGroupProxyNode) -> None:
+        """Temporarily restore control connections from proxy back to original nodes for packaging.
+
+        Only restores control connections (CONTROL_TYPE parameters) so that the packaged flow
+        has the correct control flow structure.
+        """
+        node_group = proxy_node.node_group_data
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Restore external incoming control connections
+        for conn in node_group.external_incoming_connections:
+            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is None:
+                continue
+
+            sanitized_node_name = original_target.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+
+            # Remove from proxy's incoming index
+            if (
+                proxy_node.name in connections.incoming_index
+                and proxy_param_name in connections.incoming_index[proxy_node.name]
+            ):
+                connections.incoming_index[proxy_node.name][proxy_param_name].remove(conn_id)
+
+            # Restore to original target
+            conn.target_node = original_target
+            connections.incoming_index.setdefault(original_target.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Restore external outgoing control connections
+        for conn in node_group.external_outgoing_connections:
+            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is None:
+                continue
+
+            sanitized_node_name = original_source.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+
+            # Remove from proxy's outgoing index
+            if (
+                proxy_node.name in connections.outgoing_index
+                and proxy_param_name in connections.outgoing_index[proxy_node.name]
+            ):
+                connections.outgoing_index[proxy_node.name][proxy_param_name].remove(conn_id)
+
+            # Restore to original source
+            conn.source_node = original_source
+            connections.outgoing_index.setdefault(original_source.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+
+    def _remove_control_connections_after_packaging(self, proxy_node: NodeGroupProxyNode) -> None:
+        """Remove control connections from original nodes and restore them to proxy after packaging.
+
+        Reverses what _restore_control_connections_for_packaging does.
+        """
+        node_group = proxy_node.node_group_data
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Remap external incoming control connections back to proxy
+        for conn in node_group.external_incoming_connections:
+            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is None:
+                continue
+
+            # Remove from original target's incoming index
+            if (
+                original_target.name in connections.incoming_index
+                and conn.target_parameter.name in connections.incoming_index[original_target.name]
+            ):
+                connections.incoming_index[original_target.name][conn.target_parameter.name].remove(conn_id)
+
+            # Restore to proxy
+            conn.target_node = proxy_node
+            sanitized_node_name = original_target.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
+
+        # Remap external outgoing control connections back to proxy
+        for conn in node_group.external_outgoing_connections:
+            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is None:
+                continue
+
+            # Remove from original source's outgoing index
+            if (
+                original_source.name in connections.outgoing_index
+                and conn.source_parameter.name in connections.outgoing_index[original_source.name]
+            ):
+                connections.outgoing_index[original_source.name][conn.source_parameter.name].remove(conn_id)
+
+            # Restore to proxy
+            conn.source_node = proxy_node
+            sanitized_node_name = original_source.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)

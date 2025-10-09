@@ -1870,12 +1870,19 @@ class FlowManager:
         Returns:
             List of SerializedNodeCommands on success, or PackageNodesAsSerializedFlowResultFailure on failure
         """
-        # Intercept execution_environment for all nodes before serialization
+        # Intercept execution_environment and job_group for all nodes before serialization
         original_execution_environments = {}
+        original_job_groups = {}
         for node in nodes_to_package:
-            original_value = node.get_parameter_value("execution_environment")
-            original_execution_environments[node.name] = original_value
+            # Save and override execution_environment to prevent recursive packaging loops
+            original_exec_value = node.get_parameter_value("execution_environment")
+            original_execution_environments[node.name] = original_exec_value
             node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
+
+            # Save and clear job_group to prevent group processing in packaged flow
+            original_job_group_value = node.get_parameter_value("job_group")
+            original_job_groups[node.name] = original_job_group_value
+            node.set_parameter_value("job_group", "")
 
         try:
             # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
@@ -1938,10 +1945,14 @@ class FlowManager:
                             )
                         )
         finally:
-            # Always restore original execution_environment values, even on failure
+            # Always restore original execution_environment and job_group values, even on failure
             for node_name, original_value in original_execution_environments.items():
                 restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
                 restore_node.set_parameter_value("execution_environment", original_value)
+
+            for node_name, original_job_group in original_job_groups.items():
+                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                restore_node.set_parameter_value("job_group", original_job_group)
 
         return serialized_node_commands
 
@@ -3326,6 +3337,8 @@ class FlowManager:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
+                # Cleanup proxy nodes before canceling flow
+                self._global_control_flow_machine.cleanup_proxy_nodes()
                 await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
@@ -3354,6 +3367,10 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
 
+        # Cleanup proxy nodes and restore connections
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.cleanup_proxy_nodes()
+
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
@@ -3371,8 +3388,12 @@ class FlowManager:
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
+
+        # Cleanup proxy nodes and restore connections before resetting machine
         if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.cleanup_proxy_nodes()
             self._global_control_flow_machine.reset_machine()
+
         # Reset control flow machine
         self._global_single_node_resolution = False
 
@@ -3480,6 +3501,8 @@ class FlowManager:
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
+                    if self._global_control_flow_machine is not None:
+                        self._global_control_flow_machine.cleanup_proxy_nodes()
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
             if resolution_machine.is_complete():
