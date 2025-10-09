@@ -127,8 +127,8 @@ class AspectRatio(SuccessFailureNode):
                 raise ValueError(error_msg)
 
         def validate_upscale(param: Parameter, value: float) -> None:  # noqa: ARG001
-            if value is not None and value <= 0:
-                error_msg = f"Upscale value must be positive: {value}"
+            if value is not None and value < 0:
+                error_msg = f"Upscale value cannot be negative: {value}"
                 raise ValueError(error_msg)
 
         # Inputs group
