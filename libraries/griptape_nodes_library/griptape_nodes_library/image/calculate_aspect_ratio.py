@@ -151,15 +151,6 @@ class CalculateAspectRatio(SuccessFailureNode):
         )
         self.add_parameter(self._ratio_str_parameter)
 
-        self._ratio_decimal_parameter = Parameter(
-            name="ratio_decimal",
-            type="float",
-            tooltip="Aspect ratio as decimal (width/height)",
-            default_value=1.0,
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._ratio_decimal_parameter)
-
         # Modifier parameters (INPUT + PROPERTY + OUTPUT)
         self._upscale_value_parameter = Parameter(
             name="upscale_value",
@@ -197,6 +188,15 @@ class CalculateAspectRatio(SuccessFailureNode):
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self._final_height_parameter)
+
+        self._ratio_decimal_parameter = Parameter(
+            name="ratio_decimal",
+            output_type="float",
+            settable=False,
+            tooltip="Aspect ratio as decimal (width/height)",
+            allowed_modes={ParameterMode.OUTPUT},
+        )
+        self.add_parameter(self._ratio_decimal_parameter)
 
         # Add status parameters for error reporting
         self._create_status_parameters(
@@ -667,6 +667,31 @@ class CalculateAspectRatio(SuccessFailureNode):
         if (aspect_width == 0 or aspect_height == 0) and not (aspect_width == 0 and aspect_height == 0):
             error_msg = f"Invalid aspect ratio {aspect_width}:{aspect_height} - if either value is 0, both must be 0."
             raise ValueError(error_msg)
+
+        # Get current dimensions
+        current_width = self.get_parameter_value(self._width_parameter.name)
+        current_height = self.get_parameter_value(self._height_parameter.name)
+
+        # Recalculate dimensions based on new ratio (use larger dimension as primary)
+        width_is_primary = aspect_width >= aspect_height
+        if width_is_primary:
+            new_width, new_height = self._calculate_dimensions_from_primary(
+                current_width, current_height, aspect_width, aspect_height
+            )
+        else:
+            # Height is primary - swap everything
+            new_height, new_width = self._calculate_dimensions_from_primary(
+                current_height, current_width, aspect_height, aspect_width
+            )
+
+        # Validate calculated dimensions before updating
+        if new_width < 0 or new_height < 0:
+            error_msg = f"Failed to calculate valid dimensions from ratio {aspect_width}:{aspect_height}. Got {new_width}x{new_height}."
+            raise ValueError(error_msg)
+
+        # Update dimensions
+        self.set_parameter_value(self._width_parameter.name, new_width)
+        self.set_parameter_value(self._height_parameter.name, new_height)
 
         # Update ratio decimal (special case for 0:0)
         if aspect_width == 0 and aspect_height == 0:
