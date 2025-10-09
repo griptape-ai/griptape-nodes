@@ -3545,7 +3545,7 @@ class FlowManager:
         if not self.check_for_existing_running_flow():
             return [], [], []
         if self._global_control_flow_machine is None:
-            return [],[],[]
+            return [], [], []
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
             [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
