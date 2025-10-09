@@ -18,6 +18,7 @@ class InitConfig:
     api_key: str | None = None
     storage_backend: str | None = None
     register_advanced_library: bool | None = None
+    register_griptape_cloud_library: bool | None = None
     config_values: dict[str, Any] | None = None
     secret_values: dict[str, str] | None = None
     libraries_sync: bool | None = None
