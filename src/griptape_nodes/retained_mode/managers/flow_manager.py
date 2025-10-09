@@ -3472,7 +3472,7 @@ class FlowManager:
                 )
             )
             try:
-                await resolution_machine.resolve_node(node)
+                await self._global_control_flow_machine.resolve_one_node(node, debug_mode=debug_mode)
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():

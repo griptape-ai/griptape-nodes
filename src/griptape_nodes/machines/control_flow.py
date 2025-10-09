@@ -45,6 +45,7 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
     pickle_control_flow_result: bool
+    single_node: bool = False
 
     def __init__(
         self,
@@ -171,13 +172,14 @@ class ResolveNodeState(State):
         # Resolve nodes - pass first node for sequential resolution
         current_node = context.current_nodes[0] if context.current_nodes else None
         await context.resolution_machine.resolve_node(current_node)
-
         if context.resolution_machine.is_complete():
             # Get the last resolved node from the DAG and set it as current
             if isinstance(context.resolution_machine, ParallelResolutionMachine):
                 last_resolved_node = context.resolution_machine.get_last_resolved_node()
                 if last_resolved_node:
                     context.current_nodes = [last_resolved_node]
+                return CompleteState
+            if context.single_node:
                 return CompleteState
             return NextNodeState
         return None
@@ -261,6 +263,7 @@ class CompleteState(State):
                     )
                 )
             )
+        context.single_node = False
         logger.info("Flow is complete.")
         return None
 
@@ -306,6 +309,12 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             )
         )
         await self.start(ResolveNodeState)  # Begins the flow
+
+    async def resolve_one_node(self, node: BaseNode, *, debug_mode: bool = False) -> None:
+        self._context.current_nodes = [node]
+        self._context.single_node = True
+        self._context.paused = debug_mode
+        await self.start(ResolveNodeState)
 
     async def update(self) -> None:
         if self._current_state is None:
