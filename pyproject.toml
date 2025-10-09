@@ -47,6 +47,7 @@ docs = [
   "mkdocs-material>=9.6.9",
   "mkdocs>=1.5.2",
   "mkdocstrings[python]>=0.29.1",
+  "mkdocs-mermaid2-plugin>=1.2.2",
 ]
 test = [
   "pytest>=8.3.5",
