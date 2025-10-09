@@ -72,7 +72,7 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
 
 1. Scroll down until you see the [Configuration](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch#configuration) section
 
-1. In the **Cofigure for Claude.app** section, you'll see "Using `uvx`". Open this and take a look at the instructions:
+1. In the **Configure for Claude.app** section, you'll see "Using `uvx`". Open this and take a look at the instructions:
 
     ```json
     {
@@ -157,7 +157,7 @@ Now that you have a working MCP server, you can:
 
 ![Multiple Tasks](images/mcp_chained_task.png)
 
-Notice in the second task, we're asking the agent about the official MCP site, but we don't _specifically_ mention the acutal url. That's because in the previous response the MCP server responded with it. The Agent remembers the conversation, and is able to iterate on it.
+Notice in the second task, we're asking the agent about the official MCP site, but we don't _specifically_ mention the actual url. That's because in the previous response the MCP server responded with it. The Agent remembers the conversation, and is able to iterate on it.
 
 ## What's Next?
 
