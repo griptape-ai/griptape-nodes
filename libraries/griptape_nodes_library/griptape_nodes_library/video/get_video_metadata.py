@@ -9,7 +9,7 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+from griptape.artifacts import VideoUrlArtifact
 
 
 @dataclass

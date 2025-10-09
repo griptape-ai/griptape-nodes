@@ -8,7 +8,7 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.video_utils import dict_to_video_url_artifact
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+from griptape.artifacts import VideoUrlArtifact
 
 
 class LoadVideo(DataNode):

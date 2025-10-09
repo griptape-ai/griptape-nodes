@@ -17,7 +17,7 @@ from griptape_nodes_library.utils.video_utils import (
     to_video_artifact,
     validate_url,
 )
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
+from griptape.artifacts import VideoUrlArtifact
 
 
 class ResizeVideo(ControlNode):
