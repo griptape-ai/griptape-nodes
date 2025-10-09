@@ -33,6 +33,7 @@ These servers connect to web-based applications and services:
 ## Need More Options?
 
 - **Browse the [official repository](https://github.com/modelcontextprotocol/servers)** for hundreds of additional servers
+- **Explore [MCP Servers](https://mcpservers.org/)** - A curated collection of MCP servers with featured and official options
 - **Check community directories** like MCPHub, MCP Servers Hub, and other curated lists
 - **Build your own** using the MCP SDKs available in multiple programming languages
 
