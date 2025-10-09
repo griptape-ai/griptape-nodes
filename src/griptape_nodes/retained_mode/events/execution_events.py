@@ -231,9 +231,9 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
         resolving_nodes: Name of the node currently being resolved (if any)
     """
 
-    control_nodes: list[str] | None
-    resolving_nodes: list[str] | None
-    involved_nodes: list[str] | None
+    control_nodes: list[str]
+    resolving_nodes: list[str]
+    involved_nodes: list[str]
 
 
 @dataclass

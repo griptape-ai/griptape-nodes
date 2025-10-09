@@ -3541,16 +3541,16 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None, list[str] | None]:
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str], list[str], list[str]]:
         if not self.check_for_existing_running_flow():
-            return None, None, None
+            return [], [], []
         if self._global_control_flow_machine is None:
-            return None, None, None
+            return [],[],[]
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
             [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
             if control_flow_context.current_nodes is not None
-            else None
+            else []
         )
         if self._global_single_node_resolution and isinstance(
             control_flow_context.resolution_machine, ParallelResolutionMachine
@@ -3568,8 +3568,8 @@ class FlowManager:
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else None, involved_nodes
-        return current_control_nodes, None, involved_nodes
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else [], involved_nodes
+        return current_control_nodes, [], involved_nodes
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
