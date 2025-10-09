@@ -12,12 +12,12 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape.artifacts import VideoUrlArtifact
 
 logger = logging.getLogger(__name__)
 
