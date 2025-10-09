@@ -3,6 +3,7 @@ from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 
 
@@ -319,6 +320,69 @@ class AspectRatio(SuccessFailureNode):
 
         return None
 
+    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+        """Validate parameter values before they are set."""
+        match parameter.name:
+            case self._ratio_str_parameter.name:
+                validation_error = self._validate_ratio_str(value)
+                if validation_error:
+                    logger.error(f"{self.name}: {validation_error}")
+                    return self.get_parameter_value(self._ratio_str_parameter.name)
+            case self._width_parameter.name:
+                if value is not None and value < 0:
+                    logger.error(f"{self.name}: Width cannot be negative: {value}")
+                    return self.get_parameter_value(self._width_parameter.name)
+            case self._height_parameter.name:
+                if value is not None and value < 0:
+                    logger.error(f"{self.name}: Height cannot be negative: {value}")
+                    return self.get_parameter_value(self._height_parameter.name)
+            case self._upscale_value_parameter.name:
+                if value is not None and value <= 0:
+                    logger.error(f"{self.name}: Upscale value must be positive: {value}")
+                    return self.get_parameter_value(self._upscale_value_parameter.name)
+
+        return value
+
+    def _validate_ratio_str(self, ratio_str: str) -> str | None:
+        """Validate ratio string format and values.
+
+        Returns:
+            Error message if validation fails, None if valid.
+        """
+        # Early validation: check basic format
+        if not ratio_str or ":" not in ratio_str:
+            format_error = (
+                "Ratio string cannot be empty."
+                if not ratio_str
+                else f"Invalid ratio format '{ratio_str}' - expected format 'width:height' (e.g., '16:9')."
+            )
+            return format_error
+
+        # Parse ratio string (expected format: "width:height")
+        parts = ratio_str.split(":")
+        expected_parts_count = 2
+        if len(parts) != expected_parts_count:
+            return f"Invalid ratio format '{ratio_str}' - expected exactly two parts separated by ':' (e.g., '16:9')."
+
+        # Parse integers and validate values
+        try:
+            aspect_width = int(parts[0].strip())
+            aspect_height = int(parts[1].strip())
+        except ValueError as e:
+            return f"Invalid ratio format '{ratio_str}' - both parts must be integers: {e}."
+
+        # Validate aspect ratio values
+        has_negative = aspect_width < 0 or aspect_height < 0
+        has_partial_zero = (aspect_width == 0 or aspect_height == 0) and not (aspect_width == 0 and aspect_height == 0)
+
+        if has_negative:
+            return f"Invalid aspect ratio {aspect_width}:{aspect_height} - values cannot be negative."
+        if has_partial_zero:
+            return f"Invalid aspect ratio {aspect_width}:{aspect_height} - if either value is 0, both must be 0."
+
+        # Validation passed (success path)
+        return None
+
     def process(self) -> None:
         """Main execution logic - just recalculate outputs since validation happens in set_parameter_value."""
         # Reset execution state
@@ -471,7 +535,7 @@ class AspectRatio(SuccessFailureNode):
         # Calculate final ratio from final dimensions
         final_ratio_str, final_ratio_decimal = self._calculate_ratio_outputs(final_width, final_height)
 
-        # Success path
+        # Success path - set output values
         self.parameter_output_values[self._final_width_parameter.name] = final_width
         self.parameter_output_values[self._final_height_parameter.name] = final_height
         self.parameter_output_values[self._final_ratio_str_parameter.name] = final_ratio_str
@@ -648,41 +712,11 @@ class AspectRatio(SuccessFailureNode):
         self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
 
     def _handle_ratio_str_change(self, ratio_str: str) -> None:
-        """Handle ratio_str parameter changes - update decimal and set to Custom."""
-        # Validate input format
-        if not ratio_str:
-            error_msg = "Ratio string cannot be empty."
-            raise ValueError(error_msg)
-
-        if ":" not in ratio_str:
-            error_msg = f"Invalid ratio format '{ratio_str}' - expected format 'width:height' (e.g., '16:9')."
-            raise ValueError(error_msg)
-
-        # Parse ratio string (expected format: "width:height")
+        """Handle ratio_str parameter changes - update dimensions and set to Custom."""
+        # Parse ratio string (validation already done in before_value_set)
         parts = ratio_str.split(":")
-        expected_parts_count = 2
-        if len(parts) != expected_parts_count:
-            error_msg = (
-                f"Invalid ratio format '{ratio_str}' - expected exactly two parts separated by ':' (e.g., '16:9')."
-            )
-            raise ValueError(error_msg)
-
-        try:
-            aspect_width = int(parts[0].strip())
-            aspect_height = int(parts[1].strip())
-        except ValueError as e:
-            error_msg = f"Invalid ratio format '{ratio_str}' - both parts must be integers: {e}."
-            raise ValueError(error_msg) from e
-
-        # Validate aspect ratio values (must be non-negative, but if one is 0, both must be 0)
-        if aspect_width < 0 or aspect_height < 0:
-            error_msg = f"Invalid aspect ratio {aspect_width}:{aspect_height} - values cannot be negative."
-            raise ValueError(error_msg)
-
-        # Special case: if either dimension is 0, both must be 0
-        if (aspect_width == 0 or aspect_height == 0) and not (aspect_width == 0 and aspect_height == 0):
-            error_msg = f"Invalid aspect ratio {aspect_width}:{aspect_height} - if either value is 0, both must be 0."
-            raise ValueError(error_msg)
+        aspect_width = int(parts[0].strip())
+        aspect_height = int(parts[1].strip())
 
         # Get current dimensions
         current_width = self.get_parameter_value(self._width_parameter.name)
