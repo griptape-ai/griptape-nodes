@@ -110,14 +110,14 @@ class AspectRatio(SuccessFailureNode):
         # Lock to prevent recursion during parameter updates
         self._updating_lock = False
 
-        # Configuration group
-        with ParameterGroup(name="Configuration"):
+        # Inputs group
+        with ParameterGroup(name="Dimensions") as inputs_group:
             self._preset_parameter = Parameter(
                 name="preset",
                 type="str",
                 tooltip="Select a preset aspect ratio or 'Custom' for manual configuration",
                 default_value="Custom",
-                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.PROPERTY},
                 traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
             )
 
@@ -145,15 +145,16 @@ class AspectRatio(SuccessFailureNode):
                 default_value="1:1",
                 allowed_modes={ParameterMode.PROPERTY},
             )
+        self.add_node_element(inputs_group)
 
         # Modifiers group
-        with ParameterGroup(name="Modifiers"):
+        with ParameterGroup(name="Modifiers") as modifiers_group:
             self._upscale_value_parameter = Parameter(
                 name="upscale_value",
                 type="float",
                 tooltip="Multiplier for scaling dimensions",
                 default_value=1.0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
 
             self._swap_dimensions_parameter = Parameter(
@@ -161,15 +162,17 @@ class AspectRatio(SuccessFailureNode):
                 type="bool",
                 tooltip="Swap width and height",
                 default_value=False,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
+        self.add_node_element(modifiers_group)
 
         # Outputs group
-        with ParameterGroup(name="Outputs"):
+        with ParameterGroup(name="Outputs") as outputs_group:
             self._final_width_parameter = Parameter(
                 name="final_width",
                 output_type="int",
                 settable=False,
+                default_value=1024,
                 tooltip="Final calculated width after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -178,6 +181,7 @@ class AspectRatio(SuccessFailureNode):
                 name="final_height",
                 output_type="int",
                 settable=False,
+                default_value=1024,
                 tooltip="Final calculated height after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -186,6 +190,7 @@ class AspectRatio(SuccessFailureNode):
                 name="final_ratio_str",
                 output_type="str",
                 settable=False,
+                default_value="1:1",
                 tooltip="Final aspect ratio as string (e.g., '16:9')",
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -194,9 +199,11 @@ class AspectRatio(SuccessFailureNode):
                 name="final_ratio_decimal",
                 output_type="float",
                 settable=False,
+                default_value=1.0,
                 tooltip="Final aspect ratio as decimal (width/height)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
+        self.add_node_element(outputs_group)
 
         # Add status parameters for error reporting
         self._create_status_parameters(
