@@ -386,63 +386,6 @@ class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
     """Flow metadata update failed. Common causes: flow not found, no current context, invalid metadata."""
 
 
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowRequest(RequestPayload):
-    """Package a single node as a complete flow with artificial start and end nodes.
-
-    Creates a serialized flow where:
-    - Start node has output parameters matching the packaged node's incoming connections
-    - End node has input parameters matching the packaged node's outgoing connections
-    - All connections are properly mapped through Start -> Node -> End
-
-    Use when: Creating reusable components, exporting nodes for templates,
-    building sub-workflows from existing nodes, creating packaged functionality.
-
-    Args:
-        node_name: Name of the node to package as a flow (None for current context node)
-        start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
-        end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
-        start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
-        entry_control_parameter_name: Name of the control parameter that the package node should be entered from. The generated start node will create a connection to this control parameter. NOTE: if no entry_control_parameter_name is specified, the package will be entered from the first available control input parameter.
-        output_parameter_prefix: Prefix for parameter names on the generated end node to avoid collisions (defaults to "packaged_node_")
-
-    Results: PackageNodeAsSerializedFlowResultSuccess (with serialized flow) | PackageNodeAsSerializedFlowResultFailure (node not found, packaging error)
-    """
-
-    # If None is passed, assumes we're packaging the node in the Current Context
-    node_name: str | None = None
-    start_node_type: str = "StartFlow"
-    end_node_type: str = "EndFlow"
-    start_end_specific_library_name: str = "Griptape Nodes Library"
-    entry_control_parameter_name: str | None = None
-    output_parameter_prefix: str = "packaged_node_"
-
-
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Node successfully packaged as serialized flow.
-
-    Args:
-        serialized_flow_commands: The complete serialized flow with StartFlow, target node, and EndFlow
-        workflow_shape: The workflow shape defining inputs and outputs for external callers
-    """
-
-    serialized_flow_commands: SerializedFlowCommands
-    workflow_shape: WorkflowShape
-
-
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Node packaging failed.
-
-    Common causes: node not found, no current context, serialization error,
-    connection analysis failed, node has no valid flow context.
-    """
-
-
 # Type aliases for parameter mapping clarity
 SanitizedParameterName = str  # What appears in the serialized flow
 OriginalNodeName = str  # Original node name (can have spaces, dots, etc.)
