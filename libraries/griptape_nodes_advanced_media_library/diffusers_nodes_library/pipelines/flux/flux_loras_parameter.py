@@ -4,7 +4,6 @@ from typing import Any
 
 import safetensors  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-import torch.nn.functional  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode

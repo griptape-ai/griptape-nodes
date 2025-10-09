@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
-from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
@@ -30,19 +31,17 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-    ParameterValueUpdateEvent,
-)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -51,6 +50,53 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+PRIVATE_EXECUTION = "Private Execution"
+CONTROL_INPUT_PARAMETER = "Control Input Selection"
+
+
+class ImportDependency(NamedTuple):
+    """Import dependency specification for a node.
+
+    Attributes:
+        module: The module name to import
+        class_name: Optional class name to import from the module. If None, imports the entire module.
+    """
+
+    module: str
+    class_name: str | None = None
+
+
+@dataclass
+class NodeDependencies:
+    """Dependencies that a node has on external resources.
+
+    This class provides a way for nodes to declare their dependencies on workflows,
+    static files, Python imports, and libraries. This information can be used by the system
+    for workflow packaging, dependency resolution, and deployment planning.
+
+    Attributes:
+        referenced_workflows: Set of workflow names that this node references
+        static_files: Set of static file names that this node depends on
+        imports: Set of Python imports that this node requires
+        libraries: Set of library names and versions that this node uses
+    """
+
+    referenced_workflows: set[str] = field(default_factory=set)
+    static_files: set[str] = field(default_factory=set)
+    imports: set[ImportDependency] = field(default_factory=set)
+    libraries: set[LibraryNameAndVersion] = field(default_factory=set)
+
+    def aggregate_from(self, other: NodeDependencies) -> None:
+        """Aggregate dependencies from another NodeDependencies object into this one.
+
+        Args:
+            other: The NodeDependencies object to aggregate from
+        """
+        # Aggregate all dependency types - no None checks needed since we use default_factory=set
+        self.referenced_workflows.update(other.referenced_workflows)
+        self.static_files.update(other.static_files)
+        self.imports.update(other.imports)
+        self.libraries.update(other.libraries)
 
 
 class NodeResolutionState(StrEnum):
@@ -69,8 +115,8 @@ def get_library_names_with_publish_handlers() -> list[str]:
     library_manager = GriptapeNodes.LibraryManager()
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" as the first option
-    library_names = [LOCAL_EXECUTION]
+    # Always include "local" and "private" as the first options
+    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -84,17 +130,18 @@ class BaseNode(ABC):
     metadata: dict[Any, Any]
 
     # Node Context Fields
-    state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
     parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
     )
     lock: bool = False  # When lock is true, the node is locked and can't be modified. When lock is false, the node is unlocked and can be modified.
+    _cancellation_requested: threading.Event  # Event indicating if cancellation has been requested for this node
 
     @property
     def parameters(self) -> list[Parameter]:
@@ -110,7 +157,7 @@ class BaseNode(ABC):
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
         self.name = name
-        self.state = state
+        self._state = state
         if metadata is None:
             self.metadata = {}
         else:
@@ -122,6 +169,7 @@ class BaseNode(ABC):
         self.root_ui_element._node_context = self
         self.process_generator = None
         self._tracked_parameters = []
+        self._cancellation_requested = threading.Event()
         self.set_entry_control_parameter(None)
         self.execution_environment = Parameter(
             name="execution_environment",
@@ -134,6 +182,18 @@ class BaseNode(ABC):
         )
         self.add_parameter(self.execution_environment)
 
+    @property
+    def state(self) -> NodeResolutionState:
+        """Get the current resolution state of the node.
+
+        Existence as @property facilitates subclasses overriding the getter for dynamic/computed state.
+        """
+        return self._state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
+
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
@@ -143,6 +203,7 @@ class BaseNode(ABC):
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
+            from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent
 
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -162,6 +223,27 @@ class BaseNode(ABC):
             parameter: The control input parameter that triggered this node's execution, or None to clear
         """
         self._entry_control_parameter = parameter
+
+    @property
+    def is_cancellation_requested(self) -> bool:
+        """Check if cancellation has been requested for this node.
+
+        Returns:
+            True if cancellation has been requested, False otherwise
+        """
+        return self._cancellation_requested.is_set()
+
+    def request_cancellation(self) -> None:
+        """Request cancellation of this node's execution.
+
+        Sets a flag that the node can check during long-running operations
+        to cooperatively cancel execution.
+        """
+        self._cancellation_requested.set()
+
+    def clear_cancellation(self) -> None:
+        """Clear the cancellation request flag."""
+        self._cancellation_requested.clear()
 
     def emit_parameter_changes(self) -> None:
         if self._tracked_parameters:
@@ -769,20 +851,14 @@ class BaseNode(ABC):
             return
 
         if isinstance(result, Generator):
-            # Handle generator pattern asynchronously using the same logic as before
-            loop = asyncio.get_running_loop()
-
             try:
                 # Start the generator
                 func = next(result)
 
                 while True:
-                    # Run callable in thread pool (preserving existing behavior)
-                    with ThreadPoolExecutor() as executor:
-                        future_result = await loop.run_in_executor(executor, func)
-
                     # Send result back and get next callable
-                    func = result.send(future_result)
+                    func_result = await async_utils.to_thread(func)
+                    func = result.send(func_result)
 
             except StopIteration:
                 # Generator is done
@@ -824,11 +900,25 @@ class BaseNode(ABC):
     def get_config_value(self, service: str, value: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        warnings.warn(
+            "get_config_value() is deprecated. Use GriptapeNodes.SecretsManager().get_secret() for secrets/API keys "
+            "or GriptapeNodes.ConfigManager().get_config_value() for other config values.",
+            UserWarning,
+            stacklevel=2,
+        )
+
         config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        warnings.warn(
+            "set_config_value() is deprecated. Use GriptapeNodes.SecretsManager().set_secret() for secrets/API keys "
+            "or GriptapeNodes.ConfigManager().set_config_value() for other config values.",
+            UserWarning,
+            stacklevel=2,
+        )
 
         GriptapeNodes.ConfigManager().set_config_value(f"nodes.{service}.{value}", new_value)
 
@@ -837,6 +927,8 @@ class BaseNode(ABC):
         self.state = NodeResolutionState.UNRESOLVED
         # delete all output values potentially generated
         self.parameter_output_values.clear()
+        # Clear cancellation flag
+        self.clear_cancellation()
         # Clear the spotlight linked list
         # First, clear all next/prev pointers to break the linked list
         current = self.current_spotlight_parameter
@@ -847,6 +939,35 @@ class BaseNode(ABC):
             current = next_param
         # Then clear the reference to the first spotlight parameter
         self.current_spotlight_parameter = None
+
+    def get_node_dependencies(self) -> NodeDependencies | None:
+        """Return the dependencies that this node has on external resources.
+
+        This method should be overridden by nodes that have dependencies on:
+        - Referenced workflows: Other workflows that this node calls or references
+        - Static files: Files that this node reads from or requires for operation
+        - Python imports: Modules or classes that this node imports beyond standard dependencies
+
+        This information can be used by the system for workflow packaging, dependency
+        resolution, deployment planning, and ensuring all required resources are available.
+
+        Returns:
+            NodeDependencies object containing the node's dependencies, or None if the node
+            has no external dependencies beyond the standard framework dependencies.
+
+        Example:
+            def get_node_dependencies(self) -> NodeDependencies | None:
+                return NodeDependencies(
+                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
+                    static_files={"config.json", "model_weights.pkl"},
+                    imports={
+                        ImportDependency("numpy"),
+                        ImportDependency("sklearn.linear_model", "LinearRegression"),
+                        ImportDependency("custom_module", "SpecialProcessor")
+                    }
+                )
+        """
+        return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -870,6 +991,7 @@ class BaseNode(ABC):
         )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         parameter = self.get_parameter_by_name(parameter_name)
@@ -932,7 +1054,10 @@ class BaseNode(ABC):
 
         # Verify we have all elements
         if len(ordered_elements) != len(current_elements):
-            msg = "Element order must include all elements exactly once"
+            ordered_names = {e.name for e in ordered_elements}
+            current_names = {e.name for e in current_elements}
+            diff = current_names - ordered_names
+            msg = f"Element order must include all elements exactly once. Missing from new order: {diff}"
             raise ValueError(msg)
 
         # Remove all elements from root_ui_element
@@ -1105,6 +1230,47 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+    def get_element_index(self, element: str | BaseNodeElement, root: BaseNodeElement | None = None) -> int:
+        """Get the current index of an element in the element list.
+
+        Args:
+            element: The element to get the index for, specified by name or element object
+            root: The root element to search within. If None, uses root_ui_element
+
+        Returns:
+            The current index of the element (0-based)
+
+        Raises:
+            ValueError: If element is not found
+
+        Example:
+            # Get index by name in root container
+            index = node.get_element_index("element1")
+
+            # Get index within a specific parameter group
+            group = node.get_element_by_name_and_type("my_group", ParameterGroup)
+            index = node.get_element_index("parameter1", root=group)
+
+            # Get index of a parameter to position another element relative to it
+            reference_index = node.get_element_index("some_parameter")
+            node.move_element_to_position("new_parameter", reference_index + 1)
+        """
+        # Use root_ui_element if no root specified
+        if root is None:
+            root = self.root_ui_element
+
+        # Get list of all element names in the root
+        element_names = [child.name for child in root._children]
+
+        # Get element name
+        if isinstance(element, str):
+            element_name = element
+        else:
+            element_name = element.name
+
+        # Find the index of the element
+        return element_names.index(element_name)
 
 
 class TrackedParameterOutputValues(dict[str, Any]):
@@ -1400,13 +1566,16 @@ class EndNode(BaseNode):
             case self.succeeded_control:
                 was_successful = True
                 status_prefix = "[SUCCEEDED]"
+                logger.debug("End Node '%s': Matched succeeded_control path", self.name)
             case self.failed_control:
                 was_successful = False
                 status_prefix = "[FAILED]"
+                logger.debug("End Node '%s': Matched failed_control path", self.name)
             case _:
                 # No specific success/failure connection provided, assume success
                 was_successful = True
                 status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+                logger.debug("End Node '%s': No specific control connection, assuming success", self.name)
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")
@@ -1424,10 +1593,10 @@ class EndNode(BaseNode):
             if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 value = self.get_parameter_value(param.name)
                 self.parameter_output_values[param.name] = value
-        next_control_output = self.get_next_control_output()
+        entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
-        if next_control_output is not None:
-            self.parameter_output_values[next_control_output.name] = 1
+        if entry_parameter is not None:
+            self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
 class StartLoopNode(BaseNode):

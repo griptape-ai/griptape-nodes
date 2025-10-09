@@ -1,32 +1,56 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_pipeline_parameters import (
-    DiffusionPipelineTypePipelineParameters,
-)
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
-from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.traits.options import Options
+
+if TYPE_CHECKING:
+    from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
+    from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
+        DiffusionPipelineTypePipelineParameters,
+    )
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineTypeParameters(ABC):
-    def __init__(self, node: BaseNode):
-        self._node: BaseNode = node
+    START_PARAMS: ClassVar = ["pipeline", "provider", "pipeline_type"]
+    END_PARAMS: ClassVar = ["loras", "logs"]
+
+    def __init__(self, node: DiffusionPipelineBuilderNode):
+        self._node = node
         self.did_pipeline_type_change = False
+        self._pipeline_type_pipeline_params: DiffusionPipelineTypePipelineParameters
         self.set_pipeline_type_pipeline_params(self.pipeline_types[0])
 
     @property
     @abstractmethod
-    def pipeline_types(self) -> list[str]:
+    def pipeline_type_dict(self) -> dict[str, type[DiffusionPipelineTypePipelineParameters]]:
         raise NotImplementedError
 
-    @abstractmethod
+    @property
+    def pipeline_types(self) -> list[str]:
+        return list(self.pipeline_type_dict.keys())
+
     def set_pipeline_type_pipeline_params(self, pipeline_type: str) -> None:
-        raise NotImplementedError
+        try:
+            self._pipeline_type_pipeline_params = self.pipeline_type_dict[pipeline_type](self._node)
+        except KeyError as e:
+            msg = f"Unsupported pipeline type: {pipeline_type}"
+            logger.error(msg)
+            raise ValueError(msg) from e
+
+    @property
+    def pipeline_type_pipeline_params(self) -> DiffusionPipelineTypePipelineParameters:
+        if self._pipeline_type_pipeline_params is None:
+            msg = "Pipeline type builder parameters not initialized. Ensure provider parameter is set."
+            logger.error(msg)
+            raise ValueError(msg)
+        return self._pipeline_type_pipeline_params
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -35,6 +59,7 @@ class DiffusionPipelineTypeParameters(ABC):
                 type="str",
                 traits={Options(choices=self.pipeline_types)},
                 tooltip="Type of diffusion pipeline to build",
+                allowed_modes={ParameterMode.PROPERTY},
             )
         )
 
@@ -52,6 +77,8 @@ class DiffusionPipelineTypeParameters(ABC):
             self.regenerate_elements_for_pipeline_type(value)
 
     def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
+        self._node.save_ui_options()
+
         self.pipeline_type_pipeline_params.remove_input_parameters()
         self.set_pipeline_type_pipeline_params(pipeline_type)
         self.pipeline_type_pipeline_params.add_input_parameters()
@@ -59,31 +86,19 @@ class DiffusionPipelineTypeParameters(ABC):
         # Get all current element names
         all_element_names = [element.name for element in self._node.root_ui_element.children]
 
-        # Start with required positioning
-        sorted_parameters = ["provider", "pipeline_type"]
-
-        # Add all other parameters that aren't already positioned or at the end
+        # Build parameter groupings
         hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
-        end_params = {*hf_param_names, "pipeline", "logs"}
-        positioned_params = {"provider", "pipeline_type"}
+        start_params = DiffusionPipelineTypeParameters.START_PARAMS
+        end_params = [*hf_param_names, *DiffusionPipelineTypeParameters.END_PARAMS]
+        excluded_params = {*start_params, *end_params}
 
-        sorted_parameters.extend(
-            [
-                param_name
-                for param_name in all_element_names
-                if param_name not in positioned_params and param_name not in end_params
-            ]
-        )
-
-        # Add end parameters
-        sorted_parameters.extend([*hf_param_names, "pipeline", "logs"])
+        # Assemble final order: start -> middle -> end
+        middle_params = [name for name in all_element_names if name not in excluded_params]
+        sorted_parameters = [*start_params, *middle_params, *end_params]
 
         self._node.reorder_elements(sorted_parameters)
 
-    @property
-    @abstractmethod
-    def pipeline_type_pipeline_params(self) -> DiffusionPipelineTypePipelineParameters:
-        raise NotImplementedError
+        self._node.clear_ui_options_cache()
 
     def get_config_kwargs(self) -> dict:
         return self.pipeline_type_pipeline_params.get_config_kwargs()

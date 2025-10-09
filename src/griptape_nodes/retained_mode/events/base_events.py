@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from griptape.artifacts import BaseArtifact
@@ -390,6 +390,21 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         """
 
     @classmethod
+    def _create_payload_instance(cls, payload_type: type, payload_data: dict[str, Any]) -> Any:
+        """Create a payload instance from data, handling dataclass init=False fields."""
+        if is_dataclass(payload_type):
+            # Filter out fields that have init=False to avoid TypeError
+            init_fields = {f.name for f in fields(payload_type) if f.init}
+            filtered_data = {k: v for k, v in payload_data.items() if k in init_fields}
+            return payload_type(**filtered_data)
+        if issubclass(payload_type, BaseModel):
+            return payload_type.model_validate(payload_data)
+        instance = payload_type()
+        for key, value in payload_data.items():
+            setattr(instance, key, value)
+        return instance
+
+    @classmethod
     def from_dict(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls, data: builtins.dict[str, Any], req_payload_type: type[P], res_payload_type: type[R]
     ) -> EventResult:
@@ -403,28 +418,14 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
 
         # Process request payload
         if req_payload_type:
-            if is_dataclass(req_payload_type):
-                request_payload = req_payload_type(**request_data)
-            elif issubclass(req_payload_type, BaseModel):
-                request_payload = req_payload_type.model_validate(request_data)
-            else:
-                request_payload = req_payload_type()
-                for key, value in request_data.items():
-                    setattr(request_payload, key, value)
+            request_payload = cls._create_payload_instance(req_payload_type, request_data)
         else:
             msg = f"Cannot create {cls.__name__} without a request payload type"
             raise ValueError(msg)
 
         # Process result payload
         if res_payload_type:
-            if is_dataclass(res_payload_type):
-                result_payload = res_payload_type(**result_data)
-            elif issubclass(res_payload_type, BaseModel):
-                result_payload = res_payload_type.model_validate(result_data)
-            else:
-                result_payload = res_payload_type()
-                for key, value in result_data.items():
-                    setattr(result_payload, key, value)
+            result_payload = cls._create_payload_instance(res_payload_type, result_data)
         else:
             msg = f"Cannot create {cls.__name__} without a result payload type"
             raise ValueError(msg)

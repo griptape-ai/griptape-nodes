@@ -23,6 +23,7 @@ API_KEYS = Category(name="API Keys", description="API keys and authentication cr
 EXECUTION = Category(name="Execution", description="Workflow execution and processing settings")
 STORAGE = Category(name="Storage", description="Data storage and persistence configuration")
 SYSTEM_REQUIREMENTS = Category(name="System Requirements", description="System resource requirements and limits")
+MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol server configurations")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -56,9 +57,47 @@ class LogLevel(StrEnum):
     DEBUG = "DEBUG"
 
 
+class MCPServerConfig(BaseModel):
+    """Configuration for a single MCP server."""
+
+    name: str = Field(description="Unique name/identifier for the MCP server")
+    enabled: bool = Field(default=True, description="Whether this MCP server is enabled")
+    transport: str = Field(default="stdio", description="Transport type: stdio, sse, streamable_http, or websocket")
+
+    # StdioConnection fields
+    command: str | None = Field(default=None, description="Command to start the MCP server (required for stdio)")
+    args: list[str] = Field(default_factory=list, description="Arguments to pass to the MCP server command (stdio)")
+    env: dict[str, str] = Field(default_factory=dict, description="Environment variables for the MCP server (stdio)")
+    cwd: str | None = Field(default=None, description="Working directory for the MCP server (stdio)")
+    encoding: str = Field(default="utf-8", description="Text encoding for stdio communication")
+    encoding_error_handler: str = Field(default="strict", description="Encoding error handler for stdio")
+
+    # HTTP-based connection fields (sse, streamable_http, websocket)
+    url: str | None = Field(
+        default=None, description="URL for HTTP-based connections (sse, streamable_http, websocket)"
+    )
+    headers: dict[str, str] | None = Field(default=None, description="HTTP headers for HTTP-based connections")
+    timeout: float | None = Field(default=None, description="HTTP timeout in seconds")
+    sse_read_timeout: float | None = Field(default=None, description="SSE read timeout in seconds")
+    terminate_on_close: bool = Field(
+        default=True, description="Whether to terminate session on close (streamable_http)"
+    )
+
+    # Common fields
+    description: str | None = Field(default=None, description="Optional description of what this MCP server provides")
+    capabilities: list[str] = Field(default_factory=list, description="List of capabilities this MCP server provides")
+
+    def __str__(self) -> str:
+        return f"{self.name} ({'enabled' if self.enabled else 'disabled'})"
+
+
 class AppInitializationComplete(BaseModel):
     libraries_to_register: list[str] = Field(default_factory=list)
     workflows_to_register: list[str] = Field(default_factory=list)
+    secrets_to_register: list[str] = Field(
+        default_factory=lambda: ["HF_TOKEN", "GT_CLOUD_API_KEY"],
+        description="Core secrets to register in the secrets manager. Library-specific secrets are registered automatically from library settings.",
+    )
     models_to_download: list[str] = Field(default_factory=list)
 
 
@@ -111,44 +150,6 @@ class Settings(BaseModel):
     app_events: AppEvents = Field(
         category=APPLICATION_EVENTS,
         default_factory=AppEvents,
-    )
-    nodes: dict[str, Any] = Field(
-        category=API_KEYS,
-        default_factory=lambda: {
-            "Griptape": {"GT_CLOUD_API_KEY": "$GT_CLOUD_API_KEY"},
-            "OpenAI": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
-            "Amazon": {
-                "AWS_ACCESS_KEY_ID": "$AWS_ACCESS_KEY_ID",
-                "AWS_SECRET_ACCESS_KEY": "$AWS_SECRET_ACCESS_KEY",
-                "AWS_DEFAULT_REGION": "$AWS_DEFAULT_REGION",
-                "AMAZON_OPENSEARCH_HOST": "$AMAZON_OPENSEARCH_HOST",
-                "AMAZON_OPENSEARCH_INDEX_NAME": "$AMAZON_OPENSEARCH_INDEX_NAME",
-            },
-            "Anthropic": {"ANTHROPIC_API_KEY": "$ANTHROPIC_API_KEY"},
-            "BlackForest Labs": {"BFL_API_KEY": "$BFL_API_KEY"},
-            "Microsoft Azure": {
-                "AZURE_OPENAI_ENDPOINT": "$AZURE_OPENAI_ENDPOINT",
-                "AZURE_OPENAI_DALL_E_3_ENDPOINT": "$AZURE_OPENAI_DALL_E_3_ENDPOINT",
-                "AZURE_OPENAI_DALL_E_3_API_KEY": "$AZURE_OPENAI_DALL_E_3_API_KEY",
-                "AZURE_OPENAI_API_KEY": "$AZURE_OPENAI_API_KEY",
-            },
-            "Cohere": {"COHERE_API_KEY": "$COHERE_API_KEY"},
-            "Eleven Labs": {"ELEVEN_LABS_API_KEY": "$ELEVEN_LABS_API_KEY"},
-            "Exa": {"EXA_API_KEY": "$EXA_API_KEY"},
-            "Grok": {"GROK_API_KEY": "$GROK_API_KEY"},
-            "Groq": {"GROQ_API_KEY": "$GROQ_API_KEY"},
-            "Nvidia": {"NVIDIA_API_KEY": "$NVIDIA_API_KEY"},
-            "Google": {"GOOGLE_API_KEY": "$GOOGLE_API_KEY", "GOOGLE_API_SEARCH_ID": "$GOOGLE_API_SEARCH_ID"},
-            "Huggingface": {"HUGGINGFACE_HUB_ACCESS_TOKEN": "$HUGGINGFACE_HUB_ACCESS_TOKEN"},
-            "LeonardoAI": {"LEONARDO_API_KEY": "$LEONARDO_API_KEY"},
-            "Pinecone": {
-                "PINECONE_API_KEY": "$PINECONE_API_KEY",
-                "PINECONE_ENVIRONMENT": "$PINECONE_ENVIRONMENT",
-                "PINECONE_INDEX_NAME": "$PINECONE_INDEX_NAME",
-            },
-            "Tavily": {"TAVILY_API_KEY": "$TAVILY_API_KEY"},
-            "Serper": {"SERPER_API_KEY": "$SERPER_API_KEY"},
-        },
     )
     log_level: LogLevel = Field(category=EXECUTION, default=LogLevel.INFO)
     workflow_execution_mode: WorkflowExecutionMode = Field(
@@ -214,4 +215,9 @@ class Settings(BaseModel):
         category=FILE_SYSTEM,
         default=True,
         description="Enable file watching for synced workflows directory",
+    )
+    mcp_servers: list[MCPServerConfig] = Field(
+        category=MCP_SERVERS,
+        default_factory=list,
+        description="List of Model Context Protocol server configurations",
     )

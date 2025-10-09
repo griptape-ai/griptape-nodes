@@ -13,7 +13,7 @@ import requests
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -185,7 +185,7 @@ class GriptapeCloudPrompt(BasePrompt):
         specific_args = {}
 
         # Retrieve the mandatory API key.
-        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        specific_args["api_key"] = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
 
         # Get the selected model.
         model = self.get_parameter_value("model")
@@ -255,7 +255,7 @@ class GriptapeCloudPrompt(BasePrompt):
         # Fetch the list of available models from the Griptape Cloud API.
         response = requests.get(
             CHAT_MODELS_URL,
-            headers={"Authorization": f"Bearer {self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)}"},
+            headers={"Authorization": f"Bearer {GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)}"},
             timeout=10,
         )
         response.raise_for_status()

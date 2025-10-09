@@ -1,8 +1,8 @@
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, NamedTuple
 
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
-from griptape_nodes.node_library.workflow_registry import WorkflowShape
+from griptape_nodes.exe_types.node_types import NodeDependencies
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -186,8 +186,6 @@ class SerializedFlowCommands:
     Useful for save/load, copy/paste, etc.
 
     Attributes:
-        node_libraries_used (set[LibraryNameAndVersion]): Set of libraries and versions used by the nodes,
-            including those in child flows.
         flow_initialization_command (CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None): Command to initialize the flow that contains all of this.
             Can be CreateFlowRequest for standalone flows, ImportWorkflowAsReferencedSubFlowRequest for referenced workflows,
             or None to deserialize into whatever Flow is in the Current Context.
@@ -200,8 +198,11 @@ class SerializedFlowCommands:
         set_parameter_value_commands (dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]): List of commands
             to set parameter values, keyed by node UUID, during deserialization.
         sub_flows_commands (list["SerializedFlowCommands"]): List of sub-flow commands. Cascades into sub-flows within this serialization.
-        referenced_workflows (set[str]): Set of workflow file paths that are referenced by this flow and its sub-flows.
-            Used for validation before deserialization to ensure all referenced workflows are available.
+        node_dependencies (NodeDependencies): Aggregated dependencies from all nodes in this flow and its sub-flows.
+            Includes referenced workflows, static files, Python imports, and libraries. Used for workflow packaging,
+            dependency resolution, and deployment planning.
+        node_types_used (set[LibraryNameAndNodeType]): Set of all node types used in this flow and its sub-flows.
+            Each entry contains the library name and node type name pair, used for tracking which node types are utilized.
     """
 
     @dataclass
@@ -222,7 +223,6 @@ class SerializedFlowCommands:
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
 
-    node_libraries_used: set[LibraryNameAndVersion]
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
     serialized_connections: list[IndirectConnectionSerialization]
@@ -232,7 +232,8 @@ class SerializedFlowCommands:
     ]
     set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
     sub_flows_commands: list["SerializedFlowCommands"]
-    referenced_workflows: set[str]
+    node_dependencies: NodeDependencies
+    node_types_used: set[LibraryNameAndNodeType]
 
 
 @dataclass
@@ -439,4 +440,88 @@ class PackageNodeAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     Common causes: node not found, no current context, serialization error,
     connection analysis failed, node has no valid flow context.
+    """
+
+
+# Type aliases for parameter mapping clarity
+SanitizedParameterName = str  # What appears in the serialized flow
+OriginalNodeName = str  # Original node name (can have spaces, dots, etc.)
+OriginalParameterName = str  # Original parameter name
+
+
+class OriginalNodeParameter(NamedTuple):
+    """Represents the original source of a parameter before sanitization."""
+
+    node_name: OriginalNodeName
+    parameter_name: OriginalParameterName
+
+
+class ParameterNameMapping(NamedTuple):
+    """Maps a sanitized parameter name back to its original node and parameter."""
+
+    output_sanitized_parameter_name: SanitizedParameterName
+    original: OriginalNodeParameter
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodesAsSerializedFlowRequest(RequestPayload):
+    """Package multiple nodes as a complete flow with artificial start and end nodes.
+
+    Creates a serialized flow where:
+    - Start node has output parameters matching all selected nodes' incoming connections
+    - All selected nodes maintain their existing connections between each other
+    - End node has input parameters matching all selected nodes' outgoing connections
+    - Flow structure: Start → [Selected Nodes with internal connections] → End
+
+    Use when: Creating complex reusable components, exporting node groups for templates,
+    building multi-step sub-workflows, packaging interconnected functionality.
+
+    Args:
+        node_names: List of node names to package as a flow (empty list will create StartFlow→EndFlow only with warning)
+        start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
+        end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
+        start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
+        entry_control_node_name: Name of the node that should receive the control flow entry (required if entry_control_parameter_name specified)
+        entry_control_parameter_name: Name of the control parameter on the entry node (None for auto-detection of first available control parameter)
+        output_parameter_prefix: Prefix for parameter names on the generated end node to avoid collisions (defaults to "packaged_node_")
+
+    Results: PackageNodesAsSerializedFlowResultSuccess (with serialized flow and node name mapping) | PackageNodesAsSerializedFlowResultFailure
+    """
+
+    # List of node names to package (empty list creates StartFlow→EndFlow only with warning)
+    node_names: list[str] = field(default_factory=list)
+    start_node_type: str = "StartFlow"
+    end_node_type: str = "EndFlow"
+    start_end_specific_library_name: str = "Griptape Nodes Library"
+    entry_control_node_name: str | None = None
+    entry_control_parameter_name: str | None = None
+    output_parameter_prefix: str = "packaged_node_"
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodesAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Multiple nodes successfully packaged as serialized flow.
+
+    Args:
+        serialized_flow_commands: The complete serialized flow with StartFlow, selected nodes with preserved connections, and EndFlow
+        workflow_shape: The workflow shape defining inputs and outputs for external callers
+        packaged_node_names: List of node names that were included in the package
+        parameter_name_mappings: Dict mapping sanitized parameter names to original node and parameter names for O(1) lookup
+    """
+
+    serialized_flow_commands: SerializedFlowCommands
+    workflow_shape: WorkflowShape
+    packaged_node_names: list[str]
+    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
+
+
+@dataclass
+@PayloadRegistry.register
+class PackageNodesAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Multiple nodes packaging failed.
+
+    Common causes: one or more nodes not found, no current context, serialization error,
+    entry control node/parameter not found, connection analysis failed.
     """

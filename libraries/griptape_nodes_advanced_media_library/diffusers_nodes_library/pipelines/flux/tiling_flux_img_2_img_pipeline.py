@@ -21,6 +21,7 @@ from diffusers_nodes_library.common.parameters.log_parameter import (  # type: i
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_memory_footprint import safe_optimize_flux_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
@@ -268,5 +269,9 @@ class TilingFluxImg2ImgPipeline(ControlNode):
             callback_on_tile_end=callback_on_tile_end,
         )
         self.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")
+
+        self.log_params.append_to_logs("Clearing pipeline from memory...\n")
+        clear_diffusion_pipeline(pipe)
         self.set_parameter_value("output_image", pil_to_image_artifact(output_image_pil))
         self.parameter_output_values["output_image"] = pil_to_image_artifact(output_image_pil)
+        self.log_params.append_to_logs("Done.\n")

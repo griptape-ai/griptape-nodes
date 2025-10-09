@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Advanced Media Library",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.3.0",
   "settings": [
     {
       "description": "Configuration settings for the Advanced Media Library temporary file storage",
@@ -16,13 +16,20 @@
         "max_directory_size_gb": 5,
         "enable_directory_cleanup": false
       }
+    },
+    {
+      "description": "Configuration settings for image preview intermediates in diffusion pipeline runtime. Enables real-time image previews during generation but will slow down inference time.",
+      "category": "advanced_media_library",
+      "contents": {
+        "enable_image_preview_intermediates": false
+      }
     }
   ],
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.50.0",
-    "engine_version": "0.50.0",
+    "library_version": "0.58.0",
+    "engine_version": "0.58.0",
     "tags": [
       "Griptape",
       "AI"
@@ -36,7 +43,7 @@
         "diffusers>=0.35.1",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
-        "peft>=0.15.2",
+        "peft>=0.17.0",
         "pillow>=11.2.1",
         "protobuf>=6.30.2",
         "sentencepiece>=0.2.0",
@@ -164,7 +171,11 @@
       "metadata": {
         "category": "image/flux",
         "description": "Generate an Image with Flux via 🤗 Diffusers.",
-        "display_name": "Flux"
+        "display_name": "Flux",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/ https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -172,8 +183,12 @@
       "file_path": "diffusers_nodes_library/pipelines/flux/flux_fill_pipeline.py",
       "metadata": {
         "category": "image/flux",
-        "description": "Generate an umasked portion of an Image with Flux via 🤗 Diffusers.",
-        "display_name": "Flux Fill"
+        "description": "Generate an unmasked portion of an Image with Flux via 🤗 Diffusers.",
+        "display_name": "Flux Fill",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -182,7 +197,11 @@
       "metadata": {
         "category": "image/flux",
         "description": "Generate an Image with Flux Kontext via 🤗 Diffusers.",
-        "display_name": "Flux Kontext"
+        "display_name": "Flux Kontext",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -190,8 +209,12 @@
       "file_path": "diffusers_nodes_library/pipelines/flux/diptych_flux_fill_pipeline.py",
       "metadata": {
         "category": "image/flux",
-        "description": "Generate a pompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
-        "display_name": "Flux ICEdit "
+        "description": "Generate a prompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
+        "display_name": "Flux ICEdit ",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -200,7 +223,11 @@
       "metadata": {
         "category": "image/flux/controlnet",
         "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union",
-        "display_name": "Flux CN Union"
+        "display_name": "Flux CN Union",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -209,7 +236,11 @@
       "metadata": {
         "category": "image/flux/controlnet",
         "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro",
-        "display_name": "Flux CN Union Pro"
+        "display_name": "Flux CN Union Pro",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -218,7 +249,11 @@
       "metadata": {
         "category": "image/flux/controlnet",
         "description": "Generate a Image with Flux + ControlNet via 🤗 Diffusers. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
-        "display_name": "Flux CN Union Pro 2"
+        "display_name": "Flux CN Union Pro 2",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -272,7 +307,11 @@
       "metadata": {
         "category": "image/upscale",
         "description": "Generate Image Variation with Flux via 🤗 Diffusers using a tiling strategy that allows efficient processing of hi-res images. Without the tiling the quadratic cost of transformer models will consume your GPU and time.",
-        "display_name": "Flux Post Upscale"
+        "display_name": "Flux Post Upscale",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -281,7 +320,11 @@
       "metadata": {
         "category": "image/upscale",
         "description": "Rescales an image using the 🛏️ pillow python package.",
-        "display_name": "Rescale Image"
+        "display_name": "Rescale Image",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -290,7 +333,11 @@
       "metadata": {
         "category": "image/upscale",
         "description": "Upscales an image using the SPAN model via the 🥞 spandrel python package. Pairs well with Generate Image Variation with Flux + Tiling.",
-        "display_name": "SPAN Upscale"
+        "display_name": "SPAN Upscale",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -308,7 +355,11 @@
       "metadata": {
         "category": "video/allegro",
         "description": "Generate a video with Allegro via 🤗 Diffusers.",
-        "display_name": "Allegro"
+        "display_name": "Allegro",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -317,7 +368,11 @@
       "metadata": {
         "category": "image/amused",
         "description": "Generate an Image with aMUSEd via 🤗 Diffusers.",
-        "display_name": "aMUSEd"
+        "display_name": "aMUSEd",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -326,7 +381,11 @@
       "metadata": {
         "category": "image/amused",
         "description": "Generate Image Variations with aMUSEd via 🤗 Diffusers.",
-        "display_name": "aMUSEd Img2Img"
+        "display_name": "aMUSEd Img2Img",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -335,7 +394,11 @@
       "metadata": {
         "category": "image/amused",
         "description": "Inpaint Images with aMUSEd via 🤗 Diffusers.",
-        "display_name": "aMUSEd Inpaint"
+        "display_name": "aMUSEd Inpaint",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -344,7 +407,11 @@
       "metadata": {
         "category": "audio/audioldm",
         "description": "Generate audio from text via 🤗 Diffusers.",
-        "display_name": "AudioLDM"
+        "display_name": "AudioLDM",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -353,7 +420,11 @@
       "metadata": {
         "category": "audio/audioldm2",
         "description": "Generate audio from text via 🤗 Diffusers.",
-        "display_name": "AudioLDM 2"
+        "display_name": "AudioLDM 2",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -362,7 +433,11 @@
       "metadata": {
         "category": "image/stable_diffusion",
         "description": "Generate images with Stable Diffusion via 🤗 Diffusers.",
-        "display_name": "Stable Diffusion"
+        "display_name": "Stable Diffusion",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -371,7 +446,11 @@
       "metadata": {
         "category": "image/stable_diffusion_3",
         "description": "Generate images with Stable Diffusion 3 via 🤗 Diffusers.",
-        "display_name": "Stable Diffusion 3"
+        "display_name": "Stable Diffusion 3",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -380,7 +459,11 @@
       "metadata": {
         "category": "image/stable_diffusion_attend_and_excite",
         "description": "Generate images with enhanced attention control via 🤗 Diffusers.",
-        "display_name": "Stable Diffusion Attend and Excite"
+        "display_name": "Stable Diffusion Attend and Excite",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -389,7 +472,11 @@
       "metadata": {
         "category": "image/stable_diffusion_diffedit",
         "description": "Edit images using DiffEdit technique via 🤗 Diffusers.",
-        "display_name": "Stable Diffusion DiffEdit"
+        "display_name": "Stable Diffusion DiffEdit",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -398,7 +485,11 @@
       "metadata": {
         "category": "video/wan",
         "description": "Generate videos from text with Wan",
-        "display_name": "Wan T2V"
+        "display_name": "Wan T2V",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -407,7 +498,11 @@
       "metadata": {
         "category": "video/wan",
         "description": "Generate videos from image and text with Wan",
-        "display_name": "Wan I2V"
+        "display_name": "Wan I2V",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -416,7 +511,11 @@
       "metadata": {
         "category": "video/wan",
         "description": "Generate videos from video and text with Wan",
-        "display_name": "Wan V2V"
+        "display_name": "Wan V2V",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -425,7 +524,11 @@
       "metadata": {
         "category": "video/wan",
         "description": "Generate videos with VACE control via 🤗 Diffusers",
-        "display_name": "Wan VACE"
+        "display_name": "Wan VACE",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -497,7 +600,11 @@
       "metadata": {
         "category": "image/würstchen",
         "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
-        "display_name": "Würstchen"
+        "display_name": "Würstchen",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
@@ -506,14 +613,18 @@
       "metadata": {
         "category": "image/cosmos",
         "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
-        "display_name": "Cosmos2 Text2Image"
+        "display_name": "Cosmos2 Text2Image",
+        "deprecation": {
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "removal_version": "0.59.0"
+        }
       }
     },
     {
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
-        "category": "misc",
+        "category": "image",
         "description": "Build and cache 🤗 Diffuser Pipelines for reuse across multiple execution nodes.",
         "display_name": "Diffusion Pipeline Builder",
         "group": "diffusion"
@@ -531,4 +642,3 @@
     }
   ]
 }
-

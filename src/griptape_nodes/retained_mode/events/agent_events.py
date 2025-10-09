@@ -29,12 +29,14 @@ class RunAgentRequest(RequestPayload):
     Args:
         input: Text input to send to the agent
         url_artifacts: List of URL artifacts to include with the request
+        additional_mcp_servers: List of additional MCP server names to include
 
     Results: RunAgentResultStarted -> RunAgentResultSuccess (with output) | RunAgentResultFailure (execution error)
     """
 
     input: str
     url_artifacts: list[RunAgentRequestArtifact]
+    additional_mcp_servers: list[str] = field(default_factory=list)
 
 
 @dataclass

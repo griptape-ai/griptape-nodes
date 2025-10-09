@@ -1,23 +1,27 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, NamedTuple, NewType
+from typing import TYPE_CHECKING, Any, NamedTuple, NewType
 from uuid import uuid4
 
-from griptape_nodes.exe_types.core_types import NodeMessagePayload
 from griptape_nodes.exe_types.node_types import NodeResolutionState
-from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import NodeMessagePayload
+    from griptape_nodes.exe_types.node_types import NodeDependencies
+    from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+    from griptape_nodes.retained_mode.events.parameter_events import (
+        GetParameterDetailsResultSuccess,
+        GetParameterValueResultSuccess,
+        SetParameterValueRequest,
+    )
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
-)
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
-from griptape_nodes.retained_mode.events.parameter_events import (
-    GetParameterDetailsResultSuccess,
-    GetParameterValueResultSuccess,
-    SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
@@ -409,7 +413,7 @@ class SerializedNodeCommands:
     Attributes:
         create_node_command (CreateNodeRequest): The command to create the node.
         element_modification_commands (list[RequestPayload]): A list of commands to create or modify the elements (including Parameters) of the node.
-        node_library_details (LibraryNameAndVersion): Details of the library and version used by the node.
+        node_dependencies (NodeDependencies): Dependencies that this node has on external resources (workflows, files, imports, libraries).
         node_uuid (NodeUUID): The UUID of this particular node. During deserialization, this UUID will be used to correlate this node's instance
             with the connections and parameter values necessary. We cannot use node name because Griptape Nodes enforces unique names, and we cannot
             predict the name that will be selected upon instantiation. Similarly, the same serialized node may be deserialized multiple times, such
@@ -431,11 +435,11 @@ class SerializedNodeCommands:
         """
 
         set_parameter_value_command: SetParameterValueRequest
-        unique_value_uuid: "SerializedNodeCommands.UniqueParameterValueUUID"
+        unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
     create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
-    node_library_details: LibraryNameAndVersion
+    node_dependencies: NodeDependencies
     lock_node_command: SetLockNodeStateRequest | None = None
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
@@ -574,12 +578,14 @@ class SerializeSelectedNodesToCommandsRequest(WorkflowNotAlteredMixin, RequestPa
 
     Args:
         nodes_to_serialize: List of node identifiers (each containing [node_name, timestamp])
+        copy_to_clipboard: Whether to copy the result to clipboard (defaults to True for backward compatibility)
 
     Results: SerializeSelectedNodesToCommandsResultSuccess (with commands) | SerializeSelectedNodesToCommandsResultFailure (node not found, serialization error)
     """
 
     # They will be passed with node_name, timestamp
     nodes_to_serialize: list[list[str]]
+    copy_to_clipboard: bool = True
 
 
 @dataclass

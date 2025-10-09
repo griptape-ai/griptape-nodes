@@ -1,14 +1,16 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
     RequestPayload,
+    ResultDetails,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 # Requests and Results TO/FROM USER! These begin requests - and are not fully Execution Events.
@@ -71,6 +73,8 @@ class StartFlowRequest(RequestPayload):
     flow_name: str | None = None
     flow_node_name: str | None = None
     debug_mode: bool = False
+    # If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess.
+    pickle_control_flow_result: bool = False
 
 
 @dataclass
@@ -223,12 +227,12 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Flow execution state retrieved successfully.
 
     Args:
-        control_node: Name of the current control node (if any)
-        resolving_node: Name of the node currently being resolved (if any)
+        control_nodes: Name of the current control node (if any)
+        resolving_nodes: Name of the node currently being resolved (if any)
     """
 
     control_nodes: list[str] | None
-    resolving_node: list[str] | None
+    resolving_nodes: list[str] | None
     involved_nodes: list[str] | None
 
 
@@ -303,12 +307,17 @@ class ParameterSpotlightEvent(ExecutionPayload):
 class ControlFlowResolvedEvent(ExecutionPayload):
     end_node_name: str
     parameter_output_values: dict
+    # Optional field for pickled parameter values - when present, parameter_output_values contains UUID references
+    unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any] | None = field(
+        default=None
+    )
 
 
 @dataclass
 @PayloadRegistry.register
 class ControlFlowCancelledEvent(ExecutionPayload):
-    pass
+    result_details: ResultDetails | str | None = None
+    exception: Exception | None = None
 
 
 @dataclass

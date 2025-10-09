@@ -6,6 +6,7 @@ from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -109,7 +110,7 @@ class DescribeImage(ControlNode):
     def validate_before_workflow_run(self) -> list[Exception] | None:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
         exceptions = []
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         # No need for the api key. These exceptions caught on other nodes.
         if self.parameter_values.get("agent", None) and self.parameter_values.get("driver", None):
             return None
@@ -172,7 +173,9 @@ class DescribeImage(ControlNode):
         agent = None
 
         default_prompt_driver = GriptapeCloudPromptDriver(
-            model=DEFAULT_MODEL, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+            model=DEFAULT_MODEL,
+            api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
+            stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
         )
 
         # If an agent is provided, we'll use and ensure it's using a PromptTask
@@ -191,7 +194,9 @@ class DescribeImage(ControlNode):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
             prompt_driver = GriptapeCloudPromptDriver(
-                model=model_input, api_key=self.get_config_value(SERVICE, API_KEY_ENV_VAR), stream=True
+                model=model_input,
+                api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
+                stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
             )
             agent = GtAgent(prompt_driver=prompt_driver)
         else:

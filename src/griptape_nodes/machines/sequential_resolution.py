@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
-from griptape_nodes.exe_types.core_types import ParameterType, ParameterTypeBuiltin
+from griptape_nodes.exe_types.connections import Direction
+from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
@@ -22,6 +24,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     SetParameterValueRequest,
+    SetParameterValueResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -31,6 +34,7 @@ logger = logging.getLogger("griptape_nodes")
 @dataclass
 class Focus:
     node: BaseNode
+    task: asyncio.Task[None] | None = None
 
 
 # This is on a per-node basis
@@ -163,12 +167,8 @@ class ExecuteNodeState(State):
         connections = GriptapeNodes.FlowManager().get_connections()
 
         for parameter in current_node.parameters:
-            # Skip control type parameters
-            if ParameterTypeBuiltin.CONTROL_TYPE.value.lower() == parameter.output_type:
-                continue
-
             # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter)
+            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -179,21 +179,20 @@ class ExecuteNodeState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                # Skip propagation for Control Parameters as they should not receive values
-                if (
-                    ParameterType.attempt_get_builtin(upstream_parameter.output_type)
-                    != ParameterTypeBuiltin.CONTROL_TYPE
-                ):
-                    GriptapeNodes.get_instance().handle_request(
-                        SetParameterValueRequest(
-                            parameter_name=parameter.name,
-                            node_name=current_node.name,
-                            value=output_value,
-                            data_type=upstream_parameter.output_type,
-                            incoming_connection_source_node_name=upstream_node.name,
-                            incoming_connection_source_parameter_name=upstream_parameter.name,
-                        )
+                result = GriptapeNodes.get_instance().handle_request(
+                    SetParameterValueRequest(
+                        parameter_name=parameter.name,
+                        node_name=current_node.name,
+                        value=output_value,
+                        data_type=upstream_parameter.output_type,
+                        incoming_connection_source_node_name=upstream_node.name,
+                        incoming_connection_source_parameter_name=upstream_parameter.name,
                     )
+                )
+                if isinstance(result, SetParameterValueResultFailure):
+                    msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
+                    logger.error(msg)
+                    raise RuntimeError(msg)
 
     @staticmethod
     async def on_enter(context: ResolutionContext) -> type[State] | None:
@@ -270,7 +269,26 @@ class ExecuteNodeState(State):
             current_node = current_focus.node
 
             try:
-                await current_node.aprocess()
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                executor = GriptapeNodes.FlowManager().node_executor
+                # Create and track task in Focus for cancellation support
+                execution_task = asyncio.create_task(executor.execute(current_node))
+                current_focus.task = execution_task
+                await execution_task
+            except asyncio.CancelledError:
+                logger.info("Node '%s' processing was cancelled.", current_node.name)
+                current_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+                )
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
+                    )
+                )
+                return CompleteState
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
@@ -283,7 +301,7 @@ class ExecuteNodeState(State):
 
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                GriptapeNodes.FlowManager().cancel_flow_run()
+                await GriptapeNodes.FlowManager().cancel_flow_run()
 
                 GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
@@ -380,6 +398,27 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
             raise ValueError(msg)
         self._context.focus_stack.append(Focus(node=node))
         await self.start(InitializeSpotlightState)
+
+    async def cancel_all_nodes(self) -> None:
+        """Cancel the currently executing node and set cancellation flags on all nodes in focus stack."""
+        # Set cancellation flag on all nodes in the focus stack
+        for focus in self._context.focus_stack:
+            focus.node.request_cancellation()
+
+        # Collect tasks that need to be cancelled
+        tasks = []
+        if self._context.focus_stack:
+            current_focus = self._context.focus_stack[-1]
+            if current_focus.task and not current_focus.task.done():
+                tasks.append(current_focus.task)
+
+        # Cancel all tasks
+        for task in tasks:
+            task.cancel()
+
+        # Wait for all tasks to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def change_debug_mode(self, debug_mode: bool) -> None:  # noqa: FBT001
         self._context.paused = debug_mode

@@ -4,6 +4,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class BaseDriver(DataNode):
@@ -127,7 +128,7 @@ class BaseDriver(DataNode):
         """
         message_param = self.get_parameter_by_name("message")
         if message_param is not None:
-            api_key = self.get_config_value(service_name, api_key_env_var)
+            api_key = GriptapeNodes.SecretsManager().get_secret(api_key_env_var)
             msg = f"⚠️ This node requires an API key from {service_name}\nPlease visit {api_key_url} to obtain a valid key and update your settings."
             message_param.default_value = msg
             ui_options = message_param.ui_options
@@ -157,7 +158,7 @@ class BaseDriver(DataNode):
         """
         exceptions = []
 
-        api_key = self.get_config_value(service_name, api_key_env_var)
+        api_key = GriptapeNodes.SecretsManager().get_secret(api_key_env_var)
         if not api_key:
             msg = f"API Key ('{api_key_env_var}') for service '{service_name}' is missing."
             if api_key_url:

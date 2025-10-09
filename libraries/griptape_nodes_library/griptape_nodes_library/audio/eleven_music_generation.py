@@ -12,6 +12,7 @@ import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
@@ -145,7 +146,7 @@ class ElevenMusicGeneration(DataNode):
         errors = []
 
         # Check if API key is available
-        api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
+        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
             errors.append(
                 ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
@@ -207,7 +208,7 @@ class ElevenMusicGeneration(DataNode):
 
     def _get_api_key(self) -> str:
         """Get the API key - validation is done in validate_before_node_run()."""
-        api_key = self.get_config_value(service=self.SERVICE_NAME, value=self.API_KEY_NAME)
+        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
         if not api_key:
             # This should not happen if validate_before_node_run() was called
             msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
@@ -290,8 +291,6 @@ class ElevenMusicGeneration(DataNode):
                 ext = "mp3"  # fallback
 
             filename = f"eleven_music_{int(time.time())}.{ext}"
-
-            from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)

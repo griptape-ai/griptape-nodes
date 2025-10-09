@@ -192,7 +192,7 @@ class SplitVideo(ControlNode):
         self.split_videos_list.clear_list()
 
     def _parse_timecodes_with_agent(self, timecodes_str: str) -> str:
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             error_msg = f"No API key found for {SERVICE}. Please set {API_KEY_ENV_VAR} environment variable."
             raise ValueError(error_msg)

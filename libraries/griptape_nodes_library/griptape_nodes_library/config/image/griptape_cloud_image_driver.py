@@ -3,6 +3,7 @@ from griptape.drivers.image_generation.griptape_cloud import (
 )
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.config.image.base_image_driver import BaseImageDriver
 
@@ -67,7 +68,7 @@ class GriptapeCloudImage(BaseImageDriver):
         specific_args = {}
 
         # Retrieve the mandatory API key.
-        specific_args["api_key"] = self.get_config_value(service=SERVICE, value=API_KEY_ENV_VAR)
+        specific_args["api_key"] = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
 
         specific_args["style"] = self.get_parameter_value("style")
         specific_args["quality"] = self.get_parameter_value("quality")

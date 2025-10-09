@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -8,6 +9,8 @@ from enum import Enum, StrEnum, auto
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
 
 from pydantic import BaseModel
+
+logger = logging.getLogger("griptape_nodes")
 
 
 class NodeMessagePayload(BaseModel):
@@ -554,6 +557,7 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
         ui_options: dict | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         **kwargs,
     ):
         super().__init__(element_type=ParameterMessage.__name__, **kwargs)
@@ -568,6 +572,17 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
+
+        # Handle traits if provided
+        if traits:
+            for trait in traits:
+                if isinstance(trait, type):
+                    # It's a trait class, instantiate it
+                    trait_instance = trait()
+                else:
+                    # It's already a trait instance
+                    trait_instance = trait
+                self.add_child(trait_instance)
 
     @property
     def variant(self) -> VariantType:
@@ -694,6 +709,16 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         else:
             button_icon = self.button_icon
 
+        # Check if there are any Button traits with on_click callbacks
+        has_button_callback = False
+        for child in self.children:
+            # Import here to avoid circular imports
+            from griptape_nodes.traits.button import Button
+
+            if isinstance(child, Button) and child.on_click_callback is not None:
+                has_button_callback = True
+                break
+
         # Merge the UI options with the message-specific options
         # Always include these fields, even if they're None or empty
         message_ui_options = {
@@ -705,6 +730,7 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
             "button_icon": button_icon,
             "button_variant": self.button_variant,
             "button_align": self.button_align,
+            "button_on_click": has_button_callback,
             "full_width": self.full_width,
         }
 
@@ -1287,7 +1313,7 @@ class ControlParameter(Parameter, ABC):
         super().__init__(
             type=ParameterTypeBuiltin.CONTROL_TYPE.value,
             default_value=None,
-            settable=False,
+            settable=True,
             name=name,
             tooltip=tooltip,
             input_types=input_types,

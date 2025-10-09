@@ -32,7 +32,7 @@ def get_pipeline_component_names(pipe: DiffusionPipeline) -> list[str]:
                 if hasattr(attr, "to") and callable(attr.to) and hasattr(attr, "parameters"):
                     component_names.append(attr_name)
             except Exception:
-                logger.debug("Error accessing attribute %s of pipeline: %s", attr_name, exc_info=True)
+                logger.debug("Error accessing attribute %s of pipeline: %s", attr_name, pipe)
                 continue
 
     if not component_names:
@@ -79,10 +79,10 @@ def _log_memory_info(
         logger.info("Recommended max memory on %s: %s", device, to_human_readable_size(recommended_max_memory))
         logger.info("Free memory on %s: %s", device, to_human_readable_size(free_memory))
 
-    logger.info("Require memory for Flux Pipeline: %s", to_human_readable_size(model_memory))
+    logger.info("Require memory for diffusion pipeline: %s", to_human_readable_size(model_memory))
 
 
-def _quantize_flux_pipeline(
+def _quantize_diffusion_pipeline(
     pipe: DiffusionPipeline,
     quantization_mode: str,
     device: torch.device,
@@ -94,25 +94,17 @@ def _quantize_flux_pipeline(
     _log_memory_info(pipe, device)
     quant_map = {"fp8": qfloat8, "int8": qint8, "int4": qint4}
     quant_type = quant_map[quantization_mode]
-    if hasattr(pipe, "transformer") and pipe.transformer is not None:
-        logger.debug("Quantizing transformer with %s", quantization_mode)
-        quantize(pipe.transformer, weights=quant_type, exclude=["proj_out"])
-        logger.debug("Freezing transformer")
-        freeze(pipe.transformer)
-        logger.debug("Quantizing completed for transformer.")
-    if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
-        logger.debug("Quantizing text_encoder with %s", quantization_mode)
-        quantize(pipe.text_encoder, weights=quant_type)
-        logger.debug("Freezing text_encoder")
-        freeze(pipe.text_encoder)
-        logger.debug("Quantizing completed for text_encoder.")
-    if hasattr(pipe, "text_encoder_2") and pipe.text_encoder_2 is not None:
-        logger.debug("Quantizing text_encoder_2 with %s", quantization_mode)
-        quantize(pipe.text_encoder_2, weights=quant_type)
-        logger.debug("Freezing text_encoder_2")
-        freeze(pipe.text_encoder_2)
-        logger.debug("Quantizing completed for text_encoder_2.")
 
+    component_names = get_pipeline_component_names(pipe)
+    logger.debug("Quantizing components: %s", component_names)
+    for name in component_names:
+        component = getattr(pipe, name, None)
+        if component is not None:
+            logger.debug("Quantizing %s with %s", name, quantization_mode)
+            quantize(component, weights=quant_type, exclude=["proj_out"])
+            logger.debug("Freezing %s", name)
+            freeze(component)
+            logger.debug("Quantizing completed for %s.", name)
     logger.info("Quantization complete.")
 
 
@@ -216,7 +208,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     quantization_mode: str,
 ) -> None:
     if quantization_mode != "None":
-        _quantize_flux_pipeline(pipe, quantization_mode, device)
+        _quantize_diffusion_pipeline(pipe, quantization_mode, device)
     if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
         logger.info("Enabling attention slicing")
         pipe.enable_attention_slicing()
@@ -252,7 +244,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
 def optimize_diffusion_pipeline(  # noqa: PLR0913
     pipe: DiffusionPipeline,
     *,
-    memory_optimization_strategy: str = "Automatic",
+    memory_optimization_strategy: str = "Manual",
     attention_slicing: bool = False,
     vae_slicing: bool = False,
     transformer_layerwise_casting: bool = False,

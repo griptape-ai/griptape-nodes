@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import logging
@@ -99,6 +100,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
+from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -880,10 +882,9 @@ class LibraryManager:
                         continue  # SKIP IT
                 else:
                     # We had an existing category. Union our changes into it (not replacing anything that matched).
-                    existing_category_contents = get_category_result.contents
-                    existing_category_contents |= {
-                        k: v for k, v in library_data_setting.contents.items() if k not in existing_category_contents
-                    }
+                    existing_category_contents = merge_dicts(
+                        library_data_setting.contents, get_category_result.contents, add_keys=True, merge_lists=True
+                    )
                     set_category_request = SetConfigCategoryRequest(
                         category=library_data_setting.category, contents=existing_category_contents
                     )
@@ -895,7 +896,8 @@ class LibraryManager:
                         continue  # SKIP IT
 
         # Attempt to load nodes from the library.
-        library_load_results = self._attempt_load_nodes_from_library(
+        library_load_results = await asyncio.to_thread(
+            self._attempt_load_nodes_from_library,
             library_data=library_data,
             library=library,
             base_dir=base_dir,
@@ -1126,7 +1128,6 @@ class LibraryManager:
         lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
             del self._library_file_path_to_info[lib_info.library_path]
-
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
@@ -1521,7 +1522,7 @@ class LibraryManager:
         for library_result in metadata_result.successful_libraries:
             if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
                 # Handle sandbox library - use the schema we already have
-                self._attempt_generate_sandbox_library_from_schema(
+                await self._attempt_generate_sandbox_library_from_schema(
                     library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
                 )
             else:
@@ -1543,11 +1544,11 @@ class LibraryManager:
         self._remove_missing_libraries_from_config(config_category=user_libraries_section)
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        GriptapeNodes.EngineIdentityManager().initialize_engine_id()
-        GriptapeNodes.SessionManager().get_saved_session_id()
-
         # App just got init'd. See if there are library JSONs to load!
         await self.load_all_libraries_from_config()
+
+        # Register all secrets now that libraries are loaded and settings are merged
+        GriptapeNodes.SecretsManager().register_all_secrets()
 
         # We have to load all libraries before we attempt to load workflows.
 
@@ -1853,7 +1854,7 @@ class LibraryManager:
             problems=problems,
         )
 
-    def _attempt_generate_sandbox_library_from_schema(
+    async def _attempt_generate_sandbox_library_from_schema(
         self, library_schema: LibrarySchema, sandbox_directory: str
     ) -> None:
         """Generate sandbox library using an existing schema, loading actual node classes."""
@@ -1945,7 +1946,8 @@ class LibraryManager:
             return
 
         # Load nodes into the library
-        library_load_results = self._attempt_load_nodes_from_library(
+        library_load_results = await asyncio.to_thread(
+            self._attempt_load_nodes_from_library,
             library_data=library_data,
             library=library,
             base_dir=sandbox_library_dir,
@@ -2057,10 +2059,5 @@ class LibraryManager:
             library_path = Path(library_path_str)
             if library_path.exists():
                 process_path(library_path)
-
-        # Add from workspace - recursive discovery of library JSON files
-        workspace_path = config_mgr.workspace_path
-        if workspace_path.exists():
-            process_path(workspace_path)
 
         return list(discovered_libraries)

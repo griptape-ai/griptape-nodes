@@ -8,6 +8,7 @@ from griptape.tools import WebSearchTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.tasks.base_task import BaseTask
 
@@ -93,13 +94,13 @@ class SearchWeb(BaseTask):
 
     def _google_driver(self) -> GoogleWebSearchDriver:
         return GoogleWebSearchDriver(
-            api_key=self.get_config_value(service="Google", value="GOOGLE_API_KEY"),
-            search_id=self.get_config_value(service="Google", value="GOOGLE_API_SEARCH_ID"),
+            api_key=GriptapeNodes.SecretsManager().get_secret("GOOGLE_API_KEY"),
+            search_id=GriptapeNodes.SecretsManager().get_secret("GOOGLE_API_SEARCH_ID"),
         )
 
     def _exa_driver(self) -> ExaWebSearchDriver:
         return ExaWebSearchDriver(
-            api_key=self.get_config_value(service="Exa", value="EXA_API_KEY"),
+            api_key=GriptapeNodes.SecretsManager().get_secret("EXA_API_KEY"),
         )
 
     def check_api_keys(self) -> bool:
@@ -108,7 +109,7 @@ class SearchWeb(BaseTask):
         if api_keys is None:
             return True
         for api_key in api_keys:
-            if not self.get_config_value(service=search_engine, value=api_key):
+            if not GriptapeNodes.SecretsManager().get_secret(api_key):
                 return False
         return True
 
