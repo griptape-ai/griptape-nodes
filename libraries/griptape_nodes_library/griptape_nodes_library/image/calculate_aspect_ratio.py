@@ -585,64 +585,82 @@ class CalculateAspectRatio(SuccessFailureNode):
     def _handle_width_change(self, width: int) -> None:
         """Handle width parameter changes - update ratio and match preset."""
         height = self.get_parameter_value(self._height_parameter.name)
-
-        # Early out for invalid values
-        if width is None or height is None or width <= 0 or height <= 0:
-            return
-
-        # Update ratio parameters
-        ratio = self._calculate_ratio(width, height)
-        if ratio is not None:
-            ratio_str = f"{ratio[0]}:{ratio[1]}"
-            self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
-
-            ratio_decimal = ratio[0] / ratio[1]
-            self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
-
-        # Match to preset
-        self._match_preset()
+        self._handle_dimension_change(width, height)
 
     def _handle_height_change(self, height: int) -> None:
         """Handle height parameter changes - update ratio and match preset."""
         width = self.get_parameter_value(self._width_parameter.name)
+        self._handle_dimension_change(width, height)
 
+    def _handle_dimension_change(self, width: int | None, height: int | None) -> None:
+        """Handle dimension parameter changes - update ratio and match preset."""
         # Early out for invalid values
-        if width is None or height is None or width <= 0 or height <= 0:
-            return
+        if width is None or height is None or width < 0 or height < 0:
+            error_msg = f"Cannot calculate ratio from dimensions {width}x{height}."
+            raise ValueError(error_msg)
 
-        # Update ratio parameters
+        # Calculate and validate ratio
         ratio = self._calculate_ratio(width, height)
-        if ratio is not None:
-            ratio_str = f"{ratio[0]}:{ratio[1]}"
-            self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
+        if ratio is None:
+            error_msg = f"Failed to calculate ratio from dimensions {width}x{height}."
+            raise ValueError(error_msg)
 
+        # Update all ratio parameters
+        ratio_str = f"{ratio[0]}:{ratio[1]}"
+        self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
+
+        # Calculate ratio decimal (special case for 0:0)
+        if ratio[0] == 0 and ratio[1] == 0:
+            ratio_decimal = 0.0
+        else:
             ratio_decimal = ratio[0] / ratio[1]
-            self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
+        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
 
         # Match to preset
         self._match_preset()
 
     def _handle_ratio_str_change(self, ratio_str: str) -> None:
         """Handle ratio_str parameter changes - update decimal and match preset."""
-        # Early out for invalid input
-        if not ratio_str or ":" not in ratio_str:
-            return
+        # Validate input format
+        if not ratio_str:
+            error_msg = "Ratio string cannot be empty."
+            raise ValueError(error_msg)
+
+        if ":" not in ratio_str:
+            error_msg = f"Invalid ratio format '{ratio_str}' - expected format 'width:height' (e.g., '16:9')."
+            raise ValueError(error_msg)
 
         # Parse ratio string (expected format: "width:height")
+        parts = ratio_str.split(":")
+        expected_parts_count = 2
+        if len(parts) != expected_parts_count:
+            error_msg = (
+                f"Invalid ratio format '{ratio_str}' - expected exactly two parts separated by ':' (e.g., '16:9')."
+            )
+            raise ValueError(error_msg)
+
         try:
-            parts = ratio_str.split(":")
-            expected_parts_count = 2
-            if len(parts) != expected_parts_count:
-                return
             aspect_width = int(parts[0].strip())
             aspect_height = int(parts[1].strip())
-            if aspect_width <= 0 or aspect_height <= 0:
-                return
-        except ValueError:
-            return
+        except ValueError as e:
+            error_msg = f"Invalid ratio format '{ratio_str}' - both parts must be integers: {e}."
+            raise ValueError(error_msg) from e
 
-        # Update ratio decimal
-        ratio_decimal = aspect_width / aspect_height
+        # Validate aspect ratio values (must be non-negative, but if one is 0, both must be 0)
+        if aspect_width < 0 or aspect_height < 0:
+            error_msg = f"Invalid aspect ratio {aspect_width}:{aspect_height} - values cannot be negative."
+            raise ValueError(error_msg)
+
+        # Special case: if either dimension is 0, both must be 0
+        if (aspect_width == 0 or aspect_height == 0) and not (aspect_width == 0 and aspect_height == 0):
+            error_msg = f"Invalid aspect ratio {aspect_width}:{aspect_height} - if either value is 0, both must be 0."
+            raise ValueError(error_msg)
+
+        # Update ratio decimal (special case for 0:0)
+        if aspect_width == 0 and aspect_height == 0:
+            ratio_decimal = 0.0
+        else:
+            ratio_decimal = aspect_width / aspect_height
         self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
 
         # Match to preset
@@ -698,8 +716,12 @@ class CalculateAspectRatio(SuccessFailureNode):
 
     def _calculate_ratio(self, width: int, height: int) -> tuple[int, int] | None:
         """Calculate GCD-reduced ratio from width and height."""
-        # Early out for invalid dimensions
-        if width <= 0 or height <= 0:
+        # Special case: 0 dimensions result in 0:0 ratio
+        if width == 0 or height == 0:
+            return (0, 0)
+
+        # Early out for negative dimensions
+        if width < 0 or height < 0:
             return None
 
         divisor = gcd(width, height)
