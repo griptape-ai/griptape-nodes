@@ -3319,7 +3319,7 @@ class FlowManager:
         )
         # Set off the request here.
         try:
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
                 await self.cancel_flow_run()
@@ -3424,7 +3424,7 @@ class FlowManager:
             # Get or create machine
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name)
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -3434,7 +3434,7 @@ class FlowManager:
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                await machine.start_flow(start_node, debug_mode)
+                await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.
@@ -3472,7 +3472,9 @@ class FlowManager:
                 )
             )
             try:
-                await self._global_control_flow_machine.resolve_one_node(node, debug_mode=debug_mode)
+                await self._global_control_flow_machine.start_flow(
+                    start_node=node, end_node=node, debug_mode=debug_mode
+                )
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():

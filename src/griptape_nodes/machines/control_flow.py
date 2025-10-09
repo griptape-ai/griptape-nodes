@@ -45,7 +45,7 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
     pickle_control_flow_result: bool
-    single_node: bool = False
+    end_node: BaseNode | None = None
 
     def __init__(
         self,
@@ -179,7 +179,7 @@ class ResolveNodeState(State):
                 if last_resolved_node:
                     context.current_nodes = [last_resolved_node]
                 return CompleteState
-            if context.single_node:
+            if context.end_node == current_node:
                 return CompleteState
             return NextNodeState
         return None
@@ -263,7 +263,7 @@ class CompleteState(State):
                     )
                 )
             )
-        context.single_node = False
+        context.end_node = None
         logger.info("Flow is complete.")
         return None
 
@@ -287,7 +287,9 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         )
         super().__init__(context)
 
-    async def start_flow(self, start_node: BaseNode, debug_mode: bool = False) -> None:  # noqa: FBT001, FBT002
+    async def start_flow(
+        self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
+    ) -> None:
         # If using DAG resolution, process data_nodes from queue first
         if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
             current_nodes = await self._process_nodes_for_dag(start_node)
@@ -295,6 +297,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             current_nodes = [start_node]
             # For control flow/sequential: emit all nodes in flow as involved
         self._context.current_nodes = current_nodes
+        self._context.end_node = end_node
         # Set entry control parameter for initial node (None for workflow start)
         for node in current_nodes:
             node.set_entry_control_parameter(None)
@@ -302,19 +305,15 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._context.paused = debug_mode
         flow_manager = GriptapeNodes.FlowManager()
         flow = flow_manager.get_flow_by_name(self._context.flow_name)
-        involved_nodes = list(flow.nodes.keys())
-        GriptapeNodes.EventManager().put_event(
-            ExecutionGriptapeNodeEvent(
-                wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+        if start_node != end_node:
+            # This blocks all nodes in the entire flow from running. If we're just resolving one node, we don't want to block that.
+            involved_nodes = list(flow.nodes.keys())
+            GriptapeNodes.EventManager().put_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=involved_nodes))
+                )
             )
-        )
         await self.start(ResolveNodeState)  # Begins the flow
-
-    async def resolve_one_node(self, node: BaseNode, *, debug_mode: bool = False) -> None:
-        self._context.current_nodes = [node]
-        self._context.single_node = True
-        self._context.paused = debug_mode
-        await self.start(ResolveNodeState)
 
     async def update(self) -> None:
         if self._current_state is None:
