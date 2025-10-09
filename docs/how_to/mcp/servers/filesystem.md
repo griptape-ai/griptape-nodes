@@ -2,7 +2,6 @@
 
 The **[Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/blob/main/src/filesystem/README.md)** enables AI agents to perform file and directory operations on your local machine. It provides secure, controlled access to specific directories for file management, content organization, and data processing tasks.
 
-
 ## Installation
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
@@ -20,8 +19,8 @@ The **[Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/bl
     "transport": "stdio",
     "command": "npx",
     "args": [
-        "-y", 
-        "@modelcontextprotocol/server-filesystem", 
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
         "/path/to/allowed/directory"],
     "env": {},
     "encoding": "utf-8",

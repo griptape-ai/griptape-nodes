@@ -2,7 +2,6 @@
 
 The [**Time MCP Server**](https://github.com/modelcontextprotocol/servers/tree/main/src/time) provides date and time operations for AI agents, enabling them to work with temporal data, scheduling, and time-based calculations. It's perfect for any workflow that needs to handle dates, times, timezones, or scheduling.
 
-
 ## Installation
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
