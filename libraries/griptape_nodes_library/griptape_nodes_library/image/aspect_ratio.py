@@ -3,7 +3,6 @@ from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 
 
@@ -111,6 +110,27 @@ class AspectRatio(SuccessFailureNode):
         # Lock to prevent recursion during parameter updates
         self._updating_lock = False
 
+        # Define validators
+        def validate_ratio_str(param: Parameter, value: str) -> None:  # noqa: ARG001
+            error = self._validate_ratio_str(value)
+            if error:
+                raise ValueError(error)
+
+        def validate_width(param: Parameter, value: int) -> None:  # noqa: ARG001
+            if value is not None and value < 0:
+                error_msg = f"Width cannot be negative: {value}"
+                raise ValueError(error_msg)
+
+        def validate_height(param: Parameter, value: int) -> None:  # noqa: ARG001
+            if value is not None and value < 0:
+                error_msg = f"Height cannot be negative: {value}"
+                raise ValueError(error_msg)
+
+        def validate_upscale(param: Parameter, value: float) -> None:  # noqa: ARG001
+            if value is not None and value <= 0:
+                error_msg = f"Upscale value must be positive: {value}"
+                raise ValueError(error_msg)
+
         # Inputs group
         with ParameterGroup(name="Dimensions") as inputs_group:
             self._preset_parameter = Parameter(
@@ -129,6 +149,7 @@ class AspectRatio(SuccessFailureNode):
                 tooltip="Width in pixels",
                 default_value=1024,
                 allowed_modes={ParameterMode.PROPERTY},
+                validators=[validate_width],
             )
 
             self._height_parameter = Parameter(
@@ -137,6 +158,7 @@ class AspectRatio(SuccessFailureNode):
                 tooltip="Height in pixels",
                 default_value=1024,
                 allowed_modes={ParameterMode.PROPERTY},
+                validators=[validate_height],
             )
 
             self._ratio_str_parameter = Parameter(
@@ -145,6 +167,7 @@ class AspectRatio(SuccessFailureNode):
                 tooltip="Aspect ratio as string (e.g., '16:9')",
                 default_value="1:1",
                 allowed_modes={ParameterMode.PROPERTY},
+                validators=[validate_ratio_str],
             )
         self.add_node_element(inputs_group)
 
@@ -156,6 +179,7 @@ class AspectRatio(SuccessFailureNode):
                 tooltip="Multiplier for scaling dimensions",
                 default_value=1.0,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                validators=[validate_upscale],
             )
 
             self._swap_dimensions_parameter = Parameter(
@@ -319,29 +343,6 @@ class AspectRatio(SuccessFailureNode):
             )
 
         return None
-
-    def before_value_set(self, parameter: Parameter, value: Any) -> Any:
-        """Validate parameter values before they are set."""
-        match parameter.name:
-            case self._ratio_str_parameter.name:
-                validation_error = self._validate_ratio_str(value)
-                if validation_error:
-                    logger.error(f"{self.name}: {validation_error}")
-                    return self.get_parameter_value(self._ratio_str_parameter.name)
-            case self._width_parameter.name:
-                if value is not None and value < 0:
-                    logger.error(f"{self.name}: Width cannot be negative: {value}")
-                    return self.get_parameter_value(self._width_parameter.name)
-            case self._height_parameter.name:
-                if value is not None and value < 0:
-                    logger.error(f"{self.name}: Height cannot be negative: {value}")
-                    return self.get_parameter_value(self._height_parameter.name)
-            case self._upscale_value_parameter.name:
-                if value is not None and value <= 0:
-                    logger.error(f"{self.name}: Upscale value must be positive: {value}")
-                    return self.get_parameter_value(self._upscale_value_parameter.name)
-
-        return value
 
     def _validate_ratio_str(self, ratio_str: str) -> str | None:
         """Validate ratio string format and values.
