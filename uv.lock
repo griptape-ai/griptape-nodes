@@ -1,6 +1,6 @@
 version = 1
-revision = 2
-requires-python = ">=3.12.0, <3.13"
+revision = 3
+requires-python = "==3.12.*"
 
 [[package]]
 name = "annotated-types"
@@ -274,7 +274,7 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.8.5"
+version = "1.8.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -295,9 +295,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/2f/522ccd35cc303d7ccf18be373a3a83e5196ad5ac3f105084f1684c158852/griptape-1.8.5.tar.gz", hash = "sha256:553f8c81fed824f46e0ac76af972f4fefa0818d81360fdfe4e295de90db6fadc", size = 189314, upload-time = "2025-10-06T17:15:55.106Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/71/ae/bfe6f67336bc7b7ec97594d9de23dd1ecc66442998247578493076e3017f/griptape-1.8.7.tar.gz", hash = "sha256:55dc94a290336b255a55e2ff434287f3900886e7ef63c3f2e6b26af34fa10d6a", size = 190292, upload-time = "2025-10-09T16:19:34.296Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/41/13/da4c44a0c43c0dc43e9b23d39f9ccf30eab0b6a87481144ebd0a1293d14d/griptape-1.8.5-py3-none-any.whl", hash = "sha256:edf554535b97467713f4e5c6288e6a2da2dc01e27eaa54e4a5f6c8055c95aeb3", size = 424713, upload-time = "2025-10-06T17:15:53.084Z" },
+    { url = "https://files.pythonhosted.org/packages/97/be/78cf80ceb68d362a8b989b1e594d92260748f2c94fc99bbccd2652887084/griptape-1.8.7-py3-none-any.whl", hash = "sha256:af3a61db041809860f2e88c731833b2962f27d7cd24d1f56ca66a68f3a72f9a8", size = 425729, upload-time = "2025-10-09T16:19:32.877Z" },
 ]
 
 [[package]]
@@ -364,7 +364,7 @@ requires-dist = [
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", specifier = ">=1.8.5" },
+    { name = "griptape", specifier = ">=1.8.7" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "huggingface-hub", extras = ["xf-xet"], specifier = ">=0.28.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
