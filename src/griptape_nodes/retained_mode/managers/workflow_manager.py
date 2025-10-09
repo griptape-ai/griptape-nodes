@@ -3269,6 +3269,7 @@ class WorkflowManager:
             "ui_options",
             "settable",
             "is_user_defined",
+            "parent_container_name",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
         minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
@@ -3365,16 +3366,6 @@ class WorkflowManager:
         Returns:
             Parameter info dict if relevant for workflow shape, None if should be excluded
         """
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
-        # Always exclude list types until container type handling is implemented
-        if parameter.type.startswith("list"):
-            logger.warning(
-                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
-                parameter.name,
-                parameter.type,
-            )
-            return None
-
         # Conditionally exclude control types
         if not include_control_params and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value:
             return None
