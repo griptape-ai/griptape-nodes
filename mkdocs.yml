@@ -3,6 +3,7 @@ site_url: https://docs.griptapenodes.com/
 
 plugins:
   - search
+  - mermaid2
   - mkdocstrings:
       handlers:
         python:
@@ -56,7 +57,11 @@ markdown_extensions:
   - pymdownx.highlight
   - admonition
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
   - tables
   - md_in_html
   - toc:
@@ -86,6 +91,22 @@ nav:
               - Grok: how_to/keys/grok.md
           - Installs:
               - Hugging Face: how_to/installs/hugging_face.md
+          - MCP Integration:
+              - Overview: how_to/mcp/index.md
+              - Getting Started: how_to/mcp/getting_started.md
+              - Using MCPTask with Agents: how_to/mcp/mcp_task_agents.md
+              - "Local Models with Agents": how_to/mcp/advanced_local_models.md
+              - Connection Types:
+                  - Local Process (stdio): how_to/mcp/connection_types/stdio.md
+                  - Server-Sent Events (SSE): how_to/mcp/connection_types/sse.md
+                  - Streamable HTTP: how_to/mcp/connection_types/streamable_http.md
+                  - WebSocket: how_to/mcp/connection_types/websocket.md
+              - Example MCP Servers:
+                  - Overview: how_to/mcp/servers/index.md
+                  - Exa: how_to/mcp/servers/exa.md
+                  - Fetch: how_to/mcp/servers/fetch.md
+                  - Filesystem: how_to/mcp/servers/filesystem.md
+                  - Time: how_to/mcp/servers/time.md
   - FAQ: faq.md
   - Nodes Reference:
     - Overview: nodes/overview.md
