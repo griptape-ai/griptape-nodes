@@ -5,6 +5,12 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.options import Options
 
+# Custom preset constant
+CUSTOM_PRESET_NAME = "Custom"
+
+# Preset tuple size constant
+PRESET_TUPLE_SIZE = 4
+
 # Aspect ratio presets dictionary
 # Format: preset_name -> (width | None, height | None, aspect_width | None, aspect_height | None)
 # - If width/height are set: pixel-based preset with specific dimensions
@@ -12,7 +18,7 @@ from griptape_nodes.traits.options import Options
 # - Custom has all None
 ASPECT_RATIO_PRESETS: dict[str, tuple[int | None, int | None, int | None, int | None] | None] = {
     # Custom option - all None
-    "Custom": None,
+    CUSTOM_PRESET_NAME: None,
     # Pixel presets from sandbox (with calculated ratios)
     "1024x1024": (1024, 1024, 1, 1),
     "896x1152": (896, 1152, 3, 4),
@@ -183,6 +189,99 @@ class CalculateAspectRatio(SuccessFailureNode):
             result_details_placeholder="Calculation result details will appear here.",
         )
 
+        # Validate presets configuration
+        self._validate_presets()
+
+    def _validate_presets(self) -> None:
+        """Validate ASPECT_RATIO_PRESETS structure during initialization."""
+        errors = []
+
+        for preset_name, preset_value in ASPECT_RATIO_PRESETS.items():
+            preset_error = self._validate_single_preset(preset_name, preset_value)
+            if preset_error:
+                errors.append(preset_error)
+
+        if errors:
+            error_lines = [f"\t* {error}" for error in errors]
+            error_message = "Invalid ASPECT_RATIO_PRESETS configuration:\n" + "\n".join(error_lines)
+            raise ValueError(error_message)
+
+    def _validate_single_preset(
+        self, preset_name: str, preset_value: tuple[int | None, int | None, int | None, int | None] | None
+    ) -> str | None:
+        """Validate a single preset entry. Returns error message or None if valid."""
+        # Custom should be None
+        if preset_name == CUSTOM_PRESET_NAME:
+            if preset_value is not None:
+                return f"Preset '{preset_name}' should have value None."
+            return None
+
+        # All other presets must be tuples
+        if preset_value is None:
+            return f"Preset '{preset_name}' cannot be None (only '{CUSTOM_PRESET_NAME}' can be None)."
+
+        return self._validate_preset_tuple(preset_name, preset_value)
+
+    def _validate_preset_tuple(
+        self, preset_name: str, preset_value: tuple[int | None, int | None, int | None, int | None]
+    ) -> str | None:
+        """Validate the structure and values of a preset tuple."""
+        if len(preset_value) != PRESET_TUPLE_SIZE:
+            return f"Preset '{preset_name}' must be a tuple with exactly {PRESET_TUPLE_SIZE} elements."
+
+        width, height, aspect_w, aspect_h = preset_value
+
+        # Check for partial specifications
+        error = self._validate_preset_completeness(preset_name, width, height, aspect_w, aspect_h)
+        if error:
+            return error
+
+        # Verify math if both pixels and ratio are specified
+        if width is not None and height is not None and aspect_w is not None and aspect_h is not None:
+            return self._validate_preset_math(preset_name, width, height, aspect_w, aspect_h)
+
+        return None
+
+    def _validate_preset_completeness(
+        self,
+        preset_name: str,
+        width: int | None,
+        height: int | None,
+        aspect_w: int | None,
+        aspect_h: int | None,
+    ) -> str | None:
+        """Validate that preset dimensions are complete (both or neither for pixels and ratio)."""
+        # Check for partial pixel dimensions
+        if (width is None) != (height is None):
+            return f"Preset '{preset_name}' has only one pixel dimension specified (need both or neither)."
+
+        # Check for partial ratio dimensions
+        if (aspect_w is None) != (aspect_h is None):
+            return f"Preset '{preset_name}' has only one aspect ratio dimension specified (need both or neither)."
+
+        # Must have at least pixels OR ratio
+        if width is None and aspect_w is None:
+            return f"Preset '{preset_name}' must specify either pixel dimensions or aspect ratio."
+
+        return None
+
+    def _validate_preset_math(
+        self, preset_name: str, width: int, height: int, aspect_w: int, aspect_h: int
+    ) -> str | None:
+        """Validate that pixel dimensions match the specified aspect ratio."""
+        calculated_ratio = self._calculate_ratio(width, height)
+        if calculated_ratio is None:
+            return f"Preset '{preset_name}' has invalid pixel dimensions that could not be reduced to a ratio."
+
+        if calculated_ratio != (aspect_w, aspect_h):
+            return (
+                f"Preset '{preset_name}' has mismatched pixels and ratio: "
+                f"{width}x{height} resolves to {calculated_ratio[0]}:{calculated_ratio[1]}, "
+                f"not {aspect_w}:{aspect_h}."
+            )
+
+        return None
+
     def process(self) -> None:
         """Main execution logic - just recalculate outputs since validation happens in set_parameter_value."""
         # Reset execution state
@@ -259,6 +358,13 @@ class CalculateAspectRatio(SuccessFailureNode):
             # Always recalculate final outputs (even if handlers throw)
             try:
                 self._calculate_outputs()
+                # Success - set status
+                final_width = self.parameter_output_values[self._final_width_parameter.name]
+                final_height = self.parameter_output_values[self._final_height_parameter.name]
+                self._set_status_results(was_successful=True, result_details=f"{final_width}x{final_height}")
+            except ValueError as e:
+                # Validation error - set failure status
+                self._set_status_results(was_successful=False, result_details=str(e))
             finally:
                 # Always release lock
                 self._updating_lock = False
@@ -275,47 +381,62 @@ class CalculateAspectRatio(SuccessFailureNode):
         upscale_value = self.get_parameter_value(self._upscale_value_parameter.name)
         swap_dimensions = self.get_parameter_value(self._swap_dimensions_parameter.name)
 
-        # Validate inputs before calculation - early out for failures
-        if width is None or height is None:
-            self.parameter_output_values[self._final_width_parameter.name] = None
-            self.parameter_output_values[self._final_height_parameter.name] = None
-            return
+        # Collect all validation errors
+        errors = []
 
-        if width <= 0 or height <= 0:
-            self.parameter_output_values[self._final_width_parameter.name] = None
-            self.parameter_output_values[self._final_height_parameter.name] = None
-            return
+        if width is None:
+            errors.append(f"Parameter '{self._width_parameter.name}' was missing or could not be calculated.")
+        elif width <= 0:
+            errors.append(f"Parameter '{self._width_parameter.name}' must be positive (got {width}).")
 
-        if upscale_value is None or upscale_value <= 0:
-            self.parameter_output_values[self._final_width_parameter.name] = None
-            self.parameter_output_values[self._final_height_parameter.name] = None
-            return
+        if height is None:
+            errors.append(f"Parameter '{self._height_parameter.name}' was missing or could not be calculated.")
+        elif height <= 0:
+            errors.append(f"Parameter '{self._height_parameter.name}' must be positive (got {height}).")
 
-        # Start with working dimensions
+        if upscale_value is None:
+            errors.append(f"Parameter '{self._upscale_value_parameter.name}' was missing or could not be calculated.")
+        elif upscale_value < 0:
+            errors.append(
+                f"Parameter '{self._upscale_value_parameter.name}' must be non-negative (got {upscale_value})."
+            )
+
+        # If there are any errors, clear outputs and throw
+        if errors:
+            self._clear_output_values()
+            error_lines = [f"\t* {error}" for error in errors]
+            error_message = "Failed due to the following reason(s):\n" + "\n".join(error_lines)
+            raise ValueError(error_message)
+
+        # All inputs valid - calculate outputs
         final_width = width
         final_height = height
 
-        # Apply swap if enabled
         if swap_dimensions:
             final_width, final_height = final_height, final_width
 
-        # Apply upscale
         final_width = int(final_width * upscale_value)
         final_height = int(final_height * upscale_value)
 
-        # Success path - set outputs
+        # Success path
         self.parameter_output_values[self._final_width_parameter.name] = final_width
         self.parameter_output_values[self._final_height_parameter.name] = final_height
 
     def _handle_preset_change(self, preset_name: str) -> None:
         """Handle preset parameter changes - update ALL working parameters."""
-        # Early out for Custom or invalid preset
-        if preset_name == "Custom" or preset_name not in ASPECT_RATIO_PRESETS:
+        # Custom preset means user is manually setting values - nothing to do
+        if preset_name == CUSTOM_PRESET_NAME:
             return
+
+        # Validate preset exists - user could provide any string via input connection
+        if preset_name not in ASPECT_RATIO_PRESETS:
+            error_msg = f"Unknown preset '{preset_name}'."
+            raise ValueError(error_msg)
 
         preset = ASPECT_RATIO_PRESETS[preset_name]
         if preset is None:
-            return
+            error_msg = f"Preset '{preset_name}' cannot be applied (only '{CUSTOM_PRESET_NAME}' can be None)."
+            raise ValueError(error_msg)
 
         preset_width, preset_height, preset_aspect_width, preset_aspect_height = preset
 
