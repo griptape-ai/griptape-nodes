@@ -937,11 +937,15 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # Set the parameter value (including None/empty values) unless we're in initial setup
-        # Skip propagation for Control Parameters as they should not receive values
-        if (
-            request.initial_setup is False
-            and ParameterType.attempt_get_builtin(source_param.output_type) != ParameterTypeBuiltin.CONTROL_TYPE
-        ):
+        # Skip propagation for:
+        # 1. Control Parameters as they should not receive values
+        # 2. Locked nodes
+        # 3. Initial Setup (this is used during deserialization; the downstream node may not be created yet)
+        is_control_parameter = (
+            ParameterType.attempt_get_builtin(source_param.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+        )
+        is_dest_node_locked = target_node.lock
+        if (not is_control_parameter) and (not is_dest_node_locked) and (not request.initial_setup):
             # When creating a connection, pass the initial value from source to target parameter
             # Set incoming_connection_source fields to identify this as legitimate connection value passing
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
