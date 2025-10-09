@@ -21,13 +21,16 @@ The **[Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/bl
 ## Installation
 
 ### Prerequisites
+
 - Node.js installed on your system
 - Access to the directories you want to manage
 
 ### Setup Instructions
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
+
 1. **Click + New MCP Server**
+
 1. **Configure the server**:
 
     - **Server Name/ID**: `filesystem`
@@ -48,6 +51,7 @@ The **[Filesystem MCP Server](https://github.com/modelcontextprotocol/servers/bl
 1. **Click Create Server**
 
 ### Multiple Directory Access
+
 To allow access to multiple directories, add them as separate arguments:
 
 ```json

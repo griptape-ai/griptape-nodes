@@ -11,7 +11,7 @@ According to the [official MCP specification](https://modelcontextprotocol.io/sp
 The MCP specification now defines only **two standard transport mechanisms**:
 
 1. **[stdio](./stdio.md)** - Communication over standard in and standard out
-2. **[Streamable HTTP](./streamable_http.md)** - HTTP-based communication with optional SSE support
+1. **[Streamable HTTP](./streamable_http.md)** - HTTP-based communication with optional SSE support
 
 ## What This Means
 

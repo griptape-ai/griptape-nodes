@@ -20,23 +20,24 @@ Here are a couple of examples. There are of course many more MCP Servers you can
 
 ### Required Fields
 
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `command` | string | Command to start the MCP server | `"npx"`, `"python"`, `"uvx"` |
-| `args` | array | Arguments passed to the command | `["-y", "@modelcontextprotocol/server-memory"]` |
+| Field     | Type   | Description                     | Example                                         |
+| --------- | ------ | ------------------------------- | ----------------------------------------------- |
+| `command` | string | Command to start the MCP server | `"npx"`, `"python"`, `"uvx"`                    |
+| `args`    | array  | Arguments passed to the command | `["-y", "@modelcontextprotocol/server-memory"]` |
 
 ### Optional Fields
 
-| Field | Type | Description | Default |
-|-------|------|-------------|---------|
-| `env` | object | Environment variables | `{}` |
-| `cwd` | string | Working directory | Current directory |
-| `encoding` | string | Text encoding | `"utf-8"` |
-| `encoding_error_handler` | string | Error handling strategy | `"strict"` |
+| Field                    | Type   | Description             | Default           |
+| ------------------------ | ------ | ----------------------- | ----------------- |
+| `env`                    | object | Environment variables   | `{}`              |
+| `cwd`                    | string | Working directory       | Current directory |
+| `encoding`               | string | Text encoding           | `"utf-8"`         |
+| `encoding_error_handler` | string | Error handling strategy | `"strict"`        |
 
 ## Example Configurations
 
 ### Memory Server (Node.js)
+
 ```json
 {
   "name": "memory",
@@ -48,6 +49,7 @@ Here are a couple of examples. There are of course many more MCP Servers you can
 ```
 
 ### Filesystem Server
+
 ```json
 {
   "name": "filesystem",
@@ -64,6 +66,7 @@ Here are a couple of examples. There are of course many more MCP Servers you can
 ## Setup Steps
 
 ### 1. Install MCP Server
+
 ```bash
 # For Node.js servers
 npm install -g @modelcontextprotocol/server-memory
@@ -75,17 +78,19 @@ uvx mcp-server-git
 ```
 
 ### 2. Configure in Griptape Nodes
+
 1. Open Griptape Nodes settings
-2. Navigate to MCP Server configuration
-3. Add new server with stdio transport
-4. Fill in command and arguments
-5. Save the connection
+1. Navigate to MCP Server configuration
+1. Add new server with stdio transport
+1. Fill in command and arguments
+1. Save the connection
 
 ### 3. Use in Workflow
+
 1. Add MCPTask node to your flow
-2. Select your configured stdio server
-3. Enter your prompt
-4. Execute the workflow
+1. Select your configured stdio server
+1. Enter your prompt
+1. Execute the workflow
 
 ## Advantages
 
@@ -104,18 +109,21 @@ uvx mcp-server-git
 ## Troubleshooting
 
 ### Server Won't Start
+
 - Verify the command exists in PATH
 - Check file permissions
 - Ensure all dependencies are installed
 - Test the command manually in terminal
 
 ### Connection Timeout
+
 - Check if server is responding to stdio
 - Verify encoding settings
 - Look for server error messages
 - Check working directory permissions
 
 ### Permission Errors
+
 - Ensure proper file system permissions
 - Check if user has access to required directories
 - Verify environment variable access
@@ -123,10 +131,10 @@ uvx mcp-server-git
 ## Best Practices
 
 1. **Use Absolute Paths**: For commands and working directories
-2. **Set Environment Variables**: For configuration and secrets
-3. **Handle Errors Gracefully**: Implement proper error handling
-4. **Monitor Resources**: Watch for memory leaks or high CPU usage
-5. **Test Commands**: Verify server commands work before configuration
+1. **Set Environment Variables**: For configuration and secrets
+1. **Handle Errors Gracefully**: Implement proper error handling
+1. **Monitor Resources**: Watch for memory leaks or high CPU usage
+1. **Test Commands**: Verify server commands work before configuration
 
 ## Next Steps
 

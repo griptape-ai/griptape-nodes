@@ -34,7 +34,7 @@ There are two official ways your Agent can connect to other applications:
 
     **Best for**: Software you have installed on your computer
 
-2. **[Web Services](./connection_types/streamable_http.md)** - Connect to web-based applications and services
+1. **[Web Services](./connection_types/streamable_http.md)** - Connect to web-based applications and services
 
     **Examples**: [Exa](./servers/exa.md) (web search), live data feeds, real-time updates
 
@@ -48,9 +48,9 @@ There are two official ways your Agent can connect to other applications:
 ## Ready to Get Started?
 
 1. **[Getting Started Tutorial](./getting_started.md)** - Step-by-step tutorial using the Fetch MCP server
-2. **[Using MCPTask with Agents](./mcp_task_agents.md)** - How to make your AI agents use these tools
-3. **[Local Models with Agents](./advanced_local_models.md)** - Use local AI models for sensitive data processing
-4. **[Example MCP Servers](./servers/index.md)** - Setup guides for some example servers
+1. **[Using MCPTask with Agents](./mcp_task_agents.md)** - How to make your AI agents use these tools
+1. **[Local Models with Agents](./advanced_local_models.md)** - Use local AI models for sensitive data processing
+1. **[Example MCP Servers](./servers/index.md)** - Setup guides for some example servers
 
 ## Need More Information?
 

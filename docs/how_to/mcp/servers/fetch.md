@@ -20,17 +20,21 @@ The **Fetch MCP Server** provides web content fetching capabilities, allowing AI
 ## Installation
 
 ### Prerequisites
+
 - Node.js installed on your system
 - Internet connection for fetching web content
 
 ### Setup Instructions
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
-2. **Click + New MCP Server**
-3. **Configure the server**:
-   - **Server Name/ID**: `fetch`
-   - **Connection Type**: `Local Process (stdio)`
-   - **Configuration JSON**:
+
+1. **Click + New MCP Server**
+
+1. **Configure the server**:
+
+    - **Server Name/ID**: `fetch`
+    - **Connection Type**: `Local Process (stdio)`
+    - **Configuration JSON**:
 
     ```json
     {
@@ -43,7 +47,7 @@ The **Fetch MCP Server** provides web content fetching capabilities, allowing AI
     }
     ```
 
-4. **Click Create Server**
+1. **Click Create Server**
 
 ## Usage Examples
 
@@ -87,33 +91,36 @@ You can customize the fetch server behavior with environment variables:
 
 ### Available Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FETCH_TIMEOUT` | Request timeout in milliseconds | `30000` |
-| `FETCH_USER_AGENT` | User agent string for requests | `mcp-server-fetch` |
-| `FETCH_MAX_SIZE` | Maximum response size in bytes | `10485760` (10MB) |
-
+| Variable           | Description                     | Default            |
+| ------------------ | ------------------------------- | ------------------ |
+| `FETCH_TIMEOUT`    | Request timeout in milliseconds | `30000`            |
+| `FETCH_USER_AGENT` | User agent string for requests  | `mcp-server-fetch` |
+| `FETCH_MAX_SIZE`   | Maximum response size in bytes  | `10485760` (10MB)  |
 
 ## Troubleshooting
 
 ### Common Issues
 
 #### Server Not Responding
+
 - Check your internet connection
 - Verify the URL is accessible in a browser
 - Try a different URL to test the server
 
 #### Content Not Loading
+
 - Some websites block automated requests
 - Try adding a custom user agent
 - Check if the site requires authentication
 
 #### Timeout Errors
+
 - Increase the `FETCH_TIMEOUT` value
 - Try smaller, simpler pages first
 - Check your network connection speed
 
 #### Invalid URLs
+
 - Ensure URLs include the protocol (http:// or https://)
 - Check for typos in the URL
 - Verify the website is accessible

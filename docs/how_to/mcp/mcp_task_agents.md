@@ -47,57 +47,59 @@ Let's build a workflow that demonstrates how agents temporarily gain MCP capabil
 ### Step 1: Create Your First Agent
 
 1. **Drag an Agent node** to your workflow editor
-2. **Configure the agent**:
-   - Set **prompt model** to `gpt-4o-mini` (or your preferred model)
-   - Set **prompt** to: `"Look up information about https://griptapenodes.com"`
-   - Leave **additional_context** empty for now
 
-3. **Run the agent** - Notice it will respond that it cannot access the internet:
+1. **Configure the agent**:
 
+    - Set **prompt model** to `gpt-4o-mini` (or your preferred model)
+    - Set **prompt** to: `"Look up information about https://griptapenodes.com"`
+    - Leave **additional_context** empty for now
 
-    > I'm unable to browse the internet or access real-time data. However, I can help you understand what kind of information you might find on a website  like griptapenodes.com...
+1. **Run the agent** - Notice it will respond that it cannot access the internet:
 
+    > I'm unable to browse the internet or access real-time data. However, I can help you understand what kind of information you might find on a website like griptapenodes.com...
 
 This demonstrates the agent's limitations without MCP access.
 
 ### Step 2: Add MCPTask Node
 
 1. **Drag an MCPTask node** to your workflow
-2. **Connect the Agent output** to the MCPTask node's **agent** input
-3. **Configure the MCPTask**:
-   - Set **mcp_server_name** to `fetch`
-   - Set **prompt** to: `"Can you look up the information now?"`
 
-4. **Run the MCPTask** - The agent now has access to the Fetch server and can retrieve information:
+1. **Connect the Agent output** to the MCPTask node's **agent** input
 
+1. **Configure the MCPTask**:
+
+    - Set **mcp_server_name** to `fetch`
+    - Set **prompt** to: `"Can you look up the information now?"`
+
+1. **Run the MCPTask** - The agent now has access to the Fetch server and can retrieve information:
 
     > [Using tool mcpFetch] Griptape Nodes is a platform designed to help creative professionals work with AI in a predictable, controllable way that fits their thinking process. It offers an intuitive drag-and-drop interface for creating advanced creative pipelines using graphs, nodes, and flowcharts...
-
 
 ### Step 3: Connect to Another Agent
 
 1. **Drag another Agent node** to your workflow
-2. **Connect the MCPTask's agent output** to the new Agent's **agent** input
-3. **Configure the second agent**:
-   - Set **prompt** to: `"Do you still have access?"`
 
-4. **Run the second agent** - Notice it responds:
+1. **Connect the MCPTask's agent output** to the new Agent's **agent** input
 
+1. **Configure the second agent**:
+
+    - Set **prompt** to: `"Do you still have access?"`
+
+1. **Run the second agent** - Notice it responds:
 
     > I don't have the ability to access or retrieve real-time information from the internet... The information I provided earlier is based on my training data...
-
 
 **Key observation**: The agent no longer has MCP access, but it remembers the information it learned during the MCPTask!
 
 ### Step 4: Test Memory Retention
 
 1. **Add another Agent node** connected to the previous one
-2. **Configure it** with: `"What did you learn about Griptape Nodes?"`
-3. **Run it** - The agent will recall the information it learned:
 
+1. **Configure it** with: `"What did you learn about Griptape Nodes?"`
+
+1. **Run it** - The agent will recall the information it learned:
 
     > Based on the information I learned earlier, Griptape Nodes is a platform designed to help creative professionals work with AI in a predictable, controllable way...
-
 
 This demonstrates that the agent retains knowledge even after losing MCP access.
 
@@ -108,6 +110,7 @@ This demonstrates that the agent retains knowledge even after losing MCP access.
 You can enhance your agents with additional capabilities:
 
 #### Rulesets
+
 Add rulesets to control how your agent behaves:
 
 - **Research Agent**: "Always cite sources when providing information"
@@ -115,6 +118,7 @@ Add rulesets to control how your agent behaves:
 - **Analytical Agent**: "Provide detailed analysis with pros and cons"
 
 #### Tools
+
 Add additional tools to complement MCP capabilities:
 
 - **Calculator tools** for mathematical operations

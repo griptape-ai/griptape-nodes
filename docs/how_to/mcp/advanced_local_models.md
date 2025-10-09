@@ -5,12 +5,14 @@ This advanced tutorial demonstrates how to use **local AI models** with MCP serv
 ## Why Use Local Models with MCP?
 
 ### Security Benefits
+
 - ✅ **No data leaves your machine** - Everything stays local
 - ✅ **No API costs** - Run models on your own hardware
 - ✅ **Complete privacy** - Perfect for sensitive documents
 - ✅ **Offline capability** - Works without internet connection
 
 ### Perfect Use Cases
+
 - **Internal documents** - Company files, contracts, sensitive reports
 - **Personal data** - Private notes, passwords, personal information
 - **Proprietary code** - Source code you don't want to share
@@ -39,21 +41,21 @@ We'll create a workflow that:
 1. **Download Ollama** for your operating system
 1. **Install Ollama** following the installation instructions
 1. **Verify installation** by opening a terminal and running:
-   ```bash
-   ollama --version
-   ```
+    ```bash
+    ollama --version
+    ```
 
 ### Download the Qwen3 Model
 
 1. **Open a terminal** and run:
-   ```bash
-   ollama pull qwen3:1.7b
-   ```
+    ```bash
+    ollama pull qwen3:1.7b
+    ```
 1. **Wait for download** - This may take a few minutes depending on your internet speed
 1. **Verify the model** is available:
-   ```bash
-   ollama list
-   ```
+    ```bash
+    ollama list
+    ```
 
 > **Why Qwen3:1.7b?** This model is small enough to run on most computers while still supporting tool use, which is required for MCP integration.
 
@@ -68,9 +70,9 @@ For detailed information about the filesystem server's capabilities and configur
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
 1. **Click + New MCP Server**
 1. **Configure the server**:
-   - **Server Name/ID**: `filesystem`
-   - **Connection Type**: `Local Process (stdio)`
-   - **Configuration JSON**:
+    - **Server Name/ID**: `filesystem`
+    - **Connection Type**: `Local Process (stdio)`
+    - **Configuration JSON**:
 
 ```json
 {
@@ -97,9 +99,9 @@ For detailed information about the filesystem server's capabilities and configur
 
 1. **Create a test file** on your desktop called `secret.txt`
 1. **Add some content** to the file:
-   ```
-   The password is: CAPYBARA
-   ```
+    ```
+    The password is: CAPYBARA
+    ```
 1. **Save the file**
 
 ## Step 3: Build the Local AI Workflow
@@ -108,27 +110,27 @@ For detailed information about the filesystem server's capabilities and configur
 
 1. **Drag an Ollama Prompt node** to your workflow
 1. **Configure the model**:
-   - **Model**: `qwen3:1.7b`
-   - **Temperature**: `0.1` (for consistent results)
-   - **Max Tokens**: `-1` (unlimited)
-   - **Stream**: `True`
-   - **Use Native Tools**: `True` (required for MCP)
+    - **Model**: `qwen3:1.7b`
+    - **Temperature**: `0.1` (for consistent results)
+    - **Max Tokens**: `-1` (unlimited)
+    - **Stream**: `True`
+    - **Use Native Tools**: `True` (required for MCP)
 
 ### Create the Agent
 
 1. **Drag an Agent node** to your workflow
 1. **Connect the Ollama Prompt's `prompt_model_config` output** to the Agent's `prompt_model_config` input
 1. **Configure the agent**:
-   - **Prompt**: Leave empty for now
-   - **Additional Context**: Leave empty for now
+    - **Prompt**: Leave empty for now
+    - **Additional Context**: Leave empty for now
 
 ### Create the MCP Task
 
 1. **Drag an MCPTask node** to your workflow
 1. **Connect the Agent's `agent` output** to the MCPTask's `agent` input
 1. **Configure the MCPTask**:
-   - **MCP Server Name**: `filesystem`
-   - **Prompt**: `"what's the password in secret.txt? it's in the desktop folder"`
+    - **MCP Server Name**: `filesystem`
+    - **Prompt**: `"what's the password in secret.txt? it's in the desktop folder"`
 
 ## Step 4: Run the Secure Workflow
 
@@ -171,9 +173,9 @@ graph LR
 ### Security Benefits Demonstrated
 
 1. **No External API Calls** - The AI model runs on your machine
-2. **No Data Transmission** - Files are read locally, processed locally
-3. **No Cloud Storage** - Nothing is sent to external servers
-4. **Complete Control** - You control exactly what the AI can access
+1. **No Data Transmission** - Files are read locally, processed locally
+1. **No Cloud Storage** - Nothing is sent to external servers
+1. **Complete Control** - You control exactly what the AI can access
 
 ## Advanced Configuration Options
 
@@ -181,11 +183,11 @@ graph LR
 
 Choose models based on your needs:
 
-| Model | Size | Speed | Capabilities | Best For |
-|-------|------|-------|--------------|----------|
-| `qwen3:1.7b` | Small | Fast | Basic tool use | Simple tasks |
-| `qwen3:4b` | Medium | Medium | Better reasoning | Complex analysis |
-| `llama4` | Large | Slower | Advanced reasoning | Complex workflows |
+| Model        | Size   | Speed  | Capabilities       | Best For          |
+| ------------ | ------ | ------ | ------------------ | ----------------- |
+| `qwen3:1.7b` | Small  | Fast   | Basic tool use     | Simple tasks      |
+| `qwen3:4b`   | Medium | Medium | Better reasoning   | Complex analysis  |
+| `llama4`     | Large  | Slower | Advanced reasoning | Complex workflows |
 
 ### Filesystem Security
 
@@ -213,6 +215,7 @@ Configure the filesystem server to only access specific directories:
 ### Common Issues
 
 #### Model Not Found
+
 ```bash
 # Check available models
 ollama list

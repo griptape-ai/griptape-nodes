@@ -17,6 +17,7 @@ The **streamable_http** connection type enables Griptape Nodes to communicate wi
 ## Example Streamable HTTP MCP Server Configuration
 
 ### Chat Application Server
+
 ```json
 {
   "name": "chat_app",
@@ -45,22 +46,23 @@ The **streamable_http** connection type enables Griptape Nodes to communicate wi
 
 ### Required Fields
 
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
+| Field | Type   | Description                      | Example                         |
+| ----- | ------ | -------------------------------- | ------------------------------- |
 | `url` | string | HTTP endpoint for the MCP server | `"https://api.example.com/mcp"` |
 
 ### Optional Fields
 
-| Field | Type | Description | Default |
-|-------|------|-------------|---------|
-| `headers` | object | HTTP headers for authentication | `{}` |
-| `timeout` | number | Request timeout in seconds | `30` |
-| `sse_read_timeout` | number | SSE read timeout in seconds | `60` |
-| `terminate_on_close` | boolean | Terminate session on close | `true` |
+| Field                | Type    | Description                     | Default |
+| -------------------- | ------- | ------------------------------- | ------- |
+| `headers`            | object  | HTTP headers for authentication | `{}`    |
+| `timeout`            | number  | Request timeout in seconds      | `30`    |
+| `sse_read_timeout`   | number  | SSE read timeout in seconds     | `60`    |
+| `terminate_on_close` | boolean | Terminate session on close      | `true`  |
 
 ## Example Configurations
 
 ### Basic Streamable HTTP
+
 ```json
 {
   "name": "streamable_api",
@@ -71,6 +73,7 @@ The **streamable_http** connection type enables Griptape Nodes to communicate wi
 ```
 
 ### Authenticated Streamable HTTP
+
 ```json
 {
   "name": "auth_streamable",
@@ -88,6 +91,7 @@ The **streamable_http** connection type enables Griptape Nodes to communicate wi
 ```
 
 ### Custom Configuration
+
 ```json
 {
   "name": "custom_streamable",
@@ -107,6 +111,7 @@ The **streamable_http** connection type enables Griptape Nodes to communicate wi
 ## Setup Steps
 
 ### 1. Deploy MCP Server
+
 Ensure your MCP server supports streamable HTTP:
 
 ```python
@@ -124,18 +129,20 @@ async def mcp_stream(request: Request):
 ```
 
 ### 2. Configure in Griptape Nodes
+
 1. Open Griptape Nodes settings
-2. Navigate to MCP Server configuration
-3. Add new server with streamable_http transport
-4. Enter the server URL
-5. Configure authentication and timeouts
-6. Test the connection
+1. Navigate to MCP Server configuration
+1. Add new server with streamable_http transport
+1. Enter the server URL
+1. Configure authentication and timeouts
+1. Test the connection
 
 ### 3. Use in Workflow
+
 1. Add MCPTask node to your flow
-2. Select your configured streamable HTTP server
-3. Enter your prompt
-4. Execute the workflow
+1. Select your configured streamable HTTP server
+1. Enter your prompt
+1. Execute the workflow
 
 ## Advantages
 
@@ -156,18 +163,19 @@ async def mcp_stream(request: Request):
 
 ## Streamable HTTP vs SSE
 
-| Feature | Streamable HTTP | SSE |
-|---------|-----------------|-----|
-| **Direction** | Bidirectional (client ↔ server) | Unidirectional (server → client) |
-| **Protocol** | Custom HTTP streaming | Standardized (`text/event-stream`) |
-| **Use Case** | Interactive apps, real-time chat | Notifications, live feeds, monitoring |
-| **Implementation** | Custom client/server logic | Built-in browser support |
-| **Reconnection** | Manual implementation | Automatic reconnection |
-| **Example** | Chat application, collaborative editing | Stock ticker, news feed |
+| Feature            | Streamable HTTP                         | SSE                                   |
+| ------------------ | --------------------------------------- | ------------------------------------- |
+| **Direction**      | Bidirectional (client ↔ server)         | Unidirectional (server → client)      |
+| **Protocol**       | Custom HTTP streaming                   | Standardized (`text/event-stream`)    |
+| **Use Case**       | Interactive apps, real-time chat        | Notifications, live feeds, monitoring |
+| **Implementation** | Custom client/server logic              | Built-in browser support              |
+| **Reconnection**   | Manual implementation                   | Automatic reconnection                |
+| **Example**        | Chat application, collaborative editing | Stock ticker, news feed               |
 
 ## Authentication
 
 ### Bearer Token
+
 ```json
 {
   "headers": {
@@ -177,6 +185,7 @@ async def mcp_stream(request: Request):
 ```
 
 ### API Key
+
 ```json
 {
   "headers": {
@@ -187,6 +196,7 @@ async def mcp_stream(request: Request):
 ```
 
 ### Custom Authentication
+
 ```json
 {
   "headers": {
@@ -200,21 +210,25 @@ async def mcp_stream(request: Request):
 ## Session Management
 
 ### Terminate on Close
+
 ```json
 {
   "terminate_on_close": true
 }
 ```
+
 - Automatically terminates the session when connection closes
 - Useful for stateless operations
 - Default behavior
 
 ### Persistent Sessions
+
 ```json
 {
   "terminate_on_close": false
 }
 ```
+
 - Maintains session state across connections
 - Useful for stateful operations
 - Requires server-side session management
@@ -222,24 +236,28 @@ async def mcp_stream(request: Request):
 ## Troubleshooting
 
 ### Connection Issues
+
 - Verify server URL is accessible
 - Check network connectivity
 - Test with curl or Postman
 - Monitor server logs
 
 ### Timeout Problems
+
 - Increase timeout values
 - Check server response times
 - Monitor network latency
 - Optimize server performance
 
 ### Authentication Failures
+
 - Verify credentials are correct
 - Check token expiration
 - Ensure proper header format
 - Test authentication separately
 
 ### Streaming Issues
+
 - Verify server supports streaming
 - Check for proper content types
 - Monitor connection stability
@@ -248,14 +266,15 @@ async def mcp_stream(request: Request):
 ## Best Practices
 
 1. **Use HTTPS**: Always use secure connections
-2. **Handle Reconnection**: Implement automatic reconnection
-3. **Monitor Sessions**: Track session state and cleanup
-4. **Optimize Timeouts**: Set appropriate timeout values
-5. **Secure Credentials**: Store sensitive data securely
+1. **Handle Reconnection**: Implement automatic reconnection
+1. **Monitor Sessions**: Track session state and cleanup
+1. **Optimize Timeouts**: Set appropriate timeout values
+1. **Secure Credentials**: Store sensitive data securely
 
 ## Example Use Cases
 
 ### Interactive Chat
+
 ```json
 {
   "name": "chat_interactive",
@@ -269,6 +288,7 @@ async def mcp_stream(request: Request):
 ```
 
 ### Real-Time Collaboration
+
 ```json
 {
   "name": "collaboration",
@@ -282,6 +302,7 @@ async def mcp_stream(request: Request):
 ```
 
 ### Live Data Processing
+
 ```json
 {
   "name": "data_processor",
@@ -295,11 +316,13 @@ async def mcp_stream(request: Request):
 ## Performance Considerations
 
 ### Timeout Configuration
+
 - **Short Timeouts**: For quick operations (30-60 seconds)
 - **Medium Timeouts**: For standard operations (60-120 seconds)
 - **Long Timeouts**: For complex operations (120+ seconds)
 
 ### Connection Pooling
+
 - Reuse connections when possible
 - Monitor connection limits
 - Implement proper cleanup

@@ -24,7 +24,9 @@ The **Exa MCP Server** provides powerful web search and research capabilities th
 The easiest way to use Exa is through their hosted MCP server:
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
+
 1. **Click + New MCP Server**
+
 1. **Configure the server**:
 
     - **Server Name/ID**: `exa`
@@ -43,16 +45,19 @@ The easiest way to use Exa is through their hosted MCP server:
 ## Available Tools
 
 ### 🔥 Featured: Code Search
+
 - **`get_code_context_exa`** - Search billions of GitHub repos, docs, and Stack Overflow for relevant code examples
 - **Perfect for developers** - Find up-to-date implementation examples and API usage patterns
 
 ### 🌐 Web Search & Research
+
 - **`web_search_exa`** - Real-time web searches with optimized results
 - **`crawling`** - Extract content from specific URLs
 - **`company_research`** - Comprehensive company information gathering
 - **`linkedin_search`** - Search LinkedIn for companies and people
 
 ### 🧠 Advanced Research
+
 - **`deep_researcher_start`** - Start AI-powered research on complex topics
 - **`deep_researcher_check`** - Get comprehensive research reports
 
@@ -99,21 +104,25 @@ You can enable specific tools by adding them to your configuration:
 ### Available Tool Combinations
 
 #### For Developers
+
 ```json
 "enabled_tools": ["get_code_context_exa", "web_search_exa"]
 ```
 
 #### For Researchers
+
 ```json
 "enabled_tools": ["web_search_exa", "deep_researcher_start", "deep_researcher_check"]
 ```
 
 #### For Business Intelligence
+
 ```json
 "enabled_tools": ["company_research", "linkedin_search", "web_search_exa"]
 ```
 
 #### All Tools
+
 ```json
 "enabled_tools": ["get_code_context_exa", "web_search_exa", "company_research", "crawling", "linkedin_search", "deep_researcher_start", "deep_researcher_check"]
 ```
@@ -123,11 +132,13 @@ You can enable specific tools by adding them to your configuration:
 ### Common Issues
 
 #### Connection Issues
+
 - Test the remote server URL: `https://mcp.exa.ai/mcp`
 - Check your internet connection
 - Verify firewall settings allow HTTPS connections
 
 #### Tool Not Available
+
 - Ensure the tool is enabled in your configuration
 - Check the tool name spelling
 - Verify the tool is available in the current Exa service
@@ -135,8 +146,8 @@ You can enable specific tools by adding them to your configuration:
 ### Debug Tips
 
 1. **Test with simple queries** first
-2. **Check the Exa dashboard** for usage and errors
-3. **Use the remote server** for easier troubleshooting
-4. **Start with basic tools** before using advanced features
+1. **Check the Exa dashboard** for usage and errors
+1. **Use the remote server** for easier troubleshooting
+1. **Start with basic tools** before using advanced features
 
 The Exa MCP server is perfect for developers and researchers who need powerful search capabilities with minimal setup!

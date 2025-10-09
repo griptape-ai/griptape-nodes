@@ -33,24 +33,27 @@ The MCPTask node acts as a bridge between your Griptape Nodes workflow and exter
 ### Step 1: Open MCP Server Settings
 
 1. Open Griptape Nodes
-2. Go to **Settings** → **MCP Servers**
-    
+
+1. Go to **Settings** → **MCP Servers**
+
     ![MCP Server menu](images/mcp_server.png)
 
-3. If this is your first time opening the MCP Server Settings, you won't have any MCP servers configured yet.
-    
+1. If this is your first time opening the MCP Server Settings, you won't have any MCP servers configured yet.
+
     ![Blank MCP Server Settings](images/mcp_server_blank.png)
 
 ### Step 2: Creating an MCP Server
 
-To create a new MCP Server you'll need to configure the appropriate MCP Server settings. 
-    
+To create a new MCP Server you'll need to configure the appropriate MCP Server settings.
+
 1. Click **+ New MCP Server**
 
     ![New MCP Server](images/blank_mcp_server.png)
 
 1. Set the **Server Name/ID** to `fetch`
+
 1. Set the **Connection Type** to `Local Process (stdio)` if it's not already set.
+
 1. Look at the **Configuration (JSON)**. It will look something like:
 
     ```json
@@ -84,7 +87,7 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
         }
     }
     ```
-    
+
     The parts we are interested in are the `command` and the `args`. This is what we'll use in our server.
 
 1. Modify the **Configuration (JSON)** to look like:
@@ -99,9 +102,9 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
         "encoding_error_handler": "strict"
     }
     ```
-    
+
     Notice we just modified the **command** and **args** settings to match what was in the docs.
-    
+
 1. Click **Create Server**
 
     ![Fetch Server Created](images/fetch_server_created.png)
@@ -111,7 +114,7 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
 Once created, you can see your server in the list. You can:
 
 - **Enable/Disable** servers using the toggle button
-- **Edit** a server by clicking the Edit button  
+- **Edit** a server by clicking the Edit button
 - **Delete** servers using the delete button
 
 Close the settings when you're done.
@@ -119,7 +122,7 @@ Close the settings when you're done.
 ### Step 4: Create an MCP Task
 
 1. In your workflow editor, drag an **MCP Task** node from the **Agent** section
-    
+
     ![MCP Server Task dragged to workflow editor](images/mcp_task.gif)
 
 1. In the MCP Task node, select `fetch` from the **mcp_server_name** dropdown
@@ -151,6 +154,7 @@ The node will execute and return results like:
 Now that you have a working MCP server, you can:
 
 ### Chain Multiple Tasks
+
 - Connect another **MCP Task** node to your first one
 - The second task can ask for more information and will use the MCP server if needed
 - You can use different MCP servers in each task if required

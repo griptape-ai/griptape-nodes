@@ -23,12 +23,15 @@ The [**Time MCP Server**](https://github.com/modelcontextprotocol/servers/tree/m
 ## Installation
 
 ### Prerequisites
+
 - Node.js installed on your system
 
 ### Setup Instructions
 
 1. **Open Griptape Nodes** and go to **Settings** → **MCP Servers**
+
 1. **Click + New MCP Server**
+
 1. **Configure the server**:
 
     - **Server Name/ID**: `time`

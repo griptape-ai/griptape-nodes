@@ -13,6 +13,7 @@ WebSocket is a communication protocol that provides full-duplex communication ch
 WebSocket support for MCP servers is still emerging. While the connection type can be implemented as a custom transport, there are currently no widely available WebSocket-based MCP servers to demonstrate with.
 
 **For now, consider:**
+
 - **[Streamable HTTP](./streamable_http.md)** for HTTP-based communication with real examples
 - **[Local Process (stdio)](./stdio.md)** for local server connections with many examples
 

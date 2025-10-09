@@ -17,6 +17,7 @@ The [official MCP servers repository](https://github.com/modelcontextprotocol/se
 ## Available Server Documentation
 
 ### Local Applications (stdio)
+
 These servers run locally on your machine and provide direct access to your software and files:
 
 - **[Fetch](./fetch.md)** - Web content fetching and processing
@@ -24,6 +25,7 @@ These servers run locally on your machine and provide direct access to your soft
 - **[Time](./time.md)** - Date and time operations
 
 ### Web Services (streamable_http)
+
 These servers connect to web-based applications and services:
 
 - **[Exa](./exa.md)** - Advanced web search and research capabilities
