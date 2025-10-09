@@ -1,7 +1,7 @@
 from math import gcd
 from typing import Any, NamedTuple
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.traits.options import Options
 
@@ -101,7 +101,7 @@ ASPECT_RATIO_PRESETS: dict[str, tuple[int | None, int | None, int | None, int | 
 }
 
 
-class CalculateAspectRatio(SuccessFailureNode):
+class AspectRatio(SuccessFailureNode):
     """Node for calculating and managing aspect ratios with presets and modifiers."""
 
     def __init__(self, **kwargs) -> None:
@@ -110,93 +110,93 @@ class CalculateAspectRatio(SuccessFailureNode):
         # Lock to prevent recursion during parameter updates
         self._updating_lock = False
 
-        # Add preset parameter
-        self._preset_parameter = Parameter(
-            name="preset",
-            type="str",
-            tooltip="Select a preset aspect ratio or 'Custom' for manual configuration",
-            default_value="Custom",
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-            traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
-        )
-        self.add_parameter(self._preset_parameter)
+        # Configuration group
+        with ParameterGroup(name="Configuration"):
+            self._preset_parameter = Parameter(
+                name="preset",
+                type="str",
+                tooltip="Select a preset aspect ratio or 'Custom' for manual configuration",
+                default_value="Custom",
+                allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
+            )
 
-        # Working parameters (PROPERTY + OUTPUT only)
-        self._width_parameter = Parameter(
-            name="width",
-            input_types=["int"],
-            type="int",
-            output_type="int",
-            tooltip="Width in pixels",
-            default_value=1024,
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._width_parameter)
+            self._width_parameter = Parameter(
+                name="width",
+                input_types=["int"],
+                type="int",
+                tooltip="Width in pixels",
+                default_value=1024,
+                allowed_modes={ParameterMode.PROPERTY},
+            )
 
-        self._height_parameter = Parameter(
-            name="height",
-            type="int",
-            tooltip="Height in pixels",
-            default_value=1024,
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._height_parameter)
+            self._height_parameter = Parameter(
+                name="height",
+                type="int",
+                tooltip="Height in pixels",
+                default_value=1024,
+                allowed_modes={ParameterMode.PROPERTY},
+            )
 
-        self._ratio_str_parameter = Parameter(
-            name="ratio_str",
-            type="str",
-            tooltip="Aspect ratio as string (e.g., '16:9')",
-            default_value="1:1",
-            allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._ratio_str_parameter)
+            self._ratio_str_parameter = Parameter(
+                name="ratio_str",
+                type="str",
+                tooltip="Aspect ratio as string (e.g., '16:9')",
+                default_value="1:1",
+                allowed_modes={ParameterMode.PROPERTY},
+            )
 
-        # Modifier parameters (INPUT + PROPERTY + OUTPUT)
-        self._upscale_value_parameter = Parameter(
-            name="upscale_value",
-            type="float",
-            tooltip="Multiplier for scaling dimensions",
-            default_value=1.0,
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._upscale_value_parameter)
+        # Modifiers group
+        with ParameterGroup(name="Modifiers"):
+            self._upscale_value_parameter = Parameter(
+                name="upscale_value",
+                type="float",
+                tooltip="Multiplier for scaling dimensions",
+                default_value=1.0,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            )
 
-        self._swap_dimensions_parameter = Parameter(
-            name="swap_dimensions",
-            type="bool",
-            tooltip="Swap width and height",
-            default_value=False,
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._swap_dimensions_parameter)
+            self._swap_dimensions_parameter = Parameter(
+                name="swap_dimensions",
+                type="bool",
+                tooltip="Swap width and height",
+                default_value=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            )
 
-        # Output parameters (OUTPUT only)
-        self._final_width_parameter = Parameter(
-            name="final_width",
-            output_type="int",
-            settable=False,
-            tooltip="Final calculated width after applying modifiers",
-            allowed_modes={ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._final_width_parameter)
+        # Outputs group
+        with ParameterGroup(name="Outputs"):
+            self._final_width_parameter = Parameter(
+                name="final_width",
+                output_type="int",
+                settable=False,
+                tooltip="Final calculated width after applying modifiers",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
 
-        self._final_height_parameter = Parameter(
-            name="final_height",
-            output_type="int",
-            settable=False,
-            tooltip="Final calculated height after applying modifiers",
-            allowed_modes={ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._final_height_parameter)
+            self._final_height_parameter = Parameter(
+                name="final_height",
+                output_type="int",
+                settable=False,
+                tooltip="Final calculated height after applying modifiers",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
 
-        self._ratio_decimal_parameter = Parameter(
-            name="ratio_decimal",
-            output_type="float",
-            settable=False,
-            tooltip="Aspect ratio as decimal (width/height)",
-            allowed_modes={ParameterMode.OUTPUT},
-        )
-        self.add_parameter(self._ratio_decimal_parameter)
+            self._final_ratio_str_parameter = Parameter(
+                name="final_ratio_str",
+                output_type="str",
+                settable=False,
+                tooltip="Final aspect ratio as string (e.g., '16:9')",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+
+            self._final_ratio_decimal_parameter = Parameter(
+                name="final_ratio_decimal",
+                output_type="float",
+                settable=False,
+                tooltip="Final aspect ratio as decimal (width/height)",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
 
         # Add status parameters for error reporting
         self._create_status_parameters(
@@ -321,10 +321,24 @@ class CalculateAspectRatio(SuccessFailureNode):
         try:
             self._calculate_outputs()
 
-            # Success path
+            # Success path - build informative message
             final_width = self.parameter_output_values[self._final_width_parameter.name]
             final_height = self.parameter_output_values[self._final_height_parameter.name]
-            success_msg = f"Successfully calculated aspect ratio: {final_width}x{final_height}"
+            final_ratio_str = self.parameter_output_values[self._final_ratio_str_parameter.name]
+
+            # Get modifier info
+            swap_dimensions = self.get_parameter_value(self._swap_dimensions_parameter.name)
+            upscale_value = self.get_parameter_value(self._upscale_value_parameter.name)
+
+            # Build success message with modifiers applied
+            modifiers_applied = []
+            if swap_dimensions:
+                modifiers_applied.append("swapped")
+            if upscale_value != 1.0:
+                modifiers_applied.append(f"upscaled {upscale_value}x")
+
+            modifiers_text = f" ({', '.join(modifiers_applied)})" if modifiers_applied else ""
+            success_msg = f"Calculated {final_width}x{final_height} ({final_ratio_str}){modifiers_text}"
             self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_msg}")
         except Exception as e:
             error_msg = f"Failed to calculate outputs: {e}"
@@ -447,9 +461,14 @@ class CalculateAspectRatio(SuccessFailureNode):
         final_width = int(final_width * upscale_value)
         final_height = int(final_height * upscale_value)
 
+        # Calculate final ratio from final dimensions
+        final_ratio_str, final_ratio_decimal = self._calculate_ratio_outputs(final_width, final_height)
+
         # Success path
         self.parameter_output_values[self._final_width_parameter.name] = final_width
         self.parameter_output_values[self._final_height_parameter.name] = final_height
+        self.parameter_output_values[self._final_ratio_str_parameter.name] = final_ratio_str
+        self.parameter_output_values[self._final_ratio_decimal_parameter.name] = final_ratio_decimal
 
     def _handle_preset_change(self, preset_name: str) -> None:
         """Handle preset parameter changes - update ALL working parameters."""
@@ -501,7 +520,7 @@ class CalculateAspectRatio(SuccessFailureNode):
         self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
 
         ratio_decimal = ratio[0] / ratio[1]
-        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
+        self.set_parameter_value(self._final_ratio_decimal_parameter.name, ratio_decimal)
 
     def _apply_ratio_preset(self, preset_aspect_width: int, preset_aspect_height: int) -> None:
         """Apply a preset with only ratio specified - calculate pixels from current dimensions."""
@@ -531,15 +550,12 @@ class CalculateAspectRatio(SuccessFailureNode):
             )
             raise ValueError(error_msg)
 
-        # Update all parameters
+        # Update all parameters (let _calculate_outputs handle ratio_decimal)
         self.set_parameter_value(self._width_parameter.name, new_width)
         self.set_parameter_value(self._height_parameter.name, new_height)
 
         ratio_str = f"{preset_aspect_width}:{preset_aspect_height}"
         self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
-
-        ratio_decimal = preset_aspect_width / preset_aspect_height
-        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
 
     def _calculate_dimensions_from_primary(
         self, primary_dimension: int | None, secondary_dimension: int | None, primary_aspect: int, secondary_aspect: int
@@ -595,17 +611,17 @@ class CalculateAspectRatio(SuccessFailureNode):
         return (new_primary, new_secondary)
 
     def _handle_width_change(self, width: int) -> None:
-        """Handle width parameter changes - update ratio and match preset."""
+        """Handle width parameter changes - update ratio and set to Custom."""
         height = self.get_parameter_value(self._height_parameter.name)
         self._handle_dimension_change(width, height)
 
     def _handle_height_change(self, height: int) -> None:
-        """Handle height parameter changes - update ratio and match preset."""
+        """Handle height parameter changes - update ratio and set to Custom."""
         width = self.get_parameter_value(self._width_parameter.name)
         self._handle_dimension_change(width, height)
 
     def _handle_dimension_change(self, width: int | None, height: int | None) -> None:
-        """Handle dimension parameter changes - update ratio and match preset."""
+        """Handle dimension parameter changes - update ratio and set to Custom."""
         # Early out for invalid values
         if width is None or height is None or width < 0 or height < 0:
             error_msg = f"Cannot calculate ratio from dimensions {width}x{height}."
@@ -617,22 +633,15 @@ class CalculateAspectRatio(SuccessFailureNode):
             error_msg = f"Failed to calculate ratio from dimensions {width}x{height}."
             raise ValueError(error_msg)
 
-        # Update all ratio parameters
+        # Update ratio parameters (let _calculate_outputs handle ratio_decimal)
         ratio_str = f"{ratio[0]}:{ratio[1]}"
         self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
 
-        # Calculate ratio decimal (special case for 0:0)
-        if ratio[0] == 0 and ratio[1] == 0:
-            ratio_decimal = 0.0
-        else:
-            ratio_decimal = ratio[0] / ratio[1]
-        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
-
-        # Match to preset
-        self._match_preset()
+        # Set preset to Custom (any manual change goes to Custom)
+        self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
 
     def _handle_ratio_str_change(self, ratio_str: str) -> None:
-        """Handle ratio_str parameter changes - update decimal and match preset."""
+        """Handle ratio_str parameter changes - update decimal and set to Custom."""
         # Validate input format
         if not ratio_str:
             error_msg = "Ratio string cannot be empty."
@@ -689,71 +698,41 @@ class CalculateAspectRatio(SuccessFailureNode):
             error_msg = f"Failed to calculate valid dimensions from ratio {aspect_width}:{aspect_height}. Got {new_width}x{new_height}."
             raise ValueError(error_msg)
 
-        # Update dimensions
+        # Update dimensions (let _calculate_outputs handle ratio_decimal)
         self.set_parameter_value(self._width_parameter.name, new_width)
         self.set_parameter_value(self._height_parameter.name, new_height)
 
-        # Update ratio decimal (special case for 0:0)
-        if aspect_width == 0 and aspect_height == 0:
-            ratio_decimal = 0.0
-        else:
-            ratio_decimal = aspect_width / aspect_height
-        self.set_parameter_value(self._ratio_decimal_parameter.name, ratio_decimal)
-
-        # Match to preset
-        self._match_preset()
-
-    def _match_preset(self) -> None:
-        """Match current working parameters to a preset using tiered matching."""
-        width = self.get_parameter_value(self._width_parameter.name)
-        height = self.get_parameter_value(self._height_parameter.name)
-
-        # Early out for invalid inputs
-        if width is None or height is None or width < 0 or height < 0:
-            self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
-            return
-
-        # Calculate current ratio
-        current_ratio = self._calculate_ratio(width, height)
-
-        # Tier 1: Exact pixel match
-        for preset_name, preset_value in ASPECT_RATIO_PRESETS.items():
-            # Skip Custom - it's not a matchable preset
-            if preset_name == CUSTOM_PRESET_NAME or preset_value is None:
-                continue
-            preset = AspectRatioPreset(*preset_value)
-            if (
-                preset.width is not None
-                and preset.height is not None
-                and preset.width == width
-                and preset.height == height
-            ):
-                # Perfect match. Use this preset.
-                self.set_parameter_value(self._preset_parameter.name, preset_name)
-                return
-
-        # Tier 2: Ratio-only match (only for presets WITHOUT pixel dimensions)
-        if current_ratio is not None:
-            for preset_name, preset_value in ASPECT_RATIO_PRESETS.items():
-                # Skip Custom - it's not a matchable preset
-                if preset_name == CUSTOM_PRESET_NAME or preset_value is None:
-                    continue
-                preset = AspectRatioPreset(*preset_value)
-                # Only match ratio-only presets (no pixel dimensions)
-                if (
-                    preset.width is None
-                    and preset.height is None
-                    and preset.aspect_width is not None
-                    and preset.aspect_height is not None
-                ):
-                    preset_ratio = (preset.aspect_width, preset.aspect_height)
-                    if current_ratio == preset_ratio:
-                        # Found it.
-                        self.set_parameter_value(self._preset_parameter.name, preset_name)
-                        return
-
-        # Tier 3: No match - set to Custom (success path)
+        # Set preset to Custom (any manual change goes to Custom)
         self.set_parameter_value(self._preset_parameter.name, CUSTOM_PRESET_NAME)
+
+    def _calculate_ratio_outputs(self, width: int, height: int) -> tuple[str, float]:
+        """Calculate ratio string and decimal from dimensions.
+
+        Args:
+            width: Width in pixels
+            height: Height in pixels
+
+        Returns:
+            Tuple of (ratio_str, ratio_decimal)
+        """
+        # Calculate simplified ratio
+        ratio = self._calculate_ratio(width, height)
+
+        # Failure case: invalid dimensions
+        if ratio is None:
+            return "0:0", 0.0
+
+        # Special case for 0:0
+        if ratio[0] == 0 and ratio[1] == 0:
+            return "0:0", 0.0
+
+        # Create ratio string
+        ratio_str = f"{ratio[0]}:{ratio[1]}"
+
+        # Calculate decimal
+        ratio_decimal = ratio[0] / ratio[1]
+
+        return ratio_str, ratio_decimal
 
     def _calculate_ratio(self, width: int, height: int) -> tuple[int, int] | None:
         """Calculate GCD-reduced ratio from width and height."""
