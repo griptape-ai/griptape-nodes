@@ -5,7 +5,7 @@ from pathlib import Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
