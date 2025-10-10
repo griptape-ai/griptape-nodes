@@ -208,7 +208,7 @@ class DinoSam2VideoDetector(ControlNode):
             dino_results = dino_processor.post_process_grounded_object_detection(
                 outputs,
                 inputs.input_ids,
-                box_threshold=self.get_box_threshold(),
+                threshold=self.get_box_threshold(),
                 text_threshold=self.get_text_threshold(),
                 target_sizes=[prompt_frame.size[::-1]],
             )
