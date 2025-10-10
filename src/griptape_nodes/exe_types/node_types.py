@@ -71,20 +71,24 @@ class NodeDependencies:
     """Dependencies that a node has on external resources.
 
     This class provides a way for nodes to declare their dependencies on workflows,
-    static files, Python imports, and libraries. This information can be used by the system
-    for workflow packaging, dependency resolution, and deployment planning.
+    static files, Python imports, libraries, and resource instances. This information
+    can be used by the system for workflow packaging, dependency resolution, and
+    deployment planning.
 
     Attributes:
         referenced_workflows: Set of workflow names that this node references
         static_files: Set of static file names that this node depends on
         imports: Set of Python imports that this node requires
         libraries: Set of library names and versions that this node uses
+        resource_instances: Set of resource instance IDs (handles) that this node depends on.
+            Used to track which resource instances need to be serialized when saving workflows.
     """
 
     referenced_workflows: set[str] = field(default_factory=set)
     static_files: set[str] = field(default_factory=set)
     imports: set[ImportDependency] = field(default_factory=set)
     libraries: set[LibraryNameAndVersion] = field(default_factory=set)
+    resource_instances: set[str] = field(default_factory=set)
 
     def aggregate_from(self, other: NodeDependencies) -> None:
         """Aggregate dependencies from another NodeDependencies object into this one.
@@ -97,6 +101,7 @@ class NodeDependencies:
         self.static_files.update(other.static_files)
         self.imports.update(other.imports)
         self.libraries.update(other.libraries)
+        self.resource_instances.update(other.resource_instances)
 
 
 class NodeResolutionState(StrEnum):

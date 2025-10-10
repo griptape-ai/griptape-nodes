@@ -51,6 +51,14 @@
       }
     },
     {
+      "resources": {
+        "title": "Resources",
+        "description": "Resource management and serialization test nodes",
+        "color": "border-orange-500",
+        "icon": "Cube"
+      }
+    },
+    {
       "execution_flow": {
         "color": "border-green-500",
         "title": "Execution Flow",
@@ -2040,6 +2048,39 @@
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle",
         "group": "describe"
+      }
+    },
+    {
+      "class_name": "CreateJokeNode",
+      "file_path": "griptape_nodes_library/resources/create_joke.py",
+      "metadata": {
+        "category": "resources",
+        "description": "Create a Joke resource instance for testing serialization",
+        "display_name": "Create Joke",
+        "icon": "Plus",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "DisplayJokeNode",
+      "file_path": "griptape_nodes_library/resources/display_joke.py",
+      "metadata": {
+        "category": "resources",
+        "description": "Display a Joke from a resource instance",
+        "display_name": "Display Joke",
+        "icon": "Eye",
+        "group": "read"
+      }
+    },
+    {
+      "class_name": "ModifyJokeNode",
+      "file_path": "griptape_nodes_library/resources/modify_joke.py",
+      "metadata": {
+        "category": "resources",
+        "description": "Modify a Joke resource instance",
+        "display_name": "Modify Joke",
+        "icon": "Pencil",
+        "group": "edit"
       }
     }
   ],

@@ -1620,6 +1620,7 @@ class FlowManager:
             sub_flows_commands=[],
             node_dependencies=packaged_dependencies,
             node_types_used=packaged_node_types_used,
+            serialized_resource_recipes={},
         )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911
@@ -1776,6 +1777,7 @@ class FlowManager:
             sub_flows_commands=[],
             node_dependencies=combined_dependencies,
             node_types_used=combined_node_types_used,
+            serialized_resource_recipes={},
         )
 
         return PackageNodesAsSerializedFlowResultSuccess(
@@ -2975,6 +2977,79 @@ class FlowManager:
 
         return node_types_used
 
+    def _serialize_resource_instances(self, resource_instance_ids: set[str]) -> dict[str, dict[str, Any]]:
+        """Serialize resource instances for workflow save.
+
+        Args:
+            resource_instance_ids: Set of resource instance IDs to serialize
+
+        Returns:
+            Dictionary mapping instance_id to serialized recipe
+        """
+        from griptape_nodes.retained_mode.events.resource_events import (
+            SerializeResourceInstanceRequest,
+            SerializeResourceInstanceResultSuccess,
+        )
+
+        serialized_recipes: dict[str, dict[str, Any]] = {}
+
+        for instance_id in resource_instance_ids:
+            # Try to serialize this resource instance
+            request = SerializeResourceInstanceRequest(instance_id=instance_id)
+            result = GriptapeNodes.handle_request(request)
+
+            if isinstance(result, SerializeResourceInstanceResultSuccess):
+                # Successfully serialized - store the recipe
+                serialized_recipes[instance_id] = result.recipe
+                logger.debug("Serialized resource instance %s for workflow save", instance_id)
+            else:
+                # Resource doesn't support serialization or failed to serialize
+                # Log a warning but don't fail the whole serialization
+                logger.warning(
+                    "Could not serialize resource instance %s: %s. Resource will not be restored on workflow load.",
+                    instance_id,
+                    result.result_details if hasattr(result, "result_details") else "Unknown error",
+                )
+
+        return serialized_recipes
+
+    def _deserialize_resource_instances(self, serialized_recipes: dict[str, dict[str, Any]]) -> dict[str, str]:
+        """Deserialize resource instances for workflow load.
+
+        Args:
+            serialized_recipes: Dictionary mapping old instance_id to recipe
+
+        Returns:
+            Dictionary mapping old instance_id to new instance_id
+        """
+        from griptape_nodes.retained_mode.events.resource_events import (
+            DeserializeResourceInstanceRequest,
+            DeserializeResourceInstanceResultSuccess,
+        )
+
+        resource_id_mapping: dict[str, str] = {}
+
+        for old_instance_id, recipe in serialized_recipes.items():
+            # Try to deserialize this resource instance
+            request = DeserializeResourceInstanceRequest(recipe=recipe)
+            result = GriptapeNodes.handle_request(request)
+
+            if isinstance(result, DeserializeResourceInstanceResultSuccess):
+                # Successfully deserialized - store the mapping
+                new_instance_id = result.instance_id
+                resource_id_mapping[old_instance_id] = new_instance_id
+                logger.debug("Deserialized resource instance: %s -> %s", old_instance_id, new_instance_id)
+            else:
+                # Failed to deserialize
+                # Log a warning but don't fail the whole deserialization
+                logger.warning(
+                    "Could not deserialize resource instance %s: %s. Nodes referencing this resource may not function correctly.",
+                    old_instance_id,
+                    result.result_details if hasattr(result, "result_details") else "Unknown error",
+                )
+
+        return resource_id_mapping
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -3121,6 +3196,7 @@ class FlowManager:
                         sub_flows_commands=[],
                         node_dependencies=sub_flow_dependencies,
                         node_types_used=set(),
+                        serialized_resource_recipes={},
                     )
                     sub_flow_commands.append(serialized_flow)
                 else:
@@ -3144,6 +3220,9 @@ class FlowManager:
             details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
             return SerializeFlowToCommandsResultFailure(result_details=details)
 
+        # Serialize resource instances that nodes depend on
+        serialized_resource_recipes = self._serialize_resource_instances(aggregated_dependencies.resource_instances)
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
@@ -3154,6 +3233,7 @@ class FlowManager:
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
+            serialized_resource_recipes=serialized_resource_recipes,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3197,6 +3277,11 @@ class FlowManager:
             GriptapeNodes.ContextManager().push_flow(flow=flow)
 
         # Deserializing a flow goes in a specific order.
+
+        # First, deserialize resource instances that nodes depend on
+        resource_id_mapping = self._deserialize_resource_instances(
+            request.serialized_flow_commands.serialized_resource_recipes
+        )
 
         # Create the nodes.
         # Preserve the node UUIDs because we will need to tie these back together with the Connections later.
@@ -3263,6 +3348,11 @@ class FlowManager:
                     except IndexError as err:
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node.name}.{parameter_name}': {err}"
                         return DeserializeFlowFromCommandsResultFailure(result_details=details)
+
+                    # Apply resource ID mapping if this value is a resource instance ID
+                    if isinstance(value, str) and value in resource_id_mapping:
+                        value = resource_id_mapping[value]
+                        logger.debug("Remapped resource instance ID for node '%s'.%s", node.name, parameter_name)
 
                     # Call the SetParameterValueRequest, subbing in the value from our unique value list.
                     indirect_set_value_command.set_parameter_value_command.value = value

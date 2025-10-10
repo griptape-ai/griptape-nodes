@@ -865,6 +865,7 @@ class OSManager:
         """Register OS and CPU resource types with ResourceManager and create system instances."""
         self._attempt_generate_os_resources()
         self._attempt_generate_cpu_resources()
+        self._attempt_register_joke_resource_type()
 
     def _attempt_generate_os_resources(self) -> None:
         """Register OS resource type and create system OS instance if successful."""
@@ -934,6 +935,20 @@ class OSManager:
             return
 
         logger.debug("Successfully created system CPU instance: %s", result.instance_id)
+
+    def _attempt_register_joke_resource_type(self) -> None:
+        """Register Joke resource type for testing serialization."""
+        from griptape_nodes.retained_mode.managers.resource_types.joke_resource import JokeResourceType
+
+        joke_resource_type = JokeResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=joke_resource_type)
+        result = GriptapeNodes.handle_request(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register Joke resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered Joke resource type")
 
     def _get_platform_name(self) -> str:
         """Get platform name using existing sys.platform detection."""

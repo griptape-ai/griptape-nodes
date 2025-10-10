@@ -203,6 +203,10 @@ class SerializedFlowCommands:
             dependency resolution, and deployment planning.
         node_types_used (set[LibraryNameAndNodeType]): Set of all node types used in this flow and its sub-flows.
             Each entry contains the library name and node type name pair, used for tracking which node types are utilized.
+        serialized_resource_recipes (dict[str, dict[str, Any]]): Dictionary of serialized resource instance recipes.
+            Key is the original instance_id, value is the recipe dict returned from SerializeResourceInstanceRequest.
+            These recipes are used to restore resource instances when deserializing the flow, maintaining the state
+            of complex objects that cannot be pickled. Only includes resources that support serialization.
     """
 
     @dataclass
@@ -234,6 +238,7 @@ class SerializedFlowCommands:
     sub_flows_commands: list["SerializedFlowCommands"]
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
+    serialized_resource_recipes: dict[str, dict[str, Any]]
 
 
 @dataclass
