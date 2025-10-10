@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 class ConcatenateVideos(BaseVideoProcessor):

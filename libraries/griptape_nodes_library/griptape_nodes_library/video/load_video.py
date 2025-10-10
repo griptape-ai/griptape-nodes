@@ -1,5 +1,7 @@
 from typing import Any, ClassVar
 
+from griptape.artifacts import VideoUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes_library.utils.artifact_path_tethering import (
@@ -8,7 +10,6 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.video_utils import dict_to_video_url_artifact
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 class LoadVideo(DataNode):

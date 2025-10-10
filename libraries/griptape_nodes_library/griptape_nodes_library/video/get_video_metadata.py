@@ -3,13 +3,14 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from griptape.artifacts import VideoUrlArtifact
+
 # static_ffmpeg is dynamically installed by the library loader at runtime
 # into the library's own virtual environment, but not available during type checking
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 @dataclass
