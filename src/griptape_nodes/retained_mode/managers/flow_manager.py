@@ -937,11 +937,15 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # Set the parameter value (including None/empty values) unless we're in initial setup
-        # Skip propagation for Control Parameters as they should not receive values
-        if (
-            request.initial_setup is False
-            and ParameterType.attempt_get_builtin(source_param.output_type) != ParameterTypeBuiltin.CONTROL_TYPE
-        ):
+        # Skip propagation for:
+        # 1. Control Parameters as they should not receive values
+        # 2. Locked nodes
+        # 3. Initial Setup (this is used during deserialization; the downstream node may not be created yet)
+        is_control_parameter = (
+            ParameterType.attempt_get_builtin(source_param.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+        )
+        is_dest_node_locked = target_node.lock
+        if (not is_control_parameter) and (not is_dest_node_locked) and (not request.initial_setup):
             # When creating a connection, pass the initial value from source to target parameter
             # Set incoming_connection_source fields to identify this as legitimate connection value passing
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
@@ -3319,7 +3323,7 @@ class FlowManager:
         )
         # Set off the request here.
         try:
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
                 await self.cancel_flow_run()
@@ -3424,7 +3428,7 @@ class FlowManager:
             # Get or create machine
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name)
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -3434,7 +3438,7 @@ class FlowManager:
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                await machine.start_flow(start_node, debug_mode)
+                await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.
@@ -3472,7 +3476,9 @@ class FlowManager:
                 )
             )
             try:
-                await resolution_machine.resolve_node(node)
+                await self._global_control_flow_machine.start_flow(
+                    start_node=node, end_node=node, debug_mode=debug_mode
+                )
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
