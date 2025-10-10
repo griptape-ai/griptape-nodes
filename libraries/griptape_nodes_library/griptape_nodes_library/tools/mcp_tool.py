@@ -13,8 +13,8 @@ from griptape_nodes_library.utils.mcp_utils import (
 class MCPToolNode(BaseTool):
     """A tool that can be used to call MCP tools.
 
-    TODO: (Jason) This tool is temporarily disabled, until we upgrade Griptape to Python 3.10
-    as it won't currently import correctly for Agents.
+    TODO: (Jason) This tool is temporarily disabled, until we figure out how to
+    properly serialize connections for the MCPTool.
     https://github.com/griptape-ai/griptape-nodes/issues/2368
     """
 

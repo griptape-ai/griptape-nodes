@@ -1821,17 +1821,6 @@
       }
     },
     {
-      "class_name": "ToolList",
-      "file_path": "griptape_nodes_library/tools/tool_list.py",
-      "metadata": {
-        "category": "agents/tools",
-        "description": "Combine tools to give an agent a more complex set of tools",
-        "display_name": "Tool List",
-        "icon": "list-check",
-        "group": "create"
-      }
-    },
-    {
       "class_name": "WebSearch",
       "file_path": "griptape_nodes_library/tools/web_search_tool.py",
       "metadata": {
