@@ -196,7 +196,7 @@ class DinoSam2ImageDetector(ControlNode):
             dino_results: list[dict] = dino_processor.post_process_grounded_object_detection(
                 outputs,
                 dino_inputs.input_ids,
-                box_threshold=self.get_box_threshold(),
+                threshold=self.get_box_threshold(),
                 text_threshold=self.get_text_threshold(),
                 target_sizes=[k.size[::-1] for k in [input_image_pil]],
             )
