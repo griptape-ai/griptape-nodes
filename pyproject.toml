@@ -72,9 +72,8 @@ griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-p
 
 [tool.ruff]
 line-length = 120
+extend-exclude = ["libraries/**/templates/*.py"]
 
-[tool.ruff.format]
-exclude = [".venv"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -110,7 +109,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
-"nodes/tests/*" = ["S101", "D104"]
+"libraries/**/tests/*" = ["S101", "D104"]
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true
@@ -131,8 +130,7 @@ venvPath = "."
 venv = ".venv"
 include = ["."]
 exclude = [
-  "libraries/griptape_nodes_library/workflows/templates/**/*",
-  "libraries/griptape_cloud/workflows/templates/**/*",
+  "libraries/**/templates/*",
   ".venv",
   "GriptapeNodes",
   "**/node_modules",
