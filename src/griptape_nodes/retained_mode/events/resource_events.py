@@ -288,3 +288,95 @@ class ListResourceInstancesByTypeResultSuccess(WorkflowNotAlteredMixin, ResultPa
 @PayloadRegistry.register
 class ListResourceInstancesByTypeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Resource instances by type listing failed. Common causes: invalid resource type."""
+
+
+# Get Resource Type Serializability Events
+@dataclass
+@PayloadRegistry.register
+class GetResourceTypeSerializabilityRequest(RequestPayload):
+    """Check if a resource type supports serialization.
+
+    Use when: Determining whether a resource type can be serialized/deserialized,
+    typically before attempting workflow save operations.
+
+    Args:
+        resource_type_name: The name of the resource type to check
+    """
+
+    resource_type_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetResourceTypeSerializabilityResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Resource type serializability check succeeded."""
+
+    supports_serialization: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class GetResourceTypeSerializabilityResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Resource type serializability check failed. Common causes: resource type not found."""
+
+
+# Serialize Resource Instance Events
+@dataclass
+@PayloadRegistry.register
+class SerializeResourceInstanceRequest(RequestPayload):
+    """Serialize a resource instance to a recipe dict.
+
+    Use when: Saving workflows that contain resource instances that need to be
+    persisted and restored. The recipe contains all information needed to
+    recreate the resource in its current state.
+
+    Args:
+        instance_id: The ID of the resource instance to serialize
+    """
+
+    instance_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeResourceInstanceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Resource instance serialized successfully."""
+
+    instance_id: str
+    recipe: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeResourceInstanceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Resource instance serialization failed. Common causes: instance not found, resource type doesn't support serialization."""
+
+
+# Deserialize Resource Instance Events
+@dataclass
+@PayloadRegistry.register
+class DeserializeResourceInstanceRequest(RequestPayload):
+    """Deserialize a resource instance from a recipe dict.
+
+    Use when: Loading workflows that contain serialized resource instances.
+    Creates a new resource instance with the same state as the original.
+
+    Args:
+        recipe: The recipe dict containing resource type name and capabilities
+    """
+
+    recipe: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeResourceInstanceResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Resource instance deserialized successfully."""
+
+    instance_id: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeResourceInstanceResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Resource instance deserialization failed. Common causes: invalid recipe, resource type not found, resource type doesn't support serialization."""
