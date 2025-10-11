@@ -261,7 +261,7 @@ class ImageProvider(ArtifactProvider):
     ) -> ArtifactProviderValidationResult:
         """Attempt to load and create image artifact from URL.
 
-        Downloads the URL to {workflow_dir}/downloads/ to avoid bloating workflow files with base64 data.
+        Downloads the URL to {workflow_dir}/inputs/ to avoid bloating workflow files with base64 data.
         Returns URLFileLocation so the user still sees the original URL in the parameter.
         """
         timeout_value = timeout if timeout is not None else 120.0
@@ -289,10 +289,8 @@ class ImageProvider(ArtifactProvider):
         except ValueError as e:
             return ArtifactProviderValidationResult(was_successful=False, result_details=str(e))
 
-        # Determine download location in workflow's downloads/ directory
-        download_location = ArtifactProvider.generate_workflow_file_location(
-            subdirectory="downloads", filename=filename
-        )
+        # Determine download location in workflow's inputs/ directory
+        download_location = ArtifactProvider.generate_workflow_file_location(subdirectory="inputs", filename=filename)
 
         # Save downloaded bytes to disk
         try:
@@ -492,9 +490,7 @@ class ImageProvider(ArtifactProvider):
         parsed = urlparse(artifact_url)
         filename = Path(parsed.path).name
 
-        download_location = ArtifactProvider.generate_workflow_file_location(
-            subdirectory="downloads", filename=filename
-        )
+        download_location = ArtifactProvider.generate_workflow_file_location(subdirectory="inputs", filename=filename)
 
         try:
             return download_location.absolute_path.read_bytes()

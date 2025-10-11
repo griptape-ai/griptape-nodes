@@ -10,12 +10,18 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.retained_mode.events.context_events import (
+    GetWorkflowContextRequest,
+    GetWorkflowContextSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.files.providers.artifact_provider import (
     ArtifactProvider,
     FileLocation,
+    URLFileLocation,
 )
 from griptape_nodes_library.files.providers.image.image_provider import ImageProvider
 
@@ -81,10 +87,10 @@ class LoadFile(SuccessFailureNode):
         self.add_parameter(self.provider_parameter)
 
         # File status info message (hidden by default)
-        # Shows for: external files (with copy button), errors, or future URL downloads
-        # Copy to Workspace button is added as trait
+        # Shows for: external files (with copy button), errors, or URL downloads
+        # Copy to Project button is added as trait
         copy_button = Button(
-            label="Copy to Workspace", variant="secondary", size="default", on_click=self._on_copy_to_workspace_clicked
+            label="Copy to Project", variant="secondary", size="default", on_click=self._on_copy_to_project_clicked
         )
         self.file_status_info_message = ParameterMessage(
             variant="info",
@@ -275,7 +281,13 @@ class LoadFile(SuccessFailureNode):
             if self._current_provider.is_location_external_to_workspace(result.location):
                 detail = self._current_provider.get_location_display_detail(result.location)
                 self.file_status_info_message.variant = "info"
-                self.file_status_info_message.value = f"File not in workspace: {detail}"
+
+                # Special handling for URLs to show "Downloaded from"
+                if isinstance(result.location, URLFileLocation):
+                    self.file_status_info_message.value = f"Downloaded from {detail}"
+                else:
+                    self.file_status_info_message.value = f"File not in workspace: {detail}"
+
                 self.file_status_info_message.ui_options = {"hide": False}
             else:
                 self.file_status_info_message.ui_options = {"hide": True}
@@ -313,12 +325,12 @@ class LoadFile(SuccessFailureNode):
         self.file_location_parameter.tooltip = tooltip
 
     def _generate_filename(self, source_location: FileLocation) -> str:
-        """Generate filename using standard naming convention.
+        """Generate collision-resistant filename using standard naming convention.
 
-        Format: {node_name}_{parameter_name}_{original_base_name}{extension}
+        Format: {workflow}_{node_name}_{parameter_name}_{original_base_name}{extension}
 
-        Workflow name is not included since files are already organized under
-        workflow-specific directories (e.g., workspace/project_a/shot_1/uploads/).
+        Includes workflow name to prevent collisions when multiple workflows share
+        the same workspace directory and copy files with the same name.
 
         Args:
             source_location: Source file location to extract original filename from
@@ -327,9 +339,21 @@ class LoadFile(SuccessFailureNode):
             Generated filename
 
         Raises:
-            RuntimeError: If filename cannot be determined
+            RuntimeError: If filename cannot be determined or workflow context unavailable
             ValueError: If file has no extension
         """
+        # Get workflow name from context
+        result = GriptapeNodes.handle_request(GetWorkflowContextRequest())
+        if not isinstance(result, GetWorkflowContextSuccess):
+            msg = f"Cannot generate filename: workflow context unavailable ({result.result_details})"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        if not result.workflow_name:
+            msg = "Cannot generate filename: no workflow context set"
+            raise RuntimeError(msg)
+
+        workflow_name = result.workflow_name
+
         # Get original filename from location
         try:
             original_filename = source_location.get_filename()
@@ -345,15 +369,15 @@ class LoadFile(SuccessFailureNode):
             msg = f"Cannot generate filename without extension: {original_filename}"
             raise ValueError(msg)
 
-        # Generate filename: {node_name}_{parameter_name}_{file_name}
-        return f"{self.name}_{self.file_location_parameter.name}_{base_name}{extension}"
+        # Generate filename: {workflow}_{node_name}_{parameter_name}_{file_name}
+        return f"{workflow_name}_{self.name}_{self.file_location_parameter.name}_{base_name}{extension}"
 
-    def _on_copy_to_workspace_clicked(
+    def _on_copy_to_project_clicked(
         self,
         button: Button,
         button_details: Any,  # noqa: ARG002
     ) -> NodeMessageResult:
-        """Handle Copy to Workspace button click with proper state management."""
+        """Handle Copy to Project button click with proper state management."""
         if not self._current_provider:
             return NodeMessageResult(success=False, details="No provider available", altered_workflow_state=False)
 
@@ -364,11 +388,11 @@ class LoadFile(SuccessFailureNode):
         button.state = "loading"
         button.loading_label = "Copying..."
 
-        # Generate destination location in uploads/
+        # Generate destination location in inputs/
         try:
             filename = self._generate_filename(self._current_location)
             destination_location = ArtifactProvider.generate_workflow_file_location(
-                subdirectory="uploads", filename=filename
+                subdirectory="inputs", filename=filename
             )
         except Exception as e:
             button.state = "normal"
