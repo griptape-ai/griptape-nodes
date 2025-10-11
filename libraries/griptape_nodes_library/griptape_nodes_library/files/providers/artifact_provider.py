@@ -32,15 +32,15 @@ class OnDiskFileLocation(FileLocation):
 
 
 @dataclass
-class WorkspaceFileLocation(OnDiskFileLocation):
-    """File in the workspace."""
+class ProjectFileLocation(OnDiskFileLocation):
+    """File in the project."""
 
-    workspace_relative_path: Path
+    project_relative_path: Path
 
 
 @dataclass
 class ExternalFileLocation(OnDiskFileLocation):
-    """File outside the workspace."""
+    """File outside the project."""
 
 
 @dataclass
@@ -117,7 +117,7 @@ class ArtifactProvider(ABC):
 
     Each provider handles loading and processing of a specific artifact type
     (image, video, audio, text) with access to the node context for proper
-    filename generation and workspace management.
+    filename generation and project management.
     """
 
     def __init__(self, node: BaseNode, *, path_parameter: Parameter) -> None:
@@ -177,7 +177,7 @@ class ArtifactProvider(ABC):
     ) -> ArtifactProviderValidationResult:
         """Attempt to load and create artifact from an ambiguous file location string.
 
-        This method disambiguates the file location (URL, workspace path, or external path)
+        This method disambiguates the file location (URL, project path, or external path)
         and routes to the appropriate specialized loader method.
         """
 
@@ -190,7 +190,7 @@ class ArtifactProvider(ABC):
         """Attempt to load and create artifact from a filesystem path.
 
         Args:
-            location: The OnDiskFileLocation (WorkspaceFileLocation or ExternalFileLocation)
+            location: The OnDiskFileLocation (ProjectFileLocation or ExternalFileLocation)
             current_parameter_values: Current parameter values for dynamic updates
         """
 
@@ -212,7 +212,7 @@ class ArtifactProvider(ABC):
 
         Args:
             file_bytes: Raw file bytes to save
-            location: OnDiskFileLocation specifying where to save (can be WorkspaceFileLocation or ExternalFileLocation)
+            location: OnDiskFileLocation specifying where to save (can be ProjectFileLocation or ExternalFileLocation)
 
         Returns:
             The location that was passed in (for chaining/confirmation)
@@ -252,14 +252,14 @@ class ArtifactProvider(ABC):
         """
 
     @abstractmethod
-    def is_location_external_to_workspace(self, location: FileLocation) -> bool:
-        """Returns True if location is outside workspace and can be copied.
+    def is_location_external_to_project(self, location: FileLocation) -> bool:
+        """Returns True if location is outside project and can be copied.
 
         Args:
             location: File location instance
 
         Returns:
-            True if location is external (can be copied to workspace), False otherwise
+            True if location is external (can be copied to project), False otherwise
         """
 
     @abstractmethod
@@ -284,7 +284,7 @@ class ArtifactProvider(ABC):
 
         Args:
             source_location: The source file location to copy from (any FileLocation type)
-            destination_location: Where to save the file (WorkspaceFileLocation or ExternalFileLocation)
+            destination_location: Where to save the file (ProjectFileLocation or ExternalFileLocation)
             artifact: The current artifact (for extracting download info from URLs)
 
         Returns:
@@ -355,7 +355,7 @@ class ArtifactProvider(ABC):
         workspace root with a warning.
 
         Returns:
-            Path relative to workspace (e.g., Path("myworkflow")), or absolute path if outside workspace
+            Path relative to workspace (e.g., Path("myworkflow")), or absolute path if outside project
 
         Raises:
             RuntimeError: If workflow context cannot be determined
@@ -380,7 +380,7 @@ class ArtifactProvider(ABC):
         try:
             final_dir = workflow_directory.relative_to(workspace_path)
         except ValueError:
-            logger.warning("Workflow directory is outside workspace: %s", workflow_directory)
+            logger.warning("Workflow directory is outside project: %s", workflow_directory)
             final_dir = workflow_directory
 
         return final_dir
@@ -393,18 +393,18 @@ class ArtifactProvider(ABC):
         This keeps all workflow files packaged together under a workflow-specific directory.
 
         Args:
-            subdirectory: Subdirectory within workflow directory (e.g., "downloads", "uploads", "thumbnails")
+            subdirectory: Subdirectory within workflow directory (e.g., "inputs", "outputs", "thumbnails")
             filename: Filename to use (e.g., "cdn_example_com_image.jpg")
 
         Returns:
-            WorkspaceFileLocation if workflow is inside workspace, ExternalFileLocation if outside
+            ProjectFileLocation if workflow is inside project, ExternalFileLocation if outside
 
         Example:
             location = ArtifactProvider.generate_workflow_file_location(
-                subdirectory="downloads",
+                subdirectory="inputs",
                 filename="cdn_example_com_image.png"
             )
-            # Result: workspace/myworkflow/myworkflow/downloads/cdn_example_com_image.png
+            # Result: workspace/myworkflow/myworkflow/inputs/cdn_example_com_image.png
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -413,16 +413,16 @@ class ArtifactProvider(ABC):
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         if workflow_directory.is_absolute():
-            # Workflow is outside workspace - return ExternalFileLocation
+            # Workflow is outside project - return ExternalFileLocation
             absolute_path = workflow_directory / workflow_name / subdirectory / filename
             return ExternalFileLocation(absolute_path=absolute_path)
 
-        # Workflow is inside workspace - return WorkspaceFileLocation
-        workspace_relative_path = workflow_directory / workflow_name / subdirectory / filename
-        absolute_path = workspace_path / workspace_relative_path
+        # Workflow is inside project - return ProjectFileLocation
+        project_relative_path = workflow_directory / workflow_name / subdirectory / filename
+        absolute_path = workspace_path / project_relative_path
 
-        return WorkspaceFileLocation(
-            workspace_relative_path=workspace_relative_path,
+        return ProjectFileLocation(
+            project_relative_path=project_relative_path,
             absolute_path=absolute_path,
         )
 
@@ -434,7 +434,7 @@ class ArtifactProvider(ABC):
             file_location_str: String representing a file location (URL or filesystem path)
 
         Returns:
-            FileLocation instance (WorkspaceFileLocation, ExternalFileLocation, or URLFileLocation)
+            FileLocation instance (ProjectFileLocation, ExternalFileLocation, or URLFileLocation)
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -453,6 +453,6 @@ class ArtifactProvider(ABC):
 
         try:
             relative_path = resolved_file_path.relative_to(workspace_path)
-            return WorkspaceFileLocation(workspace_relative_path=relative_path, absolute_path=resolved_file_path)
+            return ProjectFileLocation(project_relative_path=relative_path, absolute_path=resolved_file_path)
         except ValueError:
             return ExternalFileLocation(absolute_path=resolved_file_path)

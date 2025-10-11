@@ -277,8 +277,8 @@ class LoadFile(SuccessFailureNode):
                 self.set_parameter_value(param_name, value)
                 self.publish_update_to_parameter(param_name, value)
 
-            # Show info box for files external to workspace
-            if self._current_provider.is_location_external_to_workspace(result.location):
+            # Show info box for files external to project
+            if self._current_provider.is_location_external_to_project(result.location):
                 detail = self._current_provider.get_location_display_detail(result.location)
                 self.file_status_info_message.variant = "info"
 
@@ -286,7 +286,7 @@ class LoadFile(SuccessFailureNode):
                 if isinstance(result.location, URLFileLocation):
                     self.file_status_info_message.value = f"Downloaded from {detail}"
                 else:
-                    self.file_status_info_message.value = f"File not in workspace: {detail}"
+                    self.file_status_info_message.value = f"File not in project: {detail}"
 
                 self.file_status_info_message.ui_options = {"hide": False}
             else:
@@ -330,7 +330,7 @@ class LoadFile(SuccessFailureNode):
         Format: {workflow}_{node_name}_{parameter_name}_{original_base_name}{extension}
 
         Includes workflow name to prevent collisions when multiple workflows share
-        the same workspace directory and copy files with the same name.
+        the same project directory and copy files with the same name.
 
         Args:
             source_location: Source file location to extract original filename from
@@ -400,10 +400,10 @@ class LoadFile(SuccessFailureNode):
                 success=False, details=f"Failed to generate destination: {e}", altered_workflow_state=False
             )
 
-        # Copy file to workspace
+        # Copy file to project
         try:
             artifact = self.get_parameter_value(self.artifact_parameter.name)
-            workspace_location = self._current_provider.copy_file_location_to_disk(
+            project_location = self._current_provider.copy_file_location_to_disk(
                 source_location=self._current_location,
                 destination_location=destination_location,
                 artifact=artifact,
@@ -412,25 +412,25 @@ class LoadFile(SuccessFailureNode):
             button.state = "normal"
             self.file_status_info_message.variant = "error"
             self.file_status_info_message.value = f"Copy failed: {e}"
-            logger.exception("Copy to workspace failed")
+            logger.exception("Copy to project failed")
             return NodeMessageResult(success=False, details=f"Copy failed: {e}", altered_workflow_state=False)
 
-        # Update current location to the new workspace location
-        self._current_location = workspace_location
+        # Update current location to the new project location
+        self._current_location = project_location
 
-        # Update file location parameter to workspace-relative path
-        file_location_str = self._current_provider.get_source_path(workspace_location)
+        # Update file location parameter to project-relative path
+        file_location_str = self._current_provider.get_source_path(project_location)
         self.set_parameter_value(self.file_location_parameter.name, file_location_str)
         self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
 
-        # Hide info box since file is now in workspace
+        # Hide info box since file is now in project
         self.file_status_info_message.ui_options = {"hide": True}
 
         # Reset button state
         button.state = "normal"
 
         return NodeMessageResult(
-            success=True, details=f"File copied to workspace: {file_location_str}", altered_workflow_state=True
+            success=True, details=f"File copied to project: {file_location_str}", altered_workflow_state=True
         )
 
     def _set_current_provider(self, provider: ArtifactProvider) -> None:

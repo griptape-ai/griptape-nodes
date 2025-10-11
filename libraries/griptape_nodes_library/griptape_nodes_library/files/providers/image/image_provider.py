@@ -22,8 +22,8 @@ from griptape_nodes_library.files.providers.artifact_provider import (
     ExternalFileLocation,
     FileLocation,
     OnDiskFileLocation,
+    ProjectFileLocation,
     URLFileLocation,
-    WorkspaceFileLocation,
 )
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
@@ -104,7 +104,7 @@ class ImageProvider(ArtifactProvider):
         """Lightweight check if this provider can handle the given file location input."""
         location = ArtifactProvider.determine_file_location(file_location_input)
 
-        if isinstance(location, (WorkspaceFileLocation, ExternalFileLocation)):
+        if isinstance(location, (ProjectFileLocation, ExternalFileLocation)):
             return self._can_handle_path(file_location_input)
         if isinstance(location, URLFileLocation):
             return self._can_handle_url(file_location_input)
@@ -142,7 +142,7 @@ class ImageProvider(ArtifactProvider):
     ) -> ArtifactProviderValidationResult:
         """Attempt to load and create image artifact from an ambiguous file location string.
 
-        This method disambiguates the file location (URL, workspace path, or external path)
+        This method disambiguates the file location (URL, project path, or external path)
         and routes to the appropriate specialized loader method.
         """
         location = ArtifactProvider.determine_file_location(file_location_str)
@@ -150,7 +150,7 @@ class ImageProvider(ArtifactProvider):
         if isinstance(location, URLFileLocation):
             return self.attempt_load_from_url(location, current_parameter_values)
 
-        if isinstance(location, (WorkspaceFileLocation, ExternalFileLocation)):
+        if isinstance(location, (ProjectFileLocation, ExternalFileLocation)):
             return self.attempt_load_from_filesystem_path(
                 location=location,
                 current_parameter_values=current_parameter_values,
@@ -191,10 +191,10 @@ class ImageProvider(ArtifactProvider):
             artifact=artifact, current_values=current_parameter_values
         )
 
-        if isinstance(location, WorkspaceFileLocation):
+        if isinstance(location, ProjectFileLocation):
             result_details = f"File loaded: {self.get_source_path(location)}"
         elif isinstance(location, ExternalFileLocation):
-            result_details = f"File outside workspace: {self.get_source_path(location)}"
+            result_details = f"File outside project: {self.get_source_path(location)}"
         else:
             result_details = f"File loaded from: {self.get_source_path(location)}"
 
@@ -328,7 +328,7 @@ class ImageProvider(ArtifactProvider):
 
         return location
 
-    def _generate_workspace_filename_only(self, original_filename: str, parameter_name: str) -> str:
+    def _generate_project_filename_only(self, original_filename: str, parameter_name: str) -> str:
         """Generate filename using protocol: {node_name}_{parameter_name}_{file_name}.
 
         Workflow name is not included since files are organized under workflow-specific directories.
@@ -375,7 +375,7 @@ class ImageProvider(ArtifactProvider):
 
         try:
             # Save mask using filename-only approach
-            filename = self._generate_workspace_filename_only(
+            filename = self._generate_project_filename_only(
                 original_filename="mask.png", parameter_name=self.output_mask_parameter.name
             )
             output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
@@ -392,15 +392,15 @@ class ImageProvider(ArtifactProvider):
 
     def get_externally_accessible_url(self, location: FileLocation) -> str:
         """Convert file location to URL the frontend can fetch."""
-        if isinstance(location, WorkspaceFileLocation):
-            # Generate staticfiles URL for workspace file
-            request = CreateWorkspaceFileDownloadUrlRequest(file_name=str(location.workspace_relative_path))
+        if isinstance(location, ProjectFileLocation):
+            # Generate staticfiles URL for project file
+            request = CreateWorkspaceFileDownloadUrlRequest(file_name=str(location.project_relative_path))
             result = GriptapeNodes.StaticFilesManager().on_handle_create_workspace_file_download_url_request(request)
 
             if isinstance(result, CreateWorkspaceFileDownloadUrlResultSuccess):
                 return result.url
 
-            msg = f"Failed to create download URL for workspace file: {location.workspace_relative_path}"
+            msg = f"Failed to create download URL for project file: {location.project_relative_path}"
             raise RuntimeError(msg)
 
         if isinstance(location, ExternalFileLocation):
@@ -416,8 +416,8 @@ class ImageProvider(ArtifactProvider):
 
     def get_display_path(self, location: FileLocation) -> str:
         """Get user-facing path string for UI display."""
-        if isinstance(location, WorkspaceFileLocation):
-            return str(location.workspace_relative_path)
+        if isinstance(location, ProjectFileLocation):
+            return str(location.project_relative_path)
         if isinstance(location, ExternalFileLocation):
             return str(location.absolute_path)
         if isinstance(location, URLFileLocation):
@@ -428,8 +428,8 @@ class ImageProvider(ArtifactProvider):
 
     def get_source_path(self, location: FileLocation) -> str:
         """Get the original source path/URL provided by user."""
-        if isinstance(location, WorkspaceFileLocation):
-            return str(location.workspace_relative_path)
+        if isinstance(location, ProjectFileLocation):
+            return str(location.project_relative_path)
         if isinstance(location, ExternalFileLocation):
             return str(location.absolute_path)
         if isinstance(location, URLFileLocation):
@@ -438,14 +438,14 @@ class ImageProvider(ArtifactProvider):
         msg = f"Unsupported location type: {type(location)}"
         raise TypeError(msg)
 
-    def is_location_external_to_workspace(self, location: FileLocation) -> bool:
-        """Returns True if location is outside workspace and can be copied."""
+    def is_location_external_to_project(self, location: FileLocation) -> bool:
+        """Returns True if location is outside project and can be copied."""
         return isinstance(location, (ExternalFileLocation, URLFileLocation))
 
     def get_location_display_detail(self, location: FileLocation) -> str:
         """Get the URL or path detail to show user."""
-        if isinstance(location, WorkspaceFileLocation):
-            return str(location.workspace_relative_path)
+        if isinstance(location, ProjectFileLocation):
+            return str(location.project_relative_path)
         if isinstance(location, ExternalFileLocation):
             return str(location.absolute_path)
         if isinstance(location, URLFileLocation):
