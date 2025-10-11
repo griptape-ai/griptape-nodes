@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -544,5 +545,113 @@ class RenameParameterResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class GetConnectionsForParameterRequest(RequestPayload):
+    """Get connections for a specific parameter on a node.
+
+    Use when: Checking if a parameter is connected, getting connection details for a parameter,
+    validating parameter connection state, building connection-aware UIs.
+
+    Args:
+        parameter_name: Name of the parameter to get connections for
+        node_name: Name of the node containing the parameter (None for current context)
+
+    Results: GetConnectionsForParameterResultSuccess (with connection details) | GetConnectionsForParameterResultFailure
+    """
+
+    parameter_name: str
+    # If node name is None, use the Current Context
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConnectionsForParameterResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter connections retrieved successfully.
+
+    Args:
+        parameter_name: Name of the parameter
+        node_name: Name of the node containing the parameter
+        has_incoming_connections: Whether the parameter has incoming connections
+        has_outgoing_connections: Whether the parameter has outgoing connections
+        incoming_connections: List of incoming connections to this parameter
+        outgoing_connections: List of outgoing connections from this parameter
+    """
+
+    parameter_name: str
+    node_name: str
+    has_incoming_connections: bool
+    has_outgoing_connections: bool
+    incoming_connections: list[IncomingConnection]
+    outgoing_connections: list[OutgoingConnection]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetConnectionsForParameterResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Parameter connections retrieval failed. Common causes: node not found, parameter not found."""
+
+
+@dataclass
+@PayloadRegistry.register
 class RemoveElementEvent(ExecutionPayload):
     element_id: str
+
+
+# Migration Events
+@dataclass
+class ConversionConfig:
+    """Configuration for parameter conversion using intermediate nodes.
+
+    Args:
+        library: Library containing the conversion node type
+        node_type: Type of node to create for conversion
+        input_parameter: Parameter name on the conversion node to connect input to
+        output_parameter: Parameter name on the conversion node to connect output from
+        additional_parameters: Additional parameters to set on the conversion node
+        offset_x: X offset for positioning the conversion node relative to target node
+        offset_y: Y offset for positioning the conversion node relative to target node
+    """
+
+    library: str
+    node_type: str
+    input_parameter: str
+    output_parameter: str
+    additional_parameters: dict[str, Any] | None = None
+    offset_x: int = 0
+    offset_y: int = 0
+
+
+@dataclass
+@PayloadRegistry.register
+class MigrateParameterRequest(RequestPayload):
+    """Request to migrate a parameter from one node to another with optional conversions.
+
+    Args:
+        source_node_name: Name of the source node
+        target_node_name: Name of the target node
+        source_parameter_name: Name of the parameter to migrate from
+        target_parameter_name: Name of the parameter to migrate to
+        input_conversion: Configuration for converting incoming connections
+        output_conversion: Configuration for converting outgoing connections
+        value_transform: Function to transform values when no connections exist
+    """
+
+    source_node_name: str
+    target_node_name: str
+    source_parameter_name: str
+    target_parameter_name: str
+    input_conversion: ConversionConfig | None = None
+    output_conversion: ConversionConfig | None = None
+    value_transform: Callable | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class MigrateParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter migration completed successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class MigrateParameterResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Parameter migration failed."""

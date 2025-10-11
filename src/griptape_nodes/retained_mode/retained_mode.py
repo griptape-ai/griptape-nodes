@@ -58,9 +58,11 @@ from griptape_nodes.retained_mode.events.object_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
+    ConversionConfig,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
     GetParameterValueResultFailure,
+    MigrateParameterRequest,
     RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
 )
@@ -392,6 +394,32 @@ class RetainedMode:
         return result
 
     @classmethod
+    def get_connections_for_parameter(cls, parameter_name: str, node_name: str | None = None) -> ResultPayload:
+        """Gets all connections associated with a specific parameter on a node.
+
+        This includes both incoming and outgoing connections to/from the parameter.
+
+        Args:
+            parameter_name (str): Name of the parameter to get connections for.
+            node_name (str | None): Name of the node containing the parameter. If None, uses current context.
+
+        Returns:
+            ResultPayload: Contains connection details for the parameter.
+
+        Example:
+            # Get connections for a parameter on a specific node
+            result = cmd.get_connections_for_parameter("input_image", "my_node")
+
+            # Get connections for a parameter on the current node
+            result = cmd.get_connections_for_parameter("scale")
+        """
+        from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterRequest
+
+        request = GetConnectionsForParameterRequest(parameter_name=parameter_name, node_name=node_name)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
     def list_params(cls, node: str) -> ResultPayload:
         """Lists all parameters associated with a node.
 
@@ -528,6 +556,61 @@ class RetainedMode:
             result = cmd.del_param("my_node", "my_param")
         """
         request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_name=node_name)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def migrate_parameter(
+        cls,
+        source_node_name: str,
+        target_node_name: str,
+        source_parameter_name: str,
+        target_parameter_name: str,
+        input_conversion: ConversionConfig | None = None,
+        output_conversion: ConversionConfig | None = None,
+        value_transform: Callable | None = None,
+    ) -> ResultPayload:
+        """Migrate a parameter from one node to another with optional conversions.
+
+        Args:
+            source_node_name (str): Name of the source node.
+            target_node_name (str): Name of the target node.
+            source_parameter_name (str): Name of the parameter to migrate from.
+            target_parameter_name (str): Name of the parameter to migrate to.
+            input_conversion (ConversionConfig, optional): Configuration for converting incoming connections.
+            output_conversion (ConversionConfig, optional): Configuration for converting outgoing connections.
+            value_transform (Callable, optional): Function to transform values when no connections exist.
+
+        Returns:
+            ResultPayload: Contains the result of the migration operation.
+
+        Example:
+            # Simple parameter migration
+            result = cmd.migrate_parameter("old_node", "new_node", "input_image", "input_image")
+
+            # Parameter migration with conversion
+            result = cmd.migrate_parameter(
+                "old_node", "new_node", "scale", "percentage_scale",
+                input_conversion={
+                    "library": "Griptape Nodes Library",
+                    "node_type": "Math",
+                    "input_parameter": "A",
+                    "output_parameter": "result",
+                    "operation": "multiply [A * B]",
+                    "B": 100
+                },
+                value_transform=lambda x: x * 100
+            )
+        """
+        request = MigrateParameterRequest(
+            source_node_name=source_node_name,
+            target_node_name=target_node_name,
+            source_parameter_name=source_parameter_name,
+            target_parameter_name=target_parameter_name,
+            input_conversion=input_conversion,
+            output_conversion=output_conversion,
+            value_transform=value_transform,
+        )
         result = GriptapeNodes().handle_request(request)
         return result
 
