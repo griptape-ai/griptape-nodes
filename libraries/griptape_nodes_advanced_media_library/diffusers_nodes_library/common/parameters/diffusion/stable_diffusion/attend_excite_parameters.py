@@ -13,7 +13,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class StableDiffusionAttendAndExcitePipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._huggingface_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -25,6 +25,7 @@ class StableDiffusionAttendAndExcitePipelineParameters(DiffusionPipelineTypePipe
                 "CompVis/stable-diffusion-v1-2",
                 "CompVis/stable-diffusion-v1-1",
             ],
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:

@@ -1,5 +1,7 @@
 import logging
+import math
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 import PIL.Image
@@ -13,6 +15,9 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
+
+
+DEFAULT_NUM_INFERENCE_STEPS = 20
 
 
 class DiffusionPipelineRuntimeParameters(ABC):
@@ -45,7 +50,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
-                default_value=4,
+                default_value=DEFAULT_NUM_INFERENCE_STEPS,
                 type="int",
                 tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality image at the expense of slower inference.",
             )
@@ -91,25 +96,35 @@ class DiffusionPipelineRuntimeParameters(ABC):
             "advanced_media_library.enable_image_preview_intermediates", default=False
         )
 
+        strength_affected_steps = math.ceil(num_inference_steps * (self._node.get_parameter_value("strength") or 1))
+
+        first_iteration_time = None
+
         def callback_on_step_end(
             pipe: DiffusionPipeline,
             i: int,
-            _t: Any,
+            _t: int,
             callback_kwargs: dict,
         ) -> dict:
+            nonlocal first_iteration_time
             # Check for cancellation request
             if self._node.is_cancellation_requested:
                 pipe._interrupt = True
                 self._node.log_params.append_to_logs("Cancellation requested, stopping after this step...\n")  # type: ignore[reportAttributeAccessIssue]
                 return callback_kwargs
 
-            if i < num_inference_steps - 1:
-                if enable_preview:
-                    self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
-                self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
+            if first_iteration_time is None:
+                first_iteration_time = datetime.now(tz=UTC)
+            if i < num_inference_steps - 1 and enable_preview:
+                self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
+            if i == 0:
+                self._node.log_params.append_to_logs(f"Completed inference step 1 of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+            else:
+                self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
+                    f"Completed inference step {i + 1} of {strength_affected_steps}. {f'{(datetime.now(tz=UTC) - first_iteration_time).total_seconds() / i:.2f}'} s/it\n"
+                )
             return {}
 
-        self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),
             output_type="pil",

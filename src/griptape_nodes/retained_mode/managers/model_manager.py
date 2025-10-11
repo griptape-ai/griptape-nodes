@@ -121,6 +121,7 @@ class ModelDownloadTracker(tqdm):
     def close(self) -> None:
         """Override close to log download completion."""
         super().close()
+        self._update_status_file()  # Write final state to status file
         logger.debug(
             "ModelDownloadTracker close - model_id: %s, self.n: %s, total: %s", self.model_id, self.n, self.total
         )
@@ -190,13 +191,21 @@ class ModelDownloadTracker(tqdm):
                     progress_percent,
                 )
 
-                data.update(
-                    {
-                        "downloaded_files": self.n,
-                        "progress_percent": progress_percent,
-                        "updated_at": current_time,
-                    }
-                )
+                # Check if download is complete
+                is_complete = self.total > 0 and self.n >= self.total
+
+                update_data = {
+                    "downloaded_files": self.n,
+                    "progress_percent": progress_percent,
+                    "updated_at": current_time,
+                }
+
+                # Update status to completed if all files are downloaded
+                if is_complete:
+                    update_data["status"] = "completed"
+                    update_data["completed_at"] = current_time
+
+                data.update(update_data)
 
                 with status_file.open("w") as f:
                     json.dump(data, f, indent=2)
@@ -426,9 +435,11 @@ class ModelManager:
             # Store process for cancellation
             self._download_processes[model_id] = process
 
-            stdout, _ = await process.communicate()
+            stdout, stderr = await process.communicate()
 
             if process.returncode == 0:
+                logger.debug(stdout.decode().strip())
+                logger.debug(stderr.decode().strip())
                 logger.info("Successfully downloaded model '%s'", model_id)
             else:
                 raise ValueError(stdout.decode().strip())

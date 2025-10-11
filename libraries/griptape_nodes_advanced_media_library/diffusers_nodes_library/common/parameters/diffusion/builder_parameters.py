@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from diffusers_nodes_library.common.parameters.diffusion.allegro.pipeline_type_parameters import (
     AllegroPipelineTypeParameters,
@@ -10,8 +12,8 @@ from diffusers_nodes_library.common.parameters.diffusion.amused.pipeline_type_pa
 from diffusers_nodes_library.common.parameters.diffusion.audioldm.pipeline_type_parameters import (
     AudioldmPipelineTypeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
-    DiffusionPipelineTypeParameters,
+from diffusers_nodes_library.common.parameters.diffusion.custom.pipeline_type_parameters import (
+    CustomPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.pipeline_type_parameters import (
     FluxPipelineTypeParameters,
@@ -29,14 +31,19 @@ from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.pipeline_typ
     WuerstchenPipelineTypeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
+
+if TYPE_CHECKING:
+    from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
+    from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
+        DiffusionPipelineTypeParameters,
+    )
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineBuilderParameters:
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: DiffusionPipelineBuilderNode):
         self.provider_choices = [
             "Flux",
             "Allegro",
@@ -46,6 +53,7 @@ class DiffusionPipelineBuilderParameters:
             "Stable Diffusion",
             "WAN",
             "Wuerstchen",
+            "Custom",
         ]
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
@@ -93,6 +101,8 @@ class DiffusionPipelineBuilderParameters:
                 self._pipeline_type_parameters = WanPipelineTypeParameters(self._node)
             case "Wuerstchen":
                 self._pipeline_type_parameters = WuerstchenPipelineTypeParameters(self._node)
+            case "Custom":
+                self._pipeline_type_parameters = CustomPipelineTypeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline provider: {provider}"
                 logger.error(msg)
@@ -110,12 +120,16 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
+        self._node.save_ui_options()
+
         self.pipeline_type_parameters.remove_input_parameters()
         self.set_pipeline_type_parameters(provider)
         self.pipeline_type_parameters.add_input_parameters()
 
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
         self._node.set_parameter_value("pipeline_type", first_pipeline_type)
+
+        self._node.clear_ui_options_cache()
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:

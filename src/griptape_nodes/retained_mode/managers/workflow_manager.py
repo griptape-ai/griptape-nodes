@@ -12,6 +12,7 @@ from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
+import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
 from rich.console import Console
@@ -23,7 +24,12 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowMetadata, WorkflowRegistry, WorkflowShape
+from griptape_nodes.node_library.workflow_registry import (
+    Workflow,
+    WorkflowMetadata,
+    WorkflowRegistry,
+    WorkflowShape,
+)
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -108,7 +114,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
-    Version,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
@@ -232,6 +237,25 @@ class WorkflowManager:
 
         execution_successful: bool
         execution_details: str
+
+    class SaveWorkflowScenario(StrEnum):
+        """Scenarios for saving workflows."""
+
+        FIRST_SAVE = "first_save"  # First save of new workflow
+        OVERWRITE_EXISTING = "overwrite_existing"  # Save existing workflow to same name
+        SAVE_AS = "save_as"  # Save existing workflow with new name
+        SAVE_FROM_TEMPLATE = "save_from_template"  # Save from a template
+
+    @dataclass
+    class SaveWorkflowTargetInfo:
+        """Target information for saving a workflow."""
+
+        scenario: WorkflowManager.SaveWorkflowScenario  # Which save scenario we're in
+        file_name: str  # Final resolved name to use
+        file_path: Path  # Absolute path where file will be written
+        relative_file_path: str  # Relative path for registry
+        creation_date: datetime  # When workflow was originally created
+        branched_from: str | None  # Workflow this was branched from (if any)
 
     def __init__(self, event_manager: EventManager) -> None:
         self._workflow_file_path_to_info = {}
@@ -929,8 +953,9 @@ class WorkflowManager:
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
             library_name = node_library_referenced.library_name
             desired_version_str = node_library_referenced.library_version
-            desired_version = Version.from_string(desired_version_str)
-            if desired_version is None:
+            try:
+                desired_version = semver.VersionInfo.parse(desired_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Workflow cited an invalid version string '{desired_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -974,8 +999,9 @@ class WorkflowManager:
             # Attempt to parse out the version string.
             library_metadata = library_metadata_result.metadata
             library_version_str = library_metadata.library_version
-            library_version = Version.from_string(version_string=library_version_str)
-            if library_version is None:
+            try:
+                library_version = semver.VersionInfo.parse(library_version_str)
+            except Exception:
                 had_critical_error = True
                 problems.append(
                     f"Library an invalid version string '{library_version_str}' for library '{library_name}'. Must be specified in major.minor.patch format."
@@ -1166,67 +1192,37 @@ class WorkflowManager:
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
-        # Start with the file name provided; we may change it.
-        file_name = request.file_name
+    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+        # Determine save target (file path, name, metadata)
+        context_manager = GriptapeNodes.ContextManager()
+        current_workflow_name = (
+            context_manager.get_current_workflow_name() if context_manager.has_current_workflow() else None
+        )
 
-        # See if we had an existing workflow for this.
-        prior_workflow = None
-        creation_date = None
-        if file_name and WorkflowRegistry.has_workflow_with_name(file_name):
-            # Get the metadata.
-            prior_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-            # We'll use its creation date.
-            creation_date = prior_workflow.metadata.creation_date
-        elif file_name:
-            # If no prior workflow exists for the new name, check if there's a current workflow
-            # context (e.g., during rename operations) to preserve metadata from
-            context_manager = GriptapeNodes.ContextManager()
-            if context_manager.has_current_workflow():
-                current_workflow_name = context_manager.get_current_workflow_name()
-                if current_workflow_name and WorkflowRegistry.has_workflow_with_name(current_workflow_name):
-                    prior_workflow = WorkflowRegistry.get_workflow_by_name(current_workflow_name)
-                    creation_date = prior_workflow.metadata.creation_date
+        try:
+            save_target = self._determine_save_target(
+                requested_file_name=request.file_name,
+                current_workflow_name=current_workflow_name,
+            )
+        except ValueError as e:
+            details = f"Attempted to save workflow. Failed when determining save target: {e}"
+            return SaveWorkflowResultFailure(result_details=details)
 
-        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
-            # Either a new workflow, or a backcompat situation.
-            creation_date = datetime.now(tz=UTC)
+        file_name = save_target.file_name
+        file_path = save_target.file_path
+        relative_file_path = save_target.relative_file_path
+        creation_date = save_target.creation_date
+        branched_from = save_target.branched_from
 
-        # Let's see if this is a template file; if so, re-route it as a copy in the customer's workflow directory.
-        if prior_workflow and prior_workflow.metadata.is_template:
-            # Aha! User is attempting to save a template. Create a differently-named file in their workspace.
-            # Find the first available file name that doesn't conflict.
-            curr_idx = 1
-            free_file_found = False
-            while not free_file_found:
-                # Composite a new candidate file name to test.
-                new_file_name = f"{file_name}_{curr_idx}"
-                new_file_name_with_extension = f"{new_file_name}.py"
-                new_file_full_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(new_file_name_with_extension)
-                if new_file_full_path.exists():
-                    # Keep going.
-                    curr_idx += 1
-                else:
-                    free_file_found = True
-                    file_name = new_file_name
+        logger.info(
+            "Save workflow: scenario=%s, file_name=%s, file_path=%s, branched_from=%s",
+            save_target.scenario.value,
+            file_name,
+            str(file_path),
+            branched_from if branched_from else "None",
+        )
 
-        # Get file name stuff prepped.
-        # Use the existing registered file path if this is an existing workflow (not a template)
-        if prior_workflow and not prior_workflow.metadata.is_template:
-            # Use the existing registered file path
-            relative_file_path = prior_workflow.file_path
-            file_path = Path(WorkflowRegistry.get_complete_file_path(relative_file_path))
-            # Extract file name from the path for metadata generation
-            if not file_name:
-                file_name = prior_workflow.metadata.name
-        else:
-            # Create new path in workspace for new workflows or templates
-            if not file_name:
-                file_name = datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
-            relative_file_path = f"{file_name}.py"
-            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
-
-        # First, serialize the current workflow state
+        # Serialize the current workflow state
         top_level_flow_request = GetTopLevelFlowRequest()
         top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -1244,11 +1240,6 @@ class WorkflowManager:
 
         serialized_flow_commands = serialized_flow_result.serialized_flow_commands
 
-        # Extract branched_from information if it exists
-        branched_from = None
-        if prior_workflow and prior_workflow.metadata.branched_from:
-            branched_from = prior_workflow.metadata.branched_from
-
         # Extract workflow shape if possible
         workflow_shape = None
         try:
@@ -1259,6 +1250,10 @@ class WorkflowManager:
             pass
 
         # Use the standalone request to save the workflow file
+        # Use pickle_control_flow_result from request if provided, otherwise use False (default)
+        pickle_control_flow_result = (
+            request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
+        )
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
             file_name=file_name,
@@ -1268,6 +1263,7 @@ class WorkflowManager:
             branched_from=branched_from,
             workflow_shape=workflow_shape,
             file_path=str(file_path),
+            pickle_control_flow_result=pickle_control_flow_result,
         )
         save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
@@ -1295,6 +1291,97 @@ class WorkflowManager:
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
+        )
+
+    def _determine_save_target(
+        self, requested_file_name: str | None, current_workflow_name: str | None
+    ) -> SaveWorkflowTargetInfo:
+        """Determine the target file path, name, and metadata for saving a workflow.
+
+        Args:
+            requested_file_name: The name the user wants to save as (can be None)
+            current_workflow_name: The workflow currently loaded in context (can be None)
+
+        Returns:
+            SaveWorkflowTargetInfo with all information needed to save the workflow
+
+        Raises:
+            ValueError: If workflow registry lookups fail or produce inconsistent state
+        """
+        # Look up workflows in registry
+        target_workflow = None
+        if requested_file_name and WorkflowRegistry.has_workflow_with_name(requested_file_name):
+            target_workflow = WorkflowRegistry.get_workflow_by_name(requested_file_name)
+
+        current_workflow = None
+        if current_workflow_name and WorkflowRegistry.has_workflow_with_name(current_workflow_name):
+            current_workflow = WorkflowRegistry.get_workflow_by_name(current_workflow_name)
+
+        # Determine scenario and build target info
+        if (target_workflow and target_workflow.metadata.is_template) or (
+            current_workflow and current_workflow.metadata.is_template
+        ):
+            # Template workflows always create new copies with unique names
+            scenario = WorkflowManager.SaveWorkflowScenario.SAVE_FROM_TEMPLATE
+            template_workflow = target_workflow or current_workflow
+            if template_workflow is None:
+                msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
+                raise ValueError(msg)
+            base_name = requested_file_name if requested_file_name else template_workflow.metadata.name
+
+            # Find unique filename
+            curr_idx = 1
+            while True:
+                candidate_name = f"{base_name}_{curr_idx}"
+                candidate_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(f"{candidate_name}.py")
+                if not candidate_path.exists():
+                    break
+                curr_idx += 1
+
+            file_name = candidate_name
+            creation_date = datetime.now(tz=UTC)
+            branched_from = None
+            relative_file_path = f"{file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+
+        elif target_workflow:
+            # Requested name exists in registry → overwrite it
+            scenario = WorkflowManager.SaveWorkflowScenario.OVERWRITE_EXISTING
+            file_name = target_workflow.metadata.name
+            creation_date = target_workflow.metadata.creation_date
+            branched_from = target_workflow.metadata.branched_from
+            relative_file_path = target_workflow.file_path
+            file_path = Path(WorkflowRegistry.get_complete_file_path(relative_file_path))
+
+        elif requested_file_name and current_workflow:
+            # Requested name doesn't exist but we have a current workflow → Save As
+            scenario = WorkflowManager.SaveWorkflowScenario.SAVE_AS
+            file_name = requested_file_name
+            creation_date = current_workflow.metadata.creation_date
+            branched_from = current_workflow.metadata.branched_from
+            relative_file_path = f"{file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+
+        else:
+            # No requested name or no current workflow → first save
+            scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
+            file_name = requested_file_name if requested_file_name else datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            creation_date = datetime.now(tz=UTC)
+            branched_from = None
+            relative_file_path = f"{file_name}.py"
+            file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
+
+        # Ensure creation date is valid (backcompat)
+        if (creation_date is None) or (creation_date == WorkflowManager.EPOCH_START):
+            creation_date = datetime.now(tz=UTC)
+
+        return WorkflowManager.SaveWorkflowTargetInfo(
+            scenario=scenario,
+            file_name=file_name,
+            file_path=file_path,
+            relative_file_path=relative_file_path,
+            creation_date=creation_date,
+            branched_from=branched_from,
         )
 
     def on_save_workflow_file_from_serialized_flow_request(
@@ -1340,6 +1427,7 @@ class WorkflowManager:
                 serialized_flow_commands=request.serialized_flow_commands,
                 workflow_metadata=workflow_metadata,
                 execution_flow_name=execution_flow_name,
+                pickle_control_flow_result=request.pickle_control_flow_result,
             )
         except Exception as err:
             details = f"Attempted to save workflow file '{request.file_name}' from serialized flow commands. Failed during content generation: {err}"
@@ -1387,6 +1475,7 @@ class WorkflowManager:
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),
+            node_types_used=serialized_flow_commands.node_types_used,
             workflows_referenced=workflows_referenced,
             creation_date=creation_date,
             last_modified_date=datetime.now(tz=UTC),
@@ -1400,6 +1489,8 @@ class WorkflowManager:
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
         execution_flow_name: str,
+        *,
+        pickle_control_flow_result: bool = False,
     ) -> str:
         """Generate workflow file content from serialized commands and metadata."""
         metadata_block = self._generate_workflow_metadata_header(workflow_metadata=workflow_metadata)
@@ -1530,6 +1621,7 @@ class WorkflowManager:
             flow_name=execution_flow_name,
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
+            pickle_control_flow_result=pickle_control_flow_result,
         )
         if workflow_execution_code is not None:
             for node in workflow_execution_code:
@@ -1600,6 +1692,8 @@ class WorkflowManager:
         flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
+        *,
+        pickle_control_flow_result: bool = False,
     ) -> list[ast.AST] | None:
         """Generates execute_workflow(...) and the __main__ guard."""
         # Use workflow shape from metadata if available, otherwise skip execution block
@@ -1625,7 +1719,7 @@ class WorkflowManager:
         )
         import_recorder.add_from_import("griptape_nodes.drivers.storage.storage_backend", "StorageBackend")
 
-        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None) -> dict | None:` ===
+        # === 1) build the `def execute_workflow(input: dict, storage_backend: str = StorageBackend.LOCAL, workflow_executor: WorkflowExecutor | None = None, pickle_control_flow_result: bool = False) -> dict | None:` ===
         #   args
         arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
         arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
@@ -1637,14 +1731,21 @@ class WorkflowManager:
                 right=ast.Constant(value=None),
             ),
         )
+        arg_pickle_control_flow_result = ast.arg(
+            arg="pickle_control_flow_result", annotation=ast.Name(id="bool", ctx=ast.Load())
+        )
         args = ast.arguments(
             posonlyargs=[],
-            args=[arg_input, arg_storage_backend, arg_workflow_executor],
+            args=[arg_input, arg_storage_backend, arg_workflow_executor, arg_pickle_control_flow_result],
             vararg=None,
             kwonlyargs=[],
             kw_defaults=[],
             kwarg=None,
-            defaults=[ast.Constant(StorageBackend.LOCAL.value), ast.Constant(value=None)],
+            defaults=[
+                ast.Constant(StorageBackend.LOCAL.value),
+                ast.Constant(value=None),
+                ast.Constant(value=pickle_control_flow_result),
+            ],
         )
         #   return annotation: dict | None
         return_annotation = ast.BinOp(
@@ -1706,6 +1807,10 @@ class WorkflowManager:
                             keywords=[
                                 ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
+                                ast.keyword(
+                                    arg="pickle_control_flow_result",
+                                    value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
+                                ),
                             ],
                         )
                     )
@@ -1754,6 +1859,10 @@ class WorkflowManager:
                                     ),
                                     ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
+                                    ),
+                                    ast.keyword(
+                                        arg="pickle_control_flow_result",
+                                        value=ast.Name(id="pickle_control_flow_result", ctx=ast.Load()),
                                     ),
                                 ],
                             )
@@ -2768,6 +2877,7 @@ class WorkflowManager:
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
+        import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeDeprecationMetadata")
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
         import_recorder.add_from_import(
@@ -3159,6 +3269,7 @@ class WorkflowManager:
             "ui_options",
             "settable",
             "is_user_defined",
+            "parent_container_name",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
         minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
@@ -3167,7 +3278,10 @@ class WorkflowManager:
         return minimal_dict
 
     def _create_workflow_shape_from_nodes(
-        self, nodes: Sequence[BaseNode], workflow_shape: dict[str, Any], workflow_shape_type: str
+        self,
+        nodes: Sequence[BaseNode],
+        workflow_shape: dict[str, Any],
+        workflow_shape_type: str,
     ) -> dict[str, Any]:
         """Creates a workflow shape from the nodes.
 
@@ -3226,10 +3340,14 @@ class WorkflowManager:
 
         # Now, we need to gather the input and output parameters for each node type.
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=start_nodes, workflow_shape=workflow_shape, workflow_shape_type="input"
+            nodes=start_nodes,
+            workflow_shape=workflow_shape,
+            workflow_shape_type="input",
         )
         workflow_shape = self._create_workflow_shape_from_nodes(
-            nodes=end_nodes, workflow_shape=workflow_shape, workflow_shape_type="output"
+            nodes=end_nodes,
+            workflow_shape=workflow_shape,
+            workflow_shape_type="output",
         )
 
         return workflow_shape
@@ -3248,16 +3366,6 @@ class WorkflowManager:
         Returns:
             Parameter info dict if relevant for workflow shape, None if should be excluded
         """
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
-        # Always exclude list types until container type handling is implemented
-        if parameter.type.startswith("list"):
-            logger.warning(
-                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
-                parameter.name,
-                parameter.type,
-            )
-            return None
-
         # Conditionally exclude control types
         if not include_control_params and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value:
             return None
@@ -3461,9 +3569,13 @@ class WorkflowManager:
 
         # Check workflow version - Schema version 0.6.0+ required for referenced workflow imports
         # (workflow schema was fixed in 0.6.0 to support importing workflows)
-        required_version = Version(major=0, minor=6, patch=0)
-        workflow_version = Version.from_string(workflow.metadata.schema_version)
-        if workflow_version is None or workflow_version < required_version:
+        required_version = semver.VersionInfo(major=0, minor=6, patch=0)
+        try:
+            workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
+        except Exception as e:
+            details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' caused an error: {e}"
+            return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
+        if workflow_version < required_version:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow version '{workflow.metadata.schema_version}' is less than required version '0.6.0'. To remedy, open the workflow you are attempting to import and save it again to upgrade it to the latest version."
             return ImportWorkflowAsReferencedSubFlowResultFailure(result_details=details)
 
@@ -3578,6 +3690,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3661,6 +3774,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,
@@ -3748,6 +3862,7 @@ class WorkflowManager:
                 schema_version=source_workflow.metadata.schema_version,
                 engine_version_created_with=source_workflow.metadata.engine_version_created_with,
                 node_libraries_referenced=source_workflow.metadata.node_libraries_referenced.copy(),
+                node_types_used=source_workflow.metadata.node_types_used.copy(),
                 workflows_referenced=source_workflow.metadata.workflows_referenced.copy()
                 if source_workflow.metadata.workflows_referenced
                 else None,

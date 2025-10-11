@@ -8,6 +8,7 @@ from typing import Any
 # static_ffmpeg is dynamically installed by the library loader at runtime
 # into the library's own virtual environment, but not available during type checking
 import static_ffmpeg.run  # type: ignore[import-untyped]
+from griptape.artifacts import VideoUrlArtifact
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.structures import Agent as GriptapeAgent
 from griptape.tasks import PromptTask
@@ -23,7 +24,6 @@ from griptape_nodes_library.utils.video_utils import (
     to_video_artifact,
     validate_url,
 )
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -192,7 +192,7 @@ class SplitVideo(ControlNode):
         self.split_videos_list.clear_list()
 
     def _parse_timecodes_with_agent(self, timecodes_str: str) -> str:
-        api_key = self.get_config_value(SERVICE, API_KEY_ENV_VAR)
+        api_key = GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR)
         if not api_key:
             error_msg = f"No API key found for {SERVICE}. Please set {API_KEY_ENV_VAR} environment variable."
             raise ValueError(error_msg)

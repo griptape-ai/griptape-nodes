@@ -10,6 +10,7 @@ node configuration, and instantiates the `AmazonBedrockPromptDriver`.
 import boto3  # pyright: ignore[reportMissingImports]
 from griptape.drivers.prompt.amazon_bedrock import AmazonBedrockPromptDriver as GtAmazonBedrockPromptDriver
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -78,9 +79,9 @@ class AmazonBedrockPrompt(BasePrompt):
 
     def start_session(self) -> boto3.Session:
         """Starts a session with Amazon Bedrock using the provided AWS credentials."""
-        aws_access_key_id = self.get_config_value(SERVICE, AWS_ACCESS_KEY_ID_ENV_VAR)
-        aws_secret_access_key = self.get_config_value(SERVICE, AWS_SECRET_ACCESS_KEY_ENV_VAR)
-        aws_default_region = self.get_config_value(SERVICE, AWS_DEFAULT_REGION_ENV_VAR)
+        aws_access_key_id = GriptapeNodes.SecretsManager().get_secret(AWS_ACCESS_KEY_ID_ENV_VAR)
+        aws_secret_access_key = GriptapeNodes.SecretsManager().get_secret(AWS_SECRET_ACCESS_KEY_ENV_VAR)
+        aws_default_region = GriptapeNodes.SecretsManager().get_secret(AWS_DEFAULT_REGION_ENV_VAR)
 
         try:
             session = boto3.Session(

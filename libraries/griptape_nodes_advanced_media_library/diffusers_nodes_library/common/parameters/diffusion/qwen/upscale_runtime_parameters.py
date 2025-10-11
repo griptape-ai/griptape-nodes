@@ -14,12 +14,6 @@ class QwenUpscalePipelineRuntimeParameters(UpscalePipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 
-    def _add_input_parameters(self) -> None:
-        super()._add_input_parameters()
-
-        self._node.hide_parameter_by_name("prompt_2")
-        self._node.hide_parameter_by_name("negative_prompt_2")
-
     def _get_pipe_kwargs(self) -> dict:
         return {
             "prompt": self._node.get_parameter_value("prompt"),
@@ -30,5 +24,5 @@ class QwenUpscalePipelineRuntimeParameters(UpscalePipelineRuntimeParameters):
         }
 
     def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:
-        tile_size = self.tile_size
+        tile_size = self.diffuser_tile_size
         return qwen_latents_to_image_pil(pipe, latents, tile_size, tile_size)

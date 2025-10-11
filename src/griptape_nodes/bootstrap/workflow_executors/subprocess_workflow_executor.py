@@ -10,9 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
-from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
-from griptape_nodes.app.app import _create_websocket_connection, _send_subscribe_command
+from griptape_nodes.api_client import Client
 from griptape_nodes.bootstrap.utils.python_subprocess_executor import PythonSubprocessExecutor
 from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor import LocalSessionWorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
@@ -80,6 +79,8 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         workflow_name: str,  # noqa: ARG002
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
+        *,
+        pickle_control_flow_result: bool = False,
         **kwargs: Any,  # noqa: ARG002
     ) -> None:
         """Execute a workflow in a subprocess and wait for completion."""
@@ -117,6 +118,9 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
                 str(tmp_workflow_path),
             ]
 
+            if pickle_control_flow_result:
+                args.append("--pickle-control-flow-result")
+
             try:
                 await self.execute_python_script(
                     script_path=tmp_script_path,
@@ -135,13 +139,7 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
     async def _start_websocket_listener(self) -> None:
         """Start WebSocket connection to listen for events from the subprocess."""
         logger.info("Starting WebSocket listener for session %s", self._session_id)
-        api_key = self._get_api_key()
-        if api_key is None:
-            logger.warning("No API key found, WebSocket listener will not be started")
-            return
-
-        logger.info("API key found, starting WebSocket listener thread")
-        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, args=(api_key,), daemon=True)
+        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, daemon=True)
         self._websocket_thread.start()
 
         if self._websocket_event_loop_ready.wait(timeout=10):
@@ -173,7 +171,7 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         else:
             logger.info("WebSocket listener thread stopped successfully")
 
-    def _start_websocket_thread(self, api_key: str) -> None:
+    def _start_websocket_thread(self) -> None:
         """Run WebSocket tasks in a separate thread with its own async loop."""
         try:
             # Create a new event loop for this thread
@@ -189,7 +187,7 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
             logger.info("WebSocket listener thread started and ready")
 
             # Run the async WebSocket listener
-            loop.run_until_complete(self._run_websocket_listener(api_key))
+            loop.run_until_complete(self._run_websocket_listener())
         except Exception as e:
             logger.error("WebSocket listener thread error: %s", e)
         finally:
@@ -198,59 +196,37 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
             self._shutdown_event = None
             logger.info("WebSocket listener thread ended")
 
-    async def _run_websocket_listener(self, api_key: str) -> None:
+    async def _run_websocket_listener(self) -> None:
         """Run WebSocket listener - establish connection and handle incoming messages."""
-        logger.info("Creating WebSocket connection stream for listening")
-        connection_stream = _create_websocket_connection(api_key)
+        logger.info("Creating Client for listening on session %s", self._session_id)
 
-        async for ws_connection in connection_stream:
+        async with Client() as client:
             logger.info("WebSocket connection established for session %s", self._session_id)
-            try:
-                # Listen for incoming messages
-                await self._listen_for_messages(ws_connection)
 
-            except (ConnectionClosed, ConnectionClosedError):
-                logger.info("WebSocket connection closed, reconnecting...")
-                continue
-            except asyncio.CancelledError:
-                logger.info("WebSocket listener task cancelled, shutting down")
-                break
+            try:
+                await self._listen_for_messages(client)
             except Exception:
                 logger.exception("WebSocket listener failed")
-                await asyncio.sleep(2.0)
-                continue
+            finally:
+                logger.info("WebSocket listener connection loop ended")
 
-            # Check if shutdown was requested
-            if self._shutdown_event and self._shutdown_event.is_set():
-                logger.info("Shutdown requested, ending WebSocket listener connection loop")
-                break
-
-        logger.info("WebSocket listener connection loop ended")
-
-    async def _listen_for_messages(self, ws_connection: Any) -> None:
+    async def _listen_for_messages(self, client: Client) -> None:
         """Listen for incoming WebSocket messages from the subprocess."""
         logger.info("Starting to listen for WebSocket messages")
 
-        # Subscribe to the session topic to receive messages
         topic = f"sessions/{self._session_id}/response"
+        await client.subscribe(topic)
 
         try:
-            await _send_subscribe_command(
-                ws_connection=ws_connection,
-                topic=topic,
-            )
-            async for message in ws_connection:
+            async for message in client.messages:
                 if self._shutdown_event and self._shutdown_event.is_set():
                     logger.info("Shutdown requested, ending message listener")
                     break
 
                 try:
-                    data = json.loads(message)
-                    logger.debug("Received WebSocket message: %s", data.get("type"))
-                    await self._process_event(data)
+                    logger.debug("Received WebSocket message: %s", message.get("type"))
+                    await self._process_event(message)
 
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse WebSocket message: %s", message)
                 except Exception:
                     logger.exception("Error processing WebSocket message")
 
@@ -285,7 +261,12 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
         if isinstance(ex_event.payload, ControlFlowResolvedEvent):
             logger.info("Workflow execution completed successfully")
-            self.output = {ex_event.payload.end_node_name: ex_event.payload.parameter_output_values}
+            # Store both parameter output values and unique UUID values for deserialization
+            result = {
+                "parameter_output_values": ex_event.payload.parameter_output_values,
+                "unique_parameter_uuid_to_values": ex_event.payload.unique_parameter_uuid_to_values,
+            }
+            self.output = {ex_event.payload.end_node_name: result}
 
         if isinstance(ex_event.payload, ControlFlowCancelledEvent):
             logger.error("Workflow execution cancelled")

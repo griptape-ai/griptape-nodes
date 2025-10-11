@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.node_library.library_registry import LibraryRegistry
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
@@ -90,11 +89,6 @@ class ConfigManager:
                 GetConfigSchemaRequest, self.on_handle_get_config_schema_request
             )
             event_manager.assign_manager_to_request_type(ResetConfigRequest, self.on_handle_reset_config_request)
-
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
 
     @property
     def workspace_path(self) -> Path:
@@ -231,34 +225,6 @@ class ConfigManager:
         )
         self.load_configs()
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # We want to ensure that all environment variables from here are pre-filled in the secrets manager.
-        env_var_names = self.gather_env_var_names()
-        for env_var_name in env_var_names:
-            self._update_secret_from_env_var(env_var_name)
-
-    def gather_env_var_names(self) -> list[str]:
-        """Gather all environment variable names within the config."""
-        return self._gather_env_var_names_in_dict(self.merged_config)
-
-    def _gather_env_var_names_in_dict(self, config: dict) -> list[str]:
-        """Gather all environment variable names from a given config dictionary."""
-        env_var_names = []
-        for value in config.values():
-            if isinstance(value, dict):
-                env_var_names.extend(self._gather_env_var_names_in_dict(value))
-            elif isinstance(value, str) and value.startswith("$"):
-                env_var_names.append(value[1:])
-        return env_var_names
-
-    def _update_secret_from_env_var(self, env_var_name: str) -> None:
-        # Lazy load to avoid circular import
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        if GriptapeNodes.SecretsManager().get_secret(env_var_name, should_error_on_not_found=False) is None:
-            # Set a blank one.
-            GriptapeNodes.SecretsManager().set_secret(env_var_name, "")
-
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
         config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
         existing_workflows = self.get_config_value(config_loc)
@@ -393,12 +359,6 @@ class ConfigManager:
 
         self.set_config_value(key=request.category, value=request.contents)
 
-        # Update any added env vars (this is dumb)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
-        after_env_vars_set = set(self.gather_env_var_names())
-        for after_env_var in after_env_vars_set:
-            self._update_secret_from_env_var(after_env_var)
-
         result_details = f"Successfully assigned the config dictionary for section '{request.category}'."
         return SetConfigCategoryResultSuccess(result_details=result_details)
 
@@ -517,12 +477,6 @@ class ConfigManager:
 
         # Set the new value
         self.set_config_value(key=request.category_and_key, value=request.value)
-
-        # Update any added env vars (this is dumb)
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1022
-        after_env_vars_set = set(self.gather_env_var_names())
-        for after_env_var in after_env_vars_set:
-            self._update_secret_from_env_var(after_env_var)
 
         # For container types, indicate the change with a diff
         if isinstance(request.value, (dict, list)):

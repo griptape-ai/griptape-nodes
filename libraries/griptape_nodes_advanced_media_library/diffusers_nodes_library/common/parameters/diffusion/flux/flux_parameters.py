@@ -14,7 +14,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
@@ -24,6 +24,7 @@ class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "black-forest-labs/FLUX.1-Krea-dev",
             ],
             parameter_name="model",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_repo_parameter = HuggingFaceRepoParameter(
@@ -32,6 +33,7 @@ class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "openai/clip-vit-large-patch14",
             ],
             parameter_name="text_encoder",
+            list_all_models=list_all_models,
         )
 
         self._text_encoder_2_repo_parameter = HuggingFaceRepoParameter(
@@ -40,6 +42,7 @@ class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
                 "google/t5-v1_1-xxl",
             ],
             parameter_name="text_encoder_2",
+            list_all_models=list_all_models,
         )
 
     def add_input_parameters(self) -> None:
@@ -48,9 +51,9 @@ class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._text_encoder_2_repo_parameter.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
-        self._node.remove_parameter_element_by_name("model")
-        self._node.remove_parameter_element_by_name("text_encoder")
-        self._node.remove_parameter_element_by_name("text_encoder_2")
+        self._model_repo_parameter.remove_input_parameters()
+        self._text_encoder_repo_parameter.remove_input_parameters()
+        self._text_encoder_2_repo_parameter.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {

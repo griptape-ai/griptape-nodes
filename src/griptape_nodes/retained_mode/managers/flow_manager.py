@@ -6,6 +6,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
+from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -29,6 +30,7 @@ from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
@@ -226,6 +228,7 @@ class FlowManager:
     _global_control_flow_machine: ControlFlowMachine | None
     _global_single_node_resolution: bool
     _global_dag_builder: DagBuilder
+    _node_executor: NodeExecutor
 
     def __init__(self, event_manager: EventManager) -> None:
         event_manager.assign_manager_to_request_type(CreateFlowRequest, self.on_create_flow_request)
@@ -276,6 +279,7 @@ class FlowManager:
         self._global_control_flow_machine = None  # Track the current control flow machine
         self._global_single_node_resolution = False
         self._global_dag_builder = DagBuilder()
+        self._node_executor = NodeExecutor()
 
     @property
     def global_single_node_resolution(self) -> bool:
@@ -288,6 +292,10 @@ class FlowManager:
     @property
     def global_dag_builder(self) -> DagBuilder:
         return self._global_dag_builder
+
+    @property
+    def node_executor(self) -> NodeExecutor:
+        return self._node_executor
 
     def get_connections(self) -> Connections:
         """Get the connections instance."""
@@ -929,11 +937,15 @@ class FlowManager:
             if isinstance(target_param, ParameterContainer):
                 target_node.kill_parameter_children(target_param)
         # Set the parameter value (including None/empty values) unless we're in initial setup
-        # Skip propagation for Control Parameters as they should not receive values
-        if (
-            request.initial_setup is False
-            and ParameterType.attempt_get_builtin(source_param.output_type) != ParameterTypeBuiltin.CONTROL_TYPE
-        ):
+        # Skip propagation for:
+        # 1. Control Parameters as they should not receive values
+        # 2. Locked nodes
+        # 3. Initial Setup (this is used during deserialization; the downstream node may not be created yet)
+        is_control_parameter = (
+            ParameterType.attempt_get_builtin(source_param.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+        )
+        is_dest_node_locked = target_node.lock
+        if (not is_control_parameter) and (not is_dest_node_locked) and (not request.initial_setup):
             # When creating a connection, pass the initial value from source to target parameter
             # Set incoming_connection_source fields to identify this as legitimate connection value passing
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
@@ -1589,6 +1601,11 @@ class FlowManager:
         )
         packaged_dependencies.libraries.add(start_end_library_dependency)
 
+        # Aggregate node types used
+        packaged_node_types_used = self._aggregate_node_types_used(
+            serialized_node_commands=all_serialized_nodes, sub_flows_commands=[]
+        )
+
         # Build the complete SerializedFlowCommands
         return SerializedFlowCommands(
             flow_initialization_command=create_packaged_flow_request,
@@ -1602,6 +1619,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=packaged_dependencies,
+            node_types_used=packaged_node_types_used,
         )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911
@@ -1742,6 +1760,11 @@ class FlowManager:
             metadata=packaged_flow_metadata,
         )
 
+        # Aggregate node types used
+        combined_node_types_used = self._aggregate_node_types_used(
+            serialized_node_commands=all_serialized_nodes, sub_flows_commands=[]
+        )
+
         # Build the complete serialized flow
         final_serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_packaged_flow_request,
@@ -1752,6 +1775,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=[],
             node_dependencies=combined_dependencies,
+            node_types_used=combined_node_types_used,
         )
 
         return PackageNodesAsSerializedFlowResultSuccess(
@@ -2695,7 +2719,12 @@ class FlowManager:
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
         # By now, it has been validated with no exceptions.
         try:
-            await self.start_flow(flow, start_node, debug_mode=request.debug_mode)
+            await self.start_flow(
+                flow,
+                start_node,
+                debug_mode=request.debug_mode,
+                pickle_control_flow_result=request.pickle_control_flow_result,
+            )
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
@@ -2715,7 +2744,7 @@ class FlowManager:
             details = f"Could not get flow state. Error: {err}"
             return GetFlowStateResultFailure(result_details=details)
         try:
-            control_nodes, resolving_nodes = self.flow_state(flow)
+            control_nodes, resolving_nodes, involved_nodes = self.flow_state(flow)
         except Exception as e:
             details = f"Failed to get flow state of flow with name {flow_name}. Exception occurred: {e} "
             logger.exception(details)
@@ -2723,7 +2752,8 @@ class FlowManager:
         details = f"Successfully got flow state for flow with name {flow_name}."
         return GetFlowStateResultSuccess(
             control_nodes=control_nodes,
-            resolving_node=resolving_nodes,
+            resolving_nodes=resolving_nodes,
+            involved_nodes=involved_nodes,
             result_details=details,
         )
 
@@ -2913,6 +2943,38 @@ class FlowManager:
 
         return aggregated_deps
 
+    def _aggregate_node_types_used(
+        self, serialized_node_commands: list[SerializedNodeCommands], sub_flows_commands: list[SerializedFlowCommands]
+    ) -> set[LibraryNameAndNodeType]:
+        """Aggregate node types used from nodes and sub-flows.
+
+        Args:
+            serialized_node_commands: List of serialized node commands to aggregate from
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Set of LibraryNameAndNodeType with all node types used
+
+        Raises:
+            ValueError: If a node command has no library name specified
+        """
+        node_types_used: set[LibraryNameAndNodeType] = set()
+
+        # Collect node types from all nodes in this flow
+        for node_cmd in serialized_node_commands:
+            node_type = node_cmd.create_node_command.node_type
+            library_name = node_cmd.create_node_command.specific_library_name
+            if library_name is None:
+                msg = f"Node type '{node_type}' has no library name specified during serialization"
+                raise ValueError(msg)
+            node_types_used.add(LibraryNameAndNodeType(library_name=library_name, node_type=node_type))
+
+        # Aggregate node types from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            node_types_used.update(sub_flow_cmd.node_types_used)
+
+        return node_types_used
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -3058,6 +3120,7 @@ class FlowManager:
                         set_lock_commands_per_node={},
                         sub_flows_commands=[],
                         node_dependencies=sub_flow_dependencies,
+                        node_types_used=set(),
                     )
                     sub_flow_commands.append(serialized_flow)
                 else:
@@ -3074,6 +3137,13 @@ class FlowManager:
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
+        # Aggregate all node types used from nodes and sub-flows
+        try:
+            aggregated_node_types_used = self._aggregate_node_types_used(serialized_node_commands, sub_flow_commands)
+        except ValueError as e:
+            details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
+            return SerializeFlowToCommandsResultFailure(result_details=details)
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
@@ -3083,6 +3153,7 @@ class FlowManager:
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
+            node_types_used=aggregated_node_types_used,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3230,6 +3301,7 @@ class FlowManager:
         start_node: BaseNode | None = None,
         *,
         debug_mode: bool = False,
+        pickle_control_flow_result: bool = False,
     ) -> None:
         if self.check_for_existing_running_flow():
             # If flow already exists, throw an error
@@ -3246,10 +3318,12 @@ class FlowManager:
 
         # Initialize global control flow machine and DAG builder
 
-        self._global_control_flow_machine = ControlFlowMachine(flow.name)
+        self._global_control_flow_machine = ControlFlowMachine(
+            flow.name, pickle_control_flow_result=pickle_control_flow_result
+        )
         # Set off the request here.
         try:
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
                 await self.cancel_flow_run()
@@ -3354,7 +3428,7 @@ class FlowManager:
             # Get or create machine
             if self._global_control_flow_machine is None:
                 self._global_control_flow_machine = ControlFlowMachine(flow.name)
-            await self._global_control_flow_machine.start_flow(start_node, debug_mode)
+            await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def _handle_post_execution_queue_processing(self, *, debug_mode: bool) -> None:
         """Handle execution queue processing after execution completes."""
@@ -3364,7 +3438,7 @@ class FlowManager:
             self._global_flow_queue.task_done()
             machine = self._global_control_flow_machine
             if machine is not None:
-                await machine.start_flow(start_node, debug_mode)
+                await machine.start_flow(start_node, debug_mode=debug_mode)
 
     async def resolve_singular_node(self, flow: ControlFlow, node: BaseNode, *, debug_mode: bool = False) -> None:
         # We are now going to have different behavior depending on how the node is behaving.
@@ -3402,12 +3476,14 @@ class FlowManager:
                 )
             )
             try:
-                await resolution_machine.resolve_node(node)
+                await self._global_control_flow_machine.start_flow(
+                    start_node=node, end_node=node, debug_mode=debug_mode
+                )
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
                     await self.cancel_flow_run()
-                    raise RuntimeError(e) from e
+                raise RuntimeError(e) from e
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []
@@ -3471,29 +3547,35 @@ class FlowManager:
             # Clear entry control parameter for new execution
             node.set_entry_control_parameter(None)
 
-    def flow_state(self, flow: ControlFlow) -> tuple[list[str] | None, list[str] | None]:  # noqa: ARG002
+    def flow_state(self, flow: ControlFlow) -> tuple[list[str], list[str], list[str]]:
         if not self.check_for_existing_running_flow():
-            return None, None
+            return [], [], []
         if self._global_control_flow_machine is None:
-            return None, None
+            return [], [], []
         control_flow_context = self._global_control_flow_machine.context
         current_control_nodes = (
             [control_flow_node.name for control_flow_node in control_flow_context.current_nodes]
             if control_flow_context.current_nodes is not None
-            else None
+            else []
         )
+        if self._global_single_node_resolution and isinstance(
+            control_flow_context.resolution_machine, ParallelResolutionMachine
+        ):
+            involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
+        else:
+            involved_nodes = list(flow.nodes.keys())
         # focus_stack is no longer available in the new architecture
         if isinstance(control_flow_context.resolution_machine, ParallelResolutionMachine):
             current_resolving_nodes = [
                 node.node_reference.name
                 for node in control_flow_context.resolution_machine.context.task_to_node.values()
             ]
-            return current_control_nodes, current_resolving_nodes
+            return current_control_nodes, current_resolving_nodes, involved_nodes
         if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
             focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
             current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else None
-        return current_control_nodes, None
+            return current_control_nodes, [current_resolving_node] if current_resolving_node else [], involved_nodes
+        return current_control_nodes, [], involved_nodes
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.

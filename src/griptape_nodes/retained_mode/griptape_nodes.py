@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
-    AppConnectionEstablished,
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
     EngineHeartbeatResultSuccess,
@@ -69,48 +68,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger("griptape_nodes")
-
-
-@dataclass
-class Version:
-    major: int
-    minor: int
-    patch: int
-
-    @classmethod
-    def from_string(cls, version_string: str) -> Version | None:
-        match = re.match(r"(\d+)\.(\d+)\.(\d+)", version_string)
-        if match:
-            major, minor, patch = map(int, match.groups())
-            return cls(major, minor, patch)
-        return None
-
-    def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
-
-    def __lt__(self, other: Version) -> bool:
-        """Less than comparison."""
-        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
-
-    def __le__(self, other: Version) -> bool:
-        """Less than or equal comparison."""
-        return (self.major, self.minor, self.patch) <= (other.major, other.minor, other.patch)
-
-    def __gt__(self, other: Version) -> bool:
-        """Greater than comparison."""
-        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
-
-    def __ge__(self, other: Version) -> bool:
-        """Greater than or equal comparison."""
-        return (self.major, self.minor, self.patch) >= (other.major, other.minor, other.patch)
-
-    def __eq__(self, other: Version) -> bool:  # type: ignore[override]
-        """Equality comparison."""
-        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
-
-    def __hash__(self) -> int:
-        """Hash function for Version."""
-        return hash((self.major, self.minor, self.patch))
 
 
 class GriptapeNodes(metaclass=SingletonMeta):
@@ -204,7 +161,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersionRequest, self.handle_engine_version_request
             )
-            self._event_manager.add_listener_to_app_event(AppConnectionEstablished, self.on_app_connection_established)
             self._event_manager.assign_manager_to_request_type(
                 EngineHeartbeatRequest, self.handle_engine_heartbeat_request
             )
@@ -389,40 +345,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             msg = "Failed to successfully delete all objects"
             raise ValueError(msg)
 
-    async def on_app_connection_established(self, _payload: AppConnectionEstablished) -> None:
-        from griptape_nodes.app.app import subscribe_to_topic
-
-        # Subscribe to request topic (engine discovery)
-        await subscribe_to_topic("request")
-
-        # Get engine ID and subscribe to engine_id/request
-        engine_id = GriptapeNodes.get_engine_id()
-        if engine_id:
-            await subscribe_to_topic(f"engines/{engine_id}/request")
-        else:
-            logger.warning("Engine ID not available for subscription")
-
-        # Get session ID and subscribe to session_id/request if available
-        session_id = GriptapeNodes.get_session_id()
-        if session_id:
-            topic = f"sessions/{session_id}/request"
-            await subscribe_to_topic(topic)
-        else:
-            logger.info("No session ID available for subscription")
-
     def handle_engine_version_request(self, request: GetEngineVersionRequest) -> ResultPayload:  # noqa: ARG002
         try:
-            engine_ver = Version.from_string(engine_version)
-            if engine_ver:
-                return GetEngineVersionResultSuccess(
-                    major=engine_ver.major,
-                    minor=engine_ver.minor,
-                    patch=engine_ver.patch,
-                    result_details="Engine version retrieved successfully.",
-                )
-            details = f"Attempted to get engine version. Failed because version string '{engine_ver}' wasn't in expected major.minor.patch format."
-            logger.error(details)
-            return GetEngineVersionResultFailure(result_details=details)
+            engine_ver = semver.VersionInfo.parse(engine_version)
+            return GetEngineVersionResultSuccess(
+                major=engine_ver.major,
+                minor=engine_ver.minor,
+                patch=engine_ver.patch,
+                result_details="Engine version retrieved successfully.",
+            )
         except Exception as err:
             details = f"Attempted to get engine version. Failed due to '{err}'."
             logger.error(details)

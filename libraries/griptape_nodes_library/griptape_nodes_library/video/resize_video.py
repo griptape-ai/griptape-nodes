@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from griptape.artifacts import VideoUrlArtifact
+
 # static_ffmpeg is dynamically installed by the library loader at runtime
 # into the library's own virtual environment, but not available during type checking
 from static_ffmpeg import run  # type: ignore[import-untyped]
@@ -17,7 +19,6 @@ from griptape_nodes_library.utils.video_utils import (
     to_video_artifact,
     validate_url,
 )
-from griptape_nodes_library.video.video_url_artifact import VideoUrlArtifact
 
 
 class ResizeVideo(ControlNode):
@@ -87,7 +88,7 @@ class ResizeVideo(ControlNode):
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=3.0,
             tooltip="Lanczos algorithm parameter (alpha value, default: 3.0). Higher values (4-5) provide sharper results but may introduce ringing artifacts. Lower values (2-3) provide smoother results.",
-            ui_options={"hidden": True},
+            ui_options={"hide": True},
         )
         self.add_parameter(lanczos_parameter)
         lanczos_parameter.add_trait(Slider(min_val=1.0, max_val=10.0))

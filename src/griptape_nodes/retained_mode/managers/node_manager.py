@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterContainer,
     ParameterGroup,
+    ParameterMessage,
     ParameterMode,
     ParameterType,
     ParameterTypeBuiltin,
@@ -146,6 +147,18 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class SerializedParameterValues(NamedTuple):
+    """Result of serializing parameter output values.
+
+    Attributes:
+        parameter_output_values: Either raw values or UUID references if pickling was used
+        unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+    """
+
+    parameter_output_values: dict[str, Any]
+    unique_parameter_uuid_to_values: dict[Any, Any] | None
 
 
 class NodeManager:
@@ -447,7 +460,7 @@ class NodeManager:
             # get the current node executing / resolving
             # if it's in connected nodes, cancel flow.
             # otherwise, leave it.
-            control_node_names, resolving_node_names = GriptapeNodes.FlowManager().flow_state(parent_flow)
+            control_node_names, resolving_node_names, _ = GriptapeNodes.FlowManager().flow_state(parent_flow)
             connected_nodes = parent_flow.get_all_connected_nodes(node)
             cancelled = False
             if control_node_names is not None:
@@ -888,7 +901,7 @@ class NodeManager:
                 has_non_control_types = True
         if request.input_types is not None:
             for test_type in request.input_types:
-                if test_type.lower == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
+                if test_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
                     has_control_type = True
                 else:
                     has_non_control_types = True
@@ -995,10 +1008,17 @@ class NodeManager:
         if isinstance(element, ParameterGroup):
             for child in element.find_elements_by_type(Parameter):
                 GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(child.name, node_name))
-            node.remove_parameter_element_by_name(request.parameter_name)
+            node.remove_node_element(element)
 
             return RemoveParameterFromNodeResultSuccess(
                 result_details=f"Successfully removed parameter group '{request.parameter_name}' and all its children from node '{node_name}'."
+            )
+
+        if isinstance(element, ParameterMessage):
+            node.remove_node_element(element)
+
+            return RemoveParameterFromNodeResultSuccess(
+                result_details=f"Successfully removed parameter message '{request.parameter_name}' from node '{node_name}'."
             )
 
         # No tricky stuff, users!
@@ -1528,11 +1548,11 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
-
-        # Well this seems kind of stupid
         object_type = request.data_type if request.data_type else parameter.type
-        # Is this value kosher for the types allowed?
-        if not parameter.is_incoming_type_allowed(object_type):
+        # If the parameter is control type, we shouldn't check the value being set, since it's just a marker for which path to take, not a real value, and will likely be a string, which doesn't match ControlType.
+        if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
+            object_type
+        ):
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the value's type of '{object_type}' was not in the Parameter's list of allowed types: {parameter.input_types}."
 
             result = SetParameterValueResultFailure(result_details=details)
@@ -1569,8 +1589,14 @@ class NodeManager:
             # (not manual property setting) so it bypasses the INPUT+PROPERTY connection blocking logic
             conn_output_nodes = parent_flow.get_connected_output_parameters(node, parameter)
             for target_node, target_parameter in conn_output_nodes:
-                # Skip propagation for Control Parameters as they should not receive values
-                if ParameterType.attempt_get_builtin(parameter.output_type) != ParameterTypeBuiltin.CONTROL_TYPE:
+                # Skip propagation for:
+                # 1. Control Parameters as they should not receive values
+                # 2. Locked nodes
+                is_control_parameter = (
+                    ParameterType.attempt_get_builtin(parameter.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+                )
+                is_dest_node_locked = target_node.lock
+                if (not is_control_parameter) and (not is_dest_node_locked):
                     GriptapeNodes.handle_request(
                         SetParameterValueRequest(
                             parameter_name=target_parameter.name,
@@ -2573,6 +2599,173 @@ class NodeManager:
             else:
                 commands.append(output_command)
         return commands if commands else None
+
+    @staticmethod
+    def serialize_parameter_output_values(node: BaseNode, *, use_pickling: bool = False) -> SerializedParameterValues:
+        """Serialize parameter output values with optional pickling for complex objects.
+
+        Args:
+            node: The node whose parameter output values should be serialized
+            use_pickling: If True, use pickle-based serialization; if False, use TypeValidator.safe_serialize
+
+        Returns:
+            SerializedParameterValues containing:
+            - parameter_output_values: Either raw values or UUID references if pickling was used
+            - unique_parameter_uuid_to_values: Dictionary of pickled values (None if no pickling needed)
+        """
+        if not node.parameters:
+            return SerializedParameterValues({}, None)
+
+        if not use_pickling:
+            return NodeManager._serialize_without_pickling(node)
+
+        return NodeManager._serialize_with_pickling(node)
+
+    @staticmethod
+    def _serialize_without_pickling(node: BaseNode) -> SerializedParameterValues:
+        """Serialize parameter values using simple TypeValidator serialization.
+
+        Args:
+            node: The node whose parameter values should be serialized
+
+        Returns:
+            SerializedParameterValues with no pickling
+        """
+        param_values = {}
+        for param in node.parameters:
+            if param.name in node.parameter_output_values:
+                param_values[param.name] = node.parameter_output_values[param.name]
+            else:
+                param_values[param.name] = node.get_parameter_value(param.name)
+        simple_values = TypeValidator.safe_serialize(param_values)
+        return SerializedParameterValues(simple_values, None)
+
+    @staticmethod
+    def _serialize_with_pickling(
+        node: BaseNode,
+    ) -> SerializedParameterValues:
+        """Serialize parameter values using pickle-based serialization with UUID references.
+
+        Args:
+            node: The node whose parameter values should be serialized
+
+        Returns:
+            SerializedParameterValues with pickled values
+        """
+        unique_parameter_uuid_to_values = {}
+        serialized_parameter_value_tracker = SerializedParameterValueTracker()
+        uuid_referenced_values = {}
+
+        for parameter in node.parameters:
+            param_name = parameter.name
+            param_value = NodeManager._get_parameter_value_for_serialization(node, param_name)
+
+            unique_uuid = NodeManager._process_parameter_for_pickling(
+                param_value,
+                param_name,
+                serialized_parameter_value_tracker,
+                unique_parameter_uuid_to_values,
+                uuid_referenced_values,
+            )
+
+            uuid_referenced_values[param_name] = unique_uuid
+
+        return SerializedParameterValues(
+            uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
+        )
+
+    @staticmethod
+    def _get_parameter_value_for_serialization(node: BaseNode, param_name: str) -> Any:
+        """Get parameter value for serialization, checking output values first.
+
+        Args:
+            node: The node to get the parameter value from
+            param_name: The parameter name
+
+        Returns:
+            The parameter value
+        """
+        if param_name in node.parameter_output_values:
+            return node.parameter_output_values[param_name]
+        return node.get_parameter_value(param_name)
+
+    @staticmethod
+    def _process_parameter_for_pickling(
+        param_value: Any,
+        param_name: str,
+        tracker: SerializedParameterValueTracker,
+        unique_parameter_uuid_to_values: dict,
+        uuid_referenced_values: dict,
+    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
+        """Process a parameter value for pickle-based serialization.
+
+        Args:
+            param_value: The value to serialize
+            param_name: Parameter name for tracking
+            tracker: Tracker for managing serialization state
+            unique_parameter_uuid_to_values: Dictionary to store pickled values
+            uuid_referenced_values: Dictionary to store UUID references
+
+        Returns:
+            UUID reference for the value, or None if not serializable
+        """
+        try:
+            hash(param_value)
+            value_id = param_value
+        except TypeError:
+            value_id = id(param_value)
+
+        tracker_status = tracker.get_tracker_state(value_id)
+
+        match tracker_status:
+            case SerializedParameterValueTracker.TrackerState.SERIALIZABLE:
+                return tracker.get_uuid_for_value_hash(value_id)
+            case SerializedParameterValueTracker.TrackerState.NOT_SERIALIZABLE:
+                uuid_referenced_values[param_name] = None
+                return None
+            case SerializedParameterValueTracker.TrackerState.NOT_IN_TRACKER:
+                return NodeManager._handle_new_value_for_pickling(
+                    param_value, param_name, tracker, unique_parameter_uuid_to_values, uuid_referenced_values
+                )
+
+    @staticmethod
+    def _handle_new_value_for_pickling(
+        param_value: Any,
+        param_name: str,
+        tracker: SerializedParameterValueTracker,
+        unique_parameter_uuid_to_values: dict,
+        uuid_referenced_values: dict,
+    ) -> SerializedNodeCommands.UniqueParameterValueUUID | None:
+        """Handle a new value that hasn't been seen before in pickling serialization.
+
+        Args:
+            param_value: The value to pickle
+            param_name: Parameter name for tracking
+            tracker: Tracker for managing serialization state
+            unique_parameter_uuid_to_values: Dictionary to store pickled values
+            uuid_referenced_values: Dictionary to store UUID references
+
+        Returns:
+            UUID reference for the value, or None if not serializable
+        """
+        try:
+            hash(param_value)
+            value_id = param_value
+        except TypeError:
+            value_id = id(param_value)
+
+        try:
+            workflow_manager = GriptapeNodes.WorkflowManager()
+            pickled_bytes = workflow_manager._patch_and_pickle_object(param_value)
+        except Exception:
+            tracker.add_as_not_serializable(value_id)
+            uuid_referenced_values[param_name] = None
+            return None
+
+        unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+        unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
+        tracker.add_as_serializable(value_id, unique_uuid)
+        return unique_uuid
 
     def on_rename_parameter_request(self, request: RenameParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle renaming a parameter on a node.

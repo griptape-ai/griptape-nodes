@@ -23,6 +23,14 @@ class FluxImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def _add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
+                name="image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageArtifact",
+                tooltip="Image to be used as the starting point.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="prompt",
                 default_value="",
                 type="str",
@@ -53,18 +61,11 @@ class FluxImg2ImgPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
-                name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Image to be used as the starting point.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="strength",
                 default_value=0.3,
                 type="float",
                 tooltip="Indicates extent to transform the reference image.",
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.01},
             )
         )
         self._node.add_parameter(

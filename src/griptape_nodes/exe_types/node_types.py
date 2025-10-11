@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field
@@ -30,10 +31,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
-from griptape_nodes.retained_mode.events.execution_events import (
-    NodeUnresolvedEvent,
-    ParameterValueUpdateEvent,
-)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -53,6 +50,8 @@ T = TypeVar("T")
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
+PRIVATE_EXECUTION = "Private Execution"
+CONTROL_INPUT_PARAMETER = "Control Input Selection"
 
 
 class ImportDependency(NamedTuple):
@@ -116,8 +115,8 @@ def get_library_names_with_publish_handlers() -> list[str]:
     library_manager = GriptapeNodes.LibraryManager()
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
-    # Always include "local" as the first option
-    library_names = [LOCAL_EXECUTION]
+    # Always include "local" and "private" as the first options
+    library_names = [LOCAL_EXECUTION, PRIVATE_EXECUTION]
 
     # Add all registered library names that can handle PublishWorkflowRequest
     library_names.extend(sorted(event_handlers.keys()))
@@ -131,12 +130,12 @@ class BaseNode(ABC):
     metadata: dict[Any, Any]
 
     # Node Context Fields
-    state: NodeResolutionState
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
     parameter_output_values: TrackedParameterOutputValues
     stop_flow: bool = False
     root_ui_element: BaseNodeElement
+    _state: NodeResolutionState
     _tracked_parameters: list[BaseNodeElement]
     _entry_control_parameter: Parameter | None = (
         None  # The control input parameter used to enter this node during execution
@@ -158,7 +157,7 @@ class BaseNode(ABC):
         state: NodeResolutionState = NodeResolutionState.UNRESOLVED,
     ) -> None:
         self.name = name
-        self.state = state
+        self._state = state
         if metadata is None:
             self.metadata = {}
         else:
@@ -183,6 +182,18 @@ class BaseNode(ABC):
         )
         self.add_parameter(self.execution_environment)
 
+    @property
+    def state(self) -> NodeResolutionState:
+        """Get the current resolution state of the node.
+
+        Existence as @property facilitates subclasses overriding the getter for dynamic/computed state.
+        """
+        return self._state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
+
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
@@ -192,6 +203,7 @@ class BaseNode(ABC):
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
+            from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent
 
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -888,11 +900,25 @@ class BaseNode(ABC):
     def get_config_value(self, service: str, value: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        warnings.warn(
+            "get_config_value() is deprecated. Use GriptapeNodes.SecretsManager().get_secret() for secrets/API keys "
+            "or GriptapeNodes.ConfigManager().get_config_value() for other config values.",
+            UserWarning,
+            stacklevel=2,
+        )
+
         config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        warnings.warn(
+            "set_config_value() is deprecated. Use GriptapeNodes.SecretsManager().set_secret() for secrets/API keys "
+            "or GriptapeNodes.ConfigManager().set_config_value() for other config values.",
+            UserWarning,
+            stacklevel=2,
+        )
 
         GriptapeNodes.ConfigManager().set_config_value(f"nodes.{service}.{value}", new_value)
 
@@ -965,6 +991,7 @@ class BaseNode(ABC):
         )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
+        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         parameter = self.get_parameter_by_name(parameter_name)
@@ -1027,7 +1054,10 @@ class BaseNode(ABC):
 
         # Verify we have all elements
         if len(ordered_elements) != len(current_elements):
-            msg = "Element order must include all elements exactly once"
+            ordered_names = {e.name for e in ordered_elements}
+            current_names = {e.name for e in current_elements}
+            diff = current_names - ordered_names
+            msg = f"Element order must include all elements exactly once. Missing from new order: {diff}"
             raise ValueError(msg)
 
         # Remove all elements from root_ui_element
@@ -1200,6 +1230,47 @@ class BaseNode(ABC):
 
         # Use reorder_elements to apply the move
         self.reorder_elements(list(new_order))
+
+    def get_element_index(self, element: str | BaseNodeElement, root: BaseNodeElement | None = None) -> int:
+        """Get the current index of an element in the element list.
+
+        Args:
+            element: The element to get the index for, specified by name or element object
+            root: The root element to search within. If None, uses root_ui_element
+
+        Returns:
+            The current index of the element (0-based)
+
+        Raises:
+            ValueError: If element is not found
+
+        Example:
+            # Get index by name in root container
+            index = node.get_element_index("element1")
+
+            # Get index within a specific parameter group
+            group = node.get_element_by_name_and_type("my_group", ParameterGroup)
+            index = node.get_element_index("parameter1", root=group)
+
+            # Get index of a parameter to position another element relative to it
+            reference_index = node.get_element_index("some_parameter")
+            node.move_element_to_position("new_parameter", reference_index + 1)
+        """
+        # Use root_ui_element if no root specified
+        if root is None:
+            root = self.root_ui_element
+
+        # Get list of all element names in the root
+        element_names = [child.name for child in root._children]
+
+        # Get element name
+        if isinstance(element, str):
+            element_name = element
+        else:
+            element_name = element.name
+
+        # Find the index of the element
+        return element_names.index(element_name)
 
 
 class TrackedParameterOutputValues(dict[str, Any]):
@@ -1495,13 +1566,16 @@ class EndNode(BaseNode):
             case self.succeeded_control:
                 was_successful = True
                 status_prefix = "[SUCCEEDED]"
+                logger.debug("End Node '%s': Matched succeeded_control path", self.name)
             case self.failed_control:
                 was_successful = False
                 status_prefix = "[FAILED]"
+                logger.debug("End Node '%s': Matched failed_control path", self.name)
             case _:
                 # No specific success/failure connection provided, assume success
                 was_successful = True
                 status_prefix = "[SUCCEEDED] No connection provided for success or failure, assuming successful"
+                logger.debug("End Node '%s': No specific control connection, assuming success", self.name)
 
         # Get result details and format the final message
         result_details_value = self.get_parameter_value("result_details")
@@ -1519,10 +1593,10 @@ class EndNode(BaseNode):
             if param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 value = self.get_parameter_value(param.name)
                 self.parameter_output_values[param.name] = value
-        next_control_output = self.get_next_control_output()
+        entry_parameter = self._entry_control_parameter
         # Update which control parameter to flag as the output value.
-        if next_control_output is not None:
-            self.parameter_output_values[next_control_output.name] = 1
+        if entry_parameter is not None:
+            self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
 class StartLoopNode(BaseNode):

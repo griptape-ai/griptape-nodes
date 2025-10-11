@@ -50,6 +50,13 @@ class IconVariant(BaseModel):
     dark: str
 
 
+class NodeDeprecationMetadata(BaseModel):
+    """Metadata about a deprecated node."""
+
+    deprecation_message: str | None = None
+    removal_version: str | None = None
+
+
 class NodeMetadata(BaseModel):
     """Metadata about each node within the library, which informs where in the hierarchy it sits, details on usage, and tags to assist search."""
 
@@ -60,6 +67,7 @@ class NodeMetadata(BaseModel):
     icon: str | IconVariant | None = None
     color: str | None = None
     group: str | None = None
+    deprecation: NodeDeprecationMetadata | None = None
 
 
 class CategoryDefinition(BaseModel):
@@ -99,7 +107,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.2.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
 
     name: str
     library_schema_version: str
@@ -359,3 +367,18 @@ class Library:
             The AdvancedNodeLibrary instance, or None if not set
         """
         return self._advanced_library
+
+    def get_nodes_by_base_type(self, base_type: type) -> list[str]:
+        """Get all node types in this library that are subclasses of the specified base type.
+
+        Args:
+            base_type: The base class to filter by (e.g., StartNode, ControlNode)
+
+        Returns:
+            List of node type names that extend the base type
+        """
+        matching_nodes = []
+        for node_type, node_class in self._node_types.items():
+            if issubclass(node_class, base_type):
+                matching_nodes.append(node_type)
+        return matching_nodes

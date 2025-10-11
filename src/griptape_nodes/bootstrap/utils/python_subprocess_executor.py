@@ -69,7 +69,7 @@ class PythonSubprocessExecutor:
                 raise RuntimeError(msg)  # noqa: TRY301
 
         except Exception as e:
-            msg = "Error running subprocess"
+            msg = f"Error running subprocess: {e}"
             logger.exception(msg)
             raise PythonSubprocessExecutorError(msg) from e
         finally:
