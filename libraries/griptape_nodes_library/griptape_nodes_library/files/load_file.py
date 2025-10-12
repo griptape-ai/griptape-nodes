@@ -188,10 +188,9 @@ class LoadFile(SuccessFailureNode):
             )
 
             if result.was_successful:
-                # Update artifact if provider returned new one (URL re-download)
-                if result.artifact != artifact:
-                    self.set_parameter_value(self.artifact_parameter.name, result.artifact)
-                    self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
+                # Always update artifact to ensure OUTPUT parameters are set for execution
+                self.set_parameter_value(self.artifact_parameter.name, result.artifact)
+                self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
 
                 # Update dynamic parameters (e.g., masks)
                 for param_name, value in result.dynamic_parameter_updates.items():
