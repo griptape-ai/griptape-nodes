@@ -152,6 +152,61 @@ class LoadFile(SuccessFailureNode):
             # Always clear the triggering parameter lock
             self._triggering_parameter_lock = None
 
+    def process(self) -> None:
+        """Process file at execution time: revalidate and update if needed."""
+        self._clear_execution_status()
+
+        # Get current state
+        artifact = self.get_parameter_value(self.artifact_parameter.name)
+        file_location_value = self.get_parameter_value(self.file_location_parameter.name)
+
+        # Assume failure until proven successful
+        was_successful = False
+        result_details = ""
+
+        # Cascade through failure cases
+        if not self._current_provider:
+            result_details = (
+                f"Failed to load file '{file_location_value}'. No file type handler available for this file format."
+            )
+        elif not self._current_location:
+            if file_location_value:
+                result_details = (
+                    f"Failed to access file path: '{file_location_value}'. File path could not be determined or parsed."
+                )
+            else:
+                result_details = "Failed to load file. No file path specified."
+        elif not artifact:
+            result_details = f"Failed to load file '{file_location_value}'. The file may be invalid or corrupted for the expected file type."
+        else:
+            # All checks passed - delegate to provider for revalidation
+            current_values = self._get_current_parameter_values()
+            result = self._current_provider.revalidate_for_execution(
+                location=self._current_location,
+                current_artifact=artifact,
+                current_parameter_values=current_values,
+            )
+
+            if result.was_successful:
+                # Update artifact if provider returned new one (URL re-download)
+                if result.artifact != artifact:
+                    self.set_parameter_value(self.artifact_parameter.name, result.artifact)
+                    self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
+
+                # Update dynamic parameters (e.g., masks)
+                for param_name, value in result.dynamic_parameter_updates.items():
+                    self.set_parameter_value(param_name, value)
+                    self.publish_update_to_parameter(param_name, value)
+
+                was_successful = True
+                result_details = result.result_details
+            else:
+                # Provider failed - pass through error message
+                result_details = result.result_details
+
+        # Set final status
+        self._set_status_results(was_successful=was_successful, result_details=result_details)
+
     def _handle_provider_change(self, provider_value: str) -> None:
         """Switch between automatic detection and specific provider."""
         if provider_value == LoadFile.AUTOMATIC_DETECTION:
@@ -519,58 +574,3 @@ class LoadFile(SuccessFailureNode):
         return [
             ImageProvider(node=self, path_parameter=self.file_location_parameter),
         ]
-
-    def process(self) -> None:
-        """Process file at execution time: revalidate and update if needed."""
-        self._clear_execution_status()
-
-        # Get current state
-        artifact = self.get_parameter_value(self.artifact_parameter.name)
-        file_location_value = self.get_parameter_value(self.file_location_parameter.name)
-
-        # Assume failure until proven successful
-        was_successful = False
-        result_details = ""
-
-        # Cascade through failure cases
-        if not self._current_provider:
-            result_details = (
-                f"Failed to load file '{file_location_value}'. No file type handler available for this file format."
-            )
-        elif not self._current_location:
-            if file_location_value:
-                result_details = (
-                    f"Failed to access file path: '{file_location_value}'. File path could not be determined or parsed."
-                )
-            else:
-                result_details = "Failed to load file. No file path specified."
-        elif not artifact:
-            result_details = f"Failed to load file '{file_location_value}'. The file may be invalid or corrupted for the expected file type."
-        else:
-            # All checks passed - delegate to provider for revalidation
-            current_values = self._get_current_parameter_values()
-            result = self._current_provider.revalidate_for_execution(
-                location=self._current_location,
-                current_artifact=artifact,
-                current_parameter_values=current_values,
-            )
-
-            if result.was_successful:
-                # Update artifact if provider returned new one (URL re-download)
-                if result.artifact != artifact:
-                    self.set_parameter_value(self.artifact_parameter.name, result.artifact)
-                    self.publish_update_to_parameter(self.artifact_parameter.name, result.artifact)
-
-                # Update dynamic parameters (e.g., masks)
-                for param_name, value in result.dynamic_parameter_updates.items():
-                    self.set_parameter_value(param_name, value)
-                    self.publish_update_to_parameter(param_name, value)
-
-                was_successful = True
-                result_details = result.result_details
-            else:
-                # Provider failed - pass through error message
-                result_details = result.result_details
-
-        # Set final status
-        self._set_status_results(was_successful=was_successful, result_details=result_details)

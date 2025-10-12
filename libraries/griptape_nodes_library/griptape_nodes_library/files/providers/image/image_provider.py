@@ -113,28 +113,6 @@ class ImageProvider(ArtifactProvider):
         logger.warning(msg)
         return False
 
-    def _can_handle_path(self, file_path_str: str) -> bool:
-        """Lightweight check if this provider can handle the given filesystem path."""
-        try:
-            file_path = Path(file_path_str)
-            return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
-        except (ValueError, OSError, AttributeError):
-            return False
-
-    def _can_handle_url(self, url_input: str) -> bool:
-        """Lightweight check if this provider can handle the given URL."""
-        if not ArtifactProvider.is_url(url_input):
-            return False
-
-        # Use proper content-type detection
-        # For now, check URL path extension as fallback
-        try:
-            url_path = Path(url_input).suffix.lower()
-        except (ValueError, OSError):
-            return False
-
-        return url_path in self.SUPPORTED_EXTENSIONS
-
     def attempt_load_from_file_location(
         self,
         file_location_str: str,
@@ -205,56 +183,6 @@ class ImageProvider(ArtifactProvider):
             dynamic_parameter_updates=dynamic_updates,
             result_details=result_details,
         )
-
-    def _generate_unique_filename_from_url(self, url: str) -> str:
-        """Generate a unique filename from URL by sanitizing domain and path.
-
-        Sanitizes domain and path separately (rather than the entire URL) to create
-        shorter, more readable filenames while maintaining uniqueness.
-
-        Examples:
-            https://example.com/images/cat.jpg -> example_com_images_cat.jpg
-            https://cdn.site.com/assets/output.png -> cdn_site_com_assets_output.png
-
-        Compare to sanitizing entire URL which would produce:
-            https___example_com_images_cat_jpg (less readable, includes protocol)
-
-        Args:
-            url: URL to generate filename from
-
-        Returns:
-            Sanitized filename like "example_com_path_to_image.png"
-
-        Raises:
-            ValueError: If filename cannot be determined from URL
-        """
-        parsed = urlparse(url)
-
-        # Get domain without port or protocol (e.g., "example.com" -> "example_com")
-        domain = parsed.netloc.split(":")[0]
-        domain_sanitized = re.sub(r"[^a-zA-Z0-9]", "_", domain)
-
-        # Get path and extract filename
-        url_path = Path(parsed.path)
-        if not url_path.name or not url_path.suffix:
-            msg = f"Cannot determine filename with extension from URL: {url}"
-            raise ValueError(msg)
-
-        # Sanitize the path (parent directories) (e.g., "/images/assets/" -> "images_assets")
-        path_parts = url_path.parent.parts
-        path_sanitized = "_".join(re.sub(r"[^a-zA-Z0-9]", "_", part) for part in path_parts if part != "/")
-
-        # Get original filename with extension
-        stem = url_path.stem
-        extension = url_path.suffix
-
-        # Combine: domain_path_filename (e.g., "example_com_images_cat.jpg")
-        if path_sanitized:
-            unique_filename = f"{domain_sanitized}_{path_sanitized}_{stem}{extension}"
-        else:
-            unique_filename = f"{domain_sanitized}_{stem}{extension}"
-
-        return unique_filename
 
     def attempt_load_from_url(
         self, location: URLFileLocation, current_parameter_values: dict[str, Any], timeout: float | None = None
@@ -328,68 +256,6 @@ class ImageProvider(ArtifactProvider):
 
         return location
 
-    def _generate_project_filename_only(self, original_filename: str, parameter_name: str) -> str:
-        """Generate filename using protocol: {node_name}_{parameter_name}_{file_name}.
-
-        Workflow name is not included since files are organized under workflow-specific directories.
-        """
-        # Extract base name and extension
-        base_name = Path(original_filename).stem
-        extension = Path(original_filename).suffix
-
-        if not extension:
-            logger.warning("No extension found in filename %s, defaulting to .png", original_filename)
-            extension = ".png"
-
-        # Generate filename: <node_name>_<parameter_name>_<file_name>
-        return f"{self.node.name}_{parameter_name}_{base_name}{extension}"
-
-    def _finalize_result_with_dynamic_updates(self, *, artifact: Any, current_values: dict[str, Any]) -> dict[str, Any]:
-        """Process image-specific dynamic parameter updates (mask extraction)."""
-        updates = {}
-
-        mask_channel = current_values.get(self.mask_channel_parameter.name)
-        if not mask_channel or not artifact:
-            return updates
-
-        try:
-            # Normalize input to ImageUrlArtifact
-            if isinstance(artifact, dict):
-                artifact = dict_to_image_url_artifact(artifact)
-        except Exception as e:
-            logger.warning("Failed to normalize artifact for mask extraction: %s", e)
-            updates["output_mask"] = None
-            return updates
-
-        if not isinstance(artifact, ImageUrlArtifact):
-            return updates
-
-        try:
-            # Load and process image
-            image_pil = load_pil_from_url(artifact.value)
-            mask = extract_channel_from_image(image_pil, mask_channel, "image")
-        except Exception as e:
-            logger.warning("Failed to extract mask channel '%s': %s", mask_channel, e)
-            updates["output_mask"] = None
-            return updates
-
-        try:
-            # Save mask using filename-only approach
-            filename = self._generate_project_filename_only(
-                original_filename="mask.png", parameter_name=self.output_mask_parameter.name
-            )
-            output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
-            logger.debug(
-                "ImageLoadProvider: Mask saved successfully as artifact: %s",
-                output_artifact.value if hasattr(output_artifact, "value") else output_artifact,
-            )
-            updates["output_mask"] = output_artifact
-        except Exception as e:
-            logger.warning("Failed to save mask: %s", e)
-            updates["output_mask"] = None
-
-        return updates
-
     def get_externally_accessible_url(self, location: FileLocation) -> str:
         """Convert file location to URL the frontend can fetch."""
         if isinstance(location, ProjectFileLocation):
@@ -454,6 +320,188 @@ class ImageProvider(ArtifactProvider):
         msg = f"Unsupported location type: {type(location)}"
         raise TypeError(msg)
 
+    def copy_file_location_to_disk(
+        self,
+        source_location: FileLocation,
+        destination_location: OnDiskFileLocation,
+        artifact: Any,
+    ) -> OnDiskFileLocation:
+        """Copy file from source location to destination location on disk."""
+        match source_location:
+            case OnDiskFileLocation():
+                file_bytes = self._read_bytes_from_on_disk_location(source_location)
+            case URLFileLocation():
+                file_bytes = self._read_bytes_from_url_location(artifact)
+            case _:
+                msg = f"Cannot copy from location type: {type(source_location)}"
+                raise TypeError(msg)
+
+        self.save_bytes_to_disk(file_bytes=file_bytes, location=destination_location)
+        return destination_location
+
+    def revalidate_for_execution(
+        self,
+        location: FileLocation,
+        current_artifact: Any,
+        current_parameter_values: dict[str, Any],
+    ) -> ArtifactProviderValidationResult:
+        """Revalidate image at execution time."""
+        match location:
+            case URLFileLocation():
+                # Re-download URL for fresh content
+                return self.attempt_load_from_url(location=location, current_parameter_values=current_parameter_values)
+
+            case ProjectFileLocation() | ExternalFileLocation():
+                # Local files: Trust they're still accessible
+                # No filesystem checks - errors surface naturally if file missing
+                display_path = self.get_display_path(location)
+                return ArtifactProviderValidationResult(
+                    was_successful=True,
+                    artifact=current_artifact,
+                    location=location,
+                    dynamic_parameter_updates={},
+                    result_details=f"File ready: {display_path}",
+                )
+
+            case _:
+                return ArtifactProviderValidationResult(
+                    was_successful=False, result_details="Unknown file location type. Please report this issue."
+                )
+
+    def _can_handle_path(self, file_path_str: str) -> bool:
+        """Lightweight check if this provider can handle the given filesystem path."""
+        try:
+            file_path = Path(file_path_str)
+            return file_path.suffix.lower() in self.SUPPORTED_EXTENSIONS
+        except (ValueError, OSError, AttributeError):
+            return False
+
+    def _can_handle_url(self, url_input: str) -> bool:
+        """Lightweight check if this provider can handle the given URL."""
+        if not ArtifactProvider.is_url(url_input):
+            return False
+
+        # Use proper content-type detection
+        # For now, check URL path extension as fallback
+        try:
+            url_path = Path(url_input).suffix.lower()
+        except (ValueError, OSError):
+            return False
+
+        return url_path in self.SUPPORTED_EXTENSIONS
+
+    def _generate_unique_filename_from_url(self, url: str) -> str:
+        """Generate a unique filename from URL by sanitizing domain and path.
+
+        Sanitizes domain and path separately (rather than the entire URL) to create
+        shorter, more readable filenames while maintaining uniqueness.
+
+        Examples:
+            https://example.com/images/cat.jpg -> example_com_images_cat.jpg
+            https://cdn.site.com/assets/output.png -> cdn_site_com_assets_output.png
+
+        Compare to sanitizing entire URL which would produce:
+            https___example_com_images_cat_jpg (less readable, includes protocol)
+
+        Args:
+            url: URL to generate filename from
+
+        Returns:
+            Sanitized filename like "example_com_path_to_image.png"
+
+        Raises:
+            ValueError: If filename cannot be determined from URL
+        """
+        parsed = urlparse(url)
+
+        # Get domain without port or protocol (e.g., "example.com" -> "example_com")
+        domain = parsed.netloc.split(":")[0]
+        domain_sanitized = re.sub(r"[^a-zA-Z0-9]", "_", domain)
+
+        # Get path and extract filename
+        url_path = Path(parsed.path)
+        if not url_path.name or not url_path.suffix:
+            msg = f"Cannot determine filename with extension from URL: {url}"
+            raise ValueError(msg)
+
+        # Sanitize the path (parent directories) (e.g., "/images/assets/" -> "images_assets")
+        path_parts = url_path.parent.parts
+        path_sanitized = "_".join(re.sub(r"[^a-zA-Z0-9]", "_", part) for part in path_parts if part != "/")
+
+        # Get original filename with extension
+        stem = url_path.stem
+        extension = url_path.suffix
+
+        # Combine: domain_path_filename (e.g., "example_com_images_cat.jpg")
+        if path_sanitized:
+            unique_filename = f"{domain_sanitized}_{path_sanitized}_{stem}{extension}"
+        else:
+            unique_filename = f"{domain_sanitized}_{stem}{extension}"
+
+        return unique_filename
+
+    def _generate_project_filename_only(self, original_filename: str, parameter_name: str) -> str:
+        """Generate filename using protocol: {node_name}_{parameter_name}_{file_name}.
+
+        Workflow name is not included since files are organized under workflow-specific directories.
+        """
+        # Extract base name and extension
+        base_name = Path(original_filename).stem
+        extension = Path(original_filename).suffix
+
+        if not extension:
+            logger.warning("No extension found in filename %s, defaulting to .png", original_filename)
+            extension = ".png"
+
+        # Generate filename: <node_name>_<parameter_name>_<file_name>
+        return f"{self.node.name}_{parameter_name}_{base_name}{extension}"
+
+    def _finalize_result_with_dynamic_updates(self, *, artifact: Any, current_values: dict[str, Any]) -> dict[str, Any]:
+        """Process image-specific dynamic parameter updates (mask extraction)."""
+        updates = {}
+
+        mask_channel = current_values.get(self.mask_channel_parameter.name)
+        if not mask_channel or not artifact:
+            return updates
+
+        try:
+            # Normalize input to ImageUrlArtifact
+            if isinstance(artifact, dict):
+                artifact = dict_to_image_url_artifact(artifact)
+        except Exception as e:
+            logger.warning("Failed to normalize artifact for mask extraction: %s", e)
+            updates["output_mask"] = None
+            return updates
+
+        if not isinstance(artifact, ImageUrlArtifact):
+            return updates
+
+        try:
+            # Load and process image
+            image_pil = load_pil_from_url(artifact.value)
+            mask = extract_channel_from_image(image_pil, mask_channel, "image")
+        except Exception as e:
+            logger.warning("Failed to extract mask channel '%s': %s", mask_channel, e)
+            updates["output_mask"] = None
+            return updates
+
+        try:
+            # Save mask using filename-only approach
+            filename = self._generate_project_filename_only(
+                original_filename="mask.png", parameter_name=self.output_mask_parameter.name
+            )
+            output_artifact = save_pil_image_with_named_filename(mask, filename, "PNG")
+            logger.debug(
+                "ImageLoadProvider: Mask saved successfully as artifact: %s",
+                output_artifact.value if hasattr(output_artifact, "value") else output_artifact,
+            )
+            updates["output_mask"] = output_artifact
+        except Exception as e:
+            logger.warning("Failed to save mask: %s", e)
+            updates["output_mask"] = None
+
+        return updates
+
     def _read_bytes_from_on_disk_location(self, location: OnDiskFileLocation) -> bytes:
         """Read bytes from an on-disk file location with comprehensive error handling."""
         try:
@@ -508,51 +556,3 @@ class ImageProvider(ArtifactProvider):
         except Exception as e:
             msg = f"Unexpected error reading downloaded file: {download_location.absolute_path}"
             raise RuntimeError(msg) from e
-
-    def copy_file_location_to_disk(
-        self,
-        source_location: FileLocation,
-        destination_location: OnDiskFileLocation,
-        artifact: Any,
-    ) -> OnDiskFileLocation:
-        """Copy file from source location to destination location on disk."""
-        match source_location:
-            case OnDiskFileLocation():
-                file_bytes = self._read_bytes_from_on_disk_location(source_location)
-            case URLFileLocation():
-                file_bytes = self._read_bytes_from_url_location(artifact)
-            case _:
-                msg = f"Cannot copy from location type: {type(source_location)}"
-                raise TypeError(msg)
-
-        self.save_bytes_to_disk(file_bytes=file_bytes, location=destination_location)
-        return destination_location
-
-    def revalidate_for_execution(
-        self,
-        location: FileLocation,
-        current_artifact: Any,
-        current_parameter_values: dict[str, Any],
-    ) -> ArtifactProviderValidationResult:
-        """Revalidate image at execution time."""
-        match location:
-            case URLFileLocation():
-                # Re-download URL for fresh content
-                return self.attempt_load_from_url(location=location, current_parameter_values=current_parameter_values)
-
-            case ProjectFileLocation() | ExternalFileLocation():
-                # Local files: Trust they're still accessible
-                # No filesystem checks - errors surface naturally if file missing
-                display_path = self.get_display_path(location)
-                return ArtifactProviderValidationResult(
-                    was_successful=True,
-                    artifact=current_artifact,
-                    location=location,
-                    dynamic_parameter_updates={},
-                    result_details=f"File ready: {display_path}",
-                )
-
-            case _:
-                return ArtifactProviderValidationResult(
-                    was_successful=False, result_details="Unknown file location type. Please report this issue."
-                )
