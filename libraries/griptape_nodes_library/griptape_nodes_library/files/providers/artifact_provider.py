@@ -294,6 +294,28 @@ class ArtifactProvider(ABC):
             TypeError: If the source location type is not supported for copying
         """
 
+    @abstractmethod
+    def revalidate_for_execution(
+        self,
+        location: FileLocation,
+        current_artifact: Any,
+        current_parameter_values: dict[str, Any],
+    ) -> ArtifactProviderValidationResult:
+        """Revalidate file at execution time.
+
+        Different location types require different revalidation strategies:
+        - URLs: Re-download to ensure fresh content (content may have changed)
+        - Local files: Trust artifact is still valid (no filesystem validation needed)
+
+        Args:
+            location: The file location to revalidate
+            current_artifact: Current artifact value (may be stale for URLs)
+            current_parameter_values: Current parameter values for dynamic updates
+
+        Returns:
+            ArtifactProviderValidationResult with fresh artifact or error details
+        """
+
     def _finalize_result_with_dynamic_updates(
         self,
         *,

@@ -527,3 +527,32 @@ class ImageProvider(ArtifactProvider):
 
         self.save_bytes_to_disk(file_bytes=file_bytes, location=destination_location)
         return destination_location
+
+    def revalidate_for_execution(
+        self,
+        location: FileLocation,
+        current_artifact: Any,
+        current_parameter_values: dict[str, Any],
+    ) -> ArtifactProviderValidationResult:
+        """Revalidate image at execution time."""
+        match location:
+            case URLFileLocation():
+                # Re-download URL for fresh content
+                return self.attempt_load_from_url(location=location, current_parameter_values=current_parameter_values)
+
+            case ProjectFileLocation() | ExternalFileLocation():
+                # Local files: Trust they're still accessible
+                # No filesystem checks - errors surface naturally if file missing
+                display_path = self.get_display_path(location)
+                return ArtifactProviderValidationResult(
+                    was_successful=True,
+                    artifact=current_artifact,
+                    location=location,
+                    dynamic_parameter_updates={},
+                    result_details=f"File ready: {display_path}",
+                )
+
+            case _:
+                return ArtifactProviderValidationResult(
+                    was_successful=False, result_details="Unknown file location type. Please report this issue."
+                )
