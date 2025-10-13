@@ -474,8 +474,8 @@ class NodeExecutor:
 
                 # Happy path: set the value on the original node in the group
                 if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                    # If it isn't a CONTROL TYPE, we can set the value.
-                    # Since CONTROL TYPEs shouldn't technically have typed values, they should only ever be set as output values.
+                    # If it isn't a control type, we can set the value.
+                    # Since control types shouldn't technically have typed values, they should only ever be set as output values.
                     target_node.set_parameter_value(target_param_name, param_value)
                 target_node.parameter_output_values[target_param_name] = param_value
 
