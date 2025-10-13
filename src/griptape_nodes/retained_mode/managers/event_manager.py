@@ -17,7 +17,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     FlushParameterChangesRequest,
     RequestPayload,
     ResultPayload,
-    WorkflowAlteredMixin,
 )
 from griptape_nodes.utils.async_utils import call_function
 
@@ -223,13 +222,9 @@ class EventManager:
         # Actually make the handler callback (support both sync and async):
         result_payload: ResultPayload = await call_function(callback, request)
 
-        # Handle workflow alteration events for async context
+        # Queue flush request for async context
         with operation_depth_mgr:
-            if (
-                result_payload.succeeded()
-                and isinstance(result_payload, WorkflowAlteredMixin)
-                and not self._flush_in_queue
-            ):
+            if not self._flush_in_queue:
                 await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
@@ -276,13 +271,9 @@ class EventManager:
         else:
             result_payload: ResultPayload = callback(request)
 
-        # Handle workflow alteration events for sync context
+        # Queue flush request for sync context
         with operation_depth_mgr:
-            if (
-                result_payload.succeeded()
-                and isinstance(result_payload, WorkflowAlteredMixin)
-                and not self._flush_in_queue
-            ):
+            if not self._flush_in_queue:
                 self.put_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
