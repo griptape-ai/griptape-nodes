@@ -171,9 +171,6 @@ class SoraVideoGeneration(DataNode):
 
         return super().after_value_set(parameter, value)
 
-    def process(self) -> None:
-        pass
-
     async def aprocess(self) -> None:
         await self._process()
 
