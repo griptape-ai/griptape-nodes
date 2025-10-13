@@ -331,7 +331,7 @@ class LoadFile(SuccessFailureNode):
                 self.set_parameter_value(param_name, value)
                 self.publish_update_to_parameter(param_name, value)
 
-            # Show info box for files external to project
+            # Show/hide info box based on file location
             if self._current_provider.is_location_external_to_project(result.location):
                 detail = self._current_provider.get_location_display_detail(result.location)
                 self.file_status_info_message.variant = "info"
@@ -342,9 +342,9 @@ class LoadFile(SuccessFailureNode):
                 else:
                     self.file_status_info_message.value = f"File not in project: {detail}"
 
-                self.file_status_info_message.ui_options = {"hide": False}
+                self.show_message_by_name(self.file_status_info_message.name)
             else:
-                self.file_status_info_message.ui_options = {"hide": True}
+                self.hide_message_by_name(self.file_status_info_message.name)
 
             self._set_status_results(was_successful=True, result_details=result.result_details)
         else:
@@ -472,13 +472,11 @@ class LoadFile(SuccessFailureNode):
         # Update current location to the new project location
         self._current_location = project_location
 
-        # Update file location parameter to project-relative path
+        # Update file location parameter - this will trigger _handle_file_location_change
+        # which will call _apply_validation_result and handle message visibility
         file_location_str = self._current_provider.get_source_path(project_location)
         self.set_parameter_value(self.file_location_parameter.name, file_location_str)
         self.publish_update_to_parameter(self.file_location_parameter.name, file_location_str)
-
-        # Hide info box since file is now in project
-        self.file_status_info_message.ui_options = {"hide": True}
 
         # Reset button state
         button.state = "normal"
