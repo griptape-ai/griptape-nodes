@@ -81,6 +81,9 @@ class RescaleImage(ControlNode):
         )
 
     def _migrate(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
+        # TODO: Add Execution parameters
+        # TODO: Handle Multiple Connections
+
         # Create the new node
         new_node_name = f"{self.name}_migrated"
 
@@ -123,7 +126,7 @@ class RescaleImage(ControlNode):
                     "operation": "multiply [A * B]",
                     "B": 100,
                 },
-                offset_x=250,  # 50 pixels spacing between nodes
+                offset_x=250,
                 offset_y=150,
             ),
             output_conversion=ConversionConfig(
@@ -135,7 +138,7 @@ class RescaleImage(ControlNode):
                     "operation": "divide [A / B]",
                     "B": 100,
                 },
-                offset_x=150,  # 50 pixels spacing between nodes
+                offset_x=150,
                 offset_y=150,
             ),
             value_transform=self._scale_transform,
