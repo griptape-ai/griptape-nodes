@@ -52,6 +52,15 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         # TODO: Broadcast shutdown https://github.com/griptape-ai/griptape-nodes/issues/2149
         return
 
+    def _get_workflow_name(self) -> str:
+        try:
+            context_manager = GriptapeNodes.ContextManager()
+            return context_manager.get_current_workflow_name()
+        except Exception as e:
+            msg = f"Failed to get current workflow from context manager: {e}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg) from e
+
     def _load_flow_for_workflow(self) -> str:
         try:
             context_manager = GriptapeNodes.ContextManager()
@@ -153,7 +162,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
     async def aprepare_workflow_for_run(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
         **kwargs: Any,
@@ -164,7 +172,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         initializing event listeners, registering libraries, loading the user-defined
         workflow, and preparing the specified workflow for execution.
         Parameters:
-            workflow_name: The name of the workflow to prepare.
             flow_input: Input data for the flow, typically a dictionary.
             storage_backend: The storage backend to use for the workflow execution.
 
@@ -175,13 +182,16 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             msg = "The storage_backend parameter is deprecated. Pass `storage_backend` to the constructor instead."
             raise ValueError(msg)
 
-        logger.info("Executing workflow: %s", workflow_name)
         GriptapeNodes.EventManager().initialize_queue()
 
         # Load workflow from file if workflow_path is provided
         workflow_path = kwargs.get("workflow_path")
         if workflow_path:
             await self._load_workflow_from_path(workflow_path)
+
+        workflow_name = self._get_workflow_name()
+        msg = f"Executing workflow: {workflow_name}"
+        logger.info(msg)
 
         # Load the flow
         flow_name = self._load_flow_for_workflow()
@@ -192,7 +202,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
 
     async def arun(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
         **kwargs: Any,
@@ -211,7 +220,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             None
         """
         flow_name = await self.aprepare_workflow_for_run(
-            workflow_name=workflow_name,
             flow_input=flow_input,
             storage_backend=storage_backend,
             **kwargs,
