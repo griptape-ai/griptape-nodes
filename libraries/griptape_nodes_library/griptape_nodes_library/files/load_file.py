@@ -280,9 +280,9 @@ class LoadFile(SuccessFailureNode):
         file_location_input: str,
     ) -> None:
         """Attempt loading with each provider until success."""
-        current_values = self._get_current_parameter_values()
-
         for provider in candidate_providers:
+            # Get parameter values specific to this provider
+            current_values = self._get_current_parameter_values(provider=provider)
             result = provider.attempt_load_from_file_location(file_location_input, current_values)
 
             if result.was_successful:
@@ -543,11 +543,20 @@ class LoadFile(SuccessFailureNode):
         for param in self._dynamic_parameters:
             param.default_value = None
 
-    def _get_current_parameter_values(self) -> dict[str, Any]:
-        """Collect parameter values for provider processing."""
+    def _get_current_parameter_values(self, *, provider: ArtifactProvider | None = None) -> dict[str, Any]:
+        """Collect parameter values for provider processing.
+
+        Only collects values for the provider's dynamic parameters to avoid sending unnecessary data.
+
+        Args:
+            provider: Optional specific provider to get values for. If not provided, uses self._current_provider.
+        """
         values = {}
-        for param in self.parameters:
-            values[param.name] = param.default_value
+        target_provider = provider or self._current_provider
+        if target_provider:
+            # Only get values for the provider's dynamic parameters
+            for param in target_provider.get_additional_parameters():
+                values[param.name] = self.get_parameter_value(param.name)
         return values
 
     def _get_provider_choices(self) -> list[str]:
