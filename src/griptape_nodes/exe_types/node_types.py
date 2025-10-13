@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -41,6 +40,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -1882,6 +1882,8 @@ class NodeGroup:
         Raises:
             ValueError: If ungrouped nodes are found between grouped nodes
         """
+        from griptape_nodes.exe_types.connections import Connections
+
         # Build a Connections object for traversal
         connections = Connections()
         connections.connections = all_connections

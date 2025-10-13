@@ -247,14 +247,15 @@ class NodeExecutor:
                 end_node_type = end_nodes[0]
                 library_name = library.get_library_data().name
         sanitized_library_name = library_name.replace(" ", "_")
-        # Temporarily restore control connections to original nodes for packaging
-        self._restore_control_connections_for_packaging(node)
         # If we are packaging a NodeGroupProxyNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the proxy node.
         if isinstance(node, NodeGroupProxyNode):
             node_names = list(node.node_group_data.nodes.keys())
         else:
             # Otherwise, it's a list of one node!
             node_names = [node.name]
+
+        # Temporarily restore control connections to original nodes for packaging
+        self._restore_control_connections_for_packaging(node)
         try:
             request = PackageNodesAsSerializedFlowRequest(
                 node_names=node_names,
@@ -266,32 +267,32 @@ class NodeExecutor:
                 entry_control_parameter_name=None,
             )
             package_result = GriptapeNodes.handle_request(request)
+            if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+                msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
+                raise RuntimeError(msg)  # noqa: TRY004
+
+            file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
+            workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+                file_name=file_name,
+                serialized_flow_commands=package_result.serialized_flow_commands,
+                workflow_shape=package_result.workflow_shape,
+                pickle_control_flow_result=True,
+            )
+
+            workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+            if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+                msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+                raise RuntimeError(msg)  # noqa: TRY004
+
+            return PublishLocalWorkflowResult(
+                workflow_result=workflow_result,
+                file_name=file_name,
+                output_parameter_prefix=output_parameter_prefix,
+                package_result=package_result,
+            )
         finally:
-            # Remove control connections from original nodes after packaging
+            # Always remove control connections from original nodes after packaging, even on failure
             self._remove_control_connections_after_packaging(node)
-        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
-            msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
-            raise RuntimeError(msg)  # noqa: TRY004
-
-        file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
-        workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
-            file_name=file_name,
-            serialized_flow_commands=package_result.serialized_flow_commands,
-            workflow_shape=package_result.workflow_shape,
-            pickle_control_flow_result=True,
-        )
-
-        workflow_result = GriptapeNodes.handle_request(workflow_file_request)
-        if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-            msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
-            raise RuntimeError(msg)  # noqa: TRY004
-
-        return PublishLocalWorkflowResult(
-            workflow_result=workflow_result,
-            file_name=file_name,
-            output_parameter_prefix=output_parameter_prefix,
-            package_result=package_result,
-        )
 
     async def _publish_library_workflow(
         self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
