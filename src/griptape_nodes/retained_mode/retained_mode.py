@@ -2,7 +2,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
+from typing import Any, Literal
 
 from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
 from griptape_nodes.retained_mode.events.base_events import (
@@ -47,10 +47,12 @@ from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
     GetNodeMetadataRequest,
+    GetNodeMetadataResultSuccess,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
     SetLockNodeStateRequest,
     SetNodeMetadataRequest,
+    SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectRequest,
@@ -558,6 +560,115 @@ class RetainedMode:
         request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_name=node_name)
         result = GriptapeNodes().handle_request(request)
         return result
+
+    @classmethod
+    def create_node_relative_to(
+        cls,
+        reference_node_name: str,
+        new_node_type: str,
+        new_node_name: str | None = None,
+        specific_library_name: str | None = None,
+        offset_side: Literal[
+            "top_left", "top", "top_right", "right", "bottom_right", "bottom", "bottom_left", "left"
+        ] = "right",
+        offset_x: int = 0,
+        offset_y: int = 0,
+    ) -> str | ResultPayload:
+        """Create a new node positioned relative to an existing node.
+
+        Args:
+            reference_node_name: Name of the existing node to position relative to
+            new_node_type: Type of the new node to create
+            new_node_name: Name for the new node (optional, will be generated if not provided)
+            specific_library_name: Specific library to use for the new node
+            offset_side: Reference side/position from reference node
+                        - "top_left", "top_right", "bottom_left", "bottom_right": corner positions
+                        - "top", "bottom", "left", "right": midpoint positions
+            offset_x: Horizontal offset in pixels (negative = left, positive = right)
+            offset_y: Vertical offset in pixels (negative = up, positive = down)
+
+        Returns:
+            String node name if successful, ResultPayload if failed
+        """
+        # Get the reference node's metadata
+        get_metadata_result = GriptapeNodes().handle_request(GetNodeMetadataRequest(node_name=reference_node_name))
+        if not isinstance(get_metadata_result, GetNodeMetadataResultSuccess):
+            return get_metadata_result
+
+        reference_metadata = get_metadata_result.metadata
+        reference_position = reference_metadata.get("position", {"x": 0, "y": 0})
+        reference_size = reference_metadata.get("size", {"width": 200, "height": 100})
+
+        # Create the new node
+        create_result = cls.create_node(
+            node_type=new_node_type,
+            node_name=new_node_name,
+            specific_library_name=specific_library_name,
+        )
+
+        # Check if creation succeeded
+        if isinstance(create_result, str):
+            new_node_name = create_result
+        else:
+            return create_result
+
+        # Calculate position based on reference node position and offsets
+        match offset_side:
+            case "top_left":
+                new_position = {
+                    "x": reference_position["x"] + offset_x,
+                    "y": reference_position["y"] + offset_y,
+                }
+            case "top":
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
+                    "y": reference_position["y"] + offset_y,
+                }
+            case "top_right":
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] + offset_x,
+                    "y": reference_position["y"] + offset_y,
+                }
+            case "right":
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                }
+            case "bottom_right":
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] + offset_y,
+                }
+            case "bottom":
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] + offset_y,
+                }
+            case "bottom_left":
+                new_position = {
+                    "x": reference_position["x"] + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] + offset_y,
+                }
+            case "left":
+                new_position = {
+                    "x": reference_position["x"] + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                }
+            case _:
+                # Default to right if unknown position
+                new_position = {
+                    "x": reference_position["x"] + reference_size["width"] + offset_x,
+                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                }
+
+        # Set the node's position
+        set_metadata_result = GriptapeNodes().handle_request(
+            SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
+        )
+        if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+            return set_metadata_result
+
+        return new_node_name
 
     @classmethod
     def migrate_parameter(

@@ -1,5 +1,4 @@
 import logging
-from typing import Literal
 
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Resampling
@@ -81,28 +80,27 @@ class RescaleImage(ControlNode):
         )
 
     def _migrate(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
-        # TODO: Add Execution parameters
-        # TODO: Handle Multiple Connections
+        # TODO: Add Execution parameters (https://github.com/griptape-ai/griptape-nodes/issues/TBD)
+        # TODO: Handle Multiple Connections (https://github.com/griptape-ai/griptape-nodes/issues/TBD)
 
-        # Create the new node
+        # Create the new node positioned relative to this one
         new_node_name = f"{self.name}_migrated"
 
-        # Get position for the new node
-        new_metadata = self._get_new_node_position(position="top", offset=20)
-
-        # Create the new node
-        new_node_result = cmd.create_node(
+        # Create the new node positioned above this one
+        new_node_result = cmd.create_node_relative_to(
+            reference_node_name=self.name,
+            new_node_type="RescaleImage",
+            new_node_name=new_node_name,
             specific_library_name="Griptape Nodes Library",
-            node_type="RescaleImage",
-            node_name=new_node_name,
-            metadata=new_metadata,
+            offset_side="top_left",
+            offset_y=-756,  # Negative offset to go UP from the reference node's top-left corner
         )
 
         # Extract the node name from the result
         if isinstance(new_node_result, str):
             new_node = new_node_result
         else:
-            # If create_node failed, new_node_result is the error result
+            # If create_node_relative_to failed, new_node_result is the error result
             logger.error("Failed to create node: %s", new_node_result)
             return None
 
@@ -126,8 +124,7 @@ class RescaleImage(ControlNode):
                     "operation": "multiply [A * B]",
                     "B": 100,
                 },
-                offset_x=250,
-                offset_y=150,
+                offset_x=-573,
             ),
             output_conversion=ConversionConfig(
                 library="Griptape Nodes Library",
@@ -138,8 +135,7 @@ class RescaleImage(ControlNode):
                     "operation": "divide [A / B]",
                     "B": 100,
                 },
-                offset_x=150,
-                offset_y=150,
+                offset_x=250,
             ),
             value_transform=self._scale_transform,
         )
@@ -148,52 +144,6 @@ class RescaleImage(ControlNode):
 
     def _scale_transform(self, x: float) -> float:
         return x * 100
-
-    def _get_new_node_position(
-        self, position: Literal["left", "right", "top", "bottom"] = "right", offset: int = 10
-    ) -> dict:
-        # Gets metadata for the node based on the position
-        # we want to replace the position.x, position.y, based on the current position, size, and offset
-
-        metadata = self.metadata
-
-        # get the size
-        size = metadata["size"]
-
-        # get the current position
-        current_position = metadata["position"]
-
-        # Calculate the new position based on the literal position string
-        match position:
-            case "right":
-                new_position = {
-                    "x": current_position["x"] + size["width"] + offset,
-                    "y": current_position["y"],
-                }
-            case "left":
-                new_position = {
-                    "x": current_position["x"] - size["width"] - offset,
-                    "y": current_position["y"],
-                }
-            case "top":
-                new_position = {
-                    "x": current_position["x"],
-                    "y": current_position["y"] - size["height"] - offset,
-                }
-            case "bottom":
-                new_position = {
-                    "x": current_position["x"],
-                    "y": current_position["y"] + size["height"] + offset,
-                }
-            case _:
-                # Default to right if unknown position
-                new_position = {
-                    "x": current_position["x"] + size["width"] + offset,
-                    "y": current_position["y"],
-                }
-
-        # Return only the position metadata
-        return {"position": new_position}
 
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()

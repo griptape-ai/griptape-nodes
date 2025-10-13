@@ -152,6 +152,7 @@ from griptape_nodes.retained_mode.events.validation_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.retained_mode import RetainedMode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -3077,31 +3078,20 @@ class NodeManager:
                 intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_input_converter"
                 input_conversion = request.input_conversion
 
-                # Calculate position for the intermediate node relative to target node
-                target_node_metadata = target_node.metadata
-                target_position = target_node_metadata.get("position", {"x": 0, "y": 0})
-                target_size = target_node_metadata.get("size", {"width": 200, "height": 100})
-
-                # Position the conversion node with spacing offset (input nodes go to the left)
-                conversion_position = {
-                    "x": target_position["x"]
-                    - target_size["width"] // 2
-                    - input_conversion.offset_x
-                    - 200,  # 200 = conversion node width
-                    "y": target_position["y"] + input_conversion.offset_y,
-                }
-
-                # Create the intermediate node
-                create_node_result = GriptapeNodes.handle_request(
-                    CreateNodeRequest(
-                        node_name=intermediate_node_name,
-                        node_type=input_conversion.node_type,
-                        specific_library_name=input_conversion.library,
-                        metadata={"position": conversion_position},
-                    )
+                # Create the intermediate node using the new relative positioning method
+                # Use the specified offset_side or default to "left" for input conversions
+                offset_side = input_conversion.offset_side or "left"
+                create_node_result = RetainedMode.create_node_relative_to(
+                    reference_node_name=request.target_node_name,
+                    new_node_type=input_conversion.node_type,
+                    new_node_name=intermediate_node_name,
+                    specific_library_name=input_conversion.library,
+                    offset_side=offset_side,
+                    offset_x=input_conversion.offset_x,
+                    offset_y=input_conversion.offset_y,
                 )
 
-                if not isinstance(create_node_result, CreateNodeResultSuccess):
+                if not isinstance(create_node_result, str):
                     return MigrateParameterResultFailure(
                         result_details=f"Failed to create intermediate node '{intermediate_node_name}'."
                     )
@@ -3179,31 +3169,20 @@ class NodeManager:
                 intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_output_converter"
                 output_conversion = request.output_conversion
 
-                # Calculate position for the intermediate node relative to target node
-                target_node_metadata = target_node.metadata
-                target_position = target_node_metadata.get("position", {"x": 0, "y": 0})
-                target_size = target_node_metadata.get("size", {"width": 200, "height": 100})
-
-                # Position the conversion node with spacing offset (output nodes go to the right)
-                conversion_position = {
-                    "x": target_position["x"]
-                    + target_size["width"] // 2
-                    + output_conversion.offset_x
-                    + 200,  # 200 = conversion node width
-                    "y": target_position["y"] + output_conversion.offset_y,
-                }
-
-                # Create the intermediate node
-                create_node_result = GriptapeNodes.handle_request(
-                    CreateNodeRequest(
-                        node_name=intermediate_node_name,
-                        node_type=output_conversion.node_type,
-                        specific_library_name=output_conversion.library,
-                        metadata={"position": conversion_position},
-                    )
+                # Create the intermediate node using the new relative positioning method
+                # Use the specified offset_side or default to "right" for output conversions
+                offset_side = output_conversion.offset_side or "right"
+                create_node_result = RetainedMode.create_node_relative_to(
+                    reference_node_name=request.target_node_name,
+                    new_node_type=output_conversion.node_type,
+                    new_node_name=intermediate_node_name,
+                    specific_library_name=output_conversion.library,
+                    offset_side=offset_side,
+                    offset_x=output_conversion.offset_x,
+                    offset_y=output_conversion.offset_y,
                 )
 
-                if not isinstance(create_node_result, CreateNodeResultSuccess):
+                if not isinstance(create_node_result, str):
                     return MigrateParameterResultFailure(
                         result_details=f"Failed to create intermediate node '{intermediate_node_name}'."
                     )

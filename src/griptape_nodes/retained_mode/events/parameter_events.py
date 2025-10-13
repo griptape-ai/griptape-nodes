@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import Field
 
@@ -14,8 +14,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
-from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from griptape_nodes.retained_mode.events.connection_events import IncomingConnection, OutgoingConnection
 
 
 @dataclass
@@ -608,6 +612,7 @@ class ConversionConfig:
         input_parameter: Parameter name on the conversion node to connect input to
         output_parameter: Parameter name on the conversion node to connect output from
         additional_parameters: Additional parameters to set on the conversion node
+        offset_side: Reference side/position from target node (defaults to "left" for input, "right" for output)
         offset_x: X offset for positioning the conversion node relative to target node
         offset_y: Y offset for positioning the conversion node relative to target node
     """
@@ -617,6 +622,7 @@ class ConversionConfig:
     input_parameter: str
     output_parameter: str
     additional_parameters: dict[str, Any] | None = None
+    offset_side: str | None = None
     offset_x: int = 0
     offset_y: int = 0
 
