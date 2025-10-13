@@ -342,6 +342,9 @@ class LoadFile(SuccessFailureNode):
                 else:
                     self.file_status_info_message.value = f"File not in project: {detail}"
 
+                # Workaround: Set button_text on ParameterMessage to sync with Button trait label
+                # TODO(https://github.com/griptape-ai/griptape-nodes/issues/2645): Fix button syncing
+                self.file_status_info_message.button_text = "Copy to Project"
                 self.show_message_by_name(self.file_status_info_message.name)
             else:
                 self.hide_message_by_name(self.file_status_info_message.name)
