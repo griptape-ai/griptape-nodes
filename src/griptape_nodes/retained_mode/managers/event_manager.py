@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultFailure,
     EventResultSuccess,
     FlushParameterChangesRequest,
+    FlushParameterChangesResultSuccess,
     RequestPayload,
     ResultPayload,
 )
@@ -26,6 +27,18 @@ if TYPE_CHECKING:
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
+
+# Result types that should NOT trigger a flush request.
+#
+# After most requests complete, we queue a FlushParameterChangesRequest to flush any tracked
+# parameter changes to the UI. However, when the FlushParameterChangesRequest itself completes,
+# it returns a FlushParameterChangesResultSuccess. If we don't exclude this result type, it would
+# trigger another FlushParameterChangesRequest, which would return another FlushParameterChangesResultSuccess,
+# creating an infinite loop of flush requests.
+#
+# Add result types to this set if they should never trigger a flush (typically because they ARE
+# the flush operation itself, or other internal operations that don't modify workflow state).
+RESULT_TYPES_THAT_SKIP_FLUSH = {FlushParameterChangesResultSuccess}
 
 
 class ResultContext(TypedDict, total=False):
@@ -222,9 +235,9 @@ class EventManager:
         # Actually make the handler callback (support both sync and async):
         result_payload: ResultPayload = await call_function(callback, request)
 
-        # Queue flush request for async context
+        # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue:
+            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
                 await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
@@ -271,9 +284,9 @@ class EventManager:
         else:
             result_payload: ResultPayload = callback(request)
 
-        # Queue flush request for sync context
+        # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue:
+            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
                 self.put_event(EventRequest(request=FlushParameterChangesRequest()))
                 self._flush_in_queue = True
 
