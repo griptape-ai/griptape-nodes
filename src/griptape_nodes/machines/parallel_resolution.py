@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import (
+    CONTROL_INPUT_PARAMETER,
+    LOCAL_EXECUTION,
+    BaseNode,
+    NodeGroupProxyNode,
+    NodeResolutionState,
+)
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -125,7 +131,6 @@ class ExecuteDagState(State):
             return
 
         # Check if this is a NodeGroupProxyNode - if so, handle grouped nodes
-        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
 
         if isinstance(current_node, NodeGroupProxyNode):
             await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
@@ -613,8 +618,6 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             executor = GriptapeNodes.FlowManager().node_executor
             await executor.execute(current_node.node_reference)
 

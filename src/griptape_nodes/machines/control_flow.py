@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
+from griptape_nodes.machines.parallel_resolution import ExecuteDagState, ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -488,7 +488,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             self._remap_connections_to_proxy_node(group, proxy_node, connections)
 
             # Now create proxy parameters (after remapping so original references are saved)
-            proxy_node._create_proxy_parameters()
+            proxy_node.create_proxy_parameters()
 
         return node_to_proxy_map
 
@@ -575,9 +575,8 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
     def cleanup_proxy_nodes(self) -> None:
         """Cleanup all proxy nodes and restore original connections."""
-        from griptape_nodes.machines.parallel_resolution import ExecuteDagState
-
         if not self._context.node_to_proxy_map:
+            # If we're calling cleanup, but it's already been cleaned up, we just want to return.
             return
 
         # Get all unique proxy nodes

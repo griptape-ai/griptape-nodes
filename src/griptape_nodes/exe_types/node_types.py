@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
+from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     ControlParameterInput,
@@ -40,7 +41,6 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -1882,8 +1882,6 @@ class NodeGroup:
         Raises:
             ValueError: If ungrouped nodes are found between grouped nodes
         """
-        from griptape_nodes.exe_types.connections import Connections
-
         # Build a Connections object for traversal
         connections = Connections()
         connections.connections = all_connections
@@ -2003,13 +2001,15 @@ class NodeGroupProxyNode(BaseNode):
         for node in node_group.nodes.values():
             execution_type.add(node.get_parameter_value(node.execution_environment.name))
         if len(execution_type) > 1:
+            # Hoping this check can be removed by UI updates.
+            # For now, we are setting execution type individually on a parameters in all three of the nodes. we want their execution types to all be matching, or we fail.
             msg = f"Node group '{node_group.group_id}' has nodes with multiple execution types: {execution_type}"
             raise ValueError(msg)
         self.set_parameter_value(self.execution_environment.name, execution_type.pop())
         # Note: Proxy parameters are created AFTER connection remapping in control_flow.py
-        # via explicit call to _create_proxy_parameters()
+        # via explicit call to create_proxy_parameters()
 
-    def _create_proxy_parameters(self) -> None:
+    def create_proxy_parameters(self) -> None:
         """Create parameters on the proxy that match external connections.
 
         For each external incoming connection, create an input parameter with name
@@ -2029,8 +2029,8 @@ class NodeGroupProxyNode(BaseNode):
             target_node = self.node_group_data.original_incoming_targets.get(conn_id)
             if target_node is None:
                 # Fallback if not found (shouldn't happen)
-                continue
-
+                msg = f"Failed to find target node for incoming connection with ID: {conn_id}"
+                raise ValueError(msg)
             target_param = conn.target_parameter
 
             # Create proxy parameter name: {sanitized_node_name}__{param_name}

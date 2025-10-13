@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.node_types import (
     PRIVATE_EXECUTION,
     BaseNode,
     EndNode,
+    NodeGroup,
     NodeGroupProxyNode,
     StartNode,
 )
@@ -36,6 +37,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -63,7 +65,7 @@ class NodeExecutor:
         msg = f"Could not find PublishWorkflowRequest handler for library {library_name}"
         raise ValueError(msg)
 
-    async def execute(self, node: BaseNode) -> None:  # noqa: C901, PLR0912, PLR0915
+    async def execute(self, node: BaseNode) -> None:
         """Execute the given node.
 
         Args:
@@ -71,7 +73,6 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
-        
 
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
@@ -122,11 +123,11 @@ class NodeExecutor:
 
         try:
             await self._execute_and_apply_workflow(
-                node,
-                Path(workflow_result.file_path),
-                result.file_name,
-                result.output_parameter_prefix,
-                result.package_result,
+                node=node,
+                workflow_path=Path(workflow_result.file_path),
+                file_name=result.file_name,
+                output_parameter_prefix=result.output_parameter_prefix,
+                package_result=result.package_result,
             )
         except RuntimeError:
             raise
@@ -238,7 +239,6 @@ class NodeExecutor:
         library_name = "Griptape Nodes Library"
         start_node_type = "StartFlow"
         end_node_type = "EndFlow"
-        end_node_type = "EndFlow"
         if library is not None:
             start_nodes = library.get_nodes_by_base_type(StartNode)
             end_nodes = library.get_nodes_by_base_type(EndNode)
@@ -247,11 +247,13 @@ class NodeExecutor:
                 end_node_type = end_nodes[0]
                 library_name = library.get_library_data().name
         sanitized_library_name = library_name.replace(" ", "_")
-            # Temporarily restore control connections to original nodes for packaging
+        # Temporarily restore control connections to original nodes for packaging
         self._restore_control_connections_for_packaging(node)
+        # If we are packaging a NodeGroupProxyNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the proxy node.
         if isinstance(node, NodeGroupProxyNode):
             node_names = list(node.node_group_data.nodes.keys())
         else:
+            # Otherwise, it's a list of one node!
             node_names = [node.name]
         try:
             request = PackageNodesAsSerializedFlowRequest(
@@ -261,16 +263,13 @@ class NodeExecutor:
                 start_end_specific_library_name=library_name,
                 output_parameter_prefix=output_parameter_prefix,
                 entry_control_node_name=None,
-                entry_control_parameter_name=None
+                entry_control_parameter_name=None,
             )
             package_result = GriptapeNodes.handle_request(request)
         finally:
             # Remove control connections from original nodes after packaging
             self._remove_control_connections_after_packaging(node)
-            package_result = GriptapeNodes.handle_request(request)
-        if not isinstance(
-            package_result, PackageNodesAsSerializedFlowResultSuccess
-        ):
+        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
             msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
@@ -427,7 +426,7 @@ class NodeExecutor:
             return stored_value
         return stored_value
 
-    def _apply_parameter_values_to_node(  # noqa: C901, PLR0912
+    def _apply_parameter_values_to_node(  # noqa: C901
         self,
         node: BaseNode,
         parameter_output_values: dict[str, Any],
@@ -455,41 +454,47 @@ class NodeExecutor:
                 target_node_name = original_node_param.node_name
                 target_param_name = original_node_param.parameter_name
 
+                # Error case: not a proxy node or target node not in group
+                if not isinstance(node, NodeGroupProxyNode) or target_node_name not in node.node_group_data.nodes:
+                    logger.debug("Proxy parameter '%s' not in mapping", param_name)
+                    continue
+
                 # Get the original node from the group
-                # Cast to NodeGroupProxyNode for type checking
-                if isinstance(node, NodeGroupProxyNode) and target_node_name in node.node_group_data.nodes:
-                    target_node = node.node_group_data.nodes[target_node_name]
-                    target_param = target_node.get_parameter_by_name(target_param_name)
-                    if target_param is not None and target_param not in (
-                        target_node.execution_environment,
-                        target_node.node_group,
-                    ):
-                        # Set the value on the original node in the group
-                        if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                            target_node.set_parameter_value(target_param_name, param_value)
-                        target_node.parameter_output_values[target_param_name] = param_value
+                target_node = node.node_group_data.nodes[target_node_name]
+                target_param = target_node.get_parameter_by_name(target_param_name)
 
-                        # Also set the value on the proxy node's corresponding output parameter
-                        # Proxy param name format: {sanitized_node_name}__{param_name}
-                        sanitized_node_name = target_node_name.replace(" ", "_")
-                        proxy_param_name = f"{sanitized_node_name}__{target_param_name}"
-                        proxy_param = node.get_parameter_by_name(proxy_param_name)
-                        if proxy_param is not None:
-                            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                                node.set_parameter_value(proxy_param_name, param_value)
-                            node.parameter_output_values[proxy_param_name] = param_value
+                # Error case: parameter not found or is special parameter
+                if target_param is None or target_param in (
+                    target_node.execution_environment,
+                    target_node.node_group,
+                ):
+                    logger.debug("Target node '%s' not found in group", target_node_name)
+                    continue
 
-                        logger.info(
-                            "Set parameter '%s' on node '%s' and proxy param '%s' to value: %s",
-                            target_param_name,
-                            target_node_name,
-                            proxy_param_name,
-                            param_value,
-                        )
-                    else:
-                        logger.warning("Target node '%s' not found in group", target_node_name)
-                else:
-                    logger.warning("Proxy parameter '%s' not in mapping", param_name)
+                # Happy path: set the value on the original node in the group
+                if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                    # If it isn't a CONTROL TYPE, we can set the value.
+                    # Since CONTROL TYPEs shouldn't technically have typed values, they should only ever be set as output values.
+                    target_node.set_parameter_value(target_param_name, param_value)
+                target_node.parameter_output_values[target_param_name] = param_value
+
+                # Also set the value on the proxy node's corresponding output parameter
+                # Proxy param name format: {sanitized_node_name}__{param_name}
+                sanitized_node_name = target_node_name.replace(" ", "_")
+                proxy_param_name = f"{sanitized_node_name}__{target_param_name}"
+                proxy_param = node.get_parameter_by_name(proxy_param_name)
+                if proxy_param is not None:
+                    if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                        node.set_parameter_value(proxy_param_name, param_value)
+                    node.parameter_output_values[proxy_param_name] = param_value
+
+                logger.info(
+                    "Set parameter '%s' on node '%s' and proxy param '%s' to value: %s",
+                    target_param_name,
+                    target_node_name,
+                    proxy_param_name,
+                    param_value,
+                )
             if param_name.startswith(output_parameter_prefix):
                 clean_param_name = param_name[len(output_parameter_prefix) :]
                 # Single node package - use the original logic
@@ -543,121 +548,114 @@ class NodeExecutor:
             storage_backend = StorageBackend.LOCAL
         return storage_backend
 
+    def _toggle_incoming_control_connections(
+        self, proxy_node: BaseNode, node_group: NodeGroup, connections: Connections, *, restore_to_original: bool
+    ) -> None:
+        """Toggle incoming control connections between proxy and original nodes."""
+        for conn in node_group.external_incoming_connections:
+            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is None:
+                msg = f"No original target found for connection {conn_id} in node group '{node_group.group_id}'"
+                raise RuntimeError(msg)
+
+            sanitized_node_name = original_target.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+
+            if restore_to_original:
+                from_node = proxy_node
+                from_param = proxy_param_name
+                to_node = original_target
+                to_param = conn.target_parameter.name
+            else:
+                from_node = original_target
+                from_param = conn.target_parameter.name
+                to_node = proxy_node
+                to_param = proxy_param_name
+
+            # Remove from old node's incoming index
+            if (
+                from_node.name in connections.incoming_index
+                and from_param in connections.incoming_index[from_node.name]
+            ):
+                connections.incoming_index[from_node.name][from_param].remove(conn_id)
+
+            # Update connection and add to new node's incoming index
+            conn.target_node = to_node
+            connections.incoming_index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
+
+    def _toggle_outgoing_control_connections(
+        self, proxy_node: BaseNode, node_group: NodeGroup, connections: Connections, *, restore_to_original: bool
+    ) -> None:
+        """Toggle outgoing control connections between proxy and original nodes."""
+        for conn in node_group.external_outgoing_connections:
+            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            conn_id = id(conn)
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is None:
+                continue
+
+            sanitized_node_name = original_source.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+
+            if restore_to_original:
+                from_node = proxy_node
+                from_param = proxy_param_name
+                to_node = original_source
+                to_param = conn.source_parameter.name
+            else:
+                from_node = original_source
+                from_param = conn.source_parameter.name
+                to_node = proxy_node
+                to_param = proxy_param_name
+
+            # Remove from old node's outgoing index
+            if (
+                from_node.name in connections.outgoing_index
+                and from_param in connections.outgoing_index[from_node.name]
+            ):
+                connections.outgoing_index[from_node.name][from_param].remove(conn_id)
+
+            # Update connection and add to new node's outgoing index
+            conn.source_node = to_node
+            connections.outgoing_index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
+
+    def _toggle_control_connections(self, proxy_node: BaseNode, *, restore_to_original: bool) -> None:
+        """Toggle control connections between proxy node and original nodes.
+
+        Args:
+            proxy_node: The proxy node containing the node group
+            restore_to_original: If True, restore connections from proxy to original nodes.
+                               If False, remap connections from original nodes back to proxy.
+        """
+        if not isinstance(proxy_node, NodeGroupProxyNode):
+            return
+        node_group = proxy_node.node_group_data
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        self._toggle_incoming_control_connections(
+            proxy_node, node_group, connections, restore_to_original=restore_to_original
+        )
+        self._toggle_outgoing_control_connections(
+            proxy_node, node_group, connections, restore_to_original=restore_to_original
+        )
+
     def _restore_control_connections_for_packaging(self, proxy_node: BaseNode) -> None:
         """Temporarily restore control connections from proxy back to original nodes for packaging.
 
         Only restores control connections (CONTROL_TYPE parameters) so that the packaged flow
         has the correct control flow structure.
         """
-        if not isinstance(proxy_node, NodeGroupProxyNode):
-            return
-        node_group = proxy_node.node_group_data
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Restore external incoming control connections
-        for conn in node_group.external_incoming_connections:
-            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_target = node_group.original_incoming_targets.get(conn_id)
-            if original_target is None:
-                continue
-
-            sanitized_node_name = original_target.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
-
-            # Remove from proxy's incoming index
-            if (
-                proxy_node.name in connections.incoming_index
-                and proxy_param_name in connections.incoming_index[proxy_node.name]
-            ):
-                connections.incoming_index[proxy_node.name][proxy_param_name].remove(conn_id)
-
-            # Restore to original target
-            conn.target_node = original_target
-            connections.incoming_index.setdefault(original_target.name, {}).setdefault(
-                conn.target_parameter.name, []
-            ).append(conn_id)
-
-        # Restore external outgoing control connections
-        for conn in node_group.external_outgoing_connections:
-            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_source = node_group.original_outgoing_sources.get(conn_id)
-            if original_source is None:
-                continue
-
-            sanitized_node_name = original_source.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
-
-            # Remove from proxy's outgoing index
-            if (
-                proxy_node.name in connections.outgoing_index
-                and proxy_param_name in connections.outgoing_index[proxy_node.name]
-            ):
-                connections.outgoing_index[proxy_node.name][proxy_param_name].remove(conn_id)
-
-            # Restore to original source
-            conn.source_node = original_source
-            connections.outgoing_index.setdefault(original_source.name, {}).setdefault(
-                conn.source_parameter.name, []
-            ).append(conn_id)
+        self._toggle_control_connections(proxy_node, restore_to_original=True)
 
     def _remove_control_connections_after_packaging(self, proxy_node: BaseNode) -> None:
         """Remove control connections from original nodes and restore them to proxy after packaging.
 
         Reverses what _restore_control_connections_for_packaging does.
         """
-        if not isinstance(proxy_node, NodeGroupProxyNode):
-            return
-        node_group = proxy_node.node_group_data
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Remap external incoming control connections back to proxy
-        for conn in node_group.external_incoming_connections:
-            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_target = node_group.original_incoming_targets.get(conn_id)
-            if original_target is None:
-                continue
-
-            # Remove from original target's incoming index
-            if (
-                original_target.name in connections.incoming_index
-                and conn.target_parameter.name in connections.incoming_index[original_target.name]
-            ):
-                connections.incoming_index[original_target.name][conn.target_parameter.name].remove(conn_id)
-
-            # Restore to proxy
-            conn.target_node = proxy_node
-            sanitized_node_name = original_target.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
-            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
-
-        # Remap external outgoing control connections back to proxy
-        for conn in node_group.external_outgoing_connections:
-            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_source = node_group.original_outgoing_sources.get(conn_id)
-            if original_source is None:
-                continue
-
-            # Remove from original source's outgoing index
-            if (
-                original_source.name in connections.outgoing_index
-                and conn.source_parameter.name in connections.outgoing_index[original_source.name]
-            ):
-                connections.outgoing_index[original_source.name][conn.source_parameter.name].remove(conn_id)
-
-            # Restore to proxy
-            conn.source_node = proxy_node
-            sanitized_node_name = original_source.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
-            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
+        self._toggle_control_connections(proxy_node, restore_to_original=False)
