@@ -441,6 +441,9 @@ class LoadFile(SuccessFailureNode):
         # Set button to loading state
         button.state = "loading"
         button.loading_label = "Copying..."
+        # Workaround: Set button_text on ParameterMessage to sync with Button trait label
+        # TODO(https://github.com/griptape-ai/griptape-nodes/issues/2645): Fix button syncing
+        self.file_status_info_message.button_text = "Copying..."
 
         # Generate destination location in inputs/
         try:
