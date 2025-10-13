@@ -227,12 +227,13 @@ class GetFlowStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Flow execution state retrieved successfully.
 
     Args:
-        control_node: Name of the current control node (if any)
-        resolving_node: Name of the node currently being resolved (if any)
+        control_nodes: Name of the current control node (if any)
+        resolving_nodes: Name of the node currently being resolved (if any)
     """
 
-    control_nodes: list[str] | None
-    resolving_node: list[str] | None
+    control_nodes: list[str]
+    resolving_nodes: list[str]
+    involved_nodes: list[str]
 
 
 @dataclass

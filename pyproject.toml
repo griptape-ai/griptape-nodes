@@ -1,11 +1,11 @@
 [project]
 name = "griptape-nodes"
-version = "0.58.0"
+version = "0.58.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
 dependencies = [
-  "griptape>=1.8.5",
+  "griptape>=1.8.8",
   "pydantic>=2.10.6",
   "python-dotenv>=1.0.1",
   "xdg-base-dirs>=6.0.2",
@@ -24,7 +24,7 @@ dependencies = [
   "pillow>=11.3.0",
   "watchfiles>=1.1.0",
   "typer>=0.15.0",
-  "huggingface-hub[xf_xet]>=0.28.0",
+  "huggingface-hub[xf-xet]>=0.28.0",
   "rich>=14.1.0",
   "semver>=3.0.4",
 ]
@@ -34,6 +34,7 @@ profiling = ["austin-dist>=3.7.0"]
 
 [dependency-groups]
 dev = [
+  "griptape-cloud-client",
   "mdformat>=0.7.22",
   "mdformat-gfm>=0.4.1",
   "mdformat-frontmatter>=2.0.8",
@@ -47,6 +48,7 @@ docs = [
   "mkdocs-material>=9.6.9",
   "mkdocs>=1.5.2",
   "mkdocstrings[python]>=0.29.1",
+  "mkdocs-mermaid2-plugin>=1.2.2",
 ]
 test = [
   "pytest>=8.3.5",
@@ -65,11 +67,13 @@ gtn = "griptape_nodes:main"
 requires = ["uv_build"]
 build-backend = "uv_build"
 
+[tool.uv.sources]
+griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }
+
 [tool.ruff]
 line-length = 120
+extend-exclude = ["libraries/**/templates/*.py"]
 
-[tool.ruff.format]
-exclude = [".venv"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -101,10 +105,11 @@ ignore = [
 "nodes.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of nodes.griptape_nodes_library"
 "libraries.griptape_nodes_library".msg = "Import from griptape_nodes_library instead of libraries.griptape_nodes_library"
 "libraries.griptape_nodes_advanced_media_library".msg = "Import from griptape_nodes_advanced_media_library instead of libraries.griptape_nodes_advanced_media_library"
+"libraries.griptape_cloud".msg = "Import from griptape_cloud instead of libraries.griptape_cloud"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "D104"]
-"nodes/tests/*" = ["S101", "D104"]
+"libraries/**/tests/*" = ["S101", "D104"]
 
 [tool.ruff.lint.flake8-annotations]
 mypy-init-return = true
@@ -125,7 +130,7 @@ venvPath = "."
 venv = ".venv"
 include = ["."]
 exclude = [
-  "libraries/griptape_nodes_library/workflows/templates/**/*",
+  "libraries/**/templates/*",
   ".venv",
   "GriptapeNodes",
   "**/node_modules",

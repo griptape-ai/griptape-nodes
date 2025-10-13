@@ -110,4 +110,5 @@ The `RetainedMode` class in `retained_mode/retained_mode.py` provides the script
 
 - Default library: `libraries/griptape_nodes_library/`
 - Advanced library: `libraries/griptape_nodes_advanced_media_library/`
+- Griptape Cloud library: `libraries/griptape_cloud/`
 - Custom libraries registered via config: `app_events.on_app_initialization_complete.libraries_to_register`

@@ -169,6 +169,8 @@ class LibraryManager:
         self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
         # LibraryDirectory owns the FSMs and manages library lifecycle
         self._library_directory = LibraryDirectory()
+        # Lock for synchronizing sys.path modifications during parallel library installation
+        self._sys_path_lock = asyncio.Lock()
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -724,7 +726,8 @@ class LibraryManager:
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
         # Add the directory to the Python path to allow for relative imports
-        sys.path.insert(0, str(base_dir))
+        async with self._sys_path_lock:
+            sys.path.insert(0, str(base_dir))
 
         # Load the advanced library module if specified
         advanced_library_instance = None
@@ -1057,7 +1060,8 @@ class LibraryManager:
                 )
             )
         )
-        sys.path.insert(0, site_packages)
+        async with self._sys_path_lock:
+            sys.path.insert(0, site_packages)
 
         return library_venv_python_path
 
@@ -1499,6 +1503,27 @@ class LibraryManager:
 
         return node_class
 
+    async def _register_single_library(self, library_result: LoadLibraryMetadataFromFileResultSuccess) -> None:
+        """Register a single library (sandbox or config-based) and handle errors.
+
+        Args:
+            library_result: The metadata result for the library to register
+        """
+        try:
+            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                await self._attempt_generate_sandbox_library_from_schema(
+                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                )
+            else:
+                register_request = RegisterLibraryFromFileRequest(
+                    file_path=library_result.file_path, load_as_default_library=False
+                )
+                register_result = await self.register_library_from_file_request(register_request)
+                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                    logger.warning("Failed to register library from %s", library_result.file_path)
+        except Exception as e:
+            logger.warning("Failed to register library from %s with exception: %s", library_result.file_path, e)
+
     async def load_all_libraries_from_config(self) -> None:
         # Load metadata for all libraries to determine which ones can be safely loaded
         metadata_request = LoadMetadataForAllLibrariesRequest()
@@ -1518,23 +1543,10 @@ class LibraryManager:
                 problems=failed_library.problems,
             )
 
-        # Use metadata results to selectively load libraries
-        for library_result in metadata_result.successful_libraries:
-            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
-                # Handle sandbox library - use the schema we already have
-                await self._attempt_generate_sandbox_library_from_schema(
-                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
-                )
-            else:
-                # Handle config-based library - register it directly using the file path
-                register_request = RegisterLibraryFromFileRequest(
-                    file_path=library_result.file_path, load_as_default_library=False
-                )
-                register_result = await self.register_library_from_file_request(register_request)
-                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
-                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
-                    # by register_library_from_file_request, so we just log it here for visibility
-                    logger.warning("Failed to register library from %s", library_result.file_path)
+        # Use task group for parallel library loading
+        async with asyncio.TaskGroup() as tg:
+            for library_result in metadata_result.successful_libraries:
+                tg.create_task(self._register_single_library(library_result))
 
         # Print 'em all pretty
         self.print_library_load_status()

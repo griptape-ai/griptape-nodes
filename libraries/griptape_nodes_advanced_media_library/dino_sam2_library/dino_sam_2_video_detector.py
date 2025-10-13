@@ -9,10 +9,10 @@ import PIL.Image  # type: ignore[reportMissingImports]
 import requests
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
+from griptape.artifacts import VideoUrlArtifact
 from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from sam2.build_sam import HF_MODEL_ID_TO_FILENAMES, build_sam2_video_predictor  # type: ignore[reportMissingImports]
 
@@ -208,7 +208,7 @@ class DinoSam2VideoDetector(ControlNode):
             dino_results = dino_processor.post_process_grounded_object_detection(
                 outputs,
                 inputs.input_ids,
-                box_threshold=self.get_box_threshold(),
+                threshold=self.get_box_threshold(),
                 text_threshold=self.get_text_threshold(),
                 target_sizes=[prompt_frame.size[::-1]],
             )

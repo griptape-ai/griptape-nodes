@@ -1,0 +1,153 @@
+{
+  "name": "Griptape Cloud Library",
+  "library_schema_version": "0.3.0",
+  "advanced_library_path": "griptape_cloud/griptape_cloud_library_advanced.py",
+  "settings": [
+    {
+      "description": "Configuration settings for Griptape Cloud",
+      "category": "griptape_cloud_library",
+      "contents": {
+        "GT_CLOUD_PUBLISH_BUCKET_ID": ""
+      }
+    }
+  ],
+  "metadata": {
+    "author": "Griptape",
+    "description": "Collection of nodes for accessing Griptape Cloud APIs and services.",
+    "library_version": "0.58.0",
+    "engine_version": "0.58.0",
+    "tags": ["Griptape", "AI", "Cloud"],
+    "dependencies": {
+      "pip_dependencies": [
+        "git+https://github.com/griptape-ai/griptape-cloud-python-client.git@main"
+      ]
+    }
+  },
+  "categories": [
+    {
+      "griptape_cloud": {
+        "color": "border-gray-500",
+        "title": "Griptape Cloud",
+        "description": "Griptape Cloud",
+        "icon": "cloud"
+      }
+    },
+    {
+      "griptape_cloud/assistants": {
+        "color": "border-blue-500",
+        "title": "GTC Assistants",
+        "description": "Griptape Cloud Assistants",
+        "icon": "bot"
+      }
+    },
+    {
+      "griptape_cloud/assets": {
+        "color": "border-gray-500",
+        "title": "GTC Assets",
+        "description": "Griptape Cloud Assets",
+        "icon": "file-text"
+      }
+    },
+    {
+      "griptape_cloud/buckets": {
+        "color": "border-yellow-500",
+        "title": "GTC Buckets",
+        "description": "Griptape Cloud Buckets",
+        "icon": "paint-bucket"
+      }
+    },
+    {
+      "griptape_cloud/published_workflows": {
+        "color": "border-green-500",
+        "title": "GTC Published Workflows",
+        "description": "Griptape Cloud Published Workflows",
+        "icon": "cloud-check"
+      }
+    },
+    {
+      "griptape_cloud/structures": {
+        "color": "border-red-500",
+        "title": "GTC Structures",
+        "description": "Griptape Cloud Structures",
+        "icon": "layout-panel-top"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "GetAssistant",
+      "file_path": "griptape_cloud/assistants/get_assistant.py",
+      "metadata": {
+        "category": "griptape_cloud/assistants",
+        "description": "Griptape Node that retrieves a specific assistant.",
+        "display_name": "Get Assistant"
+      }
+    },
+    {
+      "class_name": "RunAssistant",
+      "file_path": "griptape_cloud/assistants/run_assistant.py",
+      "metadata": {
+        "category": "griptape_cloud/assistants",
+        "description": "Griptape Node that runs a specific assistant.",
+        "display_name": "Run Assistant"
+      }
+    },
+    {
+      "class_name": "CreateAssetUrl",
+      "file_path": "griptape_cloud/assets/create_asset_url.py",
+      "metadata": {
+        "category": "griptape_cloud/assets",
+        "description": "Griptape Node that creates a URL for uploading or downloading an asset.",
+        "display_name": "Create Asset URL"
+      }
+    },
+    {
+      "class_name": "UploadAsset",
+      "file_path": "griptape_cloud/assets/upload_asset.py",
+      "metadata": {
+        "category": "griptape_cloud/assets",
+        "description": "Griptape Node that uploads an asset to a specific bucket.",
+        "display_name": "Upload Asset"
+      }
+    },
+    {
+      "class_name": "GetBucket",
+      "file_path": "griptape_cloud/buckets/get_bucket.py",
+      "metadata": {
+        "category": "griptape_cloud/buckets",
+        "description": "Griptape Node that retrieves a specific bucket.",
+        "display_name": "Get Bucket"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudPublishedWorkflow",
+      "file_path": "griptape_cloud/publish_workflow/griptape_cloud_published_workflow.py",
+      "metadata": {
+        "category": "griptape_cloud/published_workflows",
+        "description": "Griptape Node that runs a specific published workflow.",
+        "display_name": "Griptape Cloud Published Workflow"
+      }
+    },
+    {
+      "class_name": "GetStructure",
+      "file_path": "griptape_cloud/structures/get_structure.py",
+      "metadata": {
+        "category": "griptape_cloud/structures",
+        "description": "Griptape Node that retrieves a specific structure.",
+        "display_name": "Get Structure"
+      }
+    },
+    {
+      "class_name": "RunStructure",
+      "file_path": "griptape_cloud/structures/run_structure.py",
+      "metadata": {
+        "category": "griptape_cloud/structures",
+        "description": "Griptape Node that runs a specific structure.",
+        "display_name": "Run Structure"
+      }
+    }
+  ],
+  "workflows": [
+    "workflows/templates/griptape_cloud_published_workflow_template.py"
+  ]
+}
