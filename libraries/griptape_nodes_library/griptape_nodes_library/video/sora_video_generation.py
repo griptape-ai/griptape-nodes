@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
 from contextlib import suppress
-from time import monotonic, sleep
+from time import monotonic
 from typing import Any
 from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -170,23 +171,26 @@ class SoraVideoGeneration(DataNode):
 
         return super().after_value_set(parameter, value)
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+    def process(self) -> None:
+        pass
 
-    def _process(self) -> None:
+    async def aprocess(self) -> None:
+        await self._process()
+
+    async def _process(self) -> None:
         # Get parameters and validate API key
         params = self._get_parameters()
         api_key = self._validate_api_key()
         headers = {"Authorization": f"Bearer {api_key}"}
 
         # Build and submit request
-        generation_id = self._submit_request(params, headers)
+        generation_id = await self._submit_request(params, headers)
         if not generation_id:
             self.parameter_output_values["video_url"] = None
             return
 
         # Poll for result
-        self._poll_for_result(generation_id, headers)
+        await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
         seconds_value = self.get_parameter_value("seconds")
@@ -208,7 +212,7 @@ class SoraVideoGeneration(DataNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
         # Build JSON payload
@@ -227,7 +231,8 @@ class SoraVideoGeneration(DataNode):
         self._log(f"JSON payload types: {[(k, type(v).__name__, v) for k, v in json_data.items()]}")
 
         # Make request with JSON data
-        post_resp = requests.post(post_url, json=json_data, headers=headers, timeout=60)
+        async with httpx.AsyncClient() as client:
+            post_resp = await client.post(post_url, json=json_data, headers=headers, timeout=60)
 
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
@@ -249,7 +254,7 @@ class SoraVideoGeneration(DataNode):
 
         return generation_id
 
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         start_time = monotonic()
         last_json = None
@@ -257,48 +262,49 @@ class SoraVideoGeneration(DataNode):
         poll_interval_s = 5.0
         timeout_s = 600.0
 
-        while True:
-            if monotonic() - start_time > timeout_s:
-                self.parameter_output_values["video_url"] = None
-                self._log("Polling timed out waiting for result")
-                return
-
-            try:
-                get_resp = requests.get(get_url, headers=headers, timeout=60)
-                get_resp.raise_for_status()
-
-                content_type = get_resp.headers.get("content-type", "").lower()
-
-                # Check if we got the binary video data
-                if "application/octet-stream" in content_type:
-                    self._log("Received video data")
-                    self._handle_video_completion(get_resp.content)
-                    return
-
-                # Otherwise, parse JSON status response
-                last_json = get_resp.json()
-            except Exception as exc:
-                self._log(f"GET generation failed: {exc}")
-                msg = f"{self.name} GET generation failed: {exc}"
-                raise RuntimeError(msg) from exc
-
-            try:
-                status = last_json.get("status", "running") if last_json else "running"
-            except Exception:
-                status = "running"
-
-            attempt += 1
-            self._log(f"Polling attempt #{attempt} status={status}")
-
-            # Check if status indicates completion or failure
-            if status and isinstance(status, str):
-                status_lower = status.lower()
-                if status_lower in {"failed", "error"}:
-                    self._log(f"Generation failed with status: {status}")
+        async with httpx.AsyncClient() as client:
+            while True:
+                if monotonic() - start_time > timeout_s:
                     self.parameter_output_values["video_url"] = None
+                    self._log("Polling timed out waiting for result")
                     return
 
-            sleep(poll_interval_s)
+                try:
+                    get_resp = await client.get(get_url, headers=headers, timeout=60)
+                    get_resp.raise_for_status()
+
+                    content_type = get_resp.headers.get("content-type", "").lower()
+
+                    # Check if we got the binary video data
+                    if "application/octet-stream" in content_type:
+                        self._log("Received video data")
+                        self._handle_video_completion(get_resp.content)
+                        return
+
+                    # Otherwise, parse JSON status response
+                    last_json = get_resp.json()
+                except Exception as exc:
+                    self._log(f"GET generation failed: {exc}")
+                    msg = f"{self.name} GET generation failed: {exc}"
+                    raise RuntimeError(msg) from exc
+
+                try:
+                    status = last_json.get("status", "running") if last_json else "running"
+                except Exception:
+                    status = "running"
+
+                attempt += 1
+                self._log(f"Polling attempt #{attempt} status={status}")
+
+                # Check if status indicates completion or failure
+                if status and isinstance(status, str):
+                    status_lower = status.lower()
+                    if status_lower in {"failed", "error"}:
+                        self._log(f"Generation failed with status: {status}")
+                        self.parameter_output_values["video_url"] = None
+                        return
+
+                await asyncio.sleep(poll_interval_s)
 
     def _handle_video_completion(self, video_bytes: bytes) -> None:
         """Handle completion when video data is received."""
