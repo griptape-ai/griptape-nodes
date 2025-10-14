@@ -749,14 +749,16 @@ class WorkflowManager:
             result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
         )
 
-    def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
-        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
+    async def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
+        save_workflow_request = await GriptapeNodes.ahandle_request(
+            SaveWorkflowRequest(file_name=request.requested_name)
+        )
 
         if isinstance(save_workflow_request, SaveWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             return RenameWorkflowResultFailure(result_details=details)
 
-        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
+        delete_workflow_result = await GriptapeNodes.ahandle_request(DeleteWorkflowRequest(name=request.workflow_name))
         if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
             return RenameWorkflowResultFailure(result_details=details)
@@ -1159,7 +1161,7 @@ class WorkflowManager:
         success: bool
         error_details: str
 
-    def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
+    async def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
         Args:
@@ -1187,15 +1189,15 @@ class WorkflowManager:
 
         # Write the file content
         try:
-            with file_path.open("w", encoding="utf-8") as file:
-                file.write(content)
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
+                await file.write(content)
         except OSError as e:
             details = f"Attempted to save workflow '{file_name}'. Failed when writing file content: {e}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
         # Determine save target (file path, name, metadata)
         context_manager = GriptapeNodes.ContextManager()
         current_workflow_name = (
@@ -1227,7 +1229,7 @@ class WorkflowManager:
 
         # Serialize the current workflow state
         top_level_flow_request = GetTopLevelFlowRequest()
-        top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
+        top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
             return SaveWorkflowResultFailure(result_details=details)
@@ -1236,7 +1238,7 @@ class WorkflowManager:
         serialized_flow_request = SerializeFlowToCommandsRequest(
             flow_name=top_level_flow_name, include_create_flow_command=True
         )
-        serialized_flow_result = GriptapeNodes.handle_request(serialized_flow_request)
+        serialized_flow_result = await GriptapeNodes.ahandle_request(serialized_flow_request)
         if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
             return SaveWorkflowResultFailure(result_details=details)
@@ -1268,7 +1270,7 @@ class WorkflowManager:
             file_path=str(file_path),
             pickle_control_flow_result=pickle_control_flow_result,
         )
-        save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
+        save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
         if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed during file generation: {save_file_result.result_details}"
@@ -1387,7 +1389,7 @@ class WorkflowManager:
             branched_from=branched_from,
         )
 
-    def on_save_workflow_file_from_serialized_flow_request(
+    async def on_save_workflow_file_from_serialized_flow_request(
         self, request: SaveWorkflowFileFromSerializedFlowRequest
     ) -> ResultPayload:
         """Save a workflow file from serialized flow commands without registry overhead."""
@@ -1436,7 +1438,7 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = self._write_workflow_file(file_path, final_code_output, request.file_name)
+        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
