@@ -573,6 +573,7 @@ class RetainedMode:
         ] = "right",
         offset_x: int = 0,
         offset_y: int = 0,
+        *,
         swap: bool = False,
     ) -> str | ResultPayload:
         """Create a new node positioned relative to an existing node.
@@ -595,6 +596,8 @@ class RetainedMode:
         # Get the reference node's metadata
         get_metadata_result = GriptapeNodes().handle_request(GetNodeMetadataRequest(node_name=reference_node_name))
         if not isinstance(get_metadata_result, GetNodeMetadataResultSuccess):
+            msg = f"{reference_node_name}: Failed to get reference node's metadata: {get_metadata_result}"
+            logger.warning(msg)
             return get_metadata_result
 
         reference_metadata = get_metadata_result.metadata
@@ -608,70 +611,48 @@ class RetainedMode:
             specific_library_name=specific_library_name,
         )
 
-        # Check if creation succeeded
+        # Check if creation succeeded, create_node returns the node name if successful
         if isinstance(create_result, str):
             new_node_name = create_result
         else:
             return create_result
 
+        # Calculate position based on offset_side and offsets
+        def calculate_position(base_position: dict, base_size: dict) -> dict:
+            # Calculate base offsets for each side
+            x_offset = base_position["x"] + offset_x
+            y_offset = base_position["y"] + offset_y
+            x_center = base_position["x"] + base_size["width"] // 2 + offset_x
+            y_center = base_position["y"] + base_size["height"] // 2 + offset_y
+            x_right = base_position["x"] + base_size["width"] + offset_x
+            y_bottom = base_position["y"] + base_size["height"] + offset_y
+
+            # Position mapping
+            positions = {
+                "top_left": {"x": x_offset, "y": y_offset},
+                "top": {"x": x_center, "y": y_offset},
+                "top_right": {"x": x_right, "y": y_offset},
+                "right": {"x": x_right, "y": y_center},
+                "bottom_right": {"x": x_right, "y": y_bottom},
+                "bottom": {"x": x_center, "y": y_bottom},
+                "bottom_left": {"x": x_offset, "y": y_bottom},
+                "left": {"x": x_offset, "y": y_center},
+            }
+
+            return positions.get(offset_side, positions["right"])  # Default to right
+
         if swap:
             # Swap mode: Create new node at reference position, move reference node relative to new node
             new_position = reference_position
-
-            # Calculate reference node's new position relative to the new node
-            match offset_side:
-                case "top_left":
-                    reference_new_position = {
-                        "x": new_position["x"] + offset_x,
-                        "y": new_position["y"] + offset_y,
-                    }
-                case "top":
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] // 2 + offset_x,
-                        "y": new_position["y"] + offset_y,
-                    }
-                case "top_right":
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] + offset_x,
-                        "y": new_position["y"] + offset_y,
-                    }
-                case "right":
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] + offset_x,
-                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
-                case "bottom_right":
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] + offset_x,
-                        "y": new_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "bottom":
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] // 2 + offset_x,
-                        "y": new_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "bottom_left":
-                    reference_new_position = {
-                        "x": new_position["x"] + offset_x,
-                        "y": new_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "left":
-                    reference_new_position = {
-                        "x": new_position["x"] + offset_x,
-                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
-                case _:
-                    # Default to right if unknown position
-                    reference_new_position = {
-                        "x": new_position["x"] + reference_size["width"] + offset_x,
-                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
+            reference_new_position = calculate_position(new_position, reference_size)
 
             # Set the new node's position (at reference position)
             set_metadata_result = GriptapeNodes().handle_request(
                 SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
             )
             if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set new node's position: {set_metadata_result}"
+                logger.warning(msg)
                 return set_metadata_result
 
             # Move the reference node to its new position
@@ -679,69 +660,27 @@ class RetainedMode:
                 SetNodeMetadataRequest(node_name=reference_node_name, metadata={"position": reference_new_position})
             )
             if not isinstance(set_reference_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set reference node's position: {set_reference_metadata_result}"
+                logger.warning(msg)
                 return set_reference_metadata_result
 
         else:
             # Normal mode: Create new node relative to reference node
-            match offset_side:
-                case "top_left":
-                    new_position = {
-                        "x": reference_position["x"] + offset_x,
-                        "y": reference_position["y"] + offset_y,
-                    }
-                case "top":
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
-                        "y": reference_position["y"] + offset_y,
-                    }
-                case "top_right":
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] + offset_x,
-                        "y": reference_position["y"] + offset_y,
-                    }
-                case "right":
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
-                case "bottom_right":
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "bottom":
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "bottom_left":
-                    new_position = {
-                        "x": reference_position["x"] + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] + offset_y,
-                    }
-                case "left":
-                    new_position = {
-                        "x": reference_position["x"] + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
-                case _:
-                    # Default to right if unknown position
-                    new_position = {
-                        "x": reference_position["x"] + reference_size["width"] + offset_x,
-                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                    }
+            new_position = calculate_position(reference_position, reference_size)
 
             # Set the new node's position
             set_metadata_result = GriptapeNodes().handle_request(
                 SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
             )
             if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set new node's position: {set_metadata_result}"
+                logger.warning(msg)
                 return set_metadata_result
 
         return new_node_name
 
     @classmethod
-    def migrate_parameter(
+    def migrate_parameter(  # noqa: PLR0913
         cls,
         source_node_name: str,
         target_node_name: str,
@@ -753,6 +692,12 @@ class RetainedMode:
     ) -> ResultPayload:
         """Migrate a parameter from one node to another with optional conversions.
 
+        This command handles:
+        - Direct parameter renaming and connection migration
+        - Value transformation when no incoming connections exist
+        - Creation of intermediate conversion nodes for complex type conversions on incoming or outgoing connections
+        - Multiple incoming and outgoing connections (including execution parameters)
+
         Args:
             source_node_name (str): Name of the source node.
             target_node_name (str): Name of the target node.
@@ -760,7 +705,7 @@ class RetainedMode:
             target_parameter_name (str): Name of the parameter to migrate to.
             input_conversion (ConversionConfig, optional): Configuration for converting incoming connections.
             output_conversion (ConversionConfig, optional): Configuration for converting outgoing connections.
-            value_transform (Callable, optional): Function to transform values when no connections exist.
+            value_transform (Callable, optional): Function to transform values when no incoming connections exist.
 
         Returns:
             ResultPayload: Contains the result of the migration operation.
@@ -772,14 +717,28 @@ class RetainedMode:
             # Parameter migration with conversion
             result = cmd.migrate_parameter(
                 "old_node", "new_node", "scale", "percentage_scale",
-                input_conversion={
-                    "library": "Griptape Nodes Library",
-                    "node_type": "Math",
-                    "input_parameter": "A",
-                    "output_parameter": "result",
-                    "operation": "multiply [A * B]",
-                    "B": 100
-                },
+                input_conversion=ConversionConfig(
+                    library="Griptape Nodes Library",
+                    node_type="Math",
+                    input_parameter="A",
+                    output_parameter="result",
+                    additional_parameters={
+                        "operation": "multiply [A * B]",
+                        "B": 100
+                    },
+                    offset_x=-300
+                ),
+                output_conversion=ConversionConfig(
+                    library="Griptape Nodes Library",
+                    node_type="Math",
+                    input_parameter="A",
+                    output_parameter="result",
+                    additional_parameters={
+                        "operation": "divide [A / B]",
+                        "B": 100
+                    },
+                    offset_x=50
+                ),
                 value_transform=lambda x: x * 100
             )
         """
