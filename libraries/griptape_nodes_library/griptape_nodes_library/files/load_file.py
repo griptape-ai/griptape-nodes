@@ -451,7 +451,7 @@ class LoadFile(SuccessFailureNode):
         # Generate destination location in inputs/
         try:
             filename = self._generate_filename(self._current_location)
-            destination_location = ArtifactProvider.generate_workflow_file_location(
+            destination_location = ArtifactProvider.generate_project_file_location(
                 subdirectory="inputs", filename=filename
             )
         except Exception as e:

@@ -76,13 +76,16 @@ class ArtifactProviderValidationResult:
     # Updates for provider-specific parameters (e.g., mask extraction results)
     dynamic_parameter_updates: dict[str, Any]
 
+    # Optional preview/thumbnail artifact for UI display (e.g., thumbnail ImageUrlArtifact)
+    preview_artifact: Any | None
+
     # Whether the operation was successful
     was_successful: bool
 
     # Details about the operation (error message or success info)
     result_details: str
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         was_successful: bool,
@@ -90,12 +93,14 @@ class ArtifactProviderValidationResult:
         artifact: Any = None,
         location: FileLocation | None = None,
         dynamic_parameter_updates: dict[str, Any] | None = None,
+        preview_artifact: Any | None = None,
     ) -> None:
         """Initialize validation result with all fields."""
         self.was_successful = was_successful
         self.artifact = artifact
         self.location = location
         self.dynamic_parameter_updates = dynamic_parameter_updates or {}
+        self.preview_artifact = preview_artifact
         self.result_details = result_details
 
 
@@ -370,14 +375,14 @@ class ArtifactProvider(ABC):
 
     @staticmethod
     def get_workflow_directory() -> Path:
-        """Get the workflow's directory, or workspace if workflow cannot be determined.
+        """Get the workflow's directory.
 
-        Returns directory where workflow files should be stored. For saved workflows,
+        Returns directory where the workflow file is located. For saved workflows,
         uses the workflow's actual directory. For unsaved workflows, falls back to
-        workspace root with a warning.
+        project root with a warning.
 
         Returns:
-            Path relative to workspace (e.g., Path("myworkflow")), or absolute path if outside project
+            Path relative to project (e.g., Path("workflows/shots")), or absolute path if outside project
 
         Raises:
             RuntimeError: If workflow context cannot be determined
@@ -385,22 +390,23 @@ class ArtifactProvider(ABC):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        # Use workspace_path for now, will become project root in the future
+        project_path = GriptapeNodes.ConfigManager().workspace_path
 
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
             workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
             workflow_directory = workflow_file_path.parent
         except KeyError:
-            # Workflow not in registry (unsaved) - use workspace root
+            # Workflow not in registry (unsaved) - use project root
             logger.warning(
-                "Workflow '%s' not saved yet, using workspace directory. Files will be stored at workspace root.",
+                "Workflow '%s' not saved yet, using project root directory.",
                 workflow_name,
             )
-            workflow_directory = workspace_path
+            workflow_directory = project_path
 
         try:
-            final_dir = workflow_directory.relative_to(workspace_path)
+            final_dir = workflow_directory.relative_to(project_path)
         except ValueError:
             logger.warning("Workflow directory is outside project: %s", workflow_directory)
             final_dir = workflow_directory
@@ -408,40 +414,103 @@ class ArtifactProvider(ABC):
         return final_dir
 
     @staticmethod
-    def generate_workflow_file_location(*, subdirectory: str, filename: str) -> OnDiskFileLocation:
-        """Generate file location in workflow subdirectory.
+    def generate_project_file_location(*, subdirectory: str, filename: str) -> OnDiskFileLocation:
+        """Generate file location in project subdirectory with workflow-prefixed filename.
 
-        Places files in {workflow_dir}/{workflow_name}/{subdirectory}/{filename}.
-        This keeps all workflow files packaged together under a workflow-specific directory.
+        Places files at project root in subdirectories (inputs, outputs, previews), with
+        filenames prefixed by workflow name to avoid collisions between workflows.
 
         Args:
-            subdirectory: Subdirectory within workflow directory (e.g., "inputs", "outputs", "thumbnails")
-            filename: Filename to use (e.g., "cdn_example_com_image.jpg")
+            subdirectory: Subdirectory at project root (e.g., "inputs", "outputs", "previews")
+            filename: Base filename (e.g., "image.png") - will be prefixed with workflow name
 
         Returns:
-            ProjectFileLocation if workflow is inside project, ExternalFileLocation if outside
+            ProjectFileLocation if inside project, ExternalFileLocation if outside project
 
         Example:
-            location = ArtifactProvider.generate_workflow_file_location(
+            location = ArtifactProvider.generate_project_file_location(
                 subdirectory="inputs",
                 filename="cdn_example_com_image.png"
             )
-            # Result: workspace/myworkflow/myworkflow/inputs/cdn_example_com_image.png
+            # Result: project/inputs/workflow1_cdn_example_com_image.png
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         workflow_name = GriptapeNodes.ContextManager().get_current_workflow_name()
         workflow_directory = ArtifactProvider.get_workflow_directory()
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        # Use workspace_path for now, will become project root in the future
+        project_path = GriptapeNodes.ConfigManager().workspace_path
+
+        # Prefix filename with workflow name to avoid collisions
+        prefixed_filename = f"{workflow_name}_{filename}"
 
         if workflow_directory.is_absolute():
-            # Workflow is outside project - return ExternalFileLocation
-            absolute_path = workflow_directory / workflow_name / subdirectory / filename
+            # Workflow is outside project - still use project root for outputs/inputs/previews
+            absolute_path = project_path / subdirectory / prefixed_filename
             return ExternalFileLocation(absolute_path=absolute_path)
 
-        # Workflow is inside project - return ProjectFileLocation
-        project_relative_path = workflow_directory / workflow_name / subdirectory / filename
-        absolute_path = workspace_path / project_relative_path
+        # Workflow is inside project - use project root
+        project_relative_path = Path(subdirectory) / prefixed_filename
+        absolute_path = project_path / project_relative_path
+
+        return ProjectFileLocation(
+            project_relative_path=project_relative_path,
+            absolute_path=absolute_path,
+        )
+
+    @staticmethod
+    def generate_preview_location(original_location: FileLocation) -> OnDiskFileLocation:
+        """Generate preview location that mirrors the original file's structure.
+
+        Takes any FileLocation and creates a corresponding location under project/previews/
+        that maintains the same subdirectory structure and filename (including workflow prefix).
+
+        Args:
+            original_location: The original file location (ProjectFileLocation, ExternalFileLocation, or URLFileLocation)
+
+        Returns:
+            OnDiskFileLocation under previews/ that mirrors original structure
+
+        Examples:
+            project/outputs/workflow1_image.png -> project/previews/outputs/workflow1_image.png
+            project/inputs/workflow1_photo.jpg -> project/previews/inputs/workflow1_photo.jpg
+            /external/path/workflow1_file.png -> /external/previews/path/workflow1_file.png
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        workflow_directory = ArtifactProvider.get_workflow_directory()
+        # Use workspace_path for now, will become project root in the future
+        project_path = GriptapeNodes.ConfigManager().workspace_path
+
+        # Determine the relative path and filename from the original location
+        match original_location:
+            case ProjectFileLocation():
+                # For project files at project root (e.g., inputs/workflow1_file.png),
+                # create preview in previews/ subdirectory (e.g., previews/inputs/workflow1_file.png)
+                relative_path = original_location.project_relative_path
+            case ExternalFileLocation():
+                # For external files, mirror the parent path structure
+                # /some/path/inputs/file.png -> previews/some/path/inputs/file.png
+                relative_path = Path(str(original_location.absolute_path).lstrip("/"))
+            case URLFileLocation():
+                # URLs are downloaded to inputs/ with workflow prefix, so preview mirrors that
+                filename = original_location.get_filename()
+                relative_path = Path("inputs") / filename
+            case _:
+                msg = f"Unsupported location type: {type(original_location)}"
+                raise TypeError(msg)
+
+        # Create preview path by prepending "previews/" to the relative path
+        preview_relative_path = Path("previews") / relative_path
+
+        if workflow_directory.is_absolute():
+            # Workflow outside project - still use project root for previews
+            absolute_path = project_path / preview_relative_path
+            return ExternalFileLocation(absolute_path=absolute_path)
+
+        # Workflow inside project - use project root
+        absolute_path = project_path / preview_relative_path
+        project_relative_path = preview_relative_path
 
         return ProjectFileLocation(
             project_relative_path=project_relative_path,

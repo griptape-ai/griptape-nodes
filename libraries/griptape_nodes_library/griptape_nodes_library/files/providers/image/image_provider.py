@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
+from PIL import Image, ImageDraw, ImageFont
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -60,6 +61,9 @@ class ImageProvider(ArtifactProvider):
 
     # Use same extensions as LoadImage for consistency
     SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+
+    # Maximum dimensions for thumbnail previews (width, height)
+    THUMBNAIL_MAX_SIZE: ClassVar[tuple[int, int]] = (1024, 1024)
 
     @property
     def provider_name(self) -> str:
@@ -169,6 +173,9 @@ class ImageProvider(ArtifactProvider):
             artifact=artifact, current_values=current_parameter_values
         )
 
+        # Generate thumbnail preview
+        preview_artifact = self._generate_thumbnail(artifact, location)
+
         if isinstance(location, ProjectFileLocation):
             result_details = f"File loaded: {self.get_source_path(location)}"
         elif isinstance(location, ExternalFileLocation):
@@ -181,6 +188,7 @@ class ImageProvider(ArtifactProvider):
             artifact=artifact,
             location=location,
             dynamic_parameter_updates=dynamic_updates,
+            preview_artifact=preview_artifact,
             result_details=result_details,
         )
 
@@ -217,8 +225,8 @@ class ImageProvider(ArtifactProvider):
         except ValueError as e:
             return ArtifactProviderValidationResult(was_successful=False, result_details=str(e))
 
-        # Determine download location in workflow's inputs/ directory
-        download_location = ArtifactProvider.generate_workflow_file_location(subdirectory="inputs", filename=filename)
+        # Determine download location in project's inputs/ directory
+        download_location = ArtifactProvider.generate_project_file_location(subdirectory="inputs", filename=filename)
 
         # Save downloaded bytes to disk
         try:
@@ -236,12 +244,16 @@ class ImageProvider(ArtifactProvider):
             artifact=artifact, current_values=current_parameter_values
         )
 
+        # Generate thumbnail preview (use download_location for mirrored structure)
+        preview_artifact = self._generate_thumbnail(artifact, download_location)
+
         # Return URLFileLocation so user still sees original URL in parameter
         return ArtifactProviderValidationResult(
             was_successful=True,
             artifact=artifact,
             location=location,
             dynamic_parameter_updates=dynamic_updates,
+            preview_artifact=preview_artifact,
             result_details=f"Image downloaded from URL: {location.url}",
         )
 
@@ -502,6 +514,155 @@ class ImageProvider(ArtifactProvider):
 
         return updates
 
+    @staticmethod
+    def _generate_xmp_metadata(original_location: FileLocation) -> bytes:
+        """Generate XMP metadata with Griptape Nodes custom namespace.
+
+        Args:
+            original_location: Original file location to embed in metadata
+
+        Returns:
+            XMP metadata as bytes
+        """
+        # Determine source location string
+        match original_location:
+            case ProjectFileLocation() | ExternalFileLocation():
+                source_location_str = str(original_location.absolute_path)
+            case _:
+                source_location_str = str(original_location)
+
+        # Create XMP packet with Griptape Nodes namespace
+        xmp_template = f"""<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+        xmlns:griptape="https://griptape.ai/ns/griptape-nodes/1.0/">
+      <griptape:sourceLocation>{source_location_str}</griptape:sourceLocation>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"""
+
+        return xmp_template.encode("utf-8")
+
+    def _generate_thumbnail(  # noqa: PLR0911
+        self,
+        artifact: ImageUrlArtifact,
+        original_location: FileLocation,
+    ) -> ImageUrlArtifact | None:
+        """Generate thumbnail preview that mirrors original file structure.
+
+        Creates thumbnail in previews/ subdirectory, maintaining the same relative path structure.
+        Images smaller than THUMBNAIL_MAX_SIZE are not upscaled. If thumbnail generation fails,
+        attempts to create a fallback error image.
+
+        Args:
+            artifact: Original image artifact to create thumbnail from
+            original_location: Location of the original file
+
+        Returns:
+            ImageUrlArtifact for the thumbnail, or None if all generation attempts fail
+        """
+        # Generate preview location first (needs to succeed for both normal and fallback paths)
+        try:
+            preview_location = ArtifactProvider.generate_preview_location(original_location)
+        except Exception as e:
+            logger.warning("Unexpected error generating preview location for %s: %s", original_location, e)
+            return None
+
+        # Ensure preview directory exists
+        try:
+            preview_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.warning("Failed to create preview directory %s: %s", preview_location.absolute_path.parent, e)
+            return None
+
+        # Load and process the original image
+        try:
+            image_pil = load_pil_from_url(artifact.value)
+        except Exception as e:
+            logger.warning("Failed to load image from %s for thumbnail generation: %s", artifact.value, e)
+            return self._generate_fallback_thumbnail(preview_location, "Failed to load image", original_location)
+
+        # Create thumbnail (only shrinks if larger than max size, preserves aspect ratio)
+        try:
+            image_pil.thumbnail(self.THUMBNAIL_MAX_SIZE, Image.Resampling.LANCZOS)
+        except Exception as e:
+            logger.warning("Failed to resize image for thumbnail: %s", e)
+            return self._generate_fallback_thumbnail(preview_location, "Failed to resize image", original_location)
+
+        # Save thumbnail as WebP with XMP metadata
+        try:
+            xmp_metadata = self._generate_xmp_metadata(original_location)
+            image_pil.save(preview_location.absolute_path, format="WEBP", quality=85, xmp=xmp_metadata)
+        except Exception as e:
+            logger.warning("Failed to save thumbnail to %s: %s", preview_location.absolute_path, e)
+            return self._generate_fallback_thumbnail(preview_location, "Failed to save thumbnail", original_location)
+
+        # Get externally accessible URL for the preview
+        try:
+            preview_url = self.get_externally_accessible_url(preview_location)
+        except Exception as e:
+            logger.warning("Failed to get preview URL for %s: %s", preview_location.absolute_path, e)
+            return None
+
+        return ImageUrlArtifact(value=preview_url)
+
+    def _generate_fallback_thumbnail(
+        self, preview_location: OnDiskFileLocation, error_text: str, original_location: FileLocation
+    ) -> ImageUrlArtifact | None:
+        """Generate a fallback error thumbnail with text.
+
+        Args:
+            preview_location: Where to save the fallback thumbnail
+            error_text: Error message to display
+            original_location: Original file location to embed in metadata
+
+        Returns:
+            ImageUrlArtifact for the fallback thumbnail, or None if creation fails
+        """
+        error_image_width = 400
+        error_image_height = 400
+
+        # Create a simple error image (gray with text)
+        try:
+            error_image = Image.new("RGB", (error_image_width, error_image_height), color=(200, 200, 200))
+        except Exception as e:
+            logger.warning("Failed to create fallback image: %s", e)
+            return None
+
+        # Draw error text
+        try:
+            draw = ImageDraw.Draw(error_image)
+            font = ImageFont.load_default()
+            text = f"Failed to create\nthumbnail:\n{error_text}"
+            # Center text at center of image
+            center_x = error_image_width // 2
+            center_y = error_image_height // 2
+            draw.multiline_text(
+                (center_x, center_y), text, fill=(100, 100, 100), font=font, anchor="mm", align="center"
+            )
+        except Exception as e:
+            logger.warning("Failed to draw text on fallback image: %s", e)
+            return None
+
+        # Save as WebP with XMP metadata
+        try:
+            xmp_metadata = self._generate_xmp_metadata(original_location)
+            error_image.save(preview_location.absolute_path, format="WEBP", quality=85, xmp=xmp_metadata)
+        except Exception as e:
+            logger.warning("Failed to save fallback thumbnail to %s: %s", preview_location.absolute_path, e)
+            return None
+
+        # Get URL
+        try:
+            preview_url = self.get_externally_accessible_url(preview_location)
+        except Exception as e:
+            logger.warning("Failed to get URL for fallback thumbnail: %s", e)
+            return None
+
+        return ImageUrlArtifact(value=preview_url)
+
     def _read_bytes_from_on_disk_location(self, location: OnDiskFileLocation) -> bytes:
         """Read bytes from an on-disk file location with comprehensive error handling."""
         try:
@@ -538,7 +699,7 @@ class ImageProvider(ArtifactProvider):
         parsed = urlparse(artifact_url)
         filename = Path(parsed.path).name
 
-        download_location = ArtifactProvider.generate_workflow_file_location(subdirectory="inputs", filename=filename)
+        download_location = ArtifactProvider.generate_project_file_location(subdirectory="inputs", filename=filename)
 
         try:
             return download_location.absolute_path.read_bytes()
