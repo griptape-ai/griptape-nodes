@@ -51,6 +51,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
     SetLockNodeStateRequest,
+    SetLockNodeStateResultSuccess,
     SetNodeMetadataRequest,
     SetNodeMetadataResultSuccess,
 )
@@ -576,6 +577,7 @@ class RetainedMode:
         offset_y: int = 0,
         *,
         swap: bool = False,
+        lock: bool = True,
     ) -> str | ResultPayload:
         """Create a new node positioned relative to an existing node.
 
@@ -591,7 +593,7 @@ class RetainedMode:
             offset_x: Horizontal offset in pixels (negative = left, positive = right)
             offset_y: Vertical offset in pixels (negative = up, positive = down)
             swap: If True, create new node at reference position and move reference node relative to new node
-
+            lock: If True, lock the old node
         Returns:
             String node name if successful, ResultPayload if failed
         """
@@ -679,6 +681,12 @@ class RetainedMode:
                 logger.warning(msg)
                 return set_metadata_result
 
+        if lock:
+            set_lock_node_state_result = cls.set_lock_node_state(node_name=reference_node_name, lock=True)
+            if not isinstance(set_lock_node_state_result, SetLockNodeStateResultSuccess):
+                msg = f"{reference_node_name}: Failed to lock reference node: {set_lock_node_state_result}"
+                logger.warning(msg)
+                return set_lock_node_state_result
         return new_node_name
 
     @classmethod
