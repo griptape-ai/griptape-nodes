@@ -3086,7 +3086,7 @@ class NodeManager:
                     new_node_type=input_conversion.node_type,
                     new_node_name=intermediate_node_name,
                     specific_library_name=input_conversion.library,
-                    offset_side=offset_side,
+                    offset_side=offset_side,  # type: ignore[arg-type]
                     offset_x=input_conversion.offset_x,
                     offset_y=input_conversion.offset_y,
                 )
@@ -3181,7 +3181,7 @@ class NodeManager:
                     new_node_type=output_conversion.node_type,
                     new_node_name=intermediate_node_name,
                     specific_library_name=output_conversion.library,
-                    offset_side=offset_side,
+                    offset_side=offset_side,  # type: ignore[arg-type]
                     offset_x=output_conversion.offset_x,
                     offset_y=output_conversion.offset_y,
                 )
