@@ -575,18 +575,22 @@ class GetConnectionsForParameterResultSuccess(WorkflowNotAlteredMixin, ResultPay
     Args:
         parameter_name: Name of the parameter
         node_name: Name of the node containing the parameter
-        has_incoming_connections: Whether the parameter has incoming connections
-        has_outgoing_connections: Whether the parameter has outgoing connections
         incoming_connections: List of incoming connections to this parameter
         outgoing_connections: List of outgoing connections from this parameter
     """
 
     parameter_name: str
     node_name: str
-    has_incoming_connections: bool
-    has_outgoing_connections: bool
     incoming_connections: list[IncomingConnection]
     outgoing_connections: list[OutgoingConnection]
+
+    def has_incoming_connections(self) -> bool:
+        """Check if the parameter has any incoming connections."""
+        return len(self.incoming_connections) > 0
+
+    def has_outgoing_connections(self) -> bool:
+        """Check if the parameter has any outgoing connections."""
+        return len(self.outgoing_connections) > 0
 
 
 @dataclass

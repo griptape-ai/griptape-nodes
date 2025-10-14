@@ -859,8 +859,6 @@ class NodeManager:
         result = GetConnectionsForParameterResultSuccess(
             parameter_name=parameter_name,
             node_name=node_name,
-            has_incoming_connections=len(incoming_connections_list) > 0,
-            has_outgoing_connections=len(outgoing_connections_list) > 0,
             incoming_connections=incoming_connections_list,
             outgoing_connections=outgoing_connections_list,
             result_details=details,
@@ -3127,7 +3125,7 @@ class NodeManager:
                     )
 
         # Handle incoming connections
-        if connections_result.has_incoming_connections and request.input_conversion:
+        if connections_result.has_incoming_connections() and request.input_conversion:
             # Create intermediate node for input conversion
             intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_input_converter"
             input_conversion = request.input_conversion
@@ -3214,7 +3212,7 @@ class NodeManager:
                     result_details=f"Failed to connect intermediate node '{intermediate_node_name}' to target: {e!s}"
                 )
 
-        elif connections_result.has_incoming_connections:
+        elif connections_result.has_incoming_connections():
             # Direct connections without conversion
             for incoming_connection in connections_result.incoming_connections:
                 try:
@@ -3237,7 +3235,7 @@ class NodeManager:
                     )
 
         # Handle outgoing connections
-        if connections_result.has_outgoing_connections and request.output_conversion:
+        if connections_result.has_outgoing_connections() and request.output_conversion:
             # Create intermediate node for output conversion
             intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_output_converter"
             output_conversion = request.output_conversion
@@ -3324,7 +3322,7 @@ class NodeManager:
                     result_details=f"Failed to connect intermediate node '{intermediate_node_name}' to destinations: {e!s}"
                 )
 
-        elif connections_result.has_outgoing_connections:
+        elif connections_result.has_outgoing_connections():
             # Direct connections without conversion
             for outgoing_connection in connections_result.outgoing_connections:
                 try:
@@ -3347,7 +3345,7 @@ class NodeManager:
                     )
 
         # Handle value migration (no incoming connections)
-        if not connections_result.has_incoming_connections:
+        if not connections_result.has_incoming_connections():
             try:
                 # Get the current value from source
                 get_value_result = GriptapeNodes.handle_request(
