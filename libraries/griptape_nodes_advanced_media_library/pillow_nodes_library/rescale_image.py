@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.events.parameter_events import (
     ConversionConfig,
 )
-from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd
+from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]

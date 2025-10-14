@@ -6,7 +6,7 @@ from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd
+from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
