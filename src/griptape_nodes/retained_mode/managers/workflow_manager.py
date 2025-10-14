@@ -1569,6 +1569,14 @@ class WorkflowManager:
                 flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
             )
 
+            # Generate resource deserialization code if we have resource recipes
+            if serialized_flow_commands.serialized_resource_recipes:
+                resource_deserialization_nodes = self._generate_resource_deserialization_code(
+                    serialized_resource_recipes=serialized_flow_commands.serialized_resource_recipes,
+                    import_recorder=import_recorder,
+                )
+                assign_flow_context_node.body.extend(resource_deserialization_nodes)
+
             # Generate nodes in flow AST node. This will create the node and apply all element modifiers
             nodes_in_flow = self._generate_nodes_in_flow(
                 serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
@@ -2628,6 +2636,77 @@ class WorkflowManager:
         ]
         full_ast = ast.Module(body=module_body, type_ignores=[])
         return full_ast
+
+    def _generate_resource_deserialization_code(
+        self, serialized_resource_recipes: dict[str, dict[str, Any]], import_recorder: ImportRecorder
+    ) -> list[ast.stmt]:
+        """Generate AST nodes for deserializing resource instances.
+
+        This generates code that calls DeserializeResourceInstanceRequest for each
+        serialized resource recipe, recreating the resources before nodes are created.
+
+        Args:
+            serialized_resource_recipes: Dict mapping old instance_id to recipe
+            import_recorder: ImportRecorder to track imports
+
+        Returns:
+            List of AST statement nodes
+        """
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.resource_events", "DeserializeResourceInstanceRequest"
+        )
+        import_recorder.add_import("pickle")
+
+        statements: list[ast.stmt] = []
+
+        # Add a comment
+        comment = ast.Expr(
+            value=ast.Constant(
+                value="Deserialize resource instances that nodes depend on",
+            )
+        )
+        statements.append(comment)
+
+        # For each resource recipe, generate a DeserializeResourceInstanceRequest call
+        for recipe in serialized_resource_recipes.values():
+            # Pickle the recipe
+            pickled_recipe = pickle.dumps(recipe)
+
+            # Generate deserialization request call
+            request_call = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="handle_request",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    ast.Call(
+                        func=ast.Name(id="DeserializeResourceInstanceRequest", ctx=ast.Load()),
+                        args=[],
+                        keywords=[
+                            ast.keyword(
+                                arg="recipe",
+                                value=ast.Call(
+                                    func=ast.Attribute(
+                                        value=ast.Name(id="pickle", ctx=ast.Load()),
+                                        attr="loads",
+                                        ctx=ast.Load(),
+                                    ),
+                                    args=[ast.Constant(value=pickled_recipe)],
+                                    keywords=[],
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+                keywords=[],
+            )
+
+            # Wrap it in an expression statement
+            request_stmt = ast.Expr(value=request_call)
+            statements.append(request_stmt)
+
+        return statements
 
     def _generate_create_flow(
         self, create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int

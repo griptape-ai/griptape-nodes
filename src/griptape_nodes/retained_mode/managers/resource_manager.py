@@ -10,12 +10,18 @@ from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultFailure,
     CreateResourceInstanceResultSuccess,
+    DeserializeResourceInstanceRequest,
+    DeserializeResourceInstanceResultFailure,
+    DeserializeResourceInstanceResultSuccess,
     FreeResourceInstanceRequest,
     FreeResourceInstanceResultFailure,
     FreeResourceInstanceResultSuccess,
     GetResourceInstanceStatusRequest,
     GetResourceInstanceStatusResultFailure,
     GetResourceInstanceStatusResultSuccess,
+    GetResourceTypeSerializabilityRequest,
+    GetResourceTypeSerializabilityResultFailure,
+    GetResourceTypeSerializabilityResultSuccess,
     ListCompatibleResourceInstancesRequest,
     ListCompatibleResourceInstancesResultFailure,
     ListCompatibleResourceInstancesResultSuccess,
@@ -29,6 +35,9 @@ from griptape_nodes.retained_mode.events.resource_events import (
     ReleaseResourceInstanceLockRequest,
     ReleaseResourceInstanceLockResultFailure,
     ReleaseResourceInstanceLockResultSuccess,
+    SerializeResourceInstanceRequest,
+    SerializeResourceInstanceResultFailure,
+    SerializeResourceInstanceResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_components.resource_type import ResourceType
@@ -87,6 +96,16 @@ class ResourceManager:
         )
         event_manager.assign_manager_to_request_type(
             request_type=ListResourceInstancesByTypeRequest, callback=self.on_list_resource_instances_by_type_request
+        )
+        event_manager.assign_manager_to_request_type(
+            request_type=GetResourceTypeSerializabilityRequest,
+            callback=self.on_get_resource_type_serializability_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            request_type=SerializeResourceInstanceRequest, callback=self.on_serialize_resource_instance_request
+        )
+        event_manager.assign_manager_to_request_type(
+            request_type=DeserializeResourceInstanceRequest, callback=self.on_deserialize_resource_instance_request
         )
 
     # Public Event Handlers
@@ -294,6 +313,91 @@ class ResourceManager:
         return ListResourceInstancesByTypeResultSuccess(
             instance_ids=matching_instances,
             result_details=f"Successfully found {len(matching_instances)} resource instances of specified type",
+        )
+
+    def on_get_resource_type_serializability_request(
+        self, request: GetResourceTypeSerializabilityRequest
+    ) -> ResultPayload:
+        """Handle request to check if a resource type supports serialization."""
+        resource_type = self._get_resource_type_by_name(request.resource_type_name)
+        if not resource_type:
+            return GetResourceTypeSerializabilityResultFailure(
+                result_details=f"Attempted to check serializability for resource type {request.resource_type_name}. Failed due to resource type not found."
+            )
+
+        supports_serialization = resource_type.supports_serialization()
+
+        return GetResourceTypeSerializabilityResultSuccess(
+            supports_serialization=supports_serialization,
+            result_details=f"Resource type {request.resource_type_name} {'supports' if supports_serialization else 'does not support'} serialization",
+        )
+
+    def on_serialize_resource_instance_request(self, request: SerializeResourceInstanceRequest) -> ResultPayload:
+        """Handle request to serialize a resource instance to a recipe."""
+        instance = self._instances.get(request.instance_id)
+        if instance is None:
+            return SerializeResourceInstanceResultFailure(
+                result_details=f"Attempted to serialize resource instance {request.instance_id}. Failed due to resource instance not found."
+            )
+
+        resource_type = instance.get_resource_type()
+
+        # Check if the resource type supports serialization
+        if not resource_type.supports_serialization():
+            return SerializeResourceInstanceResultFailure(
+                result_details=f"Attempted to serialize resource instance {request.instance_id} of type {type(resource_type).__name__}. Failed because resource type does not support serialization."
+            )
+
+        try:
+            recipe = resource_type.serialize_instance_to_recipe(instance)
+        except Exception as e:
+            return SerializeResourceInstanceResultFailure(
+                result_details=f"Attempted to serialize resource instance {request.instance_id}. Failed due to serialization error: {e}."
+            )
+
+        return SerializeResourceInstanceResultSuccess(
+            instance_id=request.instance_id,
+            recipe=recipe,
+            result_details=f"Successfully serialized resource instance {request.instance_id}",
+        )
+
+    def on_deserialize_resource_instance_request(self, request: DeserializeResourceInstanceRequest) -> ResultPayload:
+        """Handle request to deserialize a resource instance from a recipe."""
+        recipe = request.recipe
+
+        # Extract resource type name from recipe
+        resource_type_name = recipe.get("resource_type_name")
+        if not resource_type_name:
+            return DeserializeResourceInstanceResultFailure(
+                result_details="Attempted to deserialize resource instance. Failed because recipe is missing 'resource_type_name' field."
+            )
+
+        resource_type = self._get_resource_type_by_name(resource_type_name)
+        if not resource_type:
+            return DeserializeResourceInstanceResultFailure(
+                result_details=f"Attempted to deserialize resource instance with resource type {resource_type_name}. Failed due to resource type not found."
+            )
+
+        # Check if the resource type supports serialization
+        if not resource_type.supports_serialization():
+            return DeserializeResourceInstanceResultFailure(
+                result_details=f"Attempted to deserialize resource instance of type {resource_type_name}. Failed because resource type does not support serialization."
+            )
+
+        try:
+            new_instance = resource_type.deserialize_instance_from_recipe(recipe)
+        except Exception as e:
+            return DeserializeResourceInstanceResultFailure(
+                result_details=f"Attempted to deserialize resource instance of type {resource_type_name}. Failed due to deserialization error: {e}."
+            )
+
+        # Register the new instance with the ResourceManager
+        instance_id = new_instance.get_instance_id()
+        self._instances[instance_id] = new_instance
+
+        return DeserializeResourceInstanceResultSuccess(
+            instance_id=instance_id,
+            result_details=f"Successfully deserialized resource instance {instance_id} of type {resource_type_name}",
         )
 
     # Private Implementation Methods

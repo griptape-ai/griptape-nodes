@@ -77,3 +77,69 @@ class ResourceType(ABC):
         """
         msg = f"Custom requirement handling not implemented for {type(self).__name__}"
         raise NotImplementedError(msg)
+
+    def supports_serialization(self) -> bool:
+        """Check if this resource type supports serialization/deserialization.
+
+        Resource types that manage complex objects with state that needs to be
+        persisted across workflow save/load cycles should return True and implement
+        the serialization methods below.
+
+        Examples of serializable resources:
+        - Business objects with saveable state (e.g., Joke with lead_up/punchline)
+        - Configured pipelines or models with parameters
+        - Complex data structures that can be reconstructed
+
+        Examples of non-serializable resources:
+        - System resources (CPU, GPU, memory)
+        - Active connections (network, database)
+        - Resources tied to the current process/machine
+
+        Returns:
+            True if this resource type supports serialization, False otherwise
+        """
+        return False
+
+    def serialize_instance_to_recipe(self, _instance: "ResourceInstance") -> dict[str, Any]:
+        """Serialize a resource instance to a recipe dictionary.
+
+        The recipe should contain all information needed to recreate the resource
+        in its current state. This typically includes the resource type name and
+        the current values of all capabilities.
+
+        This method is only called if supports_serialization() returns True.
+
+        Args:
+            _instance: The resource instance to serialize
+
+        Returns:
+            A dictionary containing the resource type name and all state needed
+            to recreate the instance
+
+        Raises:
+            NotImplementedError: If serialization is not supported (default behavior)
+            TypeError: If the instance is not of the expected type
+        """
+        msg = f"Serialization not implemented for {type(self).__name__}"
+        raise NotImplementedError(msg)
+
+    def deserialize_instance_from_recipe(self, _recipe: dict[str, Any]) -> "ResourceInstance":
+        """Deserialize a resource instance from a recipe dictionary.
+
+        Creates a new resource instance with the same state as the original,
+        based on the information in the recipe.
+
+        This method is only called if supports_serialization() returns True.
+
+        Args:
+            _recipe: The recipe dictionary containing resource type name and state
+
+        Returns:
+            A newly created resource instance with the same state as the original
+
+        Raises:
+            NotImplementedError: If deserialization is not supported (default behavior)
+            ValueError: If the recipe is invalid or incomplete
+        """
+        msg = f"Deserialization not implemented for {type(self).__name__}"
+        raise NotImplementedError(msg)
