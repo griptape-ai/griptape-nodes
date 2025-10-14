@@ -27,7 +27,7 @@ class LocalWorkflowPublisher(LocalWorkflowExecutor):
         **kwargs: Any,
     ) -> None:
         # Load the workflow into memory
-        await self.aprepare_workflow_for_run(workflow_name=workflow_name, flow_input={}, workflow_path=workflow_path)
+        await self.aprepare_workflow_for_run(flow_input={}, workflow_path=workflow_path)
         pickle_control_flow_result = kwargs.get("pickle_control_flow_result", False)
         publish_workflow_request = PublishWorkflowRequest(
             workflow_name=workflow_name,

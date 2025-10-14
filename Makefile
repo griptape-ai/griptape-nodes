@@ -76,7 +76,7 @@ format: ## Format project.
 .PHONY: fix
 fix: ## Fix project.
 	@make format
-	@uv run ruff check --fix --unsafe-fixes --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
+	@uv run ruff check --fix --unsafe-fixes
 
 .PHONY: check
 check: check/format check/lint check/types check/spell ## Run all checks.
@@ -88,7 +88,7 @@ check/format:
 
 .PHONY: check/lint
 check/lint:
-	@uv run ruff check --exclude "libraries/**/tests/**/*" --exclude "libraries/griptape_nodes_library/workflows/templates/**/*"
+	@uv run ruff check .
 
 .PHONY: check/types
 check/types:

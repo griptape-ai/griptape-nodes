@@ -1426,7 +1426,6 @@ class WorkflowManager:
             final_code_output = self._generate_workflow_file_content(
                 serialized_flow_commands=request.serialized_flow_commands,
                 workflow_metadata=workflow_metadata,
-                execution_flow_name=execution_flow_name,
                 pickle_control_flow_result=request.pickle_control_flow_result,
             )
         except Exception as err:
@@ -1488,7 +1487,6 @@ class WorkflowManager:
         self,
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
-        execution_flow_name: str,
         *,
         pickle_control_flow_result: bool = False,
     ) -> str:
@@ -1618,7 +1616,6 @@ class WorkflowManager:
 
         # Generate workflow execution code
         workflow_execution_code = self._generate_workflow_execution(
-            flow_name=execution_flow_name,
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
             pickle_control_flow_result=pickle_control_flow_result,
@@ -1689,7 +1686,6 @@ class WorkflowManager:
 
     def _generate_workflow_execution(
         self,
-        flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
         *,
@@ -1805,7 +1801,6 @@ class WorkflowManager:
                             ),
                             args=[],
                             keywords=[
-                                ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
                                 ast.keyword(
                                     arg="pickle_control_flow_result",
@@ -3269,6 +3264,7 @@ class WorkflowManager:
             "ui_options",
             "settable",
             "is_user_defined",
+            "parent_container_name",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
         minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
@@ -3365,16 +3361,6 @@ class WorkflowManager:
         Returns:
             Parameter info dict if relevant for workflow shape, None if should be excluded
         """
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1090): This is a temporary solution until we know how to handle container types.
-        # Always exclude list types until container type handling is implemented
-        if parameter.type.startswith("list"):
-            logger.warning(
-                "Skipping list parameter '%s' of type '%s' in workflow shape - container types not yet supported",
-                parameter.name,
-                parameter.type,
-            )
-            return None
-
         # Conditionally exclude control types
         if not include_control_params and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value:
             return None

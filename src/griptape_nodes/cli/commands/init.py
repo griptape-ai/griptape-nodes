@@ -47,6 +47,13 @@ def init_command(  # noqa: PLR0913
             help="Install the Griptape Nodes Advanced Image Library.",
         ),
     ] = None,
+    register_griptape_cloud_library: Annotated[
+        bool | None,
+        typer.Option(
+            "--register-griptape-cloud-library/--no-register-griptape-cloud-library",
+            help="Install the Griptape Cloud Library.",
+        ),
+    ] = None,
     libraries_sync: Annotated[
         bool | None,
         typer.Option("--libraries-sync/--no-libraries-sync", help="Sync the Griptape Nodes libraries."),
@@ -83,6 +90,7 @@ def init_command(  # noqa: PLR0913
             api_key=api_key,
             storage_backend=storage_backend,
             register_advanced_library=register_advanced_library,
+            register_griptape_cloud_library=register_griptape_cloud_library,
             config_values=config_values,
             secret_values=secret_values,
             libraries_sync=libraries_sync,
@@ -134,7 +142,7 @@ def _run_init_configuration(config: InitConfig) -> None:
     _handle_storage_backend_config(config)
     _handle_bucket_config(config)
     _handle_hf_token_config(config)
-    _handle_advanced_library_config(config)
+    _handle_additional_library_config(config)
     _handle_arbitrary_configs(config)
 
 
@@ -218,17 +226,24 @@ def _handle_hf_token_config(config: InitConfig) -> str | None:
     return hf_token
 
 
-def _handle_advanced_library_config(config: InitConfig) -> bool | None:
-    """Handle advanced library configuration step."""
+def _handle_additional_library_config(config: InitConfig) -> bool | None:
+    """Handle additional library configuration step."""
     register_advanced_library = config.register_advanced_library
+    register_griptape_cloud_library = config.register_griptape_cloud_library
 
     if config.interactive:
         register_advanced_library = _prompt_for_advanced_media_library(
             default_prompt_for_advanced_media_library=register_advanced_library
         )
+        register_griptape_cloud_library = _prompt_for_griptape_cloud_library(
+            default_prompt_for_griptape_cloud_library=register_griptape_cloud_library
+        )
 
-    if register_advanced_library is not None:
-        libraries_to_register = _build_libraries_list(register_advanced_library=register_advanced_library)
+    if register_advanced_library is not None or register_griptape_cloud_library is not None:
+        libraries_to_register = _build_libraries_list(
+            register_advanced_library=register_advanced_library,
+            register_griptape_cloud_library=register_griptape_cloud_library,
+        )
         config_manager.set_config_value(
             "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
         )
@@ -470,8 +485,25 @@ def _prompt_for_advanced_media_library(*, default_prompt_for_advanced_media_libr
     return Confirm.ask("Register Advanced Media Library?", default=default_prompt_for_advanced_media_library)
 
 
-def _build_libraries_list(*, register_advanced_library: bool) -> list[str]:
-    """Builds the list of libraries to register based on the advanced library setting."""
+def _prompt_for_griptape_cloud_library(*, default_prompt_for_griptape_cloud_library: bool | None = None) -> bool:
+    """Prompts the user whether to register the Griptape Cloud Library."""
+    if default_prompt_for_griptape_cloud_library is None:
+        default_prompt_for_griptape_cloud_library = False
+    explainer = """[bold cyan]Griptape Cloud Library[/bold cyan]
+    Would you like to install the Griptape Nodes Griptape Cloud Library?
+    This node library makes Griptape Cloud APIs and functionality available within Griptape Nodes.
+    For example, nodes are available for invoking Structures, Assistants, or even publishing a Workflow to Griptape Cloud.
+    The Griptape Nodes Griptape Cloud Library can be added later by following instructions here: [bold blue][link=https://docs.griptapenodes.com]https://docs.griptapenodes.com[/link][/bold blue].
+    """
+    console.print(Panel(explainer, expand=False))
+
+    return Confirm.ask("Register Griptape Cloud Library?", default=default_prompt_for_griptape_cloud_library)
+
+
+def _build_libraries_list(
+    *, register_advanced_library: bool | None = False, register_griptape_cloud_library: bool | None = False
+) -> list[str]:
+    """Builds the list of libraries to register based on library settings."""
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
     library_base_dir = Path(ENV_LIBRARIES_BASE_DIR)
@@ -506,6 +538,20 @@ def _build_libraries_list(*, register_advanced_library: bool) -> list[str]:
     else:
         # If the advanced media library is registered, remove it
         libraries_to_remove = [lib for lib in new_libraries if _get_library_identifier(lib) == advanced_identifier]
+        for lib in libraries_to_remove:
+            new_libraries.remove(lib)
+
+    griptape_cloud_library = str(library_base_dir / "griptape_cloud/griptape_nodes_library.json")
+    griptape_cloud_identifier = _get_library_identifier(griptape_cloud_library)
+    if register_griptape_cloud_library:
+        # If the griptape cloud library is not registered, add it
+        if griptape_cloud_identifier not in current_identifiers:
+            new_libraries.append(griptape_cloud_library)
+    else:
+        # If the griptape cloud library is registered, remove it
+        libraries_to_remove = [
+            lib for lib in new_libraries if _get_library_identifier(lib) == griptape_cloud_identifier
+        ]
         for lib in libraries_to_remove:
             new_libraries.remove(lib)
 
