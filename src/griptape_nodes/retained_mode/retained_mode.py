@@ -699,6 +699,8 @@ class RetainedMode:
         input_conversion: ConversionConfig | None = None,
         output_conversion: ConversionConfig | None = None,
         value_transform: Callable | None = None,
+        *,
+        break_connections: bool = True,
     ) -> ResultPayload:
         """Migrate a parameter from one node to another with optional conversions.
 
@@ -716,7 +718,7 @@ class RetainedMode:
             input_conversion (ConversionConfig, optional): Configuration for converting incoming connections.
             output_conversion (ConversionConfig, optional): Configuration for converting outgoing connections.
             value_transform (Callable, optional): Function to transform values when no incoming connections exist.
-
+            break_connections (bool, optional): If True, break any existing connections for the original parameter
         Returns:
             ResultPayload: Contains the result of the migration operation.
 
@@ -760,6 +762,7 @@ class RetainedMode:
             input_conversion=input_conversion,
             output_conversion=output_conversion,
             value_transform=value_transform,
+            break_connections=break_connections,
         )
         result = GriptapeNodes().handle_request(request)
         return result

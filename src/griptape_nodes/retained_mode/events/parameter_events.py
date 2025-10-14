@@ -640,6 +640,7 @@ class MigrateParameterRequest(RequestPayload):
         input_conversion: Configuration for converting incoming connections
         output_conversion: Configuration for converting outgoing connections
         value_transform: Function to transform values when no connections exist
+        break_connections: If True, break any existing connections for the original parameter
     """
 
     source_node_name: str
@@ -649,6 +650,7 @@ class MigrateParameterRequest(RequestPayload):
     input_conversion: ConversionConfig | None = None
     output_conversion: ConversionConfig | None = None
     value_transform: Callable | None = None
+    break_connections: bool = True
 
 
 @dataclass

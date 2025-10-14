@@ -36,6 +36,7 @@ from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
+    DeleteConnectionResultSuccess,
     IncomingConnection,
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultFailure,
@@ -3073,12 +3074,12 @@ class NodeManager:
 
         # Handle incoming connections
         if connections_result.has_incoming_connections and request.input_conversion:
-            try:
-                # Create intermediate node for input conversion
-                intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_input_converter"
-                input_conversion = request.input_conversion
+            # Create intermediate node for input conversion
+            intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_input_converter"
+            input_conversion = request.input_conversion
 
-                # Create the intermediate node using the new relative positioning method
+            # Create the intermediate node using the new relative positioning method
+            try:
                 # Use the specified offset_side or default to "left" for input conversions
                 offset_side = input_conversion.offset_side or "left"
                 create_node_result = RetainedMode.create_node_relative_to(
@@ -3093,11 +3094,16 @@ class NodeManager:
 
                 if not isinstance(create_node_result, str):
                     return MigrateParameterResultFailure(
-                        result_details=f"Failed to create intermediate node '{intermediate_node_name}'."
+                        result_details=f"Failed to create intermediate node '{intermediate_node_name}': {create_node_result}"
                     )
+            except Exception as e:
+                return MigrateParameterResultFailure(
+                    result_details=f"Failed to create intermediate node '{intermediate_node_name}': {e!s}"
+                )
 
-                # Set additional parameters on the intermediate node
-                if input_conversion.additional_parameters:
+            # Set additional parameters on the intermediate node
+            if input_conversion.additional_parameters:
+                try:
                     for param_name, param_value in input_conversion.additional_parameters.items():
                         set_value_result = GriptapeNodes.handle_request(
                             SetParameterValueRequest(
@@ -3106,10 +3112,15 @@ class NodeManager:
                         )
                         if not isinstance(set_value_result, SetParameterValueResultSuccess):
                             return MigrateParameterResultFailure(
-                                result_details=f"Failed to set parameter '{param_name}' on intermediate node '{intermediate_node_name}'."
+                                result_details=f"Failed to set parameter '{param_name}' on intermediate node '{intermediate_node_name}': {set_value_result}"
                             )
+                except Exception as e:
+                    return MigrateParameterResultFailure(
+                        result_details=f"Failed to set additional parameters on intermediate node '{intermediate_node_name}': {e!s}"
+                    )
 
-                # Connect all sources to intermediate node
+            # Connect all sources to intermediate node
+            try:
                 for incoming_connection in connections_result.incoming_connections:
                     connection_result = GriptapeNodes.handle_request(
                         CreateConnectionRequest(
@@ -3122,10 +3133,15 @@ class NodeManager:
 
                     if not isinstance(connection_result, CreateConnectionResultSuccess):
                         return MigrateParameterResultFailure(
-                            result_details=f"Failed to connect source '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}' to intermediate node."
+                            result_details=f"Failed to connect source '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}' to intermediate node: {connection_result}"
                         )
+            except Exception as e:
+                return MigrateParameterResultFailure(
+                    result_details=f"Failed to connect sources to intermediate node '{intermediate_node_name}': {e!s}"
+                )
 
-                # Connect intermediate node to target
+            # Connect intermediate node to target
+            try:
                 connection_result = GriptapeNodes.handle_request(
                     CreateConnectionRequest(
                         source_node_name=intermediate_node_name,
@@ -3137,17 +3153,17 @@ class NodeManager:
 
                 if not isinstance(connection_result, CreateConnectionResultSuccess):
                     return MigrateParameterResultFailure(
-                        result_details="Failed to connect intermediate node to target."
+                        result_details=f"Failed to connect intermediate node to target: {connection_result}"
                     )
             except Exception as e:
                 return MigrateParameterResultFailure(
-                    result_details=f"Failed to handle incoming connections with conversion: {e!s}"
+                    result_details=f"Failed to connect intermediate node '{intermediate_node_name}' to target: {e!s}"
                 )
 
         elif connections_result.has_incoming_connections:
-            try:
-                # Direct connections without conversion
-                for incoming_connection in connections_result.incoming_connections:
+            # Direct connections without conversion
+            for incoming_connection in connections_result.incoming_connections:
+                try:
                     connection_result = GriptapeNodes.handle_request(
                         CreateConnectionRequest(
                             source_node_name=incoming_connection.source_node_name,
@@ -3159,21 +3175,21 @@ class NodeManager:
 
                     if not isinstance(connection_result, CreateConnectionResultSuccess):
                         return MigrateParameterResultFailure(
-                            result_details=f"Failed to create direct connection from '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}'."
+                            result_details=f"Failed to create direct connection from '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}': {connection_result}"
                         )
-            except Exception as e:
-                return MigrateParameterResultFailure(
-                    result_details=f"Failed to create direct incoming connections: {e!s}"
-                )
+                except Exception as e:
+                    return MigrateParameterResultFailure(
+                        result_details=f"Failed to create direct connection from '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}': {e!s}"
+                    )
 
         # Handle outgoing connections
         if connections_result.has_outgoing_connections and request.output_conversion:
-            try:
-                # Create intermediate node for output conversion
-                intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_output_converter"
-                output_conversion = request.output_conversion
+            # Create intermediate node for output conversion
+            intermediate_node_name = f"{request.target_node_name}_{request.source_parameter_name}_output_converter"
+            output_conversion = request.output_conversion
 
-                # Create the intermediate node using the new relative positioning method
+            # Create the intermediate node using the new relative positioning method
+            try:
                 # Use the specified offset_side or default to "right" for output conversions
                 offset_side = output_conversion.offset_side or "right"
                 create_node_result = RetainedMode.create_node_relative_to(
@@ -3188,11 +3204,16 @@ class NodeManager:
 
                 if not isinstance(create_node_result, str):
                     return MigrateParameterResultFailure(
-                        result_details=f"Failed to create intermediate node '{intermediate_node_name}'."
+                        result_details=f"Failed to create intermediate node '{intermediate_node_name}': {create_node_result}"
                     )
+            except Exception as e:
+                return MigrateParameterResultFailure(
+                    result_details=f"Failed to create intermediate node '{intermediate_node_name}': {e!s}"
+                )
 
-                # Set additional parameters on the intermediate node
-                if output_conversion.additional_parameters:
+            # Set additional parameters on the intermediate node
+            if output_conversion.additional_parameters:
+                try:
                     for param_name, param_value in output_conversion.additional_parameters.items():
                         set_value_result = GriptapeNodes.handle_request(
                             SetParameterValueRequest(
@@ -3201,10 +3222,15 @@ class NodeManager:
                         )
                         if not isinstance(set_value_result, SetParameterValueResultSuccess):
                             return MigrateParameterResultFailure(
-                                result_details=f"Failed to set parameter '{param_name}' on intermediate node '{intermediate_node_name}'."
+                                result_details=f"Failed to set parameter '{param_name}' on intermediate node '{intermediate_node_name}': {set_value_result}"
                             )
+                except Exception as e:
+                    return MigrateParameterResultFailure(
+                        result_details=f"Failed to set additional parameters on intermediate node '{intermediate_node_name}': {e!s}"
+                    )
 
-                # Connect target to intermediate node
+            # Connect target to intermediate node
+            try:
                 connection_result = GriptapeNodes.handle_request(
                     CreateConnectionRequest(
                         source_node_name=request.target_node_name,
@@ -3216,10 +3242,15 @@ class NodeManager:
 
                 if not isinstance(connection_result, CreateConnectionResultSuccess):
                     return MigrateParameterResultFailure(
-                        result_details="Failed to connect target to intermediate node."
+                        result_details=f"Failed to connect target to intermediate node: {connection_result}"
                     )
+            except Exception as e:
+                return MigrateParameterResultFailure(
+                    result_details=f"Failed to connect target to intermediate node '{intermediate_node_name}': {e!s}"
+                )
 
-                # Connect intermediate node to all destinations
+            # Connect intermediate node to all destinations
+            try:
                 for outgoing_connection in connections_result.outgoing_connections:
                     connection_result = GriptapeNodes.handle_request(
                         CreateConnectionRequest(
@@ -3232,17 +3263,17 @@ class NodeManager:
 
                     if not isinstance(connection_result, CreateConnectionResultSuccess):
                         return MigrateParameterResultFailure(
-                            result_details=f"Failed to connect intermediate node to destination '{outgoing_connection.target_node_name}.{outgoing_connection.target_parameter_name}'."
+                            result_details=f"Failed to connect intermediate node to destination '{outgoing_connection.target_node_name}.{outgoing_connection.target_parameter_name}': {connection_result}"
                         )
             except Exception as e:
                 return MigrateParameterResultFailure(
-                    result_details=f"Failed to handle outgoing connections with conversion: {e!s}"
+                    result_details=f"Failed to connect intermediate node '{intermediate_node_name}' to destinations: {e!s}"
                 )
 
         elif connections_result.has_outgoing_connections:
-            try:
-                # Direct connections without conversion
-                for outgoing_connection in connections_result.outgoing_connections:
+            # Direct connections without conversion
+            for outgoing_connection in connections_result.outgoing_connections:
+                try:
                     connection_result = GriptapeNodes.handle_request(
                         CreateConnectionRequest(
                             source_node_name=request.target_node_name,
@@ -3254,12 +3285,12 @@ class NodeManager:
 
                     if not isinstance(connection_result, CreateConnectionResultSuccess):
                         return MigrateParameterResultFailure(
-                            result_details=f"Failed to create direct connection to '{outgoing_connection.target_node_name}.{outgoing_connection.target_parameter_name}'."
+                            result_details=f"Failed to create direct connection to '{outgoing_connection.target_node_name}.{outgoing_connection.target_parameter_name}': {connection_result}"
                         )
-            except Exception as e:
-                return MigrateParameterResultFailure(
-                    result_details=f"Failed to create direct outgoing connections: {e!s}"
-                )
+                except Exception as e:
+                    return MigrateParameterResultFailure(
+                        result_details=f"Failed to create direct connection to '{outgoing_connection.target_node_name}.{outgoing_connection.target_parameter_name}': {e!s}"
+                    )
 
         # Handle value migration (no incoming connections)
         if not connections_result.has_incoming_connections:
@@ -3299,6 +3330,50 @@ class NodeManager:
                     )
             except Exception as e:
                 return MigrateParameterResultFailure(result_details=f"Failed to migrate parameter value: {e!s}")
+
+        # Break original connections if requested
+        if request.break_connections:
+            try:
+                # Break incoming connections
+                for incoming_connection in connections_result.incoming_connections:
+                    delete_result = GriptapeNodes.handle_request(
+                        DeleteConnectionRequest(
+                            source_node_name=incoming_connection.source_node_name,
+                            source_parameter_name=incoming_connection.source_parameter_name,
+                            target_node_name=request.source_node_name,
+                            target_parameter_name=request.source_parameter_name,
+                        )
+                    )
+                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                        # Log warning but don't fail the migration
+                        logger.warning(
+                            "Failed to break incoming connection from %s.%s: %s",
+                            incoming_connection.source_node_name,
+                            incoming_connection.source_parameter_name,
+                            delete_result,
+                        )
+
+                # Break outgoing connections
+                for outgoing_connection in connections_result.outgoing_connections:
+                    delete_result = GriptapeNodes.handle_request(
+                        DeleteConnectionRequest(
+                            source_node_name=request.source_node_name,
+                            source_parameter_name=request.source_parameter_name,
+                            target_node_name=outgoing_connection.target_node_name,
+                            target_parameter_name=outgoing_connection.target_parameter_name,
+                        )
+                    )
+                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                        # Log warning but don't fail the migration
+                        logger.warning(
+                            "Failed to break outgoing connection to %s.%s: %s",
+                            outgoing_connection.target_node_name,
+                            outgoing_connection.target_parameter_name,
+                            delete_result,
+                        )
+            except Exception as e:
+                # Log warning but don't fail the migration
+                logger.warning("Failed to break original connections: %s", e)
 
         return MigrateParameterResultSuccess(
             result_details=f"Successfully migrated parameter '{request.source_parameter_name}' from '{request.source_node_name}' to '{request.target_parameter_name}' on '{request.target_node_name}'."
