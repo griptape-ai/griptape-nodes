@@ -45,14 +45,18 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
+    CreateNodeResultFailure,
     DeleteNodeRequest,
     GetNodeMetadataRequest,
+    GetNodeMetadataResultFailure,
     GetNodeMetadataResultSuccess,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
     SetLockNodeStateRequest,
+    SetLockNodeStateResultFailure,
     SetLockNodeStateResultSuccess,
     SetNodeMetadataRequest,
+    SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
@@ -62,6 +66,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
     ConversionConfig,
+    GetConnectionsForParameterRequest,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
     GetParameterValueResultFailure,
@@ -419,8 +424,6 @@ class RetainedMode:
             # Get connections for a parameter on the current node
             result = cmd.get_connections_for_parameter("scale")
         """
-        from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterRequest
-
         request = GetConnectionsForParameterRequest(parameter_name=parameter_name, node_name=node_name)
         result = GriptapeNodes().handle_request(request)
         return result
@@ -579,7 +582,13 @@ class RetainedMode:
         swap: bool = False,
         lock: bool = True,
         match_size: bool = False,
-    ) -> str | ResultPayload:
+    ) -> (
+        str
+        | GetNodeMetadataResultFailure
+        | CreateNodeResultFailure
+        | SetNodeMetadataResultFailure
+        | SetLockNodeStateResultFailure
+    ):
         """Create a new node positioned relative to an existing node.
 
         Args:

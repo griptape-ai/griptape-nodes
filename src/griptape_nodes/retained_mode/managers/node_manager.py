@@ -789,7 +789,9 @@ class NodeManager:
         )
         return result
 
-    def on_get_connections_for_parameter_request(self, request: GetConnectionsForParameterRequest) -> ResultPayload:
+    def on_get_connections_for_parameter_request(
+        self, request: GetConnectionsForParameterRequest
+    ) -> GetConnectionsForParameterResultFailure | GetConnectionsForParameterResultSuccess:
         parameter_name = request.parameter_name
         node_name = request.node_name
         node = None
@@ -3037,7 +3039,9 @@ class NodeManager:
                 result_details=f"Node '{request.node_name}' not found or not assigned to any flow.",
             )
 
-    def on_migrate_parameter_request(self, request: MigrateParameterRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def on_migrate_parameter_request(
+        self, request: MigrateParameterRequest
+    ) -> MigrateParameterResultFailure | MigrateParameterResultSuccess:
         """Handle parameter migration requests."""
         # Validate nodes exist
         try:
