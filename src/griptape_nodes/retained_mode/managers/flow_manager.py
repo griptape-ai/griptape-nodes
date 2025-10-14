@@ -1102,7 +1102,7 @@ class FlowManager:
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
 
-    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911
+    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912
         self, request: PackageNodesAsSerializedFlowRequest
     ) -> ResultPayload:
         """Handle request to package multiple nodes as a serialized flow.
@@ -1110,6 +1110,12 @@ class FlowManager:
         Creates a self-contained flow with Start → [Selected Nodes] → End structure,
         where artificial start/end nodes interface with external connections only.
         """
+        # Step 0: Apply defaults for None values
+        if request.start_node_type is None:
+            request.start_node_type = "StartFlow"
+        if request.end_node_type is None:
+            request.end_node_type = "EndFlow"
+
         # Step 1: Reject empty node list
         if not request.node_names:
             return PackageNodesAsSerializedFlowResultFailure(

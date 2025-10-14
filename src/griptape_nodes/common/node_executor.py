@@ -86,7 +86,6 @@ class NodeExecutor:
         node: BaseNode,
         workflow_path: Path,
         file_name: str,
-        output_parameter_prefix: str,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Execute workflow in subprocess and apply results to node.
@@ -95,12 +94,11 @@ class NodeExecutor:
             node: The node to apply results to
             workflow_path: Path to workflow file to execute
             file_name: Name of workflow for logging
-            output_parameter_prefix: Prefix for output parameters
             package_result: The packaging result containing parameter mappings
         """
         my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
-        self._apply_parameter_values_to_node(node, parameter_output_values, output_parameter_prefix, package_result)
+        self._apply_parameter_values_to_node(node, parameter_output_values, package_result)
 
     async def _execute_private_workflow(self, node: BaseNode) -> None:
         """Execute node in private subprocess environment.
@@ -126,7 +124,6 @@ class NodeExecutor:
                 node=node,
                 workflow_path=Path(workflow_result.file_path),
                 file_name=result.file_name,
-                output_parameter_prefix=result.output_parameter_prefix,
                 package_result=result.package_result,
             )
         except RuntimeError:
@@ -202,7 +199,6 @@ class NodeExecutor:
                 node,
                 published_workflow_filename,
                 result.file_name,
-                result.output_parameter_prefix,
                 result.package_result,
             )
         except RuntimeError:
@@ -255,7 +251,7 @@ class NodeExecutor:
             node_names = [node.name]
 
         # Temporarily restore control connections to original nodes for packaging
-        self._restore_control_connections_for_packaging(node)
+        self._toggle_control_connections(node, restore_to_original=True)
         try:
             request = PackageNodesAsSerializedFlowRequest(
                 node_names=node_names,
@@ -292,7 +288,7 @@ class NodeExecutor:
             )
         finally:
             # Always remove control connections from original nodes after packaging, even on failure
-            self._remove_control_connections_after_packaging(node)
+            self._toggle_control_connections(node, restore_to_original=False)
 
     async def _publish_library_workflow(
         self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
@@ -431,56 +427,60 @@ class NodeExecutor:
         self,
         node: BaseNode,
         parameter_output_values: dict[str, Any],
-        output_parameter_prefix: str,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
     ) -> None:
         """Apply deserialized parameter values back to the node.
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
-        Uses parameter_name_mappings from package_result for PackageNodesAsSerializedFlowResultSuccess.
+        Uses parameter_name_mappings from package_result to map packaged parameters back to original nodes.
+        Works for both single-node and multi-node packages.
         """
-        # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'. That means that running the node failed, but was caught by the published flow.
-        # In this case, we should fail the node, since it didn't complete properly.
+        # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
             msg = f"Failed to execute node: {node.name}, with exception: {parameter_output_values.get('result_details', 'No result details were returned.')}"
             raise RuntimeError(msg)
 
-        # Get parameter mappings if this is a multi-node package
+        # Use parameter mappings to apply values back to original nodes
         parameter_name_mappings = package_result.parameter_name_mappings
         for param_name, param_value in parameter_output_values.items():
-            # We are grabbing all of the parameters on our end nodes that align with the node being published.
-            # For multi-node packages, use the parameter mapping to find the original node and parameter
-            if param_name in parameter_name_mappings:
-                original_node_param = parameter_name_mappings[param_name]
-                target_node_name = original_node_param.node_name
-                target_param_name = original_node_param.parameter_name
+            # Check if this parameter has a mapping back to an original node parameter
+            if param_name not in parameter_name_mappings:
+                continue
 
-                # Error case: not a proxy node or target node not in group
-                if not isinstance(node, NodeGroupProxyNode) or target_node_name not in node.node_group_data.nodes:
-                    logger.debug("Proxy parameter '%s' not in mapping", param_name)
-                    continue
+            original_node_param = parameter_name_mappings[param_name]
+            target_node_name = original_node_param.node_name
+            target_param_name = original_node_param.parameter_name
 
-                # Get the original node from the group
+            # For multi-node packages, get the target node from the group
+            # For single-node packages, use the node itself
+            if isinstance(node, NodeGroupProxyNode):
+                if target_node_name not in node.node_group_data.nodes:
+                    msg = f"Target node '{target_node_name}' not found in node group for proxy node '{node.name}'. Available nodes: {list(node.node_group_data.nodes.keys())}"
+                    raise RuntimeError(msg)
                 target_node = node.node_group_data.nodes[target_node_name]
-                target_param = target_node.get_parameter_by_name(target_param_name)
+            else:
+                target_node = node
 
-                # Error case: parameter not found or is special parameter
-                if target_param is None or target_param in (
-                    target_node.execution_environment,
-                    target_node.node_group,
-                ):
-                    logger.debug("Target node '%s' not found in group", target_node_name)
-                    continue
+            # Get the parameter from the target node
+            target_param = target_node.get_parameter_by_name(target_param_name)
 
-                # Happy path: set the value on the original node in the group
-                if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                    # If it isn't a control type, we can set the value.
-                    # Since control types shouldn't technically have typed values, they should only ever be set as output values.
-                    target_node.set_parameter_value(target_param_name, param_value)
-                target_node.parameter_output_values[target_param_name] = param_value
+            # Skip if parameter not found or is special parameter (execution_environment, node_group)
+            if target_param is None or target_param in (
+                target_node.execution_environment,
+                target_node.node_group,
+            ):
+                logger.debug(
+                    "Skipping special or missing parameter '%s' on node '%s'", target_param_name, target_node_name
+                )
+                continue
 
-                # Also set the value on the proxy node's corresponding output parameter
-                # Proxy param name format: {sanitized_node_name}__{param_name}
+            # Set the value on the target node
+            if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
+                target_node.set_parameter_value(target_param_name, param_value)
+            target_node.parameter_output_values[target_param_name] = param_value
+
+            # For multi-node packages, also set the value on the proxy node's corresponding output parameter
+            if isinstance(node, NodeGroupProxyNode):
                 sanitized_node_name = target_node_name.replace(" ", "_")
                 proxy_param_name = f"{sanitized_node_name}__{target_param_name}"
                 proxy_param = node.get_parameter_by_name(proxy_param_name)
@@ -489,31 +489,12 @@ class NodeExecutor:
                         node.set_parameter_value(proxy_param_name, param_value)
                     node.parameter_output_values[proxy_param_name] = param_value
 
-                logger.info(
-                    "Set parameter '%s' on node '%s' and proxy param '%s' to value: %s",
-                    target_param_name,
-                    target_node_name,
-                    proxy_param_name,
-                    param_value,
-                )
-            if param_name.startswith(output_parameter_prefix):
-                clean_param_name = param_name[len(output_parameter_prefix) :]
-                # Single node package - use the original logic
-                parameter = node.get_parameter_by_name(clean_param_name)
-                # Don't set execution_environment, since that will be set to Local Execution on any published flow.
-                if parameter is None:
-                    msg = (
-                        "Parameter '%s' from parameter output values not found on node '%s'",
-                        clean_param_name,
-                        node.name,
-                    )
-                    logger.error(msg)
-                    raise RuntimeError(msg)
-                if parameter != node.execution_environment:
-                    if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                        # If the node is control type, only set its value in parameter_output_values.
-                        node.set_parameter_value(clean_param_name, param_value)
-                    node.parameter_output_values[clean_param_name] = param_value
+            logger.debug(
+                "Set parameter '%s' on node '%s' to value: %s",
+                target_param_name,
+                target_node_name,
+                param_value,
+            )
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
         try:
@@ -549,82 +530,75 @@ class NodeExecutor:
             storage_backend = StorageBackend.LOCAL
         return storage_backend
 
-    def _toggle_incoming_control_connections(
-        self, proxy_node: BaseNode, node_group: NodeGroup, connections: Connections, *, restore_to_original: bool
+    def _toggle_directional_control_connections(
+        self,
+        proxy_node: BaseNode,
+        node_group: NodeGroup,
+        connections: Connections,
+        *,
+        restore_to_original: bool,
+        is_incoming: bool,
     ) -> None:
-        """Toggle incoming control connections between proxy and original nodes."""
-        for conn in node_group.external_incoming_connections:
-            if conn.target_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
+        """Toggle control connections between proxy and original nodes for a specific direction.
+
+        Args:
+            proxy_node: The proxy node containing the node group
+            node_group: The node group data
+            connections: The connections manager
+            restore_to_original: If True, restore connections to original nodes; if False, remap to proxy
+            is_incoming: If True, handle incoming connections; if False, handle outgoing connections
+        """
+        if is_incoming:
+            connection_list = node_group.external_incoming_connections
+            original_nodes_map = node_group.original_incoming_targets
+            index = connections.incoming_index
+        else:
+            connection_list = node_group.external_outgoing_connections
+            original_nodes_map = node_group.original_outgoing_sources
+            index = connections.outgoing_index
+
+        for conn in connection_list:
+            # Get parameter based on direction
+            parameter = conn.target_parameter if is_incoming else conn.source_parameter
+            if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 continue
 
             conn_id = id(conn)
-            original_target = node_group.original_incoming_targets.get(conn_id)
-            if original_target is None:
-                msg = f"No original target found for connection {conn_id} in node group '{node_group.group_id}'"
-                raise RuntimeError(msg)
+            original_node = original_nodes_map.get(conn_id)
 
-            sanitized_node_name = original_target.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+            # For incoming connections, missing original is an error; for outgoing, skip
+            if original_node is None:
+                if is_incoming:
+                    msg = f"No original target found for connection {conn_id} in node group '{node_group.group_id}'"
+                    raise RuntimeError(msg)
+                continue
+
+            sanitized_node_name = original_node.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{parameter.name}"
 
             if restore_to_original:
                 from_node = proxy_node
                 from_param = proxy_param_name
-                to_node = original_target
-                to_param = conn.target_parameter.name
+                to_node = original_node
+                to_param = parameter.name
             else:
-                from_node = original_target
-                from_param = conn.target_parameter.name
+                from_node = original_node
+                from_param = parameter.name
                 to_node = proxy_node
                 to_param = proxy_param_name
 
-            # Remove from old node's incoming index
-            if (
-                from_node.name in connections.incoming_index
-                and from_param in connections.incoming_index[from_node.name]
-            ):
-                connections.incoming_index[from_node.name][from_param].remove(conn_id)
+            # Remove from old node's index
+            if from_node.name in index and from_param in index[from_node.name]:
+                index[from_node.name][from_param].remove(conn_id)
 
-            # Update connection and add to new node's incoming index
-            conn.target_node = to_node
-            connections.incoming_index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
-
-    def _toggle_outgoing_control_connections(
-        self, proxy_node: BaseNode, node_group: NodeGroup, connections: Connections, *, restore_to_original: bool
-    ) -> None:
-        """Toggle outgoing control connections between proxy and original nodes."""
-        for conn in node_group.external_outgoing_connections:
-            if conn.source_parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_source = node_group.original_outgoing_sources.get(conn_id)
-            if original_source is None:
-                continue
-
-            sanitized_node_name = original_source.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
-
-            if restore_to_original:
-                from_node = proxy_node
-                from_param = proxy_param_name
-                to_node = original_source
-                to_param = conn.source_parameter.name
+            # Update connection node based on direction
+            if is_incoming:
+                conn.target_node = to_node
             else:
-                from_node = original_source
-                from_param = conn.source_parameter.name
-                to_node = proxy_node
-                to_param = proxy_param_name
+                conn.source_node = to_node
 
-            # Remove from old node's outgoing index
-            if (
-                from_node.name in connections.outgoing_index
-                and from_param in connections.outgoing_index[from_node.name]
-            ):
-                connections.outgoing_index[from_node.name][from_param].remove(conn_id)
-
-            # Update connection and add to new node's outgoing index
-            conn.source_node = to_node
-            connections.outgoing_index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
+            # Add to new node's index
+            index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
 
     def _toggle_control_connections(self, proxy_node: BaseNode, *, restore_to_original: bool) -> None:
         """Toggle control connections between proxy node and original nodes.
@@ -639,24 +613,10 @@ class NodeExecutor:
         node_group = proxy_node.node_group_data
         connections = GriptapeNodes.FlowManager().get_connections()
 
-        self._toggle_incoming_control_connections(
-            proxy_node, node_group, connections, restore_to_original=restore_to_original
+        # Toggle both incoming and outgoing connections
+        self._toggle_directional_control_connections(
+            proxy_node, node_group, connections, restore_to_original=restore_to_original, is_incoming=True
         )
-        self._toggle_outgoing_control_connections(
-            proxy_node, node_group, connections, restore_to_original=restore_to_original
+        self._toggle_directional_control_connections(
+            proxy_node, node_group, connections, restore_to_original=restore_to_original, is_incoming=False
         )
-
-    def _restore_control_connections_for_packaging(self, proxy_node: BaseNode) -> None:
-        """Temporarily restore control connections from proxy back to original nodes for packaging.
-
-        Only restores control connections (CONTROL_TYPE parameters) so that the packaged flow
-        has the correct control flow structure.
-        """
-        self._toggle_control_connections(proxy_node, restore_to_original=True)
-
-    def _remove_control_connections_after_packaging(self, proxy_node: BaseNode) -> None:
-        """Remove control connections from original nodes and restore them to proxy after packaging.
-
-        Reverses what _restore_control_connections_for_packaging does.
-        """
-        self._toggle_control_connections(proxy_node, restore_to_original=False)
