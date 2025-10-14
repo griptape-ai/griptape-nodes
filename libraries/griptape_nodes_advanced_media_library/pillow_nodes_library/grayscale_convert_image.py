@@ -1,15 +1,16 @@
 import io
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
 from utils.image_utils import load_image_from_url_artifact
 
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import DeprecationMessage, NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode as cmd  # noqa: N813
-from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+from griptape_nodes.traits.button import ButtonDetailsMessagePayload
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,  # type: ignore[reportMissingImports]
 )
@@ -21,14 +22,10 @@ class GrayscaleConvertImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.migrate_message = ParameterMessage(
-            variant="warning",
-            full_width=True,
-            button_text="Create Grayscale Image Node",
+        self.migrate_message = DeprecationMessage(
             value="This node is being deprecated.\nPlease use the Grayscale Image node from the Griptape Nodes Library.",
-            traits={
-                Button(label="Create Grayscale Image Node", icon="plus", variant="secondary", on_click=self._migrate)
-            },
+            button_text="Create Grayscale Image Node",
+            migrate_function=self._migrate,
         )
         self.add_node_element(self.migrate_message)
 
@@ -49,7 +46,7 @@ class GrayscaleConvertImage(ControlNode):
             )
         )
 
-    def _migrate(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
+    def _migrate(self, button: Any, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
         # Create the new node positioned relative to this one
         new_node_name = f"{self.name}_migrated"
 

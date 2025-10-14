@@ -4,7 +4,7 @@ from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Resampling
 from utils.image_utils import load_image_from_url_artifact
 
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import DeprecationMessage, NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.events.parameter_events import (
     ConversionConfig,
@@ -23,14 +23,10 @@ logger = logging.getLogger("pillow_nodes_library")
 class RescaleImage(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.migrate_message = ParameterMessage(
-            variant="warning",
-            full_width=True,
-            button_text="Create Rescale Image Node",
+        self.migrate_message = DeprecationMessage(
             value="This node is being deprecated.\nPlease use the Rescale Image node from the Griptape Nodes Library.",
-            traits={
-                Button(label="Create Rescale Image Node", icon="plus", variant="secondary", on_click=self._migrate)
-            },
+            button_text="Create Rescale Image Node",
+            migrate_function=self._migrate,
         )
         self.add_node_element(self.migrate_message)
 
