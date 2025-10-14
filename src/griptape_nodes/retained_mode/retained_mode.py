@@ -573,6 +573,7 @@ class RetainedMode:
         ] = "right",
         offset_x: int = 0,
         offset_y: int = 0,
+        swap: bool = False,
     ) -> str | ResultPayload:
         """Create a new node positioned relative to an existing node.
 
@@ -586,6 +587,7 @@ class RetainedMode:
                         - "top", "bottom", "left", "right": midpoint positions
             offset_x: Horizontal offset in pixels (negative = left, positive = right)
             offset_y: Vertical offset in pixels (negative = up, positive = down)
+            swap: If True, create new node at reference position and move reference node relative to new node
 
         Returns:
             String node name if successful, ResultPayload if failed
@@ -612,61 +614,129 @@ class RetainedMode:
         else:
             return create_result
 
-        # Calculate position based on reference node position and offsets
-        match offset_side:
-            case "top_left":
-                new_position = {
-                    "x": reference_position["x"] + offset_x,
-                    "y": reference_position["y"] + offset_y,
-                }
-            case "top":
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
-                    "y": reference_position["y"] + offset_y,
-                }
-            case "top_right":
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] + offset_x,
-                    "y": reference_position["y"] + offset_y,
-                }
-            case "right":
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                }
-            case "bottom_right":
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] + offset_y,
-                }
-            case "bottom":
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] + offset_y,
-                }
-            case "bottom_left":
-                new_position = {
-                    "x": reference_position["x"] + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] + offset_y,
-                }
-            case "left":
-                new_position = {
-                    "x": reference_position["x"] + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                }
-            case _:
-                # Default to right if unknown position
-                new_position = {
-                    "x": reference_position["x"] + reference_size["width"] + offset_x,
-                    "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
-                }
+        if swap:
+            # Swap mode: Create new node at reference position, move reference node relative to new node
+            new_position = reference_position
 
-        # Set the node's position
-        set_metadata_result = GriptapeNodes().handle_request(
-            SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
-        )
-        if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
-            return set_metadata_result
+            # Calculate reference node's new position relative to the new node
+            match offset_side:
+                case "top_left":
+                    reference_new_position = {
+                        "x": new_position["x"] + offset_x,
+                        "y": new_position["y"] + offset_y,
+                    }
+                case "top":
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] // 2 + offset_x,
+                        "y": new_position["y"] + offset_y,
+                    }
+                case "top_right":
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] + offset_x,
+                        "y": new_position["y"] + offset_y,
+                    }
+                case "right":
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] + offset_x,
+                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+                case "bottom_right":
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] + offset_x,
+                        "y": new_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "bottom":
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] // 2 + offset_x,
+                        "y": new_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "bottom_left":
+                    reference_new_position = {
+                        "x": new_position["x"] + offset_x,
+                        "y": new_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "left":
+                    reference_new_position = {
+                        "x": new_position["x"] + offset_x,
+                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+                case _:
+                    # Default to right if unknown position
+                    reference_new_position = {
+                        "x": new_position["x"] + reference_size["width"] + offset_x,
+                        "y": new_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+
+            # Set the new node's position (at reference position)
+            set_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
+            )
+            if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                return set_metadata_result
+
+            # Move the reference node to its new position
+            set_reference_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=reference_node_name, metadata={"position": reference_new_position})
+            )
+            if not isinstance(set_reference_metadata_result, SetNodeMetadataResultSuccess):
+                return set_reference_metadata_result
+
+        else:
+            # Normal mode: Create new node relative to reference node
+            match offset_side:
+                case "top_left":
+                    new_position = {
+                        "x": reference_position["x"] + offset_x,
+                        "y": reference_position["y"] + offset_y,
+                    }
+                case "top":
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
+                        "y": reference_position["y"] + offset_y,
+                    }
+                case "top_right":
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] + offset_x,
+                        "y": reference_position["y"] + offset_y,
+                    }
+                case "right":
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+                case "bottom_right":
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "bottom":
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] // 2 + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "bottom_left":
+                    new_position = {
+                        "x": reference_position["x"] + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] + offset_y,
+                    }
+                case "left":
+                    new_position = {
+                        "x": reference_position["x"] + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+                case _:
+                    # Default to right if unknown position
+                    new_position = {
+                        "x": reference_position["x"] + reference_size["width"] + offset_x,
+                        "y": reference_position["y"] + reference_size["height"] // 2 + offset_y,
+                    }
+
+            # Set the new node's position
+            set_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
+            )
+            if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                return set_metadata_result
 
         return new_node_name
 

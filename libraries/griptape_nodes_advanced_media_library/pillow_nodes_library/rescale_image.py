@@ -93,7 +93,8 @@ class RescaleImage(ControlNode):
             new_node_name=new_node_name,
             specific_library_name="Griptape Nodes Library",
             offset_side="top_left",
-            offset_y=-756,  # Negative offset to go UP from the reference node's top-left corner
+            offset_y=-1056,  # Negative offset to go UP from the reference node's top-left corner
+            swap=True,
         )
 
         # Extract the node name from the result
@@ -129,6 +130,7 @@ class RescaleImage(ControlNode):
                     "B": 100,
                 },
                 offset_x=-573,
+                offset_y=150,
             ),
             output_conversion=ConversionConfig(
                 library="Griptape Nodes Library",
@@ -140,6 +142,7 @@ class RescaleImage(ControlNode):
                     "B": 100,
                 },
                 offset_x=250,
+                offset_y=150,
             ),
             value_transform=self._scale_transform,
         )
