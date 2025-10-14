@@ -83,7 +83,7 @@
         "group": "edit",
         "deprecation": {
           "deprecation_message": "Use 'Grayscale Image' from the Griptape Nodes Library instead under `Image/Edit/Grayscale Image`",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
 
       }
@@ -98,7 +98,7 @@
         "group": "edit",
         "deprecation": {
           "deprecation_message": "Use 'Gaussian Blur Image' from the Griptape Nodes Library instead under `Image/Effects/Gaussian Blur Image`",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
 
       }
@@ -184,7 +184,7 @@
         "display_name": "Flux",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/ https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -197,7 +197,7 @@
         "display_name": "Flux Fill",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -210,7 +210,7 @@
         "display_name": "Flux Kontext",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -223,7 +223,7 @@
         "display_name": "Flux ICEdit ",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -236,7 +236,7 @@
         "display_name": "Flux CN Union",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -262,7 +262,7 @@
         "display_name": "Flux CN Union Pro 2",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -333,7 +333,7 @@
         "display_name": "Rescale Image",
         "deprecation": {
           "deprecation_message": "Use 'Rescale Image' from the Griptape Nodes Library instead under `Image/Edit/Rescale Image`",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -346,7 +346,7 @@
         "display_name": "SPAN Upscale",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -368,7 +368,7 @@
         "display_name": "Allegro",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },
@@ -381,7 +381,7 @@
         "display_name": "aMUSEd",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.59.0"
+          "removal_version": "0.64.0"
         }
       }
     },

@@ -59,9 +59,10 @@ class GrayscaleConvertImage(ControlNode):
             new_node_type="GrayscaleImage",
             new_node_name=new_node_name,
             specific_library_name="Griptape Nodes Library",
-            offset_side="top_left",
-            offset_y=-1056,  # Negative offset to go UP from the reference node's top-left corner
+            offset_side="top_right",
+            offset_y=-50,  # Negative offset to go UP from the reference node's top-left corner
             swap=True,
+            match_size=True,
         )
 
         # Extract the node name from the result
