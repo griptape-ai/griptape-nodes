@@ -26,9 +26,11 @@ class RescaleImage(ControlNode):
         self.migrate_message = ParameterMessage(
             variant="warning",
             full_width=True,
-            button_text="Create RescaleImage Node",
-            value="This node is being deprecated.\nPlease use the RescaleImage node from the Griptape Nodes Library.",
-            traits={Button(label="Create RescaleImage Node", icon="plus", variant="secondary", on_click=self._migrate)},
+            button_text="Create Rescale Image Node",
+            value="This node is being deprecated.\nPlease use the Rescale Image node from the Griptape Nodes Library.",
+            traits={
+                Button(label="Create Rescale Image Node", icon="plus", variant="secondary", on_click=self._migrate)
+            },
         )
         self.add_node_element(self.migrate_message)
 

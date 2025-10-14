@@ -1490,6 +1490,28 @@
       }
     },
     {
+      "class_name": "GrayscaleImage",
+      "file_path": "griptape_nodes_library/image/grayscale_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert image to grayscale",
+        "display_name": "Grayscale Image",
+        "icon": "image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "griptape_nodes_library/image/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a Gaussian blur to an image",
+        "display_name": "Gaussian Blur Image",
+        "icon": "sparkles",
+        "group": "effects"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
@@ -1811,14 +1833,13 @@
       }
     },
     {
-      "class_name": "ToolList",
-      "file_path": "griptape_nodes_library/tools/tool_list.py",
+      "class_name": "MCPToolNode",
+      "file_path": "griptape_nodes_library/tools/mcp_tool.py",
       "metadata": {
         "category": "agents/tools",
-        "description": "Combine tools to give an agent a more complex set of tools",
-        "display_name": "Tool List",
-        "icon": "list-check",
-        "group": "create"
+        "description": "Give an agent the ability to use an MCP tool",
+        "display_name": "MCP Tool",
+        "icon": "network"
       }
     },
     {

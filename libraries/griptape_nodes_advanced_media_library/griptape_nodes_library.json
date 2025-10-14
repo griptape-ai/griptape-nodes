@@ -80,7 +80,12 @@
         "category": "image",
         "description": "Desaturate an image via the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in grayscale mode.",
         "display_name": "Desaturate",
-        "group": "edit"
+        "group": "edit",
+        "deprecation": {
+          "deprecation_message": "Use 'Grayscale Image' from the Griptape Nodes Library instead under `Image/Edit/Grayscale Image`",
+          "removal_version": "0.59.0"
+        }
+
       }
     },
     {
@@ -90,7 +95,12 @@
         "category": "image",
         "description": "Apply a gaussian blur to an image with the 🛏️ pillow python package. Pairs well with ControlNet Image Generation in blur or tile mode.",
         "display_name": "Gaussian Blur",
-        "group": "edit"
+        "group": "edit",
+        "deprecation": {
+          "deprecation_message": "Use 'Gaussian Blur Image' from the Griptape Nodes Library instead under `Image/Effects/Gaussian Blur Image`",
+          "removal_version": "0.59.0"
+        }
+
       }
     },
     {
@@ -322,7 +332,7 @@
         "description": "Rescales an image using the 🛏️ pillow python package.",
         "display_name": "Rescale Image",
         "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "deprecation_message": "Use 'Rescale Image' from the Griptape Nodes Library instead under `Image/Edit/Rescale Image`",
           "removal_version": "0.59.0"
         }
       }
