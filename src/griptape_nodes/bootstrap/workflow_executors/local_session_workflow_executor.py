@@ -109,7 +109,6 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
 
     async def arun(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
         **kwargs: Any,
@@ -120,7 +119,6 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         loading the user-defined workflow, and running the specified workflow.
 
         Parameters:
-            workflow_name: The name of the workflow to execute.
             flow_input: Input data for the flow, typically a dictionary.
             storage_backend: The storage backend to use for the workflow execution.
 
@@ -129,7 +127,6 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
         """
         try:
             await self._arun(
-                workflow_name=workflow_name,
                 flow_input=flow_input,
                 storage_backend=storage_backend,
                 **kwargs,
@@ -151,14 +148,12 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor):
 
     async def _arun(  # noqa: C901, PLR0915
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend | None = None,
         **kwargs: Any,
     ) -> None:
         """Internal async run method with detailed event handling and websocket integration."""
         flow_name = await self.aprepare_workflow_for_run(
-            workflow_name=workflow_name,
             flow_input=flow_input,
             storage_backend=storage_backend,
             **kwargs,

@@ -311,7 +311,6 @@ class NodeExecutor:
         try:
             async with subprocess_executor as executor:
                 await executor.arun(
-                    workflow_name=file_name,
                     flow_input={},
                     storage_backend=await self._get_storage_backend(),
                     pickle_control_flow_result=pickle_control_flow_result,

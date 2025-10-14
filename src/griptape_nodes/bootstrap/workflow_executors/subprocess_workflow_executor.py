@@ -76,7 +76,6 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
     async def arun(
         self,
-        workflow_name: str,  # noqa: ARG002
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         *,

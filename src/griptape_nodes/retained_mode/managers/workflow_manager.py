@@ -1426,7 +1426,6 @@ class WorkflowManager:
             final_code_output = self._generate_workflow_file_content(
                 serialized_flow_commands=request.serialized_flow_commands,
                 workflow_metadata=workflow_metadata,
-                execution_flow_name=execution_flow_name,
                 pickle_control_flow_result=request.pickle_control_flow_result,
             )
         except Exception as err:
@@ -1488,7 +1487,6 @@ class WorkflowManager:
         self,
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
-        execution_flow_name: str,
         *,
         pickle_control_flow_result: bool = False,
     ) -> str:
@@ -1618,7 +1616,6 @@ class WorkflowManager:
 
         # Generate workflow execution code
         workflow_execution_code = self._generate_workflow_execution(
-            flow_name=execution_flow_name,
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
             pickle_control_flow_result=pickle_control_flow_result,
@@ -1689,7 +1686,6 @@ class WorkflowManager:
 
     def _generate_workflow_execution(
         self,
-        flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
         *,
@@ -1805,7 +1801,6 @@ class WorkflowManager:
                             ),
                             args=[],
                             keywords=[
-                                ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
                                 ast.keyword(
                                     arg="pickle_control_flow_result",

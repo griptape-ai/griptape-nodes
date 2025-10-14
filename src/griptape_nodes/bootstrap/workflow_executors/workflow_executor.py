@@ -28,17 +28,15 @@ class WorkflowExecutor:
 
     def run(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         **kwargs: Any,
     ) -> None:
-        return asyncio.run(self.arun(workflow_name, flow_input, storage_backend, **kwargs))
+        return asyncio.run(self.arun(flow_input, storage_backend, **kwargs))
 
     @abstractmethod
     async def arun(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         **kwargs: Any,

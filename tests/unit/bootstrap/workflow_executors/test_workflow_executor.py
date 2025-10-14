@@ -19,12 +19,11 @@ class ConcreteWorkflowExecutor(WorkflowExecutor):
 
     async def arun(
         self,
-        workflow_name: str,
         flow_input: Any,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         **kwargs: Any,
     ) -> None:
-        await self.arun_mock(workflow_name, flow_input, storage_backend, **kwargs)
+        await self.arun_mock(flow_input, storage_backend, **kwargs)
 
 
 class TestWorkflowExecutor:
@@ -50,31 +49,29 @@ class TestWorkflowExecutor:
         executor = ConcreteWorkflowExecutor()
 
         # Test that arun can be called with required parameters
-        await executor.arun("test_workflow", {"input": "data"})
+        await executor.arun({"input": "data"})
 
         # Verify the mock was called with correct arguments
-        executor.arun_mock.assert_called_once_with("test_workflow", {"input": "data"}, StorageBackend.LOCAL)
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.LOCAL)
 
     @pytest.mark.asyncio
     async def test_arun_with_custom_storage_backend(self) -> None:
         """Test arun method with custom storage backend."""
         executor = ConcreteWorkflowExecutor()
 
-        await executor.arun("test_workflow", {"input": "data"}, StorageBackend.GTC)
+        await executor.arun({"input": "data"}, StorageBackend.GTC)
 
-        executor.arun_mock.assert_called_once_with("test_workflow", {"input": "data"}, StorageBackend.GTC)
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.GTC)
 
     @pytest.mark.asyncio
     async def test_arun_with_kwargs(self) -> None:
         """Test arun method with additional keyword arguments."""
         executor = ConcreteWorkflowExecutor()
 
-        await executor.arun(
-            "test_workflow", {"input": "data"}, StorageBackend.LOCAL, extra_param="test_value", another_param=42
-        )
+        await executor.arun({"input": "data"}, StorageBackend.LOCAL, extra_param="test_value", another_param=42)
 
         executor.arun_mock.assert_called_once_with(
-            "test_workflow", {"input": "data"}, StorageBackend.LOCAL, extra_param="test_value", another_param=42
+            {"input": "data"}, StorageBackend.LOCAL, extra_param="test_value", another_param=42
         )
 
     @patch("asyncio.run")
@@ -83,7 +80,7 @@ class TestWorkflowExecutor:
         executor = ConcreteWorkflowExecutor()
 
         # Call the synchronous run method
-        executor.run("test_workflow", {"input": "data"})
+        executor.run({"input": "data"})
 
         # Verify asyncio.run was called once
         mock_asyncio_run.assert_called_once()
@@ -104,7 +101,7 @@ class TestWorkflowExecutor:
         """Test run method with custom storage backend."""
         executor = ConcreteWorkflowExecutor()
 
-        executor.run("test_workflow", {"input": "data"}, StorageBackend.GTC)
+        executor.run({"input": "data"}, StorageBackend.GTC)
 
         mock_asyncio_run.assert_called_once()
 
@@ -118,7 +115,7 @@ class TestWorkflowExecutor:
         """Test run method with additional keyword arguments."""
         executor = ConcreteWorkflowExecutor()
 
-        executor.run("test_workflow", {"input": "data"}, StorageBackend.LOCAL, extra_param="test_value")
+        executor.run({"input": "data"}, StorageBackend.LOCAL, extra_param="test_value")
 
         mock_asyncio_run.assert_called_once()
 
@@ -133,7 +130,7 @@ class TestWorkflowExecutor:
 
         with patch("asyncio.run") as mock_asyncio_run:
             mock_asyncio_run.return_value = None
-            result = executor.run("test_workflow", {"input": "data"})
+            result = executor.run({"input": "data"})
             assert result is None
 
     def test_output_property_can_be_set(self) -> None:
@@ -176,7 +173,7 @@ class TestWorkflowExecutorIntegration:
         executor.arun_mock.side_effect = mock_arun
 
         # Execute the workflow
-        await executor.arun("integration_test", {"test_input": "value"})
+        await executor.arun({"test_input": "value"})
 
         # Verify the workflow was called and output was set
         executor.arun_mock.assert_called_once()
@@ -193,7 +190,7 @@ class TestWorkflowExecutorIntegration:
         executor.arun_mock.side_effect = mock_arun
 
         # Execute synchronously
-        result = executor.run("sync_test", {"input": "data"})
+        result = executor.run({"input": "data"})
 
         # Verify execution completed
         assert result is None  # run method returns None
