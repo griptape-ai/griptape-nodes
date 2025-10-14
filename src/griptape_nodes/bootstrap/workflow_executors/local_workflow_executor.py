@@ -189,10 +189,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         if workflow_path:
             await self._load_workflow_from_path(workflow_path)
 
-        workflow_name = self._get_workflow_name()
-        msg = f"Executing workflow: {workflow_name}"
-        logger.info(msg)
-
         # Load the flow
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
