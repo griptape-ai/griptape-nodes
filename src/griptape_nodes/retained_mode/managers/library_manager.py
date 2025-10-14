@@ -2016,7 +2016,7 @@ class LibraryManager:
     async def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():
             details = "Failed to clear the existing object state when preparing to reload all libraries."
             logger.error(details)
