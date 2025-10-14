@@ -104,6 +104,10 @@ class RescaleImage(ControlNode):
             logger.error("Failed to create node: %s", new_node_result)
             return None
 
+        # Migrate executions
+        cmd.migrate_parameter(self.name, new_node, "exec_in", "exec_in")
+        cmd.migrate_parameter(self.name, new_node, "exec_out", "exec_out")
+
         # Migrate simple parameters (no conversion needed)
         cmd.migrate_parameter(self.name, new_node, "input_image", "input_image")
         cmd.migrate_parameter(self.name, new_node, "resample_strategy", "resample_filter")

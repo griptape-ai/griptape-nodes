@@ -3109,20 +3109,21 @@ class NodeManager:
                                 result_details=f"Failed to set parameter '{param_name}' on intermediate node '{intermediate_node_name}'."
                             )
 
-                # Connect source to intermediate node
-                connection_result = GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=connections_result.incoming_connections[0].source_node_name,
-                        source_parameter_name=connections_result.incoming_connections[0].source_parameter_name,
-                        target_node_name=intermediate_node_name,
-                        target_parameter_name=input_conversion.input_parameter,
+                # Connect all sources to intermediate node
+                for incoming_connection in connections_result.incoming_connections:
+                    connection_result = GriptapeNodes.handle_request(
+                        CreateConnectionRequest(
+                            source_node_name=incoming_connection.source_node_name,
+                            source_parameter_name=incoming_connection.source_parameter_name,
+                            target_node_name=intermediate_node_name,
+                            target_parameter_name=input_conversion.input_parameter,
+                        )
                     )
-                )
 
-                if not isinstance(connection_result, CreateConnectionResultSuccess):
-                    return MigrateParameterResultFailure(
-                        result_details="Failed to connect source to intermediate node."
-                    )
+                    if not isinstance(connection_result, CreateConnectionResultSuccess):
+                        return MigrateParameterResultFailure(
+                            result_details=f"Failed to connect source '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}' to intermediate node."
+                        )
 
                 # Connect intermediate node to target
                 connection_result = GriptapeNodes.handle_request(
@@ -3145,21 +3146,24 @@ class NodeManager:
 
         elif connections_result.has_incoming_connections:
             try:
-                # Direct connection without conversion
-                connection_result = GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=connections_result.incoming_connections[0].source_node_name,
-                        source_parameter_name=connections_result.incoming_connections[0].source_parameter_name,
-                        target_node_name=request.target_node_name,
-                        target_parameter_name=request.target_parameter_name,
+                # Direct connections without conversion
+                for incoming_connection in connections_result.incoming_connections:
+                    connection_result = GriptapeNodes.handle_request(
+                        CreateConnectionRequest(
+                            source_node_name=incoming_connection.source_node_name,
+                            source_parameter_name=incoming_connection.source_parameter_name,
+                            target_node_name=request.target_node_name,
+                            target_parameter_name=request.target_parameter_name,
+                        )
                     )
-                )
 
-                if not isinstance(connection_result, CreateConnectionResultSuccess):
-                    return MigrateParameterResultFailure(result_details="Failed to create direct connection.")
+                    if not isinstance(connection_result, CreateConnectionResultSuccess):
+                        return MigrateParameterResultFailure(
+                            result_details=f"Failed to create direct connection from '{incoming_connection.source_node_name}.{incoming_connection.source_parameter_name}'."
+                        )
             except Exception as e:
                 return MigrateParameterResultFailure(
-                    result_details=f"Failed to create direct incoming connection: {e!s}"
+                    result_details=f"Failed to create direct incoming connections: {e!s}"
                 )
 
         # Handle outgoing connections
