@@ -70,6 +70,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+# Type alias for offset side values
+OffsetSide = Literal["top_left", "top", "top_right", "right", "bottom_right", "bottom", "bottom_left", "left"]
+
 MIN_NODES = 2
 
 logger = logging.getLogger("griptpae_nodes_engine")
@@ -568,9 +571,7 @@ class RetainedMode:
         new_node_type: str,
         new_node_name: str | None = None,
         specific_library_name: str | None = None,
-        offset_side: Literal[
-            "top_left", "top", "top_right", "right", "bottom_right", "bottom", "bottom_left", "left"
-        ] = "right",
+        offset_side: OffsetSide = "right",
         offset_x: int = 0,
         offset_y: int = 0,
         *,
@@ -583,9 +584,10 @@ class RetainedMode:
             new_node_type: Type of the new node to create
             new_node_name: Name for the new node (optional, will be generated if not provided)
             specific_library_name: Specific library to use for the new node
-            offset_side: Reference side/position from reference node
+            offset_side: Reference side/position from reference node (OffsetSide)
                         - "top_left", "top_right", "bottom_left", "bottom_right": corner positions
                         - "top", "bottom", "left", "right": midpoint positions
+                        - Invalid values default to "right"
             offset_x: Horizontal offset in pixels (negative = left, positive = right)
             offset_y: Vertical offset in pixels (negative = up, positive = down)
             swap: If True, create new node at reference position and move reference node relative to new node
