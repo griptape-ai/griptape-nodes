@@ -3072,6 +3072,60 @@ class NodeManager:
         except Exception as e:
             return MigrateParameterResultFailure(result_details=f"Failed to get parameter connections: {e!s}")
 
+        # Break original connections if requested (do this FIRST before creating new connections)
+        if request.break_connections:
+            # Break incoming connections
+            for incoming_connection in connections_result.incoming_connections:
+                try:
+                    delete_result = GriptapeNodes.handle_request(
+                        DeleteConnectionRequest(
+                            source_node_name=incoming_connection.source_node_name,
+                            source_parameter_name=incoming_connection.source_parameter_name,
+                            target_node_name=request.source_node_name,
+                            target_parameter_name=request.source_parameter_name,
+                        )
+                    )
+                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                        logger.warning(
+                            "Failed to break incoming connection from %s.%s: %s",
+                            incoming_connection.source_node_name,
+                            incoming_connection.source_parameter_name,
+                            delete_result,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to break incoming connection from %s.%s: %s",
+                        incoming_connection.source_node_name,
+                        incoming_connection.source_parameter_name,
+                        e,
+                    )
+
+            # Break outgoing connections
+            for outgoing_connection in connections_result.outgoing_connections:
+                try:
+                    delete_result = GriptapeNodes.handle_request(
+                        DeleteConnectionRequest(
+                            source_node_name=request.source_node_name,
+                            source_parameter_name=request.source_parameter_name,
+                            target_node_name=outgoing_connection.target_node_name,
+                            target_parameter_name=outgoing_connection.target_parameter_name,
+                        )
+                    )
+                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
+                        logger.warning(
+                            "Failed to break outgoing connection to %s.%s: %s",
+                            outgoing_connection.target_node_name,
+                            outgoing_connection.target_parameter_name,
+                            delete_result,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to break outgoing connection to %s.%s: %s",
+                        outgoing_connection.target_node_name,
+                        outgoing_connection.target_parameter_name,
+                        e,
+                    )
+
         # Handle incoming connections
         if connections_result.has_incoming_connections and request.input_conversion:
             # Create intermediate node for input conversion
@@ -3330,50 +3384,6 @@ class NodeManager:
                     )
             except Exception as e:
                 return MigrateParameterResultFailure(result_details=f"Failed to migrate parameter value: {e!s}")
-
-        # Break original connections if requested
-        if request.break_connections:
-            try:
-                # Break incoming connections
-                for incoming_connection in connections_result.incoming_connections:
-                    delete_result = GriptapeNodes.handle_request(
-                        DeleteConnectionRequest(
-                            source_node_name=incoming_connection.source_node_name,
-                            source_parameter_name=incoming_connection.source_parameter_name,
-                            target_node_name=request.source_node_name,
-                            target_parameter_name=request.source_parameter_name,
-                        )
-                    )
-                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
-                        # Log warning but don't fail the migration
-                        logger.warning(
-                            "Failed to break incoming connection from %s.%s: %s",
-                            incoming_connection.source_node_name,
-                            incoming_connection.source_parameter_name,
-                            delete_result,
-                        )
-
-                # Break outgoing connections
-                for outgoing_connection in connections_result.outgoing_connections:
-                    delete_result = GriptapeNodes.handle_request(
-                        DeleteConnectionRequest(
-                            source_node_name=request.source_node_name,
-                            source_parameter_name=request.source_parameter_name,
-                            target_node_name=outgoing_connection.target_node_name,
-                            target_parameter_name=outgoing_connection.target_parameter_name,
-                        )
-                    )
-                    if not isinstance(delete_result, DeleteConnectionResultSuccess):
-                        # Log warning but don't fail the migration
-                        logger.warning(
-                            "Failed to break outgoing connection to %s.%s: %s",
-                            outgoing_connection.target_node_name,
-                            outgoing_connection.target_parameter_name,
-                            delete_result,
-                        )
-            except Exception as e:
-                # Log warning but don't fail the migration
-                logger.warning("Failed to break original connections: %s", e)
 
         return MigrateParameterResultSuccess(
             result_details=f"Successfully migrated parameter '{request.source_parameter_name}' from '{request.source_node_name}' to '{request.target_parameter_name}' on '{request.target_node_name}'."
