@@ -82,9 +82,6 @@ class RescaleImage(ControlNode):
         )
 
     def _migrate(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult | None:  # noqa: ARG002
-        # TODO: Add Execution parameters (https://github.com/griptape-ai/griptape-nodes/issues/TBD)
-        # TODO: Handle Multiple Connections (https://github.com/griptape-ai/griptape-nodes/issues/TBD)
-
         # Create the new node positioned relative to this one
         new_node_name = f"{self.name}_migrated"
 
