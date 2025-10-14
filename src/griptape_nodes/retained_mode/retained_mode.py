@@ -562,7 +562,7 @@ class RetainedMode:
         return result
 
     @classmethod
-    def create_node_relative_to(
+    def create_node_relative_to(  # noqa: PLR0913
         cls,
         reference_node_name: str,
         new_node_type: str,
