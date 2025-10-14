@@ -391,6 +391,7 @@ class PublishWorkflowRequest(RequestPayload):
     execute_on_publish: bool = False
     published_workflow_file_name: str | None = None
     pickle_control_flow_result: bool = False
+    metadata: dict | None = None
 
 
 @dataclass
@@ -403,6 +404,7 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
     """
 
     published_workflow_file_path: str
+    metadata: dict | None = None
 
 
 @dataclass
