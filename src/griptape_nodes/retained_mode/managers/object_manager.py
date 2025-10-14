@@ -107,7 +107,7 @@ class ObjectManager:
             result_details = details
         return RenameObjectResultSuccess(final_name=final_name, result_details=result_details)
 
-    def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
+    async def on_clear_all_object_state_request(self, request: ClearAllObjectStateRequest) -> ResultPayload:  # noqa: C901
         if not request.i_know_what_im_doing:
             details = "Attempted to clear all object state and delete everything. Failed because they didn't know what they were doing."
             logger.warning(details)
@@ -117,7 +117,7 @@ class ObjectManager:
         flows = self.get_filtered_subset(type=ControlFlow)
         for flow_name in flows:
             if GriptapeNodes.FlowManager().check_for_existing_running_flow():
-                result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow_name))
+                result = await GriptapeNodes.ahandle_request(CancelFlowRequest(flow_name=flow_name))
                 if not result.succeeded():
                     details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)

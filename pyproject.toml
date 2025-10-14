@@ -27,6 +27,7 @@ dependencies = [
   "huggingface-hub[xf-xet]>=0.28.0",
   "rich>=14.1.0",
   "semver>=3.0.4",
+  "aiofiles>=25.1.0",
 ]
 
 [project.optional-dependencies]
