@@ -55,14 +55,11 @@ class GrayscaleImage(BaseImageProcessor):
 
     def _get_processing_description(self) -> str:
         """Get description of what this processor does."""
-        return "image grayscale conversion"
+        return "grayscale conversion"
 
     def _process_image(self, pil_image: Image.Image) -> Image.Image:
         """Process the PIL image by converting to grayscale."""
         saturation = 0
-
-        # Debug logging
-        from griptape_nodes.retained_mode.griptape_nodes import logger
 
         logger.debug(f"{self.name}: Processing image with saturation={saturation}")
 
@@ -72,9 +69,13 @@ class GrayscaleImage(BaseImageProcessor):
 
         return pil_image
 
+    def _validate_custom_parameters(self) -> list[Exception] | None:
+        """Validate custom parameters."""
+        return None
+
     def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
-        return "_eq"
+        return "_grayscale"
 
     def process(self) -> None:
         """Main workflow execution method."""
