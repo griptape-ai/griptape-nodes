@@ -250,45 +250,43 @@ class NodeExecutor:
             # Otherwise, it's a list of one node!
             node_names = [node.name]
 
-        # Temporarily restore control connections to original nodes for packaging
-        self._toggle_control_connections(node, restore_to_original=True)
-        try:
-            request = PackageNodesAsSerializedFlowRequest(
-                node_names=node_names,
-                start_node_type=start_node_type,
-                end_node_type=end_node_type,
-                start_end_specific_library_name=library_name,
-                output_parameter_prefix=output_parameter_prefix,
-                entry_control_node_name=None,
-                entry_control_parameter_name=None,
-            )
-            package_result = GriptapeNodes.handle_request(request)
-            if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
-                msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
-                raise RuntimeError(msg)  # noqa: TRY004
+        # Pass the proxy node if this is a NodeGroupProxyNode so serialization can use stored connections
+        proxy_node_for_packaging = node if isinstance(node, NodeGroupProxyNode) else None
 
-            file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
-            workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
-                file_name=file_name,
-                serialized_flow_commands=package_result.serialized_flow_commands,
-                workflow_shape=package_result.workflow_shape,
-                pickle_control_flow_result=True,
-            )
+        request = PackageNodesAsSerializedFlowRequest(
+            node_names=node_names,
+            start_node_type=start_node_type,
+            end_node_type=end_node_type,
+            start_end_specific_library_name=library_name,
+            output_parameter_prefix=output_parameter_prefix,
+            entry_control_node_name=None,
+            entry_control_parameter_name=None,
+            proxy_node=proxy_node_for_packaging,
+        )
+        package_result = GriptapeNodes.handle_request(request)
+        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            msg = f"Failed to package node '{node.name}'. Error: {package_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
 
-            workflow_result = GriptapeNodes.handle_request(workflow_file_request)
-            if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-                msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
-                raise RuntimeError(msg)  # noqa: TRY004
+        file_name = f"{sanitized_node_name}_{sanitized_library_name}_packaged_flow"
+        workflow_file_request = SaveWorkflowFileFromSerializedFlowRequest(
+            file_name=file_name,
+            serialized_flow_commands=package_result.serialized_flow_commands,
+            workflow_shape=package_result.workflow_shape,
+            pickle_control_flow_result=True,
+        )
 
-            return PublishLocalWorkflowResult(
-                workflow_result=workflow_result,
-                file_name=file_name,
-                output_parameter_prefix=output_parameter_prefix,
-                package_result=package_result,
-            )
-        finally:
-            # Always remove control connections from original nodes after packaging, even on failure
-            self._toggle_control_connections(node, restore_to_original=False)
+        workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+        if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+            msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        return PublishLocalWorkflowResult(
+            workflow_result=workflow_result,
+            file_name=file_name,
+            output_parameter_prefix=output_parameter_prefix,
+            package_result=package_result,
+        )
 
     async def _publish_library_workflow(
         self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str

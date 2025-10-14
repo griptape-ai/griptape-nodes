@@ -2002,6 +2002,7 @@ class NodeGroupProxyNode(BaseNode):
         execution_type = set()
         for node in node_group.nodes.values():
             execution_type.add(node.get_parameter_value(node.execution_environment.name))
+        # TODO: Set this by group in the UI, not set on the node itself. https://github.com/griptape-ai/griptape-vsl-gui/issues/1429
         if len(execution_type) > 1:
             # Hoping this check can be removed by UI updates.
             # For now, we are setting execution type individually on a parameters in all three of the nodes. we want their execution types to all be matching, or we fail.

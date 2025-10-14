@@ -1,8 +1,14 @@
-from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from __future__ import annotations
 
-from griptape_nodes.exe_types.node_types import NodeDependencies
-from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import NodeDependencies, NodeGroupProxyNode
+    from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
+    from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
+
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -10,9 +16,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
-from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
 
 
 @dataclass(kw_only=True)
@@ -231,7 +235,7 @@ class SerializedFlowCommands:
         SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
     set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
-    sub_flows_commands: list["SerializedFlowCommands"]
+    sub_flows_commands: list[SerializedFlowCommands]
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
 
@@ -440,6 +444,9 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
+    proxy_node: NodeGroupProxyNode | None = (
+        None  # NodeGroupProxyNode if packaging nodes from a proxy, used to access original connections
+    )
 
 
 @dataclass
