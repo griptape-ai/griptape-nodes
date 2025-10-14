@@ -58,6 +58,7 @@ if TYPE_CHECKING:
         StaticFilesManager,
     )
     from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+    from griptape_nodes.retained_mode.managers.user_manager import UserManager
     from griptape_nodes.retained_mode.managers.variable_manager import (
         VariablesManager,
     )
@@ -93,6 +94,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _mcp_manager: MCPManager
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
+    _user_manager: UserManager
 
     def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -120,6 +122,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             StaticFilesManager,
         )
         from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+        from griptape_nodes.retained_mode.managers.user_manager import UserManager
         from griptape_nodes.retained_mode.managers.variable_manager import (
             VariablesManager,
         )
@@ -156,6 +159,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._session_manager = SessionManager(self._engine_identity_manager, self._event_manager)
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
+            self._user_manager = UserManager(self._secrets_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -323,6 +327,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._workflow_variables_manager
 
     @classmethod
+    def UserManager(cls) -> UserManager:
+        return GriptapeNodes.get_instance()._user_manager
+
+    @classmethod
     def clear_data(cls) -> None:
         # Get canvas
         more_flows = True
@@ -374,6 +382,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
             # Get engine name
             engine_name = GriptapeNodes.EngineIdentityManager().engine_name
 
+            # Get user email and organization
+            user_email = GriptapeNodes.UserManager().user_email
+            user_organization = GriptapeNodes.UserManager().user_organization
+
             return EngineHeartbeatResultSuccess(
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
@@ -381,6 +393,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 engine_id=GriptapeNodes.EngineIdentityManager().active_engine_id,
                 session_id=GriptapeNodes.SessionManager().active_session_id,
                 timestamp=datetime.now(tz=UTC).isoformat(),
+                user_email=user_email,
+                user_organization=user_organization,
                 result_details="Engine heartbeat successful",
                 **instance_info,
                 **workflow_info,

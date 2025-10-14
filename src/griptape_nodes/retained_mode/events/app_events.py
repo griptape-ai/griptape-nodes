@@ -201,6 +201,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         workflow_file_path: Path to workflow file (None if none)
         has_active_flow: Whether there's an active flow running
         engine_name: Human-readable engine name
+        user_email: User's email address (None if not logged in)
+        user_organization: User's organization name (None if not logged in)
     """
 
     heartbeat_id: str
@@ -216,6 +218,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     workflow_file_path: str | None
     has_active_flow: bool
     engine_name: str
+    user_email: str | None
+    user_organization: str | None
 
 
 @dataclass

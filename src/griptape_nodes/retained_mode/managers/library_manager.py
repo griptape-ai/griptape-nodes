@@ -1604,6 +1604,13 @@ class LibraryManager:
         session_id = GriptapeNodes.get_session_id()
         session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
 
+        # Get user email and organization
+        user_email = GriptapeNodes.UserManager().user_email
+        user_info = f" | User: {user_email}" if user_email else ""
+
+        user_organization = GriptapeNodes.UserManager().user_organization
+        org_info = f" | Org: {user_organization}" if user_organization else ""
+
         nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
         message = Panel(
             Align.center(
@@ -1612,7 +1619,7 @@ class LibraryManager:
                 vertical="middle",
             ),
             title="Griptape Nodes Engine Started",
-            subtitle=f"[green]{engine_version}{session_info}[/green]",
+            subtitle=f"[green]{engine_version}{session_info}{user_info}{org_info}[/green]",
             border_style="green",
             padding=(1, 4),
         )
