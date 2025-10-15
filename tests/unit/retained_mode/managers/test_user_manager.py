@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import httpx
 
+from griptape_nodes.retained_mode.events.app_events import OrganizationInfo, UserInfo
 from griptape_nodes.retained_mode.managers.user_manager import UserManager
 
 # Expected timeout value from UserManager
@@ -12,8 +13,8 @@ EXPECTED_TIMEOUT = 5.0
 class TestUserManager:
     """Test UserManager functionality for fetching and caching user email."""
 
-    def test_user_email_success(self) -> None:
-        """Test successful user email fetch from Griptape Cloud API."""
+    def test_user_success(self) -> None:
+        """Test successful user fetch from Griptape Cloud API."""
         # Create mock secrets manager
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -32,13 +33,16 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email == "test@example.com"
+            assert isinstance(user_info, UserInfo)
+            assert user_info.id == "test-uuid"
+            assert user_info.email == "test@example.com"
+            assert user_info.name == "Test User"
             mock_secrets_manager.get_secret.assert_called_once_with("GT_CLOUD_API_KEY")
 
-    def test_user_email_cached_property(self) -> None:
-        """Test that user_email property is cached and httpx.get is only called once."""
+    def test_user_cached_property(self) -> None:
+        """Test that user property is cached and httpx.get is only called once."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
 
@@ -51,29 +55,33 @@ class TestUserManager:
             user_manager = UserManager(mock_secrets_manager)
 
             # Access the property twice
-            email1 = user_manager.user_email
-            email2 = user_manager.user_email
+            user1 = user_manager.user
+            user2 = user_manager.user
 
             # Both should return the same value
-            assert email1 == "cached@example.com"
-            assert email2 == "cached@example.com"
+            assert isinstance(user1, UserInfo)
+            assert isinstance(user2, UserInfo)
+            assert user1.id == "test-uuid"
+            assert user1.email == "cached@example.com"
+            assert user2.id == "test-uuid"
+            assert user2.email == "cached@example.com"
 
             # httpx.get should only be called once due to caching
             assert mock_get.call_count == 1
 
-    def test_user_email_no_api_key(self) -> None:
+    def test_user_no_api_key(self) -> None:
         """Test that no HTTP request is made when API key is not available."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = None
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get") as mock_get:
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
             mock_get.assert_not_called()
 
-    def test_user_email_http_status_error(self) -> None:
+    def test_user_http_status_error(self) -> None:
         """Test handling of HTTP status errors (401, 403, 500, etc.)."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -86,11 +94,11 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", side_effect=http_error):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
 
-    def test_user_email_request_error(self) -> None:
+    def test_user_request_error(self) -> None:
         """Test handling of network request errors."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -100,11 +108,11 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", side_effect=request_error):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
 
-    def test_user_email_empty_users_list(self) -> None:
+    def test_user_empty_users_list(self) -> None:
         """Test handling of empty users array in API response."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -114,11 +122,11 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
 
-    def test_user_email_missing_users_key(self) -> None:
+    def test_user_missing_users_key(self) -> None:
         """Test handling of response without 'users' key."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -128,11 +136,11 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
 
-    def test_user_email_custom_base_url(self) -> None:
+    def test_user_custom_base_url(self) -> None:
         """Test that custom GT_CLOUD_BASE_URL environment variable is used."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -148,14 +156,16 @@ class TestUserManager:
             ) as mock_get,
         ):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email == "test@example.com"
+            assert isinstance(user_info, UserInfo)
+            assert user_info.id == "test-uuid"
+            assert user_info.email == "test@example.com"
             # Verify the correct URL was used
             call_args = mock_get.call_args
             assert call_args[0][0] == f"{custom_url}/api/users"
 
-    def test_user_email_default_base_url(self) -> None:
+    def test_user_default_base_url(self) -> None:
         """Test that default base URL is used when environment variable is not set."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -174,14 +184,15 @@ class TestUserManager:
             ) as mock_get,
         ):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email == "test@example.com"
+            assert isinstance(user_info, UserInfo)
+            assert user_info.email == "test@example.com"
             # Verify default URL was used
             call_args = mock_get.call_args
             assert call_args[0][0] == "https://cloud.griptape.ai/api/users"
 
-    def test_user_email_unexpected_exception(self) -> None:
+    def test_user_unexpected_exception(self) -> None:
         """Test handling of unexpected exceptions during API call."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -190,11 +201,11 @@ class TestUserManager:
             "griptape_nodes.retained_mode.managers.user_manager.httpx.get", side_effect=Exception("Unexpected error")
         ):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email is None
+            assert user_info is None
 
-    def test_user_email_authorization_header(self) -> None:
+    def test_user_authorization_header(self) -> None:
         """Test that correct Authorization header is sent with API request."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "my-secret-key"
@@ -206,16 +217,17 @@ class TestUserManager:
             "griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response
         ) as mock_get:
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email == "test@example.com"
+            assert isinstance(user_info, UserInfo)
+            assert user_info.email == "test@example.com"
 
             # Verify Authorization header was set correctly
             call_kwargs = mock_get.call_args[1]
             assert "headers" in call_kwargs
             assert call_kwargs["headers"]["Authorization"] == "Bearer my-secret-key"
 
-    def test_user_email_timeout_parameter(self) -> None:
+    def test_user_timeout_parameter(self) -> None:
         """Test that request timeout is set appropriately."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
@@ -227,17 +239,18 @@ class TestUserManager:
             "griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response
         ) as mock_get:
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            assert email == "test@example.com"
+            assert isinstance(user_info, UserInfo)
+            assert user_info.email == "test@example.com"
 
             # Verify timeout was set
             call_kwargs = mock_get.call_args[1]
             assert "timeout" in call_kwargs
             assert call_kwargs["timeout"] == EXPECTED_TIMEOUT
 
-    def test_user_email_multiple_users_returns_first(self) -> None:
-        """Test that when multiple users are returned, the first one's email is used."""
+    def test_user_multiple_users_returns_first(self) -> None:
+        """Test that when multiple users are returned, the first one's info is used."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
 
@@ -251,10 +264,12 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            email = user_manager.user_email
+            user_info = user_manager.user
 
-            # Should return first user's email
-            assert email == "first@example.com"
+            # Should return first user's info
+            assert isinstance(user_info, UserInfo)
+            assert user_info.id == "uuid-1"
+            assert user_info.email == "first@example.com"
 
     def test_user_organization_success(self) -> None:
         """Test successful user organization fetch from Griptape Cloud API."""
@@ -274,9 +289,11 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            assert org_name == "Test Organization"
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "test-org-uuid"
+            assert org_info.name == "Test Organization"
             mock_secrets_manager.get_secret.assert_called_once_with("GT_CLOUD_API_KEY")
 
     def test_user_organization_cached_property(self) -> None:
@@ -299,8 +316,12 @@ class TestUserManager:
             org2 = user_manager.user_organization
 
             # Both should return the same value
-            assert org1 == "Cached Organization"
-            assert org2 == "Cached Organization"
+            assert isinstance(org1, OrganizationInfo)
+            assert isinstance(org2, OrganizationInfo)
+            assert org1.id == "test-org-uuid"
+            assert org1.name == "Cached Organization"
+            assert org2.id == "test-org-uuid"
+            assert org2.name == "Cached Organization"
 
             # httpx.get should only be called once due to caching
             assert mock_get.call_count == 1
@@ -392,9 +413,11 @@ class TestUserManager:
             ) as mock_get,
         ):
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            assert org_name == "Test Organization"
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "test-org-uuid"
+            assert org_info.name == "Test Organization"
             # Verify the correct URL was used
             call_args = mock_get.call_args
             assert call_args[0][0] == f"{custom_url}/api/organizations"
@@ -420,9 +443,11 @@ class TestUserManager:
             ) as mock_get,
         ):
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            assert org_name == "Test Organization"
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "test-org-uuid"
+            assert org_info.name == "Test Organization"
             # Verify default URL was used
             call_args = mock_get.call_args
             assert call_args[0][0] == "https://cloud.griptape.ai/api/organizations"
@@ -454,9 +479,11 @@ class TestUserManager:
             "griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response
         ) as mock_get:
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            assert org_name == "Test Organization"
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "test-org-uuid"
+            assert org_info.name == "Test Organization"
 
             # Verify Authorization header was set correctly
             call_kwargs = mock_get.call_args[1]
@@ -477,9 +504,11 @@ class TestUserManager:
             "griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response
         ) as mock_get:
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            assert org_name == "Test Organization"
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "test-org-uuid"
+            assert org_info.name == "Test Organization"
 
             # Verify timeout was set
             call_kwargs = mock_get.call_args[1]
@@ -487,7 +516,7 @@ class TestUserManager:
             assert call_kwargs["timeout"] == EXPECTED_TIMEOUT
 
     def test_user_organization_multiple_organizations_returns_first(self) -> None:
-        """Test that when multiple organizations are returned, the first one's name is used."""
+        """Test that when multiple organizations are returned, the first one's info is used."""
         mock_secrets_manager = Mock()
         mock_secrets_manager.get_secret.return_value = "test-api-key"
 
@@ -501,7 +530,9 @@ class TestUserManager:
 
         with patch("griptape_nodes.retained_mode.managers.user_manager.httpx.get", return_value=mock_response):
             user_manager = UserManager(mock_secrets_manager)
-            org_name = user_manager.user_organization
+            org_info = user_manager.user_organization
 
-            # Should return first organization's name
-            assert org_name == "First Organization"
+            # Should return first organization's info
+            assert isinstance(org_info, OrganizationInfo)
+            assert org_info.id == "org-1"
+            assert org_info.name == "First Organization"

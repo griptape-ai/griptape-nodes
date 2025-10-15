@@ -382,8 +382,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             # Get engine name
             engine_name = GriptapeNodes.EngineIdentityManager().engine_name
 
-            # Get user email and organization
-            user_email = GriptapeNodes.UserManager().user_email
+            # Get user and organization
+            user = GriptapeNodes.UserManager().user
             user_organization = GriptapeNodes.UserManager().user_organization
 
             return EngineHeartbeatResultSuccess(
@@ -393,7 +393,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 engine_id=GriptapeNodes.EngineIdentityManager().active_engine_id,
                 session_id=GriptapeNodes.SessionManager().active_session_id,
                 timestamp=datetime.now(tz=UTC).isoformat(),
-                user_email=user_email,
+                user=user,
                 user_organization=user_organization,
                 result_details="Engine heartbeat successful",
                 **instance_info,
