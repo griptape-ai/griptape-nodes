@@ -29,7 +29,6 @@ When developing, follow this iteration loop:
 **Simple, Readable Logic Flow** - Prefer simple, easy-to-follow logic over complex nested expressions:
 
 - Use explicit if/else statements instead of ternary operators or nested conditionals
-- Put failure cases at the top so the success path flows naturally to the bottom
 - Avoid complex nested expressions - break them into clear, separate statements
 - Example: Instead of `value = func() if condition else None`, use:
     ```python
@@ -39,11 +38,96 @@ When developing, follow this iteration loop:
         value = None
     ```
 
-**Avoid Lazy Imports** - Prefer importing modules at the top of the file as a standard practice:
+**CRITICAL: Evaluate ALL failure cases first, success path ONLY at the end** - This is MANDATORY unless explicitly asked otherwise:
 
-- Put imports at the top of the file in the standard order whenever possible
-- Only use lazy imports (imports inside functions) as a last resort when necessary to avoid circular imports or other import-time issues
-- This improves readability, makes dependencies clear, and avoids most import-time problems
+- ALL validation checks, error conditions, and failure cases MUST be at the top of the function
+- Each failure case should exit immediately (return/raise) with a clear error message
+- The success path MUST be at the absolute bottom of the function - never return in the middle
+- If there are multiple return statements in the success path, you're probably doing it wrong (unless explicitly requested)
+- Bad example:
+    ```python
+    def process_data(value):
+        if value > 0:
+            result = calculate(value)
+            return result  # SUCCESS IN MIDDLE
+        return "Error: value must be positive"  # Failure at end
+    ```
+- Good example:
+    ```python
+    def process_data(value):
+        if value <= 0:  # FAILURE FIRST
+            return "Error: value must be positive"
+        if value > 1000:  # MORE FAILURES
+            return "Error: value too large"
+
+        # SUCCESS PATH AT END
+        result = calculate(value)
+        return result
+    ```
+
+**CRITICAL: Do NOT use lazy imports** - Imports MUST be at the top of the file:
+
+- ALL imports MUST be at the top of the file in standard order - this is the default and expected pattern
+- NEVER use lazy imports (imports inside functions) unless absolutely necessary to resolve a circular import
+- If you think you need a lazy import, STOP and explain to the user why you think it's necessary, then ASK for confirmation before proceeding
+- The ONLY valid reason for a lazy import is an unavoidable circular import that cannot be resolved through refactoring
+- If you must use a lazy import, you MUST add a comment explaining exactly why it's necessary and what circular import it's resolving
+- Bad example:
+    ```python
+    def process_data(value):
+        from some_module import helper  # NO! Move to top
+        return helper(value)
+    ```
+- Good example (only if circular import is unavoidable):
+    ```python
+    def process_data(value):
+        # Lazy import required: circular dependency between this module and some_module
+        # some_module imports MyClass from this file, and we need helper from some_module
+        from some_module import helper
+        return helper(value)
+    ```
+
+## Exception Handling
+
+**CRITICAL: Only wrap code that actually raises exceptions** - Never add try/except blocks speculatively:
+
+- Before adding exception handling, verify the code actually raises exceptions (check documentation, source code, or type hints)
+- Do NOT add try/except blocks "just in case" or because code "might" fail
+- Unnecessary exception handling creates misleading code and unnecessary nesting
+- If you're unsure whether code raises exceptions, ASK the user first
+
+**Use specific, narrow exception blocks** - Broad exception handling makes debugging impossible:
+
+- Catch ONLY the specific exception types that can be raised (e.g., `FileNotFoundError`, not `Exception`)
+- Keep try blocks as small as possible - wrap only the exact line(s) that raise exceptions
+- Each distinct operation that can fail should have its own try/except with a specific error message
+- Never use bare `except:` or catch `Exception` unless explicitly required
+- Bad example:
+    ```python
+    try:
+        data = load_file(path)
+        processed = transform_data(data)
+        result = save_output(processed)
+    except Exception as e:
+        return f"Error: {e}"
+    ```
+- Good example:
+    ```python
+    try:
+        data = load_file(path)
+    except FileNotFoundError:
+        return f"Error: File not found at {path}"
+
+    try:
+        processed = transform_data(data)
+    except ValueError as e:
+        return f"Error: Invalid data format - {e}"
+
+    try:
+        result = save_output(processed)
+    except PermissionError:
+        return f"Error: Cannot write to output location"
+    ```
 
 ## Architecture Overview
 
