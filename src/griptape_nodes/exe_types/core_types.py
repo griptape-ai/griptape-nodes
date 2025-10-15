@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
@@ -752,6 +753,51 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         # Combine them both to get what we need for the UI.
         event_data.update(dict_data)
         return event_data
+
+
+class DeprecationMessage(ParameterMessage):
+    """A specialized ParameterMessage for deprecation warnings with default warning styling."""
+
+    # Keep the same element_type as ParameterMessage so UI recognizes it
+    element_type: str = "ParameterMessage"
+
+    def __init__(
+        self,
+        value: str,
+        button_text: str,
+        migrate_function: Callable[[Any, Any], Any],
+        **kwargs,
+    ):
+        """Initialize a deprecation message with default warning styling.
+
+        Args:
+            value: The deprecation message text
+            button_text: Text for the migration button
+            migrate_function: Function to call when migration button is clicked
+            **kwargs: Additional arguments passed to ParameterMessage
+        """
+        # Set defaults for deprecation messages
+        kwargs.setdefault("variant", "warning")
+        kwargs.setdefault("full_width", True)
+
+        # Add the button trait
+        from griptape_nodes.traits.button import Button
+
+        kwargs.setdefault("traits", {})
+        kwargs["traits"][Button(label=button_text, icon="plus", variant="secondary", on_click=migrate_function)] = None
+
+        super().__init__(value=value, **kwargs)
+
+    def to_dict(self) -> dict:
+        """Override to_dict to use element_type instead of class name.
+
+        The base to_dict() method uses self.__class__.__name__ which would return
+        "DeprecationMessage", but the UI expects element_type to be "ParameterMessage"
+        to recognize it as a valid ParameterMessage element.
+        """
+        data = super().to_dict()
+        data["element_type"] = self.element_type  # Use "ParameterMessage" not "DeprecationMessage"
+        return data
 
 
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):

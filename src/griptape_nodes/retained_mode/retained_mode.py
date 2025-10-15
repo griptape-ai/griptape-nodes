@@ -2,7 +2,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
+from typing import Any, Literal
 
 from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
 from griptape_nodes.retained_mode.events.base_events import (
@@ -45,12 +45,19 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
+    CreateNodeResultFailure,
     DeleteNodeRequest,
     GetNodeMetadataRequest,
+    GetNodeMetadataResultFailure,
+    GetNodeMetadataResultSuccess,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
     SetLockNodeStateRequest,
+    SetLockNodeStateResultFailure,
+    SetLockNodeStateResultSuccess,
     SetNodeMetadataRequest,
+    SetNodeMetadataResultFailure,
+    SetNodeMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectRequest,
@@ -58,13 +65,21 @@ from griptape_nodes.retained_mode.events.object_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AlterParameterDetailsRequest,
+    ConversionConfig,
+    GetConnectionsForParameterRequest,
     GetParameterDetailsRequest,
     GetParameterValueRequest,
     GetParameterValueResultFailure,
+    MigrateParameterRequest,
+    MigrateParameterResultFailure,
+    MigrateParameterResultSuccess,
     RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+# Type alias for offset side values
+OffsetSide = Literal["top_left", "top", "top_right", "right", "bottom_right", "bottom", "bottom_left", "left"]
 
 MIN_NODES = 2
 
@@ -230,7 +245,7 @@ class RetainedMode:
         node_name: str | None = None,
         parent_flow_name: str | None = None,
         metadata: dict[Any, Any] | None = None,
-    ) -> ResultPayload:
+    ) -> str | CreateNodeResultFailure:
         """Creates a node of the specified type and adds it to the current or a specified parent flow.
 
         Supports custom naming and metadata (e.g., UI position, display name, tags).
@@ -350,7 +365,9 @@ class RetainedMode:
         return result
 
     @classmethod
-    def set_lock_node_state(cls, *, node_name: str | None = None, lock: bool = True) -> ResultPayload:
+    def set_lock_node_state(
+        cls, *, node_name: str | None = None, lock: bool = True
+    ) -> SetLockNodeStateResultSuccess | SetLockNodeStateResultFailure:
         """Sets the lock state of a node.
 
         Args:
@@ -388,6 +405,30 @@ class RetainedMode:
             result = cmd.get_connections_for_node("my_node")
         """
         request = ListConnectionsForNodeRequest(node_name=node_name)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def get_connections_for_parameter(cls, parameter_name: str, node_name: str | None = None) -> ResultPayload:
+        """Gets all connections associated with a specific parameter on a node.
+
+        This includes both incoming and outgoing connections to/from the parameter.
+
+        Args:
+            parameter_name (str): Name of the parameter to get connections for.
+            node_name (str | None): Name of the node containing the parameter. If None, uses current context.
+
+        Returns:
+            ResultPayload: Contains connection details for the parameter.
+
+        Example:
+            # Get connections for a parameter on a specific node
+            result = cmd.get_connections_for_parameter("input_image", "my_node")
+
+            # Get connections for a parameter on the current node
+            result = cmd.get_connections_for_parameter("scale")
+        """
+        request = GetConnectionsForParameterRequest(parameter_name=parameter_name, node_name=node_name)
         result = GriptapeNodes().handle_request(request)
         return result
 
@@ -528,6 +569,259 @@ class RetainedMode:
             result = cmd.del_param("my_node", "my_param")
         """
         request = RemoveParameterFromNodeRequest(parameter_name=parameter_name, node_name=node_name)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def create_node_relative_to(  # noqa: PLR0911, PLR0913
+        cls,
+        reference_node_name: str,
+        new_node_type: str,
+        new_node_name: str | None = None,
+        specific_library_name: str | None = None,
+        offset_side: OffsetSide = "right",
+        offset_x: int = 0,
+        offset_y: int = 0,
+        *,
+        swap: bool = False,
+        lock: bool = True,
+        match_size: bool = False,
+    ) -> (
+        str
+        | GetNodeMetadataResultFailure
+        | CreateNodeResultFailure
+        | SetNodeMetadataResultFailure
+        | SetLockNodeStateResultFailure
+    ):
+        """Create a new node positioned relative to an existing node.
+
+        Args:
+            reference_node_name: Name of the existing node to position relative to
+            new_node_type: Type of the new node to create
+            new_node_name: Name for the new node (optional, will be generated if not provided)
+            specific_library_name: Specific library to use for the new node
+            offset_side: Reference side/position from reference node (OffsetSide)
+                        - "top_left", "top_right", "bottom_left", "bottom_right": corner positions
+                        - "top", "bottom", "left", "right": midpoint positions
+                        - Invalid values default to "right"
+            offset_x: Horizontal offset (behavior depends on swap):
+                      - When swap=False: pixels (negative = left, positive = right)
+                      - When swap=True: additional pixel spacing between nodes (negative = closer, positive = further)
+            offset_y: Vertical offset (behavior depends on swap):
+                      - When swap=False: pixels (negative = up, positive = down)
+                      - When swap=True: additional pixel spacing between nodes (negative = closer, positive = further)
+            swap: If True, create new node at reference position and move reference node relative to new node.
+                  Also changes offset_x/offset_y to be additional pixel spacing between nodes instead of absolute position offsets.
+            lock: If True, lock the old node
+            match_size: If True, the new node will have the same width and height as the reference node,
+                       ensuring consistent and predictable spacing calculations. Defaults to False.
+
+        Returns:
+            String node name if successful, ResultPayload if failed
+        """
+        # Get the reference node's metadata
+        get_metadata_result = GriptapeNodes().handle_request(GetNodeMetadataRequest(node_name=reference_node_name))
+        if not isinstance(get_metadata_result, GetNodeMetadataResultSuccess):
+            msg = f"{reference_node_name}: Failed to get reference node's metadata: {get_metadata_result}"
+            logger.warning(msg)
+            return get_metadata_result
+
+        reference_metadata = get_metadata_result.metadata
+        reference_position = reference_metadata.get("position", {"x": 0, "y": 0})
+        reference_size = reference_metadata.get("size", {"width": 200, "height": 100})
+
+        # Create the new node, optionally with matching size from reference node
+        metadata = None
+        if match_size:
+            metadata = {"size": reference_size}
+        create_result = cls.create_node(
+            node_type=new_node_type,
+            node_name=new_node_name,
+            specific_library_name=specific_library_name,
+            metadata=metadata,
+        )
+
+        # Check if creation succeeded, create_node returns the node name if successful
+        if isinstance(create_result, str):
+            new_node_name = create_result
+        else:
+            return create_result
+
+        # Calculate position based on offset_side and offsets
+        new_position = cls._calculate_relative_position(
+            reference_position, reference_size, offset_side, offset_x, offset_y, swap=swap
+        )
+
+        if swap:
+            # Swap mode: Create new node at reference position, move reference node relative to new node
+            new_position = reference_position
+            reference_new_position = cls._calculate_relative_position(
+                new_position, reference_size, offset_side, offset_x, offset_y, swap=swap
+            )
+
+            # Set the new node's position (at reference position)
+            set_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
+            )
+            if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set new node's position: {set_metadata_result}"
+                logger.warning(msg)
+                return set_metadata_result
+
+            # Move the reference node to its new position
+            set_reference_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=reference_node_name, metadata={"position": reference_new_position})
+            )
+            if not isinstance(set_reference_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set reference node's position: {set_reference_metadata_result}"
+                logger.warning(msg)
+                return set_reference_metadata_result
+
+        else:
+            # Normal mode: Create new node relative to reference node
+            new_position = cls._calculate_relative_position(
+                reference_position, reference_size, offset_side, offset_x, offset_y, swap=swap
+            )
+
+            # Set the new node's position
+            set_metadata_result = GriptapeNodes().handle_request(
+                SetNodeMetadataRequest(node_name=new_node_name, metadata={"position": new_position})
+            )
+            if not isinstance(set_metadata_result, SetNodeMetadataResultSuccess):
+                msg = f"{reference_node_name} -> {new_node_name}: Failed to set new node's position: {set_metadata_result}"
+                logger.warning(msg)
+                return set_metadata_result
+
+        if lock:
+            set_lock_node_state_result = cls.set_lock_node_state(node_name=reference_node_name, lock=True)
+            if not isinstance(set_lock_node_state_result, SetLockNodeStateResultSuccess):
+                msg = f"{reference_node_name}: Failed to lock reference node: {set_lock_node_state_result}"
+                logger.warning(msg)
+                return set_lock_node_state_result
+        return new_node_name
+
+    @classmethod
+    def _calculate_relative_position(  # noqa: PLR0913
+        cls,
+        base_position: dict,
+        base_size: dict,
+        offset_side: OffsetSide,
+        offset_x: int,
+        offset_y: int,
+        *,
+        swap: bool,
+    ) -> dict:
+        """Calculate position based on offset_side and offsets."""
+        if swap:
+            # For swap mode, offset_x/offset_y are additional pixel spacing between nodes
+            # Formula: reference_position - reference_size + offset  # noqa: ERA001
+            x_offset = base_position["x"] - base_size["width"] + offset_x
+            y_offset = base_position["y"] - base_size["height"] + offset_y
+            x_center = base_position["x"] - base_size["width"] // 2 + offset_x
+            y_center = base_position["y"] - base_size["height"] // 2 + offset_y
+            x_right = base_position["x"] + offset_x
+            y_bottom = base_position["y"] + offset_y
+        else:
+            # Absolute pixel offsets (normal mode)
+            effective_offset_x = offset_x
+            effective_offset_y = offset_y
+            # Calculate base offsets for each side (relative to reference node position)
+            x_offset = base_position["x"] + effective_offset_x
+            y_offset = base_position["y"] + effective_offset_y
+            x_center = base_position["x"] + base_size["width"] // 2 + effective_offset_x
+            y_center = base_position["y"] + base_size["height"] // 2 + effective_offset_y
+            x_right = base_position["x"] + base_size["width"] + effective_offset_x
+            y_bottom = base_position["y"] + base_size["height"] + effective_offset_y
+
+        # Position mapping
+        positions = {
+            "top_left": {"x": x_offset, "y": y_offset},
+            "top": {"x": x_center, "y": y_offset},
+            "top_right": {"x": x_right, "y": y_offset},
+            "right": {"x": x_right, "y": y_center},
+            "bottom_right": {"x": x_right, "y": y_bottom},
+            "bottom": {"x": x_center, "y": y_bottom},
+            "bottom_left": {"x": x_offset, "y": y_bottom},
+            "left": {"x": x_offset, "y": y_center},
+        }
+
+        return positions.get(offset_side, positions["right"])  # Default to right
+
+    @classmethod
+    def migrate_parameter(  # noqa: PLR0913
+        cls,
+        source_node_name: str,
+        target_node_name: str,
+        source_parameter_name: str,
+        target_parameter_name: str,
+        input_conversion: ConversionConfig | None = None,
+        output_conversion: ConversionConfig | None = None,
+        value_transform: Callable | None = None,
+        *,
+        break_connections: bool = True,
+    ) -> MigrateParameterResultSuccess | MigrateParameterResultFailure:
+        """Migrate a parameter from one node to another with optional conversions.
+
+        This command handles:
+        - Direct parameter renaming and connection migration
+        - Value transformation when no incoming connections exist
+        - Creation of intermediate conversion nodes for complex type conversions on incoming or outgoing connections
+        - Multiple incoming and outgoing connections (including execution parameters)
+
+        Args:
+            source_node_name (str): Name of the source node.
+            target_node_name (str): Name of the target node.
+            source_parameter_name (str): Name of the parameter to migrate from.
+            target_parameter_name (str): Name of the parameter to migrate to.
+            input_conversion (ConversionConfig, optional): Configuration for converting incoming connections.
+            output_conversion (ConversionConfig, optional): Configuration for converting outgoing connections.
+            value_transform (Callable, optional): Function to transform values when no incoming connections exist.
+            break_connections (bool, optional): If True, break any existing connections for the original parameter
+        Returns:
+            ResultPayload: Contains the result of the migration operation.
+
+        Example:
+            # Simple parameter migration
+            result = cmd.migrate_parameter("old_node", "new_node", "input_image", "input_image")
+
+            # Parameter migration with conversion
+            result = cmd.migrate_parameter(
+                "old_node", "new_node", "scale", "percentage_scale",
+                input_conversion=ConversionConfig(
+                    library="Griptape Nodes Library",
+                    node_type="Math",
+                    input_parameter="A",
+                    output_parameter="result",
+                    additional_parameters={
+                        "operation": "multiply [A * B]",
+                        "B": 100
+                    },
+                    offset_x=-300
+                ),
+                output_conversion=ConversionConfig(
+                    library="Griptape Nodes Library",
+                    node_type="Math",
+                    input_parameter="A",
+                    output_parameter="result",
+                    additional_parameters={
+                        "operation": "divide [A / B]",
+                        "B": 100
+                    },
+                    offset_x=50
+                ),
+                value_transform=lambda x: x * 100
+            )
+        """
+        request = MigrateParameterRequest(
+            source_node_name=source_node_name,
+            target_node_name=target_node_name,
+            source_parameter_name=source_parameter_name,
+            target_parameter_name=target_parameter_name,
+            input_conversion=input_conversion,
+            output_conversion=output_conversion,
+            value_transform=value_transform,
+            break_connections=break_connections,
+        )
         result = GriptapeNodes().handle_request(request)
         return result
 

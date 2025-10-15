@@ -66,10 +66,12 @@ class RescaleImage(BaseImageProcessor):
             )
             target_size_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
             self.add_parameter(target_size_param)
+            self.hide_parameter_by_name("target_size")
 
             # Percentage scale parameter (for percentage mode)
             percentage_scale_param = Parameter(
                 name="percentage_scale",
+                input_types=["int", "float"],
                 type="int",
                 default_value=self.DEFAULT_PERCENTAGE_SCALE,
                 tooltip=f"Scale factor as percentage ({self.MIN_PERCENTAGE_SCALE}-{self.MAX_PERCENTAGE_SCALE}%, 100% = original size)",

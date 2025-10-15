@@ -1501,6 +1501,28 @@
       }
     },
     {
+      "class_name": "GrayscaleImage",
+      "file_path": "griptape_nodes_library/image/grayscale_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert image to grayscale",
+        "display_name": "Grayscale Image",
+        "icon": "image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "griptape_nodes_library/image/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a Gaussian blur to an image",
+        "display_name": "Gaussian Blur Image",
+        "icon": "sparkles",
+        "group": "effects"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
