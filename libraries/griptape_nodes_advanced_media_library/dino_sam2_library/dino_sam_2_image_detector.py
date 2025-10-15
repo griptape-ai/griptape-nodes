@@ -5,7 +5,9 @@ import PIL.Image  # type: ignore[reportMissingImports]
 import PIL.ImageDraw  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
-from griptape_nodes.common.parameters.huggingface.log_parameter import LogParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.log_parameter import (
+    LogParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from griptape.artifacts import ImageUrlArtifact

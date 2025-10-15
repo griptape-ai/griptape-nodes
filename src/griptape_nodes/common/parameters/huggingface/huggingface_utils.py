@@ -5,7 +5,6 @@ from typing import Any
 from huggingface_hub import scan_cache_dir
 from huggingface_hub.constants import HF_HUB_CACHE
 
-
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -74,6 +73,7 @@ def list_repo_revisions_with_file_in_cache(repo_id: str, file: str) -> list[tupl
                 if any(f.file_name == file for f in revision.files):
                     results.append((repo.repo_id, revision.commit_hash))
     return results
+
 
 def quick_scan_diffuser_repos(cache_dir: str) -> list[dict[str, Any]]:
     """Quick scan of diffuser repositories in huggingface cache directory.

@@ -16,7 +16,7 @@ from utils.image_utils import load_image_from_url_artifact
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
-from griptape_nodes.common.parameters.huggingface.log_parameter import (  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]

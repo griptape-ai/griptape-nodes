@@ -6,9 +6,6 @@ import PIL.Image
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
-from griptape_nodes.common.parameters.huggingface.huggingface_repo_file_parameter import (
-    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
@@ -21,6 +18,9 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 from utils.directory_utils import get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_file_parameter import (
+    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.traits.options import Options

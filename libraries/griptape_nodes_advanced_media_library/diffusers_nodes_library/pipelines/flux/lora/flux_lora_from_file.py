@@ -1,6 +1,6 @@
 import logging
 
-from griptape_nodes.common.parameters.huggingface.file_path_parameter import FilePathParameter
+from diffusers_nodes_library.common.parameters.file_path_parameter import FilePathParameter
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )

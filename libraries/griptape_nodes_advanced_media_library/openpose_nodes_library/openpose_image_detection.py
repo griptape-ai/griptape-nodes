@@ -6,7 +6,9 @@ import cv2  # type: ignore[reportMissingImports]
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image  # type: ignore[reportMissingImports]
-from griptape_nodes.common.parameters.huggingface.log_parameter import LogParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.log_parameter import (
+    LogParameter,  # type: ignore[reportMissingImports]
+)
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]

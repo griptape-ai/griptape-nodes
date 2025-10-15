@@ -10,7 +10,7 @@ from diffusers.schedulers.scheduling_unipc_multistep import (  # type: ignore[re
     UniPCMultistepScheduler,
 )
 
-from griptape_nodes.common.parameters.huggingface.log_parameter import (  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
