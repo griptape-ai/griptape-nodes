@@ -5,7 +5,7 @@ The **[Blender MCP Server](https://github.com/ahujasid/blender-mcp)** enables AI
 !!! note "Prerequisites"
     Before using the Blender MCP server, you must:
     
-    1. Have Blender 3.0 or newer installed
+    1. Have [Blender](http://blender.org) 3.0 or newer installed
     2. Install the `uv` package manager ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/))
     3. Download and install the Blender addon from the [repository](https://github.com/ahujasid/blender-mcp)
 
