@@ -3,7 +3,7 @@ from typing import Any
 
 from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (
     HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]

@@ -6,7 +6,7 @@ import PIL.Image
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]

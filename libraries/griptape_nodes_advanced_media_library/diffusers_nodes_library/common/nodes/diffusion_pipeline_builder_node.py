@@ -6,7 +6,7 @@ from typing import Any
 from diffusers_nodes_library.common.parameters.diffusion.builder_parameters import (
     DiffusionPipelineBuilderParameters,
 )
-from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
+from griptape_nodes.common.parameters.huggingface.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter

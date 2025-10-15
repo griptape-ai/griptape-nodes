@@ -3,7 +3,7 @@ from abc import abstractmethod
 
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (

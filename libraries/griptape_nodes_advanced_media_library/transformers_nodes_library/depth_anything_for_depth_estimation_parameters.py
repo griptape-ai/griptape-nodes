@@ -4,7 +4,7 @@ from collections.abc import Iterator
 
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation  # type: ignore[reportMissingImports]

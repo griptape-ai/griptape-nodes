@@ -8,7 +8,7 @@ from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (  # type: ignore[reportMissingImports]
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (  # type: ignore[reportMissingImports]
     HuggingFaceRepoParameter,
 )
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]

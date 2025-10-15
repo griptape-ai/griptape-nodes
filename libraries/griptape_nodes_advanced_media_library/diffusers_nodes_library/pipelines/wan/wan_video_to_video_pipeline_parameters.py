@@ -9,7 +9,7 @@ import torch  # type: ignore[reportMissingImports]
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from PIL import Image  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode

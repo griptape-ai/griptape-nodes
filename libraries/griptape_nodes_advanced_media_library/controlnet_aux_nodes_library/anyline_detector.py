@@ -8,7 +8,7 @@ with warnings.catch_warnings():
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (
     HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
 )
 from griptape.artifacts import ImageUrlArtifact

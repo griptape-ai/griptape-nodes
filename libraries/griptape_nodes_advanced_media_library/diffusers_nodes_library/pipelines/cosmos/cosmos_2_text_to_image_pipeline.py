@@ -4,7 +4,7 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.log_parameter import (
+from griptape_nodes.common.parameters.huggingface.log_parameter import (
     LogParameter,  # type: ignore[reportMissingImports]
 )
 from diffusers_nodes_library.common.utils.huggingface_utils import (
