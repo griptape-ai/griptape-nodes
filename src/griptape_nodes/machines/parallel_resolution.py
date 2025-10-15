@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import (
+    CONTROL_INPUT_PARAMETER,
+    LOCAL_EXECUTION,
+    BaseNode,
+    NodeGroupProxyNode,
+    NodeResolutionState,
+)
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State
@@ -56,6 +62,7 @@ class ParallelResolutionContext:
     task_to_node: dict[asyncio.Task, DagNode]
     dag_builder: DagBuilder | None
     last_resolved_node: BaseNode | None  # Track the last node that was resolved
+    last_resolved_node: BaseNode | None  # Track the last node that was resolved
 
     def __init__(
         self, flow_name: str, max_nodes_in_parallel: int | None = None, dag_builder: DagBuilder | None = None
@@ -65,6 +72,7 @@ class ParallelResolutionContext:
         self.error_message = None
         self.workflow_state = WorkflowState.NO_ERROR
         self.dag_builder = dag_builder
+        self.last_resolved_node = None
         self.last_resolved_node = None
 
         # Initialize execution fields
@@ -101,6 +109,7 @@ class ParallelResolutionContext:
             self.error_message = None
             self.task_to_node.clear()
             self.last_resolved_node = None
+            self.last_resolved_node = None
 
         # Clear DAG builder state to allow re-adding nodes on subsequent runs
         if self.dag_builder:
@@ -121,8 +130,15 @@ class ExecuteDagState(State):
             )
             return
 
+        # Check if this is a NodeGroupProxyNode - if so, handle grouped nodes
+
+        if isinstance(current_node, NodeGroupProxyNode):
+            await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
+            return
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
+        # Track this as the last resolved node
+        context.last_resolved_node = current_node
         # Track this as the last resolved node
         context.last_resolved_node = current_node
         # Serialization can be slow so only do it if the user wants debug details.
@@ -178,6 +194,170 @@ class ExecuteDagState(State):
 
     # Method is mirrored in Control_flow.py. If you update one, update the other.
     @staticmethod
+    async def _handle_group_proxy_completion(
+        context: ParallelResolutionContext, proxy_node: BaseNode, network_name: str
+    ) -> None:
+        """Handle completion of a NodeGroupProxyNode by marking all grouped nodes as resolved.
+
+        When a NodeGroupProxyNode completes, all nodes in the group have been executed
+        in parallel by the NodeExecutor. This method marks each grouped node as RESOLVED
+        and emits NodeResolvedEvent for each one.
+
+        Args:
+            proxy_node: The NodeGroupProxyNode that completed execution
+            context: The ParallelResolutionContext
+            network_name: The name of the network
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        if not isinstance(proxy_node, NodeGroupProxyNode):
+            return
+
+        node_group = proxy_node.node_group_data
+
+        # Mark all grouped nodes as resolved and emit events
+        proxy_node.state = NodeResolutionState.RESOLVED
+        for grouped_node in node_group.nodes.values():
+            # Mark node as resolved
+            grouped_node.state = NodeResolutionState.RESOLVED
+
+            # Emit parameter update events for each output parameter
+            for parameter_name, value in grouped_node.parameter_output_values.items():
+                parameter = grouped_node.get_parameter_by_name(parameter_name)
+                if parameter is None:
+                    logger.warning(
+                        "Node '%s' in group '%s' has output parameter '%s' but parameter not found",
+                        grouped_node.name,
+                        node_group.group_id,
+                        parameter_name,
+                    )
+                    continue
+
+                data_type = parameter.type
+                if data_type is None:
+                    data_type = ParameterTypeBuiltin.NONE.value
+
+                await GriptapeNodes.EventManager().aput_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(
+                            payload=ParameterValueUpdateEvent(
+                                node_name=grouped_node.name,
+                                parameter_name=parameter_name,
+                                data_type=data_type,
+                                value=TypeValidator.safe_serialize(value),
+                            )
+                        ),
+                    )
+                )
+
+            # Emit NodeResolvedEvent for the grouped node
+            library = LibraryRegistry.get_libraries_with_node_type(grouped_node.__class__.__name__)
+            library_name = library[0] if len(library) == 1 else None
+
+            await GriptapeNodes.EventManager().aput_event(
+                ExecutionGriptapeNodeEvent(
+                    wrapped_event=ExecutionEvent(
+                        payload=NodeResolvedEvent(
+                            node_name=grouped_node.name,
+                            parameter_output_values=TypeValidator.safe_serialize(grouped_node.parameter_output_values),
+                            node_type=grouped_node.__class__.__name__,
+                            specific_library_name=library_name,
+                        )
+                    )
+                )
+            )
+
+        # Cleanup: restore connections and deregister proxy
+        ExecuteDagState.get_next_control_graph(context, proxy_node, network_name)
+        ExecuteDagState._cleanup_proxy_node(proxy_node)
+
+    @staticmethod
+    def _cleanup_proxy_node(proxy_node: BaseNode) -> None:
+        """Clean up a NodeGroupProxyNode after execution completes.
+
+        Restores original connections from proxy back to grouped nodes and
+        deregisters the proxy node from ObjectManager.
+
+        Args:
+            proxy_node: The NodeGroupProxyNode to clean up
+        """
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
+        if not isinstance(proxy_node, NodeGroupProxyNode):
+            return
+
+        node_group = proxy_node.node_group_data
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Restore external incoming connections (proxy -> original target node)
+        for conn in node_group.external_incoming_connections:
+            conn_id = id(conn)
+
+            # Get original target node
+            original_target = node_group.original_incoming_targets.get(conn_id)
+            if original_target is None:
+                continue
+
+            # Create proxy parameter name to find it in the index
+            sanitized_node_name = original_target.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
+
+            # Remove proxy from incoming index (using proxy parameter name)
+            if (
+                proxy_node.name in connections.incoming_index
+                and proxy_param_name in connections.incoming_index[proxy_node.name]
+            ):
+                connections.incoming_index[proxy_node.name][proxy_param_name].remove(conn_id)
+
+            # Restore connection to original target node
+            conn.target_node = original_target
+
+            # Add back to original target node's incoming index (using original parameter name)
+            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Restore external outgoing connections (original source node -> proxy)
+        for conn in node_group.external_outgoing_connections:
+            conn_id = id(conn)
+
+            # Get original source node
+            original_source = node_group.original_outgoing_sources.get(conn_id)
+            if original_source is None:
+                continue
+
+            # Create proxy parameter name to find it in the index
+            sanitized_node_name = original_source.name.replace(" ", "_")
+            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
+
+            # Remove proxy from outgoing index (using proxy parameter name)
+            if (
+                proxy_node.name in connections.outgoing_index
+                and proxy_param_name in connections.outgoing_index[proxy_node.name]
+            ):
+                connections.outgoing_index[proxy_node.name][proxy_param_name].remove(conn_id)
+
+            # Restore connection to original source node
+            conn.source_node = original_source
+
+            # Add back to original source node's outgoing index (using original parameter name)
+            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+
+        # Deregister proxy node from ObjectManager
+        obj_manager = GriptapeNodes.ObjectManager()
+        if obj_manager.has_object_with_name(proxy_node.name):
+            del obj_manager._name_to_objects[proxy_node.name]
+
+        logger.debug(
+            "Cleaned up proxy node '%s' for group '%s' - restored %d connections",
+            proxy_node.name,
+            node_group.group_id,
+            len(node_group.external_incoming_connections) + len(node_group.external_outgoing_connections),
+        )
+
+    @staticmethod
     def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
         for param_name, value in node.parameter_output_values.items():
             parameter = node.get_parameter_by_name(param_name)
@@ -201,6 +381,10 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
+        if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
+            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
+        else:
+            next_output = node.get_next_control_output()
         if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
             next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
         else:
@@ -241,6 +425,14 @@ class ExecuteDagState(State):
         """Process the next control node in the flow."""
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
         if node_connection is not None:
+            next_node, next_parameter = node_connection
+            # Set entry control parameter
+            logger.debug(
+                "Parallel Resolution: Setting entry control parameter for node '%s' to '%s'",
+                next_node.name,
+                next_parameter.name if next_parameter else None,
+            )
+            next_node.set_entry_control_parameter(next_parameter)
             next_node, next_parameter = node_connection
             # Set entry control parameter
             logger.debug(
@@ -327,6 +519,7 @@ class ExecuteDagState(State):
         for parameter in current_node.parameters:
             # Get the connected upstream node for this parameter
             upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
+            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -337,6 +530,20 @@ class ExecuteDagState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
+                result = await GriptapeNodes.get_instance().ahandle_request(
+                    SetParameterValueRequest(
+                        parameter_name=parameter.name,
+                        node_name=current_node.name,
+                        value=output_value,
+                        data_type=upstream_parameter.output_type,
+                        incoming_connection_source_node_name=upstream_node.name,
+                        incoming_connection_source_parameter_name=upstream_parameter.name,
+                    )
+                )
+                if isinstance(result, SetParameterValueResultFailure):
+                    msg = f"Failed to set value for parameter '{parameter.name}' on node '{current_node.name}': {result.result_details}"
+                    logger.error(msg)
+                    raise RuntimeError(msg)
                 result = await GriptapeNodes.get_instance().ahandle_request(
                     SetParameterValueRequest(
                         parameter_name=parameter.name,
@@ -411,8 +618,6 @@ class ExecuteDagState(State):
     @staticmethod
     async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
         async with semaphore:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             executor = GriptapeNodes.FlowManager().node_executor
             await executor.execute(current_node.node_reference)
 
@@ -431,7 +636,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0915
         # Check if execution is paused
         if context.paused:
             return None
@@ -523,7 +728,22 @@ class ExecuteDagState(State):
                         exc,
                     )
 
+                    dag_node = context.task_to_node.get(task)
+                    node_name = dag_node.node_reference.name if dag_node else "Unknown"
+                    node_type = dag_node.node_reference.__class__.__name__ if dag_node else "Unknown"
+
+                    logger.exception(
+                        "Task execution failed for node '%s' (type: %s) in flow '%s'. Exception: %s",
+                        node_name,
+                        node_type,
+                        context.flow_name,
+                        exc,
+                    )
+
                     context.task_to_node.pop(task)
+                    context.error_message = f"Task execution failed for node '{node_name}': {exc}"
+                    context.workflow_state = WorkflowState.ERRORED
+                    return ErrorState
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"
                     context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
@@ -541,10 +761,23 @@ class ErrorState(State):
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
         if context.error_message:
             logger.error("DAG execution error: %s", context.error_message)
+
+        # Clean up any proxy nodes that failed before completion
+        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
+
         for node in context.node_to_reference.values():
+            # Clean up proxy nodes that were processing or queued
+            if isinstance(node.node_reference, NodeGroupProxyNode) and node.node_state in (
+                NodeState.PROCESSING,
+                NodeState.QUEUED,
+            ):
+                logger.info("Cleaning up proxy node '%s' that failed during execution", node.node_reference.name)
+                ExecuteDagState._cleanup_proxy_node(node.node_reference)
+
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
+
         # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
         # Cancel async tasks
         for task in list(context.task_to_node.keys()):

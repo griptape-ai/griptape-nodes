@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -89,12 +89,12 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
     )
 
 
-@pytest.fixture(autouse=True)
-def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> Generator[None, Any, None]:
+@pytest_asyncio.fixture(autouse=True)
+async def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> AsyncGenerator[None, Any]:
     """Clear all object state before each test to ensure clean starting conditions."""
     # Clear any existing state
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-    griptape_nodes.handle_request(clear_request)
+    await griptape_nodes.ahandle_request(clear_request)
 
     griptape_nodes.ConfigManager()._set_log_level("DEBUG")
 
@@ -102,7 +102,7 @@ def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> Generator[Non
 
     # Clean up after test
     clear_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-    griptape_nodes.handle_request(clear_request)
+    await griptape_nodes.ahandle_request(clear_request)
 
 
 @pytest.mark.parametrize("workflow_path", get_workflows())

@@ -1,8 +1,14 @@
-from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from __future__ import annotations
 
-from griptape_nodes.exe_types.node_types import NodeDependencies
-from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import NodeDependencies, NodeGroupProxyNode
+    from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
+    from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
+    from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
+
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -10,9 +16,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
-from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
-from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
 
 
 @dataclass(kw_only=True)
@@ -231,7 +235,7 @@ class SerializedFlowCommands:
         SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
     set_lock_commands_per_node: dict[SerializedNodeCommands.NodeUUID, SetLockNodeStateRequest]
-    sub_flows_commands: list["SerializedFlowCommands"]
+    sub_flows_commands: list[SerializedFlowCommands]
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
 
@@ -386,63 +390,6 @@ class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
     """Flow metadata update failed. Common causes: flow not found, no current context, invalid metadata."""
 
 
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowRequest(RequestPayload):
-    """Package a single node as a complete flow with artificial start and end nodes.
-
-    Creates a serialized flow where:
-    - Start node has output parameters matching the packaged node's incoming connections
-    - End node has input parameters matching the packaged node's outgoing connections
-    - All connections are properly mapped through Start -> Node -> End
-
-    Use when: Creating reusable components, exporting nodes for templates,
-    building sub-workflows from existing nodes, creating packaged functionality.
-
-    Args:
-        node_name: Name of the node to package as a flow (None for current context node)
-        start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
-        end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
-        start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
-        entry_control_parameter_name: Name of the control parameter that the package node should be entered from. The generated start node will create a connection to this control parameter. NOTE: if no entry_control_parameter_name is specified, the package will be entered from the first available control input parameter.
-        output_parameter_prefix: Prefix for parameter names on the generated end node to avoid collisions (defaults to "packaged_node_")
-
-    Results: PackageNodeAsSerializedFlowResultSuccess (with serialized flow) | PackageNodeAsSerializedFlowResultFailure (node not found, packaging error)
-    """
-
-    # If None is passed, assumes we're packaging the node in the Current Context
-    node_name: str | None = None
-    start_node_type: str = "StartFlow"
-    end_node_type: str = "EndFlow"
-    start_end_specific_library_name: str = "Griptape Nodes Library"
-    entry_control_parameter_name: str | None = None
-    output_parameter_prefix: str = "packaged_node_"
-
-
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Node successfully packaged as serialized flow.
-
-    Args:
-        serialized_flow_commands: The complete serialized flow with StartFlow, target node, and EndFlow
-        workflow_shape: The workflow shape defining inputs and outputs for external callers
-    """
-
-    serialized_flow_commands: SerializedFlowCommands
-    workflow_shape: WorkflowShape
-
-
-@dataclass
-@PayloadRegistry.register
-class PackageNodeAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Node packaging failed.
-
-    Common causes: node not found, no current context, serialization error,
-    connection analysis failed, node has no valid flow context.
-    """
-
-
 # Type aliases for parameter mapping clarity
 SanitizedParameterName = str  # What appears in the serialized flow
 OriginalNodeName = str  # Original node name (can have spaces, dots, etc.)
@@ -479,8 +426,8 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
 
     Args:
         node_names: List of node names to package as a flow (empty list will create StartFlow→EndFlow only with warning)
-        start_node_type: Node type name for the artificial start node (defaults to "StartFlow")
-        end_node_type: Node type name for the artificial end node (defaults to "EndFlow")
+        start_node_type: Node type name for the artificial start node (None or omitted defaults to "StartFlow")
+        end_node_type: Node type name for the artificial end node (None or omitted defaults to "EndFlow")
         start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
         entry_control_node_name: Name of the node that should receive the control flow entry (required if entry_control_parameter_name specified)
         entry_control_parameter_name: Name of the control parameter on the entry node (None for auto-detection of first available control parameter)
@@ -491,12 +438,15 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
 
     # List of node names to package (empty list creates StartFlow→EndFlow only with warning)
     node_names: list[str] = field(default_factory=list)
-    start_node_type: str = "StartFlow"
-    end_node_type: str = "EndFlow"
+    start_node_type: str | None = None
+    end_node_type: str | None = None
     start_end_specific_library_name: str = "Griptape Nodes Library"
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
+    proxy_node: NodeGroupProxyNode | None = (
+        None  # NodeGroupProxyNode if packaging nodes from a proxy, used to access original connections
+    )
 
 
 @dataclass
