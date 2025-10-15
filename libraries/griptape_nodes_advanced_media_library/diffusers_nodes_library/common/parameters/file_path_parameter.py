@@ -31,7 +31,7 @@ class FilePathParameter:
                         allow_files=True,
                         allow_directories=False,
                         multiple=False,
-                        file_types=self._file_types if self._file_types is not None else None,
+                        file_types=self._file_types,
                         initial_path=self._initial_path,
                     )
                 },
