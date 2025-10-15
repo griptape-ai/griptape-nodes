@@ -52,8 +52,8 @@ class PythonSubprocessExecutor:
 
             stdout_bytes, stderr_bytes = await self._process.communicate()
             returncode = self._process.returncode
-            stdout = stdout_bytes.decode() if stdout_bytes else ""
-            stderr = stderr_bytes.decode() if stderr_bytes else ""
+            stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
+            stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
 
             # Log all output regardless of return code
             if stdout:
