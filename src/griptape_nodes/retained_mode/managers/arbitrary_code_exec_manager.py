@@ -44,9 +44,9 @@ class ArbitraryCodeExecManager:
                 # 1. to disallow the executed code from accessing potentially sensitive variables defined in this scope, limiting it to a barebones python environment
                 # 2. to make the globals and the locals dict the same, so that when calling a function that uses recursion, python knows where to find the function definition
                 # for a more detailed explanation on why recursion fails, see https://stackoverflow.com/questions/871887/using-exec-with-recursive-functions
-                python_output = exec(
+                python_output = exec(  # noqa: S102
                     request.python_string, {"__builtins__": __builtins__}, {"__builtins__": __builtins__}
-                ) # noqa: S102
+                )
 
             captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(
