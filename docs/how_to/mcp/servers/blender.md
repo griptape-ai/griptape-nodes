@@ -3,26 +3,27 @@
 The **[Blender MCP Server](https://github.com/ahujasid/blender-mcp)** enables AI agents to directly interact with and control Blender. This integration allows for prompt-assisted 3D modeling, scene creation, and manipulation. This is a third-party server created by [Siddharth Ahuja](https://github.com/ahujasid), and is not made by Blender or Griptape.
 
 !!! note "Prerequisites"
+
     Before using the Blender MCP server, you must:
-    
+
     1. Have [Blender](http://blender.org) 3.0 or newer installed
-    2. Install the `uv` package manager ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/))
-    3. Download and install the Blender addon from the [repository](https://github.com/ahujasid/blender-mcp)
+    1. Install the `uv` package manager ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/))
+    1. Download and install the Blender addon from the [repository](https://github.com/ahujasid/blender-mcp)
 
 ## Installing the Blender Addon
 
 1. Download the `addon.py` file from the [Blender MCP repository](https://github.com/ahujasid/blender-mcp)
-2. Open Blender
-3. Go to **Edit** → **Preferences** → **Add-ons**
-4. Click **Install...** and select the `addon.py` file
-5. Enable the addon by checking the box next to "Interface: Blender MCP"
+1. Open Blender
+1. Go to **Edit** → **Preferences** → **Add-ons**
+1. Click **Install...** and select the `addon.py` file
+1. Enable the addon by checking the box next to "Interface: Blender MCP"
 
 ## Starting the Blender Connection
 
 1. In Blender, open the 3D View sidebar (press **N** if not visible)
-2. Find the **BlenderMCP** tab
-3. (Optional) Turn on the **Poly Haven** checkbox if you want to use assets from their API
-4. Click **Connect to Claude**
+1. Find the **BlenderMCP** tab
+1. (Optional) Turn on the **Poly Haven** checkbox if you want to use assets from their API
+1. Click **Connect to Claude**
 
 ![Blender MCP Sidebar](../images/blender_mcp_sidebar.png)
 
@@ -57,12 +58,13 @@ The **[Blender MCP Server](https://github.com/ahujasid/blender-mcp)** enables AI
 1. **Click Create Server**
 
 !!! warning "Blender Path Varies by System"
+
     The `BLENDER_PATH` environment variable should point to your Blender executable. Common locations include:
-    
+
     - **macOS**: `/Applications/Blender.app/Contents/MacOS/Blender`
     - **Linux**: `/usr/bin/blender` or `/usr/local/bin/blender`
     - **Windows**: `C:\Program Files\Blender Foundation\Blender\blender.exe`
-    
+
     Your installation path may vary depending on how you installed Blender.
 
 ## Available Tools
@@ -119,9 +121,10 @@ Available environment variables:
 The Blender MCP server can download and import assets (HDRIs, textures, models) from Poly Haven's free library:
 
 1. Enable Poly Haven in the Blender addon by checking the **Poly Haven** checkbox
-2. Use tools like `search_polyhaven_assets` and `download_polyhaven_asset` to find and import assets
+1. Use tools like `search_polyhaven_assets` and `download_polyhaven_asset` to find and import assets
 
 Example commands:
+
 - "Download a beach HDRI from Poly Haven and use it as the environment"
 - "Find a wood texture on Poly Haven and apply it to this cube"
 
@@ -130,10 +133,11 @@ Example commands:
 Generate 3D models using AI through Hyper3D Rodin:
 
 1. Check the Hyper3D status with `get_hyper3d_status`
-2. Generate models from text descriptions or images
-3. Poll for completion and import the generated asset
+1. Generate models from text descriptions or images
+1. Poll for completion and import the generated asset
 
 !!! info "Hyper3D Free Trial"
+
     Hyper3D's free trial key allows a limited number of model generations per day. For unlimited access, obtain your own key from [hyper3d.ai](https://hyper3d.ai) and [fal.ai](https://fal.ai).
 
 ### Sketchfab Integration
@@ -141,7 +145,7 @@ Generate 3D models using AI through Hyper3D Rodin:
 Search and download models from Sketchfab's library:
 
 1. Use `search_sketchfab_models` to find models
-2. Download models with `download_sketchfab_model`
+1. Download models with `download_sketchfab_model`
 
 ## Example Use Cases
 
@@ -169,10 +173,10 @@ Here are some examples of what you can create with the Blender MCP server:
 ### Debug Tips
 
 1. Check that the Blender addon is enabled and running (look for the BlenderMCP tab in the sidebar)
-2. Verify the socket server is active in Blender (status shown in the addon panel)
-3. Test with simple commands first (e.g., "get scene information")
-4. If Poly Haven or Hyper3D features aren't working, check their status with the respective status tools
-5. Restart both Blender and the MCP connection if issues persist
+1. Verify the socket server is active in Blender (status shown in the addon panel)
+1. Test with simple commands first (e.g., "get scene information")
+1. If Poly Haven or Hyper3D features aren't working, check their status with the respective status tools
+1. Restart both Blender and the MCP connection if issues persist
 
 ## Resources
 
@@ -185,18 +189,19 @@ Here are some examples of what you can create with the Blender MCP server:
 ## Security Considerations
 
 !!! danger "Arbitrary Code Execution"
+
     The `execute_blender_code` tool allows running arbitrary Python code in Blender. This can be powerful but potentially dangerous:
-    
+
     - **Always save your Blender work** before using code execution
     - Review generated code when possible
     - Use with caution in production environments
     - Be aware that malicious code could potentially harm your system or data
 
 !!! info "Asset Downloads"
+
     Poly Haven and Sketchfab integrations require downloading external assets:
-    
+
     - Downloads may be large (textures, HDRIs, models)
     - Ensure you have adequate disk space
     - Assets are stored in Blender's cache directory
     - If you don't want to use these features, keep Poly Haven disabled in the addon
-
