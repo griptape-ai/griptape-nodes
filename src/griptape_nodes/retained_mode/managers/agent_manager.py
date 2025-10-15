@@ -257,7 +257,8 @@ class AgentManager:
                     full_result += event.token
                     try:
                         result_json = json.loads(repair_json(full_result))
-                        if "conversation_output" in result_json:
+
+                        if isinstance(result_json, dict) and "conversation_output" in result_json:
                             new_conversation_output = result_json["conversation_output"]
                             if new_conversation_output != last_conversation_output:
                                 GriptapeNodes.EventManager().put_event(
@@ -286,7 +287,7 @@ class AgentManager:
             return RunAgentResultFailure(error=ErrorArtifact(last_event).to_dict(), result_details=err_msg)
         except Exception as e:
             err_msg = f"Error running agent: {e}"
-            logger.error(err_msg)
+            logger.exception(err_msg)
             return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
