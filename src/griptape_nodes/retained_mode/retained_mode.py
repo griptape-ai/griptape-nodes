@@ -71,6 +71,8 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultFailure,
     MigrateParameterRequest,
+    MigrateParameterResultFailure,
+    MigrateParameterResultSuccess,
     RemoveParameterFromNodeRequest,
     SetParameterValueRequest,
 )
@@ -243,7 +245,7 @@ class RetainedMode:
         node_name: str | None = None,
         parent_flow_name: str | None = None,
         metadata: dict[Any, Any] | None = None,
-    ) -> ResultPayload:
+    ) -> str | CreateNodeResultFailure:
         """Creates a node of the specified type and adds it to the current or a specified parent flow.
 
         Supports custom naming and metadata (e.g., UI position, display name, tags).
@@ -363,7 +365,9 @@ class RetainedMode:
         return result
 
     @classmethod
-    def set_lock_node_state(cls, *, node_name: str | None = None, lock: bool = True) -> ResultPayload:
+    def set_lock_node_state(
+        cls, *, node_name: str | None = None, lock: bool = True
+    ) -> SetLockNodeStateResultSuccess | SetLockNodeStateResultFailure:
         """Sets the lock state of a node.
 
         Args:
@@ -755,7 +759,7 @@ class RetainedMode:
         value_transform: Callable | None = None,
         *,
         break_connections: bool = True,
-    ) -> ResultPayload:
+    ) -> MigrateParameterResultSuccess | MigrateParameterResultFailure:
         """Migrate a parameter from one node to another with optional conversions.
 
         This command handles:
