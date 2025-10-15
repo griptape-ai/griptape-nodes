@@ -4,7 +4,7 @@ from griptape_nodes.common.parameters.huggingface.huggingface_model_parameter im
 from griptape_nodes.common.parameters.huggingface.huggingface_utils import list_repo_revisions_with_file_in_cache
 from griptape_nodes.exe_types.node_types import BaseNode
 
-logger = logging.getLogger("diffusers_nodes_library")
+logger = logging.getLogger("griptape_nodes")
 
 
 class HuggingFaceRepoFileParameter(HuggingFaceModelParameter):
