@@ -18,7 +18,7 @@ from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ElevenMusicGeneration"]
+__all__ = ["ElevenAudioGeneration"]
 
 PROMPT_TRUNCATE_LENGTH = 100
 MAX_PROMPT_LENGTH = 2000
@@ -26,19 +26,21 @@ MIN_MUSIC_LENGTH_MS = 10000
 MAX_MUSIC_LENGTH_MS = 300000
 MIN_MUSIC_LENGTH_SEC = 10.0
 MAX_MUSIC_LENGTH_SEC = 300.0
+MIN_SOUND_DURATION_SEC = 0.5
+MAX_SOUND_DURATION_SEC = 30.0
 
 
-class ElevenMusicGeneration(DataNode):
-    """Generate music using Eleven Labs Music Generation API via Griptape model proxy.
+class ElevenAudioGeneration(DataNode):
+    """Generate audio using Eleven Labs API via Griptape model proxy.
 
-    Inputs:
-        - prompt (str): Text prompt describing the music to generate (max 2000 characters)
-        - duration_seconds (float): Duration of the music in seconds (10.0-300.0s, optional)
-        - output_format (str): Audio output format (e.g., mp3_44100_128, pcm_44100)
+    Supports three models:
+    - Eleven Music v1: Music generation from text prompts
+    - Eleven Multilingual v2: Text-to-speech with voice options
+    - Eleven Text to Sound v2: Text-to-sound effects generation
 
     Outputs:
         - generation_id (str): Generation ID from the API
-        - audio_url (AudioUrlArtifact): Generated music as URL artifact
+        - audio_url (AudioUrlArtifact): Generated audio as URL artifact
     """
 
     SERVICE_NAME = "Griptape"
@@ -47,7 +49,7 @@ class ElevenMusicGeneration(DataNode):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
-        self.description = "Generate music using Eleven Labs Music Generation API via Griptape model proxy"
+        self.description = "Generate audio using Eleven Labs API via Griptape model proxy"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
@@ -56,6 +58,29 @@ class ElevenMusicGeneration(DataNode):
         self._proxy_base = urljoin(api_base, "proxy/models/")
 
         # INPUTS / PROPERTIES
+        # Model Selection
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                default_value="eleven-music-v1",
+                tooltip="Select the Eleven Labs model to use",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={
+                    Options(
+                        choices=[
+                            "eleven-music-v1",
+                            "eleven_multilingual_v2",
+                            "eleven_text_to_sound_v2",
+                        ]
+                    )
+                },
+                ui_options={"display_name": "Model"},
+            )
+        )
+
+        # Parameters for Eleven Music v1
         self.add_parameter(
             Parameter(
                 name="prompt",
@@ -66,14 +91,14 @@ class ElevenMusicGeneration(DataNode):
                 ui_options={
                     "multiline": True,
                     "placeholder_text": "Describe the music you want to generate...",
-                    "display_name": "Prompt",
+                    "display_name": "Prompt (Music)",
                 },
             )
         )
 
         self.add_parameter(
             Parameter(
-                name="duration_seconds",
+                name="music_duration_seconds",
                 input_types=["float"],
                 type="float",
                 default_value=30.0,
@@ -118,6 +143,137 @@ class ElevenMusicGeneration(DataNode):
             )
         )
 
+        # Parameters for Eleven Multilingual v2 (Text-to-Speech)
+        self.add_parameter(
+            Parameter(
+                name="text",
+                input_types=["str"],
+                type="str",
+                tooltip="Text to be converted to speech",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Enter text to convert to speech...",
+                    "display_name": "Text",
+                },
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="voice_id",
+                input_types=["str"],
+                type="str",
+                tooltip="Voice ID to use for speech generation (optional, null reverts to default)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Voice ID"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="language_code",
+                input_types=["str"],
+                type="str",
+                tooltip="ISO 639-1 language code as a hint for pronunciation (optional)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "display_name": "Language Code",
+                    "placeholder_text": "e.g., en, es, fr",
+                },
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="seed",
+                input_types=["int"],
+                type="int",
+                tooltip="Seed for reproducible generation (optional)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Seed"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="previous_text",
+                input_types=["str"],
+                type="str",
+                tooltip="Previous text to improve continuity in speech generation (optional)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "display_name": "Previous Text",
+                },
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="next_text",
+                input_types=["str"],
+                type="str",
+                tooltip="Next text to improve continuity in speech generation (optional)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "display_name": "Next Text",
+                },
+            )
+        )
+
+        # Parameters for Eleven Text to Sound v2
+        self.add_parameter(
+            Parameter(
+                name="sound_text",
+                input_types=["str"],
+                type="str",
+                tooltip="Text describing the sound effect to generate",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the sound you want to generate...",
+                    "display_name": "Text",
+                },
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="loop",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Whether to create a smoothly looping sound",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Loop"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="sound_duration_seconds",
+                input_types=["float"],
+                type="float",
+                default_value=10.0,
+                tooltip="Duration of the sound in seconds (0.5-30.0s, optional)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Duration (seconds)"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="prompt_influence",
+                input_types=["float"],
+                type="float",
+                tooltip="Prompt influence (0.0-1.0). Higher values follow prompt more closely. Defaults to 0.3",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Prompt Influence"},
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -140,6 +296,109 @@ class ElevenMusicGeneration(DataNode):
                 ui_options={"is_full_width": True, "pulse_on_run": True},
             )
         )
+
+        # Initialize parameter visibility based on default model
+        self._initialize_parameter_visibility()
+
+    def _initialize_parameter_visibility(self) -> None:
+        """Initialize parameter visibility based on default model selection."""
+        default_model = self.get_parameter_value("model") or "eleven-music-v1"
+        if default_model == "eleven-music-v1":
+            # Show music parameters, hide TTS and sound parameters
+            self.show_parameter_by_name("prompt")
+            self.show_parameter_by_name("music_duration_seconds")
+            self.show_parameter_by_name("output_format")
+            self.hide_parameter_by_name("text")
+            self.hide_parameter_by_name("voice_id")
+            self.hide_parameter_by_name("language_code")
+            self.hide_parameter_by_name("seed")
+            self.hide_parameter_by_name("previous_text")
+            self.hide_parameter_by_name("next_text")
+            self.hide_parameter_by_name("sound_text")
+            self.hide_parameter_by_name("loop")
+            self.hide_parameter_by_name("sound_duration_seconds")
+            self.hide_parameter_by_name("prompt_influence")
+        elif default_model == "eleven_multilingual_v2":
+            # Show TTS parameters, hide music and sound parameters
+            self.hide_parameter_by_name("prompt")
+            self.hide_parameter_by_name("music_duration_seconds")
+            self.hide_parameter_by_name("output_format")
+            self.show_parameter_by_name("text")
+            self.show_parameter_by_name("voice_id")
+            self.show_parameter_by_name("language_code")
+            self.show_parameter_by_name("seed")
+            self.show_parameter_by_name("previous_text")
+            self.show_parameter_by_name("next_text")
+            self.hide_parameter_by_name("sound_text")
+            self.hide_parameter_by_name("loop")
+            self.hide_parameter_by_name("sound_duration_seconds")
+            self.hide_parameter_by_name("prompt_influence")
+        elif default_model == "eleven_text_to_sound_v2":
+            # Show sound parameters, hide music and TTS parameters
+            self.hide_parameter_by_name("prompt")
+            self.hide_parameter_by_name("music_duration_seconds")
+            self.hide_parameter_by_name("output_format")
+            self.hide_parameter_by_name("text")
+            self.hide_parameter_by_name("voice_id")
+            self.hide_parameter_by_name("language_code")
+            self.hide_parameter_by_name("seed")
+            self.hide_parameter_by_name("previous_text")
+            self.hide_parameter_by_name("next_text")
+            self.show_parameter_by_name("sound_text")
+            self.show_parameter_by_name("loop")
+            self.show_parameter_by_name("sound_duration_seconds")
+            self.show_parameter_by_name("prompt_influence")
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Update parameter visibility based on model selection."""
+        if parameter.name == "model":
+            if value == "eleven-music-v1":
+                # Show music parameters, hide TTS and sound parameters
+                self.show_parameter_by_name("prompt")
+                self.show_parameter_by_name("music_duration_seconds")
+                self.show_parameter_by_name("output_format")
+                self.hide_parameter_by_name("text")
+                self.hide_parameter_by_name("voice_id")
+                self.hide_parameter_by_name("language_code")
+                self.hide_parameter_by_name("seed")
+                self.hide_parameter_by_name("previous_text")
+                self.hide_parameter_by_name("next_text")
+                self.hide_parameter_by_name("sound_text")
+                self.hide_parameter_by_name("loop")
+                self.hide_parameter_by_name("sound_duration_seconds")
+                self.hide_parameter_by_name("prompt_influence")
+            elif value == "eleven_multilingual_v2":
+                # Show TTS parameters, hide music and sound parameters
+                self.hide_parameter_by_name("prompt")
+                self.hide_parameter_by_name("music_duration_seconds")
+                self.hide_parameter_by_name("output_format")
+                self.show_parameter_by_name("text")
+                self.show_parameter_by_name("voice_id")
+                self.show_parameter_by_name("language_code")
+                self.show_parameter_by_name("seed")
+                self.show_parameter_by_name("previous_text")
+                self.show_parameter_by_name("next_text")
+                self.hide_parameter_by_name("sound_text")
+                self.hide_parameter_by_name("loop")
+                self.hide_parameter_by_name("sound_duration_seconds")
+                self.hide_parameter_by_name("prompt_influence")
+            elif value == "eleven_text_to_sound_v2":
+                # Show sound parameters, hide music and TTS parameters
+                self.hide_parameter_by_name("prompt")
+                self.hide_parameter_by_name("music_duration_seconds")
+                self.hide_parameter_by_name("output_format")
+                self.hide_parameter_by_name("text")
+                self.hide_parameter_by_name("voice_id")
+                self.hide_parameter_by_name("language_code")
+                self.hide_parameter_by_name("seed")
+                self.hide_parameter_by_name("previous_text")
+                self.hide_parameter_by_name("next_text")
+                self.show_parameter_by_name("sound_text")
+                self.show_parameter_by_name("loop")
+                self.show_parameter_by_name("sound_duration_seconds")
+                self.show_parameter_by_name("prompt_influence")
+
+        return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate that required configuration is available before running the node."""
@@ -166,21 +425,37 @@ class ElevenMusicGeneration(DataNode):
 
     async def _process_async(self) -> None:
         """Async implementation of the processing logic."""
-        params = self._get_parameters()
+        model = self.get_parameter_value("model") or "eleven-music-v1"
+        params = self._get_parameters(model)
         api_key = self._get_api_key()
         headers = self._build_headers(api_key)
 
-        self._log("Generating music with Eleven Labs Music Generation via Griptape proxy")
+        model_names = {
+            "eleven-music-v1": "Eleven Music v1",
+            "eleven_multilingual_v2": "Eleven Multilingual v2",
+            "eleven_text_to_sound_v2": "Eleven Text to Sound v2",
+        }
+        self._log(f"Generating audio with {model_names.get(model, model)} via Griptape proxy")
 
-        response_bytes = await self._submit_request(params, headers)
+        response_bytes = await self._submit_request(model, params, headers)
         if response_bytes:
-            self._handle_response(response_bytes)
+            self._handle_response(response_bytes, model)
         else:
             self._set_safe_defaults()
 
-    def _get_parameters(self) -> dict[str, Any]:
+    def _get_parameters(self, model: str) -> dict[str, Any]:
+        if model == "eleven-music-v1":
+            return self._get_music_parameters()
+        if model == "eleven_multilingual_v2":
+            return self._get_tts_parameters()
+        if model == "eleven_text_to_sound_v2":
+            return self._get_sound_parameters()
+        msg = f"Unknown model: {model}"
+        raise ValueError(msg)
+
+    def _get_music_parameters(self) -> dict[str, Any]:
         prompt = self.get_parameter_value("prompt") or ""
-        duration_seconds = self.get_parameter_value("duration_seconds")
+        duration_seconds = self.get_parameter_value("music_duration_seconds")
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
 
         # Validate prompt length
@@ -206,6 +481,62 @@ class ElevenMusicGeneration(DataNode):
             "output_format": output_format,
         }
 
+    def _get_tts_parameters(self) -> dict[str, Any]:
+        text = self.get_parameter_value("text") or ""
+        voice_id = self.get_parameter_value("voice_id")
+        language_code = self.get_parameter_value("language_code")
+        seed = self.get_parameter_value("seed")
+        previous_text = self.get_parameter_value("previous_text")
+        next_text = self.get_parameter_value("next_text")
+
+        params = {"text": text}
+
+        # Add optional parameters if they have values
+        if voice_id:
+            params["voice_id"] = voice_id
+        if language_code:
+            params["language_code"] = language_code
+        if seed is not None:
+            params["seed"] = seed
+        if previous_text:
+            params["previous_text"] = previous_text
+        if next_text:
+            params["next_text"] = next_text
+
+        return params
+
+    def _get_sound_parameters(self) -> dict[str, Any]:
+        text = self.get_parameter_value("sound_text") or ""
+        loop = self.get_parameter_value("loop")
+        duration_seconds = self.get_parameter_value("sound_duration_seconds")
+        prompt_influence = self.get_parameter_value("prompt_influence")
+
+        params = {"text": text}
+
+        # Add optional parameters if they have values
+        if loop is not None:
+            params["loop"] = loop
+        if duration_seconds is not None:
+            # Validate duration for sound effects
+            if duration_seconds < MIN_SOUND_DURATION_SEC:
+                duration_seconds = MIN_SOUND_DURATION_SEC
+                self._log(f"Duration adjusted to minimum {MIN_SOUND_DURATION_SEC}s")
+            elif duration_seconds > MAX_SOUND_DURATION_SEC:
+                duration_seconds = MAX_SOUND_DURATION_SEC
+                self._log(f"Duration adjusted to maximum {MAX_SOUND_DURATION_SEC}s")
+            params["duration_seconds"] = duration_seconds
+        if prompt_influence is not None:
+            # Validate prompt influence (0.0-1.0)
+            if prompt_influence < 0.0:
+                prompt_influence = 0.0
+                self._log("Prompt influence adjusted to minimum 0.0")
+            elif prompt_influence > 1.0:
+                prompt_influence = 1.0
+                self._log("Prompt influence adjusted to maximum 1.0")
+            params["prompt_influence"] = prompt_influence
+
+        return params
+
     def _get_api_key(self) -> str:
         """Get the API key - validation is done in validate_before_node_run()."""
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
@@ -222,17 +553,22 @@ class ElevenMusicGeneration(DataNode):
             "Accept": "application/json",
         }
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
-        model_id = "eleven-music-1-0"
+    async def _submit_request(self, model: str, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
+        # Map model names to proxy model IDs
+        model_id_map = {
+            "eleven-music-v1": "eleven-music-1-0",
+            "eleven_multilingual_v2": "eleven_multilingual_v2",
+            "eleven_text_to_sound_v2": "eleven_text_to_sound_v2",
+        }
+        model_id = model_id_map.get(model, model)
         url = urljoin(self._proxy_base, model_id)
-        payload = self._build_payload(params)
 
         self._log(f"Submitting request to Griptape model proxy with model: {model_id}")
-        self._log_request(payload)
+        self._log_request(params)
 
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
+                response = await client.post(url, json=params, headers=headers)
                 response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
@@ -246,29 +582,21 @@ class ElevenMusicGeneration(DataNode):
         self._log("Request submitted successfully")
         return response.content
 
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
-        payload = {
-            "prompt": params["prompt"],
-            "output_format": params["output_format"],
-        }
-
-        if params["music_length_ms"] is not None:
-            payload["music_length_ms"] = params["music_length_ms"]
-
-        return payload
-
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
             sanitized_payload = payload.copy()
-            prompt = sanitized_payload.get("prompt", "")
-            if len(prompt) > PROMPT_TRUNCATE_LENGTH:
-                sanitized_payload["prompt"] = prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
+            # Truncate any text fields for logging
+            for key in ["prompt", "text"]:
+                if key in sanitized_payload:
+                    text_value = sanitized_payload[key]
+                    if isinstance(text_value, str) and len(text_value) > PROMPT_TRUNCATE_LENGTH:
+                        sanitized_payload[key] = text_value[:PROMPT_TRUNCATE_LENGTH] + "..."
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    def _handle_response(self, response_bytes: bytes) -> None:
+    def _handle_response(self, response_bytes: bytes, model: str) -> None:
         if response_bytes:
-            self._save_audio_from_bytes(response_bytes)
+            self._save_audio_from_bytes(response_bytes, model)
         else:
             self._log("No audio data in response")
             self.parameter_output_values["audio_url"] = None
@@ -276,21 +604,30 @@ class ElevenMusicGeneration(DataNode):
         # Set generation ID (using timestamp since proxy doesn't provide one)
         self.parameter_output_values["generation_id"] = str(int(time.time()))
 
-    def _save_audio_from_bytes(self, audio_bytes: bytes) -> None:
+    def _save_audio_from_bytes(self, audio_bytes: bytes, model: str) -> None:
         try:
             self._log("Processing audio bytes from proxy response")
-            # Determine file extension based on output format
-            output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
-            if output_format.startswith("mp3_"):
-                ext = "mp3"
-            elif output_format.startswith(("pcm_", "ulaw_", "alaw_")):
-                ext = "wav"
-            elif output_format.startswith("opus_"):
-                ext = "opus"
-            else:
-                ext = "mp3"  # fallback
+            # Determine file extension based on model and output format
+            ext = "mp3"  # Default extension
+            prefix = "eleven_audio"
 
-            filename = f"eleven_music_{int(time.time())}.{ext}"
+            if model == "eleven-music-v1":
+                output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
+                if output_format.startswith("mp3_"):
+                    ext = "mp3"
+                elif output_format.startswith(("pcm_", "ulaw_", "alaw_")):
+                    ext = "wav"
+                elif output_format.startswith("opus_"):
+                    ext = "opus"
+                prefix = "eleven_music"
+            elif model == "eleven_multilingual_v2":
+                ext = "mp3"  # Output format is mp3_44100_128
+                prefix = "eleven_tts"
+            elif model == "eleven_text_to_sound_v2":
+                ext = "mp3"  # Output format is mp3_44100_128
+                prefix = "eleven_sound"
+
+            filename = f"{prefix}_{int(time.time())}.{ext}"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)

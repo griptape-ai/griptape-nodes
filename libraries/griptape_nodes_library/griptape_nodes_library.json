@@ -643,12 +643,12 @@
       }
     },
     {
-      "class_name": "ElevenMusicGeneration",
+      "class_name": "ElevenAudioGeneration",
       "file_path": "griptape_nodes_library/audio/eleven_music_generation.py",
       "metadata": {
         "category": "audio",
-        "description": "Generate music using Eleven Labs Music Generation API",
-        "display_name": "Eleven Music Generation",
+        "description": "Generate audio using Eleven Labs API (music, speech, or sound effects)",
+        "display_name": "Eleven Labs Audio Generation",
         "icon": "music",
         "group": "create"
       }
