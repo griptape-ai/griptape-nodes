@@ -276,9 +276,9 @@ class NodeExecutor:
             pickle_control_flow_result=True,
         )
 
-        workflow_result = GriptapeNodes.handle_request(workflow_file_request)
+        workflow_result = await GriptapeNodes.ahandle_request(workflow_file_request)
         if not isinstance(workflow_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-            msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {package_result.result_details}"
+            msg = f"Failed to Save Workflow File from Serialized Flow for node '{node.name}'. Error: {workflow_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
         return PublishLocalWorkflowResult(
