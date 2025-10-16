@@ -643,11 +643,22 @@
       }
     },
     {
-      "class_name": "ElevenAudioGeneration",
+      "class_name": "ElevenMusicGeneration",
       "file_path": "griptape_nodes_library/audio/eleven_music_generation.py",
       "metadata": {
         "category": "audio",
-        "description": "Generate audio using Eleven Labs API (music, speech, or sound effects)",
+        "description": "Generate music using Eleven Labs Music Generation API",
+        "display_name": "Eleven Music Generation",
+        "icon": "music",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "ElevenLabsAudioGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_audio_generation.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate audio using Eleven Labs models",
         "display_name": "Eleven Labs Audio Generation",
         "icon": "music",
         "group": "create"
@@ -715,6 +726,17 @@
         "category": "video",
         "description": "Generate a video using the Seedance model via Griptape Cloud Forwarders.",
         "display_name": "Seedance Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "SoraVideoGeneration",
+      "file_path": "griptape_nodes_library/video/sora_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate video using Sora 2 models via Griptape Cloud model proxy",
+        "display_name": "Sora 2 Video Generation",
         "icon": "Sparkles",
         "group": "create"
       }
@@ -1487,6 +1509,28 @@
         "display_name": "Adjust Image Levels",
         "icon": "bar-chart-3",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "GrayscaleImage",
+      "file_path": "griptape_nodes_library/image/grayscale_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert image to grayscale",
+        "display_name": "Grayscale Image",
+        "icon": "image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "griptape_nodes_library/image/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a Gaussian blur to an image",
+        "display_name": "Gaussian Blur Image",
+        "icon": "sparkles",
+        "group": "effects"
       }
     },
     {
