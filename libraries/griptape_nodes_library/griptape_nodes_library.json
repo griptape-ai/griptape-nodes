@@ -650,6 +650,21 @@
         "description": "Generate music using Eleven Labs Music Generation API",
         "display_name": "Eleven Music Generation",
         "icon": "music",
+        "group": "create",
+        "deprecation": {
+          "deprecation_message": "Please use the Eleven Labs Audio Generation node instead.",
+          "removal_version": "0.64.0"
+        }
+      }
+    },
+    {
+      "class_name": "ElevenLabsAudioGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_audio_generation.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate audio using Eleven Labs models",
+        "display_name": "Eleven Labs Audio Generation",
+        "icon": "music",
         "group": "create"
       }
     },
