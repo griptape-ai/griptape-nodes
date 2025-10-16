@@ -1512,6 +1512,17 @@
       }
     },
     {
+      "class_name": "FlipImage",
+      "file_path": "griptape_nodes_library/image/flip_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Flip image horizontally, vertically, or both directions",
+        "display_name": "Flip Image",
+        "icon": "flip-horizontal",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "GaussianBlurImage",
       "file_path": "griptape_nodes_library/image/gaussian_blur_image.py",
       "metadata": {

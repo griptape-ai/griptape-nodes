@@ -115,20 +115,3 @@ class GaussianBlurImage(BaseImageProcessor):
         """Get output filename suffix."""
         radius = kwargs.get("radius", self.DEFAULT_RADIUS)
         return f"_blur_{radius:.1f}"
-
-    def process(self) -> None:
-        """Main workflow execution method."""
-        # Get input image
-        input_image = self.get_parameter_value("input_image")
-
-        if input_image is None:
-            return
-
-        # Normalize input to ImageUrlArtifact
-        if isinstance(input_image, dict):
-            from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
-            input_image = dict_to_image_url_artifact(input_image)
-
-        # Process the image
-        self._process_image_immediately(input_image)

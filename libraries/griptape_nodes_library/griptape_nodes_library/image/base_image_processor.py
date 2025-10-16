@@ -8,7 +8,7 @@ from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -18,7 +18,7 @@ from griptape_nodes_library.utils.image_utils import (
 )
 
 
-class BaseImageProcessor(ControlNode, ABC):
+class BaseImageProcessor(SuccessFailureNode, ABC):
     """Base class for image processing nodes with common functionality."""
 
     # Default image properties constants
@@ -98,6 +98,13 @@ class BaseImageProcessor(ControlNode, ABC):
                 tooltip="The processed image",
                 ui_options={"pulse_on_run": True, "expander": True},
             )
+        )
+
+        # Add status parameters using the SuccessFailureNode helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the image processing result",
+            result_details_placeholder="Details on the image processing will be presented here.",
+            parameter_group_initially_collapsed=True,
         )
 
         self._setup_logging_group()
@@ -279,40 +286,36 @@ class BaseImageProcessor(ControlNode, ABC):
 
     def _process(self, pil_image: Image.Image, detected_format: str, **kwargs) -> None:
         """Common processing wrapper."""
-        try:
-            self.append_value_to_parameter("logs", f"{self._get_processing_description()}\n")
+        self.append_value_to_parameter("logs", f"{self._get_processing_description()}\n")
 
-            # Process image using the custom implementation
-            processed_image = self._process_image(pil_image, **kwargs)
+        # Process image using the custom implementation
+        processed_image = self._process_image(pil_image, **kwargs)
 
-            # Get output format
-            output_format = self._get_output_format(detected_format)
+        # Get output format
+        output_format = self._get_output_format(detected_format)
 
-            # Get output suffix from subclass
-            suffix = self._get_output_suffix(**kwargs)
+        # Get output suffix from subclass
+        suffix = self._get_output_suffix(**kwargs)
 
-            # Save processed image
-            output_artifact = self._save_image_artifact(processed_image, output_format, suffix)
+        # Save processed image
+        output_artifact = self._save_image_artifact(processed_image, output_format, suffix)
 
-            self.append_value_to_parameter(
-                "logs", f"Successfully processed image with suffix: {suffix}.{output_format.lower()}\n"
-            )
+        self.append_value_to_parameter(
+            "logs", f"Successfully processed image with suffix: {suffix}.{output_format.lower()}\n"
+        )
 
-            # Save to parameter
-            self.parameter_output_values["output"] = output_artifact
-
-        except Exception as e:
-            error_message = str(e)
-            msg = f"{self.name}: Error processing image: {error_message}"
-            self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+        # Save to parameter
+        self.parameter_output_values["output"] = output_artifact
 
     def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get the output filename suffix. Override in subclasses if needed."""
         return ""
 
-    def process(self) -> AsyncResult[None]:
+    async def aprocess(self) -> None:
         """Common async processing entry point."""
+        # Reset execution state and clear status
+        self._clear_execution_status()
+
         # Get image input data
         pil_image, detected_format = self._get_image_input_data()
         self._log_format_detection(detected_format)
@@ -325,16 +328,36 @@ class BaseImageProcessor(ControlNode, ABC):
         self.append_value_to_parameter("logs", f"[Processing {self._get_processing_description()}..]\n")
 
         try:
-            # Run the image processing asynchronously
+            # Run the image processing
             self.append_value_to_parameter("logs", "[Started image processing..]\n")
-            yield lambda: self._process(pil_image, detected_format, **custom_params)
+            self._process(pil_image, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished image processing.]\n")
+
+            # Set success status with detailed information
+            output_format = self._get_output_format(detected_format)
+            suffix = self._get_output_suffix(**custom_params)
+            success_details = (
+                f"Successfully processed image: {self._get_processing_description()}\n"
+                f"Input: {pil_image.width}x{pil_image.height} {detected_format}\n"
+                f"Output: {output_format} format with suffix '{suffix}'"
+            )
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
 
         except Exception as e:
             error_message = str(e)
             msg = f"{self.name}: Error processing image: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+
+            # Set failure status with detailed error information
+            failure_details = (
+                f"Image processing failed: {self._get_processing_description()}\n"
+                f"Input: {pil_image.width}x{pil_image.height} {detected_format}\n"
+                f"Error: {error_message}"
+            )
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
+
+            # Handle failure based on whether failure output is connected
+            self._handle_failure_exception(ValueError(msg))
 
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get custom parameters for processing. Override in subclasses if needed."""
