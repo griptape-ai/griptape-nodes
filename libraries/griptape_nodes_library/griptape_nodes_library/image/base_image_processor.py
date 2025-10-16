@@ -9,7 +9,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -138,15 +138,10 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         """Common image input validation."""
         exceptions = []
 
-        # Validate that we have an image
+        # Only validate if there's actually a value to validate
         image = self.parameter_values.get("input_image")
-        if not image:
-            msg = f"{self.name}: Input image parameter is required"
-            exceptions.append(ValueError(msg))
-
-        # Make sure it's an image artifact
-        if not hasattr(image, "value"):
-            msg = f"{self.name}: Input image parameter must have a value"
+        if image is not None and (not hasattr(image, "value") or not image.value):
+            msg = f"{self.name}: Input image parameter must have a valid value"
             exceptions.append(ValueError(msg))
 
         return exceptions if exceptions else None
@@ -278,6 +273,12 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         if custom_exceptions:
             exceptions.extend(custom_exceptions)
 
+        # If there are validation errors, set the status to failure
+        if exceptions:
+            error_messages = [str(e) for e in exceptions]
+            error_details = f"Validation failed: {'; '.join(error_messages)}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+
         return exceptions if exceptions else None
 
     def _validate_custom_parameters(self) -> list[Exception] | None:
@@ -311,53 +312,50 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         """Get the output filename suffix. Override in subclasses if needed."""
         return ""
 
-    async def aprocess(self) -> None:
-        """Common async processing entry point."""
-        # Reset execution state and clear status
+    def process(self) -> None:
+        """Main workflow execution method following LoadImage pattern."""
+        # Reset execution state and result details at the start of each run
         self._clear_execution_status()
 
-        # Get image input data
-        pil_image, detected_format = self._get_image_input_data()
-        self._log_format_detection(detected_format)
-        self._log_image_properties(pil_image)
+        # Clear output values to prevent downstream nodes from getting stale data on errors
+        self.parameter_output_values["output"] = None
 
-        # Get custom parameters from subclasses
-        custom_params = self._get_custom_parameters()
+        # Get input image
+        input_image = self.get_parameter_value("input_image")
 
-        # Initialize logs
-        self.append_value_to_parameter("logs", f"[Processing {self._get_processing_description()}..]\n")
+        if input_image is None:
+            error_details = "No input image provided"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            self._handle_failure_exception(RuntimeError(error_details))
+            return
 
         try:
+            # Get image input data
+            pil_image, detected_format = self._get_image_input_data()
+            self._log_format_detection(detected_format)
+            self._log_image_properties(pil_image)
+
+            # Get custom parameters from subclasses
+            custom_params = self._get_custom_parameters()
+
+            # Initialize logs
+            self.append_value_to_parameter("logs", f"[Processing {self._get_processing_description()}..]\n")
+
             # Run the image processing
             self.append_value_to_parameter("logs", "[Started image processing..]\n")
             self._process(pil_image, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished image processing.]\n")
 
-            # Set success status with detailed information
-            output_format = self._get_output_format(detected_format)
-            suffix = self._get_output_suffix(**custom_params)
-            success_details = (
-                f"Successfully processed image: {self._get_processing_description()}\n"
-                f"Input: {pil_image.width}x{pil_image.height} {detected_format}\n"
-                f"Output: {output_format} format with suffix '{suffix}'"
-            )
+            # Success case
+            success_details = f"Successfully processed image: {self._get_processing_description()} ({pil_image.width}x{pil_image.height})"
             self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+            logger.info(f"{self.__class__.__name__} '{self.name}': {success_details}")
 
         except Exception as e:
-            error_message = str(e)
-            msg = f"{self.name}: Error processing image: {error_message}"
-            self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-
-            # Set failure status with detailed error information
-            failure_details = (
-                f"Image processing failed: {self._get_processing_description()}\n"
-                f"Input: {pil_image.width}x{pil_image.height} {detected_format}\n"
-                f"Error: {error_message}"
-            )
-            self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
-
-            # Handle failure based on whether failure output is connected
-            self._handle_failure_exception(ValueError(msg))
+            error_details = f"Failed to process image: {e}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"{self.__class__.__name__} '{self.name}': {error_details}")
+            self._handle_failure_exception(e)
 
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get custom parameters for processing. Override in subclasses if needed."""

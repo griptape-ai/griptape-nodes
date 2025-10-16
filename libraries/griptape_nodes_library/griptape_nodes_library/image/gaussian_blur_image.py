@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
 from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
     load_pil_from_url,
     save_pil_image_with_named_filename,
 )
@@ -52,8 +53,6 @@ class GaussianBlurImage(BaseImageProcessor):
         try:
             # Convert to ImageUrlArtifact if needed
             if isinstance(image_value, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 image_artifact = dict_to_image_url_artifact(image_value)
             else:
                 image_artifact = image_value
