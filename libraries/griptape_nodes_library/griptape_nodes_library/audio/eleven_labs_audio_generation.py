@@ -49,6 +49,22 @@ VOICE_PRESET_MAP = {
     "Thomas": "GBv7mTt0atIp3Br8iCZE",
 }
 
+# Model-specific parameter visibility mapping
+MODEL_PARAMETERS = {
+    "eleven-music-v1": ["prompt", "music_duration_seconds", "output_format"],
+    "eleven_multilingual_v2": [
+        "text",
+        "voice_preset",
+        "custom_voice_id",
+        "language_code",
+        "seed",
+        "previous_text",
+        "next_text",
+    ],
+    "eleven_v3": ["text", "voice_preset", "custom_voice_id", "language_code", "seed", "previous_text", "next_text"],
+    "eleven_text_to_sound_v2": ["sound_text", "loop", "sound_duration_seconds", "prompt_influence"],
+}
+
 
 class ElevenLabsAudioGeneration(SuccessFailureNode):
     """Generate audio using Eleven Labs API via Griptape model proxy.
@@ -222,7 +238,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="custom_voice_id",
                 input_types=["str"],
                 type="str",
-                tooltip="Enter a custom Eleven Labs voice ID",
+                tooltip="Enter a custom Eleven Labs voice ID (must be publicly accessible)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "Custom Voice ID",
@@ -237,7 +253,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="language_code",
                 input_types=["str"],
                 type="str",
-                tooltip="ISO 639-1 language code as a hint for pronunciation (optional)",
+                tooltip="ISO 639-1 language code as a hint for pronunciation (optional, defaults to 'en')",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "Language Code",
@@ -375,81 +391,44 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         # Initialize parameter visibility based on default model
         self._initialize_parameter_visibility()
 
-    def _show_music_parameters(self) -> None:
-        """Show music parameters, hide TTS and sound parameters."""
-        self.show_parameter_by_name("prompt")
-        self.show_parameter_by_name("music_duration_seconds")
-        self.show_parameter_by_name("output_format")
-        self.hide_parameter_by_name("text")
-        self.hide_parameter_by_name("voice_preset")
-        self.hide_parameter_by_name("custom_voice_id")
-        self.hide_parameter_by_name("language_code")
-        self.hide_parameter_by_name("seed")
-        self.hide_parameter_by_name("previous_text")
-        self.hide_parameter_by_name("next_text")
-        self.hide_parameter_by_name("sound_text")
-        self.hide_parameter_by_name("loop")
-        self.hide_parameter_by_name("sound_duration_seconds")
-        self.hide_parameter_by_name("prompt_influence")
+    def _update_parameter_visibility(self, model: str) -> None:
+        """Update parameter visibility based on selected model.
 
-    def _show_tts_parameters(self) -> None:
-        """Show TTS parameters, hide music and sound parameters."""
-        self.hide_parameter_by_name("prompt")
-        self.hide_parameter_by_name("music_duration_seconds")
-        self.hide_parameter_by_name("output_format")
-        self.show_parameter_by_name("text")
-        self.show_parameter_by_name("voice_preset")
-        # custom_voice_id visibility depends on voice_preset value
-        voice_preset = self.get_parameter_value("voice_preset")
-        if voice_preset == "Custom...":
-            self.show_parameter_by_name("custom_voice_id")
-        else:
-            self.hide_parameter_by_name("custom_voice_id")
-        self.show_parameter_by_name("language_code")
-        self.show_parameter_by_name("seed")
-        self.show_parameter_by_name("previous_text")
-        self.show_parameter_by_name("next_text")
-        self.hide_parameter_by_name("sound_text")
-        self.hide_parameter_by_name("loop")
-        self.hide_parameter_by_name("sound_duration_seconds")
-        self.hide_parameter_by_name("prompt_influence")
+        Args:
+            model: The selected model name
+        """
+        # Get all parameter names across all models
+        all_parameters = set()
+        for params in MODEL_PARAMETERS.values():
+            all_parameters.update(params)
 
-    def _show_sound_parameters(self) -> None:
-        """Show sound parameters, hide music and TTS parameters."""
-        self.hide_parameter_by_name("prompt")
-        self.hide_parameter_by_name("music_duration_seconds")
-        self.hide_parameter_by_name("output_format")
-        self.hide_parameter_by_name("text")
-        self.hide_parameter_by_name("voice_preset")
-        self.hide_parameter_by_name("custom_voice_id")
-        self.hide_parameter_by_name("language_code")
-        self.hide_parameter_by_name("seed")
-        self.hide_parameter_by_name("previous_text")
-        self.hide_parameter_by_name("next_text")
-        self.show_parameter_by_name("sound_text")
-        self.show_parameter_by_name("loop")
-        self.show_parameter_by_name("sound_duration_seconds")
-        self.show_parameter_by_name("prompt_influence")
+        # Get parameters for the selected model
+        visible_parameters = set(MODEL_PARAMETERS.get(model, []))
+
+        # Show parameters for this model, hide all others
+        for param_name in all_parameters:
+            if param_name in visible_parameters:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
+
+        # Special handling for custom_voice_id - only show if voice_preset is "Custom..."
+        if "custom_voice_id" in visible_parameters:
+            voice_preset = self.get_parameter_value("voice_preset")
+            if voice_preset == "Custom...":
+                self.show_parameter_by_name("custom_voice_id")
+            else:
+                self.hide_parameter_by_name("custom_voice_id")
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "eleven_v3"
-        if default_model == "eleven-music-v1":
-            self._show_music_parameters()
-        elif default_model in {"eleven_multilingual_v2", "eleven_v3"}:
-            self._show_tts_parameters()
-        elif default_model == "eleven_text_to_sound_v2":
-            self._show_sound_parameters()
+        self._update_parameter_visibility(default_model)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update parameter visibility based on model and voice preset selection."""
         if parameter.name == "model":
-            if value == "eleven-music-v1":
-                self._show_music_parameters()
-            elif value in {"eleven_multilingual_v2", "eleven_v3"}:
-                self._show_tts_parameters()
-            elif value == "eleven_text_to_sound_v2":
-                self._show_sound_parameters()
+            self._update_parameter_visibility(value)
         elif parameter.name == "voice_preset":
             # Show/hide custom voice ID field based on preset selection
             if value == "Custom...":
