@@ -12,6 +12,23 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
 @dataclass
+class OrganizationInfo:
+    """Organization information from Griptape Cloud."""
+
+    id: str
+    name: str
+
+
+@dataclass
+class UserInfo:
+    """User information from Griptape Cloud."""
+
+    id: str
+    email: str
+    name: str | None = None
+
+
+@dataclass
 @PayloadRegistry.register
 class AppStartSessionRequest(RequestPayload):
     """Start a new application session.
@@ -201,6 +218,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
         workflow_file_path: Path to workflow file (None if none)
         has_active_flow: Whether there's an active flow running
         engine_name: Human-readable engine name
+        user: User information including ID, email, and name (None if not logged in)
+        user_organization: User's organization information including ID and name (None if not logged in)
     """
 
     heartbeat_id: str
@@ -216,6 +235,8 @@ class EngineHeartbeatResultSuccess(ResultPayloadSuccess):
     workflow_file_path: str | None
     has_active_flow: bool
     engine_name: str
+    user: UserInfo | None
+    user_organization: OrganizationInfo | None
 
 
 @dataclass
