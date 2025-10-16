@@ -312,9 +312,11 @@ wheels = [
 [[package]]
 name = "griptape-cloud-client"
 version = "0.1.0"
-source = { git = "https://github.com/griptape-ai/griptape-cloud-python-client?rev=main#c582d9648eafe420685677d15b7d7d195fa3f1ed" }
+source = { git = "https://github.com/griptape-ai/griptape-cloud-python-client?rev=main#47173f8815aa06f0e2b3b833d68af5b81d1bae63" }
 dependencies = [
+    { name = "attrs" },
     { name = "httpx" },
+    { name = "python-dateutil" },
     { name = "pyyaml" },
 ]
 
