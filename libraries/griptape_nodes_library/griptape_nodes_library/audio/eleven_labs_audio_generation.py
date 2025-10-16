@@ -30,23 +30,23 @@ MAX_MUSIC_LENGTH_SEC = 300.0
 MIN_SOUND_DURATION_SEC = 0.5
 MAX_SOUND_DURATION_SEC = 30.0
 
-# Voice preset mapping - friendly names to Eleven Labs voice IDs
+# Voice preset mapping - friendly names to Eleven Labs voice IDs (sorted alphabetically)
 VOICE_PRESET_MAP = {
-    "Rachel": "21m00Tcm4TlvDq8ikWAM",
-    "Drew": "29vD33N1CtxCmqQRPOHJ",
-    "Clyde": "2EiwWnXFnvU5JabPnv8n",
-    "Paul": "5Q0t7uMcjvnagumLfvZi",
-    "Domi": "AZnzlk1XvdvUeBnXmlld",
-    "Dave": "CYw3kZ02Hs0563khs1Fj",
-    "Fin": "D38z5RcWu1voky8WS1ja",
-    "Sarah": "EXAVITQu4vr4xnSDxMaL",
+    "Alexandra": "kdmDKE6EkgrWrrykO9Qt",
     "Antoni": "ErXwobaYiN019PkySvjV",
-    "Thomas": "GBv7mTt0atIp3Br8iCZE",
+    "Austin": "Bj9UqZbhQsanLzgalpEG",
+    "Clyde": "2EiwWnXFnvU5JabPnv8n",
+    "Dave": "CYw3kZ02Hs0563khs1Fj",
+    "Domi": "AZnzlk1XvdvUeBnXmlld",
+    "Drew": "29vD33N1CtxCmqQRPOHJ",
+    "Fin": "D38z5RcWu1voky8WS1ja",
+    "Hope": "tnSpp4vdxKPjI9w0GnoV",
     "James": "EkK5I93UQWFDigLMpZcX",
     "Jane": "RILOU7YmBhvwJGDGjNmP",
-    "Hope": "tnSpp4vdxKPjI9w0GnoV",
-    "Alexandra": "kdmDKE6EkgrWrrykO9Qt",
-    "Austin": "Bj9UqZbhQsanLzgalpEG",
+    "Paul": "5Q0t7uMcjvnagumLfvZi",
+    "Rachel": "21m00Tcm4TlvDq8ikWAM",
+    "Sarah": "EXAVITQu4vr4xnSDxMaL",
+    "Thomas": "GBv7mTt0atIp3Br8iCZE",
 }
 
 
@@ -84,7 +84,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value="eleven-music-v1",
+                default_value="eleven_v3",
                 tooltip="Select the Eleven Labs model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={
@@ -187,29 +187,28 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="voice_preset",
                 input_types=["str"],
                 type="str",
-                default_value="Default Voice",
-                tooltip="Select a preset voice or choose 'Custom' to enter a voice ID",
+                default_value="Alexandra",
+                tooltip="Select a preset voice or choose 'Custom...' to enter a voice ID",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={
                     Options(
                         choices=[
-                            "Default Voice",
-                            "Rachel",
-                            "Drew",
-                            "Clyde",
-                            "Paul",
-                            "Domi",
-                            "Dave",
-                            "Fin",
-                            "Sarah",
+                            "Alexandra",
                             "Antoni",
-                            "Thomas",
+                            "Austin",
+                            "Clyde",
+                            "Dave",
+                            "Domi",
+                            "Drew",
+                            "Fin",
+                            "Hope",
                             "James",
                             "Jane",
-                            "Hope",
-                            "Alexandra",
-                            "Austin",
-                            "Custom",
+                            "Paul",
+                            "Rachel",
+                            "Sarah",
+                            "Thomas",
+                            "Custom...",
                         ]
                     )
                 },
@@ -252,7 +251,8 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="seed",
                 input_types=["int"],
                 type="int",
-                tooltip="Seed for reproducible generation (optional)",
+                default_value=-1,
+                tooltip="Seed for reproducible generation (-1 for random seed)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Seed"},
             )
@@ -263,11 +263,12 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="previous_text",
                 input_types=["str"],
                 type="str",
-                tooltip="Previous text to improve continuity in speech generation (optional)",
+                tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
                     "display_name": "Previous Text",
+                    "placeholder_text": "Optional: provide text that comes before for continuity...",
                 },
             )
         )
@@ -277,11 +278,12 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="next_text",
                 input_types=["str"],
                 type="str",
-                tooltip="Next text to improve continuity in speech generation (optional)",
+                tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
                     "display_name": "Next Text",
+                    "placeholder_text": "Optional: provide text that comes after for continuity...",
                 },
             )
         )
@@ -399,7 +401,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         self.show_parameter_by_name("voice_preset")
         # custom_voice_id visibility depends on voice_preset value
         voice_preset = self.get_parameter_value("voice_preset")
-        if voice_preset == "Custom":
+        if voice_preset == "Custom...":
             self.show_parameter_by_name("custom_voice_id")
         else:
             self.hide_parameter_by_name("custom_voice_id")
@@ -431,7 +433,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model") or "eleven-music-v1"
+        default_model = self.get_parameter_value("model") or "eleven_v3"
         if default_model == "eleven-music-v1":
             self._show_music_parameters()
         elif default_model in {"eleven_multilingual_v2", "eleven_v3"}:
@@ -450,7 +452,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 self._show_sound_parameters()
         elif parameter.name == "voice_preset":
             # Show/hide custom voice ID field based on preset selection
-            if value == "Custom":
+            if value == "Custom...":
                 self.show_parameter_by_name("custom_voice_id")
             else:
                 self.hide_parameter_by_name("custom_voice_id")
@@ -484,7 +486,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         """Async implementation of the processing logic."""
         self._clear_execution_status()
 
-        model = self.get_parameter_value("model") or "eleven-music-v1"
+        model = self.get_parameter_value("model") or "eleven_v3"
         params = self._get_parameters(model)
         api_key = self._get_api_key()
         headers = self._build_headers(api_key)
@@ -558,10 +560,10 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         # Handle voice ID selection based on preset
         voice_preset = self.get_parameter_value("voice_preset")
         voice_id = None
-        if voice_preset == "Custom":
+        if voice_preset == "Custom...":
             # Use custom voice ID entered by user
             voice_id = self.get_parameter_value("custom_voice_id")
-        elif voice_preset and voice_preset != "Default Voice":
+        elif voice_preset:
             # Map preset name to actual voice ID
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
@@ -572,7 +574,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             params["voice_id"] = voice_id
         if language_code:
             params["language_code"] = language_code
-        if seed is not None:
+        if seed is not None and seed != -1:
             params["seed"] = seed
         if previous_text:
             params["previous_text"] = previous_text
