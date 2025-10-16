@@ -11,9 +11,10 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ MIN_SOUND_DURATION_SEC = 0.5
 MAX_SOUND_DURATION_SEC = 30.0
 
 
-class ElevenLabsAudioGeneration(DataNode):
+class ElevenLabsAudioGeneration(SuccessFailureNode):
     """Generate audio using Eleven Labs API via Griptape model proxy.
 
     Supports three models:
@@ -105,6 +106,7 @@ class ElevenLabsAudioGeneration(DataNode):
                 default_value=30.0,
                 tooltip="Duration of the music in seconds (10.0-300.0s)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=MIN_MUSIC_LENGTH_SEC, max_val=MAX_MUSIC_LENGTH_SEC)},
                 ui_options={"display_name": "Duration (seconds)"},
             )
         )
@@ -257,9 +259,10 @@ class ElevenLabsAudioGeneration(DataNode):
                 name="sound_duration_seconds",
                 input_types=["float"],
                 type="float",
-                default_value=10.0,
+                default_value=6.0,
                 tooltip="Duration of the sound in seconds (0.5-30.0s, optional)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=MIN_SOUND_DURATION_SEC, max_val=MAX_SOUND_DURATION_SEC)},
                 ui_options={"display_name": "Duration (seconds)"},
             )
         )
@@ -269,8 +272,10 @@ class ElevenLabsAudioGeneration(DataNode):
                 name="prompt_influence",
                 input_types=["float"],
                 type="float",
+                default_value=0.3,
                 tooltip="Prompt influence (0.0-1.0). Higher values follow prompt more closely. Defaults to 0.3",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Slider(min_val=0.0, max_val=1.0)},
                 ui_options={"display_name": "Prompt Influence"},
             )
         )
@@ -296,6 +301,13 @@ class ElevenLabsAudioGeneration(DataNode):
                 settable=False,
                 ui_options={"is_full_width": True, "pulse_on_run": True},
             )
+        )
+
+        # Create status output parameters for success/failure information
+        self._create_status_parameters(
+            result_details_tooltip="Details about the audio generation result or any errors encountered",
+            result_details_placeholder="Audio generation status will appear here...",
+            parameter_group_initially_collapsed=False,
         )
 
         # Initialize parameter visibility based on default model
@@ -426,6 +438,8 @@ class ElevenLabsAudioGeneration(DataNode):
 
     async def _process_async(self) -> None:
         """Async implementation of the processing logic."""
+        self._clear_execution_status()
+
         model = self.get_parameter_value("model") or "eleven-music-v1"
         params = self._get_parameters(model)
         api_key = self._get_api_key()
@@ -439,11 +453,23 @@ class ElevenLabsAudioGeneration(DataNode):
         }
         self._log(f"Generating audio with {model_names.get(model, model)} via Griptape proxy")
 
-        response_bytes = await self._submit_request(model, params, headers)
-        if response_bytes:
-            self._handle_response(response_bytes, model)
-        else:
+        try:
+            response_bytes = await self._submit_request(model, params, headers)
+            if response_bytes:
+                self._handle_response(response_bytes, model)
+                self._set_status_results(was_successful=True, result_details="Audio generated successfully")
+            else:
+                self._set_safe_defaults()
+                self._set_status_results(was_successful=False, result_details="No audio data received from API")
+        except Exception as e:
             self._set_safe_defaults()
+            # Set the failure status with the error message BEFORE calling _handle_failure_exception
+            # This ensures the user sees the error details in the node's status output
+            error_message = str(e)
+            self._set_status_results(was_successful=False, result_details=error_message)
+            # Now handle the exception - this will either log and continue (if failure output is connected)
+            # or raise the exception to crash the flow (if no failure handling is set up)
+            self._handle_failure_exception(e)
 
     def _get_parameters(self, model: str) -> dict[str, Any]:
         if model == "eleven-music-v1":
@@ -467,16 +493,9 @@ class ElevenLabsAudioGeneration(DataNode):
             prompt = prompt[:MAX_PROMPT_LENGTH]
             self._log(f"Prompt truncated to {MAX_PROMPT_LENGTH} characters")
 
-        # Convert seconds to milliseconds and validate
+        # Convert seconds to milliseconds
         music_length_ms = None
         if duration_seconds is not None:
-            if duration_seconds < MIN_MUSIC_LENGTH_SEC:
-                duration_seconds = MIN_MUSIC_LENGTH_SEC
-                self._log(f"Duration adjusted to minimum {MIN_MUSIC_LENGTH_SEC}s")
-            elif duration_seconds > MAX_MUSIC_LENGTH_SEC:
-                duration_seconds = MAX_MUSIC_LENGTH_SEC
-                self._log(f"Duration adjusted to maximum {MAX_MUSIC_LENGTH_SEC}s")
-
             music_length_ms = int(duration_seconds * 1000)
 
         return {
@@ -521,22 +540,8 @@ class ElevenLabsAudioGeneration(DataNode):
         if loop is not None:
             params["loop"] = loop
         if duration_seconds is not None:
-            # Validate duration for sound effects
-            if duration_seconds < MIN_SOUND_DURATION_SEC:
-                duration_seconds = MIN_SOUND_DURATION_SEC
-                self._log(f"Duration adjusted to minimum {MIN_SOUND_DURATION_SEC}s")
-            elif duration_seconds > MAX_SOUND_DURATION_SEC:
-                duration_seconds = MAX_SOUND_DURATION_SEC
-                self._log(f"Duration adjusted to maximum {MAX_SOUND_DURATION_SEC}s")
             params["duration_seconds"] = duration_seconds
         if prompt_influence is not None:
-            # Validate prompt influence (0.0-1.0)
-            if prompt_influence < 0.0:
-                prompt_influence = 0.0
-                self._log("Prompt influence adjusted to minimum 0.0")
-            elif prompt_influence > 1.0:
-                prompt_influence = 1.0
-                self._log("Prompt influence adjusted to maximum 1.0")
             params["prompt_influence"] = prompt_influence
 
         return params
@@ -577,15 +582,58 @@ class ElevenLabsAudioGeneration(DataNode):
                 response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            msg = f"{self.name} API error: {e.response.status_code}"
-            raise RuntimeError(msg) from e
+            error_message = self._parse_error_response(e.response.text, e.response.status_code)
+            raise RuntimeError(error_message) from e
         except Exception as e:
             self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
+            msg = f"Request failed: {e}"
             raise RuntimeError(msg) from e
 
         self._log("Request submitted successfully")
         return response.content
+
+    def _parse_error_response(self, response_text: str, status_code: int) -> str:
+        """Parse error response and extract meaningful error information for the user.
+
+        Args:
+            response_text: The raw response text from the API
+            status_code: The HTTP status code
+
+        Returns:
+            A user-friendly error message
+        """
+        try:
+            # Try to parse the response as JSON
+            error_data = _json.loads(response_text)
+
+            # Check if there's a provider_response field
+            if "provider_response" in error_data:
+                # The provider_response is a JSON string that needs to be parsed
+                provider_response_str = error_data["provider_response"]
+                provider_data = _json.loads(provider_response_str)
+
+                # Extract detail.status and detail.message if available
+                if "detail" in provider_data:
+                    detail = provider_data["detail"]
+                    status = detail.get("status", "")
+                    message = detail.get("message", "")
+
+                    if status and message:
+                        # Format a user-friendly error message
+                        return f"{status}: {message}"
+                    if message:
+                        return f"Error: {message}"
+
+            # Fall back to the error field if provider_response isn't available
+            if "error" in error_data:
+                return f"Error: {error_data['error']}"
+
+            # If we got here, we have JSON but couldn't extract useful info
+            return f"API Error ({status_code}): {response_text[:200]}"
+
+        except (_json.JSONDecodeError, KeyError, TypeError):
+            # If parsing fails, return a generic error with the status code
+            return f"API Error ({status_code}): Unable to parse error response"
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
