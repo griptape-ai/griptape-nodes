@@ -30,22 +30,22 @@ MIN_SOUND_DURATION_SEC = 0.5
 MAX_SOUND_DURATION_SEC = 30.0
 
 # Voice preset mapping - friendly names to Eleven Labs voice IDs (sorted alphabetically)
-VOICE_PRESET_MAP = {
-    "Alexandra": "kdmDKE6EkgrWrrykO9Qt",
-    "Antoni": "ErXwobaYiN019PkySvjV",
-    "Austin": "Bj9UqZbhQsanLzgalpEG",
-    "Clyde": "2EiwWnXFnvU5JabPnv8n",
-    "Dave": "CYw3kZ02Hs0563khs1Fj",
-    "Domi": "AZnzlk1XvdvUeBnXmlld",
-    "Drew": "29vD33N1CtxCmqQRPOHJ",
-    "Fin": "D38z5RcWu1voky8WS1ja",
-    "Hope": "tnSpp4vdxKPjI9w0GnoV",
-    "James": "EkK5I93UQWFDigLMpZcX",
-    "Jane": "RILOU7YmBhvwJGDGjNmP",
-    "Paul": "5Q0t7uMcjvnagumLfvZi",
-    "Rachel": "21m00Tcm4TlvDq8ikWAM",
-    "Sarah": "EXAVITQu4vr4xnSDxMaL",
-    "Thomas": "GBv7mTt0atIp3Br8iCZE",
+VOICE_PRESET_MAP = {  # spellchecker:disable-line
+    "Alexandra": "kdmDKE6EkgrWrrykO9Qt",  # spellchecker:disable-line
+    "Antoni": "ErXwobaYiN019PkySvjV",  # spellchecker:disable-line
+    "Austin": "Bj9UqZbhQsanLzgalpEG",  # spellchecker:disable-line
+    "Clyde": "2EiwWnXFnvU5JabPnv8n",  # spellchecker:disable-line
+    "Dave": "CYw3kZ02Hs0563khs1Fj",  # spellchecker:disable-line
+    "Domi": "AZnzlk1XvdvUeBnXmlld",  # spellchecker:disable-line
+    "Drew": "29vD33N1CtxCmqQRPOHJ",  # spellchecker:disable-line
+    "Fin": "D38z5RcWu1voky8WS1ja",  # spellchecker:disable-line
+    "Hope": "tnSpp4vdxKPjI9w0GnoV",  # spellchecker:disable-line
+    "James": "EkK5I93UQWFDigLMpZcX",  # spellchecker:disable-line
+    "Jane": "RILOU7YmBhvwJGDGjNmP",  # spellchecker:disable-line
+    "Paul": "5Q0t7uMcjvnagumLfvZi",  # spellchecker:disable-line
+    "Rachel": "21m00Tcm4TlvDq8ikWAM",  # spellchecker:disable-line
+    "Sarah": "EXAVITQu4vr4xnSDxMaL",  # spellchecker:disable-line
+    "Thomas": "GBv7mTt0atIp3Br8iCZE",  # spellchecker:disable-line
 }
 
 # Model-specific parameter visibility mapping
