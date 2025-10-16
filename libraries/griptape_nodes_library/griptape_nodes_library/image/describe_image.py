@@ -19,7 +19,6 @@ MODEL_CHOICES = [
     "gpt-4.1",
     "gpt-4.1-mini",
     "gpt-4.1-nano",
-    "gpt-4.5-preview",
     "gpt-5",
     "o1",
     "o1-mini",

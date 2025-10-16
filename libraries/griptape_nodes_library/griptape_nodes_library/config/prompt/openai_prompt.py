@@ -17,7 +17,7 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 SERVICE = "OpenAI"
 API_KEY_URL = "https://platform.openai.com/api-keys"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
-MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.5-preview", "gpt-5", "o1", "o1-mini", "o3-mini"]
+MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5", "o1", "o1-mini", "o3-mini"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
