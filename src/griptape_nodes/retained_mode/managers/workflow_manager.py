@@ -1699,7 +1699,7 @@ class WorkflowManager:
         """Generates execute_workflow(...) and the __main__ guard."""
         # Use workflow shape from metadata if available, otherwise skip execution block
         if workflow_metadata.workflow_shape is None:
-            logger.info("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
+            logger.debug("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
             return None
 
         # Convert WorkflowShape to dict format expected by the rest of the method
