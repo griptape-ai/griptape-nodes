@@ -262,6 +262,7 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
+        self._workflows_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -352,39 +353,44 @@ class WorkflowManager:
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
-        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
-        config_mgr = GriptapeNodes.ConfigManager()
+        self._workflows_loading_complete.clear()
 
-        workflows_to_register = []
+        try:
+            default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+            config_mgr = GriptapeNodes.ConfigManager()
 
-        # Add from config
-        config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
-        workflows_to_register.extend(config_workflows)
+            workflows_to_register = []
 
-        # Add from workspace (avoiding duplicates)
-        workspace_path = config_mgr.workspace_path
-        workflows_to_register.extend([workspace_path])
+            # Add from config
+            config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
+            workflows_to_register.extend(config_workflows)
 
-        # Register all discovered workflows at once if any were found
-        self._process_workflows_for_registration(workflows_to_register)
+            # Add from workspace (avoiding duplicates)
+            workspace_path = config_mgr.workspace_path
+            workflows_to_register.extend([workspace_path])
 
-        # Print it all out nicely.
-        self.print_workflow_load_status()
+            # Register all discovered workflows at once if any were found
+            self._process_workflows_for_registration(workflows_to_register)
 
-        # Now remove any workflows that were missing files.
-        paths_to_remove = set()
-        for workflow_path, workflow_info in self._workflow_file_path_to_info.items():
-            if workflow_info.status == WorkflowManager.WorkflowStatus.MISSING:
-                # Remove this file path from the config.
-                paths_to_remove.add(workflow_path.lower())
+            # Print it all out nicely.
+            self.print_workflow_load_status()
 
-        if paths_to_remove:
-            workflows_to_register = config_mgr.get_config_value(default_workflow_section)
-            if workflows_to_register:
-                workflows_to_register = [
-                    workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
-                ]
-                config_mgr.set_config_value(default_workflow_section, workflows_to_register)
+            # Now remove any workflows that were missing files.
+            paths_to_remove = set()
+            for workflow_path, workflow_info in self._workflow_file_path_to_info.items():
+                if workflow_info.status == WorkflowManager.WorkflowStatus.MISSING:
+                    # Remove this file path from the config.
+                    paths_to_remove.add(workflow_path.lower())
+
+            if paths_to_remove:
+                workflows_to_register = config_mgr.get_config_value(default_workflow_section)
+                if workflows_to_register:
+                    workflows_to_register = [
+                        workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
+                    ]
+                    config_mgr.set_config_value(default_workflow_section, workflows_to_register)
+        finally:
+            self._workflows_loading_complete.set()
 
     def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
         """Get the workflow metadata for a given workflow file path.
@@ -609,6 +615,8 @@ class WorkflowManager:
         return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
     async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+        await self._workflows_loading_complete.wait()
+
         # get workflow from registry
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -716,7 +724,9 @@ class WorkflowManager:
             ),
         )
 
-    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
+    async def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
+        await self._workflows_loading_complete.wait()
+
         try:
             workflows = WorkflowRegistry.list_workflows()
         except Exception:
