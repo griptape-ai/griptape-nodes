@@ -30,6 +30,25 @@ MAX_MUSIC_LENGTH_SEC = 300.0
 MIN_SOUND_DURATION_SEC = 0.5
 MAX_SOUND_DURATION_SEC = 30.0
 
+# Voice preset mapping - friendly names to Eleven Labs voice IDs
+VOICE_PRESET_MAP = {
+    "Rachel": "21m00Tcm4TlvDq8ikWAM",
+    "Drew": "29vD33N1CtxCmqQRPOHJ",
+    "Clyde": "2EiwWnXFnvU5JabPnv8n",
+    "Paul": "5Q0t7uMcjvnagumLfvZi",
+    "Domi": "AZnzlk1XvdvUeBnXmlld",
+    "Dave": "CYw3kZ02Hs0563khs1Fj",
+    "Fin": "D38z5RcWu1voky8WS1ja",
+    "Sarah": "EXAVITQu4vr4xnSDxMaL",
+    "Antoni": "ErXwobaYiN019PkySvjV",
+    "Thomas": "GBv7mTt0atIp3Br8iCZE",
+    "James": "EkK5I93UQWFDigLMpZcX",
+    "Jane": "RILOU7YmBhvwJGDGjNmP",
+    "Hope": "tnSpp4vdxKPjI9w0GnoV",
+    "Alexandra": "kdmDKE6EkgrWrrykO9Qt",
+    "Austin": "Bj9UqZbhQsanLzgalpEG",
+}
+
 
 class ElevenLabsAudioGeneration(SuccessFailureNode):
     """Generate audio using Eleven Labs API via Griptape model proxy.
@@ -162,14 +181,55 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             )
         )
 
+        # Voice preset selection
         self.add_parameter(
             Parameter(
-                name="voice_id",
+                name="voice_preset",
                 input_types=["str"],
                 type="str",
-                tooltip="Voice ID to use for speech generation (optional, null reverts to default)",
+                default_value="Default Voice",
+                tooltip="Select a preset voice or choose 'Custom' to enter a voice ID",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Voice ID"},
+                traits={
+                    Options(
+                        choices=[
+                            "Default Voice",
+                            "Rachel",
+                            "Drew",
+                            "Clyde",
+                            "Paul",
+                            "Domi",
+                            "Dave",
+                            "Fin",
+                            "Sarah",
+                            "Antoni",
+                            "Thomas",
+                            "James",
+                            "Jane",
+                            "Hope",
+                            "Alexandra",
+                            "Austin",
+                            "Custom",
+                        ]
+                    )
+                },
+                ui_options={"display_name": "Voice"},
+            )
+        )
+
+        # Custom voice ID field (hidden by default)
+        self.add_parameter(
+            Parameter(
+                name="custom_voice_id",
+                input_types=["str"],
+                type="str",
+                tooltip="Enter a custom Eleven Labs voice ID",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "display_name": "Custom Voice ID",
+                    "hide": True,
+                    "placeholder_text": "e.g., 21m00Tcm4TlvDq8ikWAM",
+                },
             )
         )
 
@@ -313,103 +373,87 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         # Initialize parameter visibility based on default model
         self._initialize_parameter_visibility()
 
+    def _show_music_parameters(self) -> None:
+        """Show music parameters, hide TTS and sound parameters."""
+        self.show_parameter_by_name("prompt")
+        self.show_parameter_by_name("music_duration_seconds")
+        self.show_parameter_by_name("output_format")
+        self.hide_parameter_by_name("text")
+        self.hide_parameter_by_name("voice_preset")
+        self.hide_parameter_by_name("custom_voice_id")
+        self.hide_parameter_by_name("language_code")
+        self.hide_parameter_by_name("seed")
+        self.hide_parameter_by_name("previous_text")
+        self.hide_parameter_by_name("next_text")
+        self.hide_parameter_by_name("sound_text")
+        self.hide_parameter_by_name("loop")
+        self.hide_parameter_by_name("sound_duration_seconds")
+        self.hide_parameter_by_name("prompt_influence")
+
+    def _show_tts_parameters(self) -> None:
+        """Show TTS parameters, hide music and sound parameters."""
+        self.hide_parameter_by_name("prompt")
+        self.hide_parameter_by_name("music_duration_seconds")
+        self.hide_parameter_by_name("output_format")
+        self.show_parameter_by_name("text")
+        self.show_parameter_by_name("voice_preset")
+        # custom_voice_id visibility depends on voice_preset value
+        voice_preset = self.get_parameter_value("voice_preset")
+        if voice_preset == "Custom":
+            self.show_parameter_by_name("custom_voice_id")
+        else:
+            self.hide_parameter_by_name("custom_voice_id")
+        self.show_parameter_by_name("language_code")
+        self.show_parameter_by_name("seed")
+        self.show_parameter_by_name("previous_text")
+        self.show_parameter_by_name("next_text")
+        self.hide_parameter_by_name("sound_text")
+        self.hide_parameter_by_name("loop")
+        self.hide_parameter_by_name("sound_duration_seconds")
+        self.hide_parameter_by_name("prompt_influence")
+
+    def _show_sound_parameters(self) -> None:
+        """Show sound parameters, hide music and TTS parameters."""
+        self.hide_parameter_by_name("prompt")
+        self.hide_parameter_by_name("music_duration_seconds")
+        self.hide_parameter_by_name("output_format")
+        self.hide_parameter_by_name("text")
+        self.hide_parameter_by_name("voice_preset")
+        self.hide_parameter_by_name("custom_voice_id")
+        self.hide_parameter_by_name("language_code")
+        self.hide_parameter_by_name("seed")
+        self.hide_parameter_by_name("previous_text")
+        self.hide_parameter_by_name("next_text")
+        self.show_parameter_by_name("sound_text")
+        self.show_parameter_by_name("loop")
+        self.show_parameter_by_name("sound_duration_seconds")
+        self.show_parameter_by_name("prompt_influence")
+
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "eleven-music-v1"
         if default_model == "eleven-music-v1":
-            # Show music parameters, hide TTS and sound parameters
-            self.show_parameter_by_name("prompt")
-            self.show_parameter_by_name("music_duration_seconds")
-            self.show_parameter_by_name("output_format")
-            self.hide_parameter_by_name("text")
-            self.hide_parameter_by_name("voice_id")
-            self.hide_parameter_by_name("language_code")
-            self.hide_parameter_by_name("seed")
-            self.hide_parameter_by_name("previous_text")
-            self.hide_parameter_by_name("next_text")
-            self.hide_parameter_by_name("sound_text")
-            self.hide_parameter_by_name("loop")
-            self.hide_parameter_by_name("sound_duration_seconds")
-            self.hide_parameter_by_name("prompt_influence")
+            self._show_music_parameters()
         elif default_model in {"eleven_multilingual_v2", "eleven_v3"}:
-            # Show TTS parameters, hide music and sound parameters
-            self.hide_parameter_by_name("prompt")
-            self.hide_parameter_by_name("music_duration_seconds")
-            self.hide_parameter_by_name("output_format")
-            self.show_parameter_by_name("text")
-            self.show_parameter_by_name("voice_id")
-            self.show_parameter_by_name("language_code")
-            self.show_parameter_by_name("seed")
-            self.show_parameter_by_name("previous_text")
-            self.show_parameter_by_name("next_text")
-            self.hide_parameter_by_name("sound_text")
-            self.hide_parameter_by_name("loop")
-            self.hide_parameter_by_name("sound_duration_seconds")
-            self.hide_parameter_by_name("prompt_influence")
+            self._show_tts_parameters()
         elif default_model == "eleven_text_to_sound_v2":
-            # Show sound parameters, hide music and TTS parameters
-            self.hide_parameter_by_name("prompt")
-            self.hide_parameter_by_name("music_duration_seconds")
-            self.hide_parameter_by_name("output_format")
-            self.hide_parameter_by_name("text")
-            self.hide_parameter_by_name("voice_id")
-            self.hide_parameter_by_name("language_code")
-            self.hide_parameter_by_name("seed")
-            self.hide_parameter_by_name("previous_text")
-            self.hide_parameter_by_name("next_text")
-            self.show_parameter_by_name("sound_text")
-            self.show_parameter_by_name("loop")
-            self.show_parameter_by_name("sound_duration_seconds")
-            self.show_parameter_by_name("prompt_influence")
+            self._show_sound_parameters()
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Update parameter visibility based on model selection."""
+        """Update parameter visibility based on model and voice preset selection."""
         if parameter.name == "model":
             if value == "eleven-music-v1":
-                # Show music parameters, hide TTS and sound parameters
-                self.show_parameter_by_name("prompt")
-                self.show_parameter_by_name("music_duration_seconds")
-                self.show_parameter_by_name("output_format")
-                self.hide_parameter_by_name("text")
-                self.hide_parameter_by_name("voice_id")
-                self.hide_parameter_by_name("language_code")
-                self.hide_parameter_by_name("seed")
-                self.hide_parameter_by_name("previous_text")
-                self.hide_parameter_by_name("next_text")
-                self.hide_parameter_by_name("sound_text")
-                self.hide_parameter_by_name("loop")
-                self.hide_parameter_by_name("sound_duration_seconds")
-                self.hide_parameter_by_name("prompt_influence")
+                self._show_music_parameters()
             elif value in {"eleven_multilingual_v2", "eleven_v3"}:
-                # Show TTS parameters, hide music and sound parameters
-                self.hide_parameter_by_name("prompt")
-                self.hide_parameter_by_name("music_duration_seconds")
-                self.hide_parameter_by_name("output_format")
-                self.show_parameter_by_name("text")
-                self.show_parameter_by_name("voice_id")
-                self.show_parameter_by_name("language_code")
-                self.show_parameter_by_name("seed")
-                self.show_parameter_by_name("previous_text")
-                self.show_parameter_by_name("next_text")
-                self.hide_parameter_by_name("sound_text")
-                self.hide_parameter_by_name("loop")
-                self.hide_parameter_by_name("sound_duration_seconds")
-                self.hide_parameter_by_name("prompt_influence")
+                self._show_tts_parameters()
             elif value == "eleven_text_to_sound_v2":
-                # Show sound parameters, hide music and TTS parameters
-                self.hide_parameter_by_name("prompt")
-                self.hide_parameter_by_name("music_duration_seconds")
-                self.hide_parameter_by_name("output_format")
-                self.hide_parameter_by_name("text")
-                self.hide_parameter_by_name("voice_id")
-                self.hide_parameter_by_name("language_code")
-                self.hide_parameter_by_name("seed")
-                self.hide_parameter_by_name("previous_text")
-                self.hide_parameter_by_name("next_text")
-                self.show_parameter_by_name("sound_text")
-                self.show_parameter_by_name("loop")
-                self.show_parameter_by_name("sound_duration_seconds")
-                self.show_parameter_by_name("prompt_influence")
+                self._show_sound_parameters()
+        elif parameter.name == "voice_preset":
+            # Show/hide custom voice ID field based on preset selection
+            if value == "Custom":
+                self.show_parameter_by_name("custom_voice_id")
+            else:
+                self.hide_parameter_by_name("custom_voice_id")
 
         return super().after_value_set(parameter, value)
 
@@ -506,11 +550,20 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
 
     def _get_tts_parameters(self) -> dict[str, Any]:
         text = self.get_parameter_value("text") or ""
-        voice_id = self.get_parameter_value("voice_id")
         language_code = self.get_parameter_value("language_code")
         seed = self.get_parameter_value("seed")
         previous_text = self.get_parameter_value("previous_text")
         next_text = self.get_parameter_value("next_text")
+
+        # Handle voice ID selection based on preset
+        voice_preset = self.get_parameter_value("voice_preset")
+        voice_id = None
+        if voice_preset == "Custom":
+            # Use custom voice ID entered by user
+            voice_id = self.get_parameter_value("custom_voice_id")
+        elif voice_preset and voice_preset != "Default Voice":
+            # Map preset name to actual voice ID
+            voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
         params = {"text": text}
 
