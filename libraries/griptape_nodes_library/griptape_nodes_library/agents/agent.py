@@ -65,7 +65,6 @@ MODEL_CHOICES_ARGS = [
     {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
-    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-5", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
