@@ -44,12 +44,15 @@ Use this node when you want to:
 A typical flipping workflow:
 
 1. Load an image using LoadImage
+
 1. Connect that image to the FlipImage node's "input_image" parameter
+
 1. Set the flip direction:
 
     - Select "horizontal" to create a mirror image
     - Select "vertical" to flip upside down
     - Select "both" to rotate 180 degrees
+
 1. Connect the "output" to DisplayImage to view the result
 
 ## Important Notes
