@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 __all__ = ["ElevenLabsAudioGeneration"]
 
 PROMPT_TRUNCATE_LENGTH = 100
-MAX_PROMPT_LENGTH = 2000
 MIN_MUSIC_LENGTH_MS = 10000
 MAX_MUSIC_LENGTH_MS = 300000
 MIN_MUSIC_LENGTH_SEC = 10.0
@@ -310,7 +309,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                 name="sound_text",
                 input_types=["str"],
                 type="str",
-                tooltip="Text describing the sound effect to generate",
+                tooltip="Text describing the sound effect to generate (max 450 characters)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
@@ -512,11 +511,6 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         prompt = self.get_parameter_value("prompt") or ""
         duration_seconds = self.get_parameter_value("music_duration_seconds")
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
-
-        # Validate prompt length
-        if len(prompt) > MAX_PROMPT_LENGTH:
-            prompt = prompt[:MAX_PROMPT_LENGTH]
-            self._log(f"Prompt truncated to {MAX_PROMPT_LENGTH} characters")
 
         # Convert seconds to milliseconds
         music_length_ms = None
