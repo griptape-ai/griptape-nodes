@@ -18,7 +18,7 @@ from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ElevenAudioGeneration"]
+__all__ = ["ElevenLabsAudioGeneration"]
 
 PROMPT_TRUNCATE_LENGTH = 100
 MAX_PROMPT_LENGTH = 2000
@@ -30,7 +30,7 @@ MIN_SOUND_DURATION_SEC = 0.5
 MAX_SOUND_DURATION_SEC = 30.0
 
 
-class ElevenAudioGeneration(DataNode):
+class ElevenLabsAudioGeneration(DataNode):
     """Generate audio using Eleven Labs API via Griptape model proxy.
 
     Supports three models:

@@ -650,7 +650,11 @@
         "description": "Generate music using Eleven Labs Music Generation API",
         "display_name": "Eleven Music Generation",
         "icon": "music",
-        "group": "create"
+        "group": "create",
+        "deprecation": {
+          "deprecation_message": "Please use the Eleven Labs Audio Generation node instead.",
+          "removal_version": "0.64.0"
+        }
       }
     },
     {
