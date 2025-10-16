@@ -88,7 +88,9 @@ class RescaleImage(BaseImageProcessor):
                 default_value="lanczos",
                 tooltip="Resample filter for resizing (higher quality = slower processing)",
             )
-            resample_filter_param.add_trait(Options(choices=list(self.RESAMPLE_FILTER_OPTIONS.keys())))
+            resample_filter_param.add_trait(
+                Options(choices=["nearest", "box", "bilinear", "hamming", "bicubic", "lanczos"])
+            )
             self.add_parameter(resample_filter_param)
 
         self.add_node_element(rescale_group)

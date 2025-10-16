@@ -416,8 +416,11 @@ class ImageBlendCompositor(BaseImageProcessor):
         """Get output filename suffix."""
         return "_blend"
 
-    def process(self) -> None:
+    async def aprocess(self) -> None:
         """Main workflow execution method."""
+        # Reset execution state and clear status
+        self._clear_execution_status()
+
         # Get input images
         base_image = self.get_parameter_value("input_image")
         blend_image = self.get_parameter_value("blend_image")
@@ -449,6 +452,23 @@ class ImageBlendCompositor(BaseImageProcessor):
             self.set_parameter_value("output", output_artifact)
             self.publish_update_to_parameter("output", output_artifact)
 
+            # Set success status with detailed information
+            success_details = (
+                f"Successfully composed images: {self._get_processing_description()}\n"
+                f"Base: {image_pil.width}x{image_pil.height}\n"
+                f"Blend: {blend_pil.width}x{blend_pil.height}\n"
+                f"Output: {processed_image.width}x{processed_image.height}"
+            )
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+
         except Exception as e:
-            logger.error(f"{self.name}: Processing failed: {e}")
+            error_message = str(e)
+            logger.error(f"{self.name}: Processing failed: {error_message}")
+
+            # Set failure status with detailed error information
+            failure_details = f"Image composition failed: {self._get_processing_description()}\nError: {error_message}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
+
+            # Handle failure based on whether failure output is connected
+            self._handle_failure_exception(ValueError(error_message))
             raise

@@ -7,6 +7,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
 from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
     load_pil_from_url,
     save_pil_image_with_named_filename,
 )
@@ -97,8 +98,6 @@ class AdjustImageEQ(BaseImageProcessor):
         try:
             # Convert to ImageUrlArtifact if needed
             if isinstance(image_value, dict):
-                from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
                 image_artifact = dict_to_image_url_artifact(image_value)
             else:
                 image_artifact = image_value
@@ -133,8 +132,6 @@ class AdjustImageEQ(BaseImageProcessor):
         gamma = kwargs.get("gamma", self.DEFAULT_GAMMA)
 
         # Debug logging
-        from griptape_nodes.retained_mode.griptape_nodes import logger
-
         logger.debug(
             f"{self.name}: Processing image with brightness={brightness}, contrast={contrast}, saturation={saturation}, gamma={gamma}"
         )
@@ -157,8 +154,6 @@ class AdjustImageEQ(BaseImageProcessor):
         # Apply gamma adjustment
         if gamma != 1.0:
             # Debug logging
-            from griptape_nodes.retained_mode.griptape_nodes import logger
-
             logger.debug(f"{self.name}: Applying gamma correction with gamma={gamma}, image_mode={pil_image.mode}")
 
             # Use the proper gamma correction method from PIL documentation
@@ -242,20 +237,3 @@ class AdjustImageEQ(BaseImageProcessor):
     def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
         """Get output filename suffix."""
         return "_eq"
-
-    def process(self) -> None:
-        """Main workflow execution method."""
-        # Get input image
-        input_image = self.get_parameter_value("input_image")
-
-        if input_image is None:
-            return
-
-        # Normalize input to ImageUrlArtifact
-        if isinstance(input_image, dict):
-            from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
-
-            input_image = dict_to_image_url_artifact(input_image)
-
-        # Process the image
-        self._process_image_immediately(input_image)
