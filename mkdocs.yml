@@ -149,6 +149,7 @@ nav:
         - Display Image: nodes/image/display_image.md
         - Display Channel: nodes/image/display_channel.md
         - Invert Image: nodes/image/invert_image.md
+        - Flip Image: nodes/image/flip_image.md
         - Display Mask: nodes/image/display_mask.md
         - Paint Mask: nodes/image/paint_mask.md
         - Invert Mask: nodes/image/invert_mask.md
