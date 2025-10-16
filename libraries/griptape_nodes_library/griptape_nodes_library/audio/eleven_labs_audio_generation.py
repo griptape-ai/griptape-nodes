@@ -499,9 +499,9 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         if model == "eleven-music-v1":
             return self._get_music_parameters()
         if model == "eleven_multilingual_v2":
-            return self._get_tts_parameters()
+            return self._get_tts_parameters(model)
         if model == "eleven_v3":
-            return self._get_tts_parameters()
+            return self._get_tts_parameters(model)
         if model == "eleven_text_to_sound_v2":
             return self._get_sound_parameters()
         msg = f"Unknown model: {model}"
@@ -523,7 +523,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             "output_format": output_format,
         }
 
-    def _get_tts_parameters(self) -> dict[str, Any]:
+    def _get_tts_parameters(self, model: str) -> dict[str, Any]:
         text = self.get_parameter_value("text") or ""
         language_code = self.get_parameter_value("language_code")
         seed = self.get_parameter_value("seed")
@@ -540,7 +540,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             # Map preset name to actual voice ID
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
-        params = {"text": text}
+        params = {"text": text, "model_id": model}
 
         # Add optional parameters if they have values
         if voice_id:
