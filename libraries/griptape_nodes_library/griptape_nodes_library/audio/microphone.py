@@ -14,7 +14,7 @@ class Microphone(DataNode):
             output_type="AudioUrlArtifact",
             ui_options={"microphone_capture_audio": True},
             tooltip="The audio that has been captured.",
-            allowed_modes={ParameterMode.OUTPUT},
+            allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
         )
         self.add_parameter(audio_parameter)
 
