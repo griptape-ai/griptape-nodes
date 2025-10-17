@@ -7,7 +7,9 @@ schema-based file management system.
 
 from __future__ import annotations
 
-import os
+import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import NamedTuple
 
 
@@ -39,8 +41,197 @@ class MacroResolutionError(Exception):
     Examples of resolution errors:
     - Required variable missing from variables dict
     - Environment variable referenced but not found in environment
-    - Format specifier cannot be applied to value type (e.g., :03d on string)
+    - Format specifier cannot be applied to value type (e.g., :03 on string)
     """
+
+
+# ============================================================================
+# Format Specifier Classes
+# ============================================================================
+
+
+@dataclass
+class FormatSpec(ABC):
+    """Base class for format specifiers."""
+
+    @abstractmethod
+    def apply(self, value: str | int) -> str | int:
+        """Apply this format spec to a value during resolution.
+
+        Args:
+            value: Value to transform
+
+        Returns:
+            Transformed value
+
+        Raises:
+            MacroResolutionError: If format cannot be applied to value type
+
+        Examples:
+            >>> # NumericPaddingFormat(width=3).apply(5)
+            "005"
+            >>> # LowerCaseFormat().apply("MyWorkflow")
+            "myworkflow"
+        """
+
+    @abstractmethod
+    def reverse(self, value: str) -> str | int:
+        """Reverse this format spec during matching (best effort).
+
+        Args:
+            value: Formatted string value from a path
+
+        Returns:
+            Original value before format was applied
+
+        Raises:
+            MacroResolutionError: If value cannot be reversed
+
+        Examples:
+            >>> # NumericPaddingFormat(width=3).reverse("005")
+            5
+            >>> # SeparatorFormat(separator="_").reverse("workflow_")
+            "workflow"
+        """
+
+
+@dataclass
+class SeparatorFormat(FormatSpec):
+    """Separator appended to variable value like :_, :/, :foo.
+
+    Must be first format spec in list (if present).
+    Syntax: {var:_} or {var:'lower'} (quotes to disambiguate from transformations)
+    """
+
+    separator: str  # e.g., "_", "/", "foo"
+
+    def apply(self, value: str | int) -> str:
+        """Append separator to value."""
+        return str(value) + self.separator
+
+    def reverse(self, value: str) -> str:
+        """Remove separator from end of value."""
+        if value.endswith(self.separator):
+            return value[: -len(self.separator)]
+        return value
+
+
+@dataclass
+class NumericPaddingFormat(FormatSpec):
+    """Numeric padding format like :03, :04."""
+
+    width: int  # e.g., 3 for :03
+
+    def apply(self, value: str | int) -> str:
+        """Apply numeric padding: 5 → "005"."""
+        if not isinstance(value, int):
+            if not str(value).isdigit():
+                msg = (
+                    f"Numeric padding format :{self.width:0{self.width}d} "
+                    f"cannot be applied to non-numeric value: {value}"
+                )
+                raise MacroResolutionError(msg)
+            value = int(value)
+        return f"{value:0{self.width}d}"
+
+    def reverse(self, value: str) -> int:
+        """Reverse numeric padding: "005" → 5."""
+        try:
+            return int(value)
+        except ValueError as e:
+            msg = f"Cannot parse '{value}' as integer"
+            raise MacroResolutionError(msg) from e
+
+
+@dataclass
+class LowerCaseFormat(FormatSpec):
+    """Lowercase transformation :lower."""
+
+    def apply(self, value: str | int) -> str:
+        """Convert value to lowercase."""
+        return str(value).lower()
+
+    def reverse(self, value: str) -> str:
+        """Cannot reliably reverse case - return as-is."""
+        return value
+
+
+@dataclass
+class UpperCaseFormat(FormatSpec):
+    """Uppercase transformation :upper."""
+
+    def apply(self, value: str | int) -> str:
+        """Convert value to uppercase."""
+        return str(value).upper()
+
+    def reverse(self, value: str) -> str:
+        """Cannot reliably reverse case - return as-is."""
+        return value
+
+
+@dataclass
+class SlugFormat(FormatSpec):
+    """Slugification format :slug (spaces to hyphens, safe chars only)."""
+
+    def apply(self, value: str | int) -> str:
+        """Convert to slug: spaces→hyphens, lowercase, safe chars."""
+        s = str(value).lower()
+        s = re.sub(r"\s+", "-", s)  # Spaces to hyphens
+        s = re.sub(r"[^a-z0-9\-_]", "", s)  # Keep only safe chars
+        return s
+
+    def reverse(self, value: str) -> str:
+        """Cannot reliably reverse slugification - return as-is."""
+        return value
+
+
+@dataclass
+class DateFormat(FormatSpec):
+    """Date formatting like :%Y-%m-%d."""
+
+    pattern: str  # e.g., "%Y-%m-%d"
+
+    def apply(self, _value: str | int) -> str:
+        """Apply date formatting."""
+        # TODO(https://github.com/griptape-ai/griptape-nodes/issues/XXXX): Implement date formatting
+        msg = "DateFormat not yet fully implemented"
+        raise MacroResolutionError(msg)
+
+    def reverse(self, value: str) -> str:
+        """Attempt to parse date string."""
+        # TODO(https://github.com/griptape-ai/griptape-nodes/issues/XXXX): Implement date parsing
+        return value
+
+
+# ============================================================================
+# Segment Classes
+# ============================================================================
+
+
+@dataclass
+class ParsedSegment:
+    """Base class for template segments."""
+
+
+@dataclass
+class ParsedStaticValue(ParsedSegment):
+    """Static text segment in template."""
+
+    text: str
+
+
+@dataclass
+class ParsedVariable(ParsedSegment):
+    """Variable segment in template."""
+
+    info: VariableInfo  # name + is_required
+    format_specs: list[FormatSpec]  # Applied in order during resolution
+    default_value: str | None  # From {var|default} syntax
+
+
+# ============================================================================
+# ParsedMacro Class
+# ============================================================================
 
 
 class ParsedMacro:
@@ -51,15 +242,19 @@ class ParsedMacro:
     to MacroResolver.resolve() without inspecting the internal structure.
     """
 
-    def __init__(self, template: str) -> None:
+    def __init__(self, template: str, segments: list[ParsedSegment]) -> None:
         """Initialize parsed macro.
 
         Args:
             template: Original template string
+            segments: List of parsed segments (alternating static/variable)
         """
         self.template = template
-        # Internal structure will be defined during implementation
-        raise NotImplementedError("ParsedMacro structure not yet implemented")
+        self.segments = segments
+
+    def get_variables(self) -> list[VariableInfo]:
+        """Extract all VariableInfo from parsed segments."""
+        return [seg.info for seg in self.segments if isinstance(seg, ParsedVariable)]
 
 
 class MacroParser:
@@ -81,7 +276,7 @@ class MacroParser:
         - {variable|default} - Required with default value
 
         Format specifiers:
-        - Numeric padding: {index:03d} -> "001", "002"
+        - Numeric padding: {index:03} -> "001", "002"
         - Case: {name:lower}, {name:upper}
         - Slugify: {name:slug}
         - Date: {date:%Y-%m-%d}
@@ -101,7 +296,8 @@ class MacroParser:
             >>> parsed = MacroParser.parse("{inputs}/{file_name}")
             >>> parsed = MacroParser.parse("{workflow_name?:_}{file_name}")
         """
-        raise NotImplementedError("MacroParser.parse() not yet implemented")
+        msg = "MacroParser.parse() not yet implemented"
+        raise NotImplementedError(msg)
 
     @staticmethod
     def get_variables(template: str) -> list[VariableInfo]:
@@ -126,7 +322,8 @@ class MacroParser:
              VariableInfo(name='workflow_name', is_required=False),
              VariableInfo(name='file_name', is_required=True)]
         """
-        raise NotImplementedError("MacroParser.get_variables() not yet implemented")
+        msg = "MacroParser.get_variables() not yet implemented"
+        raise NotImplementedError(msg)
 
     @staticmethod
     def match(parsed_macro: ParsedMacro, path: str) -> list[dict[VariableInfo, str | int]]:
@@ -145,7 +342,7 @@ class MacroParser:
             Empty list if path doesn't match the template pattern.
             The VariableInfo keys preserve metadata (name, is_required) from
             the original template. Values are reversed through format specifiers
-            where possible (e.g., "005" with :03d becomes integer 5).
+            where possible (e.g., "005" with :03 becomes integer 5).
 
         Examples:
             >>> parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
@@ -165,7 +362,7 @@ class MacroParser:
             }
             # workflow_name not in dict (optional variable not present)
 
-            >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03d}")
+            >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03}")
             >>> matches = MacroParser.match(parsed, "outputs/render_005")
             >>> matches[0]
             {
@@ -179,7 +376,8 @@ class MacroParser:
             >>> MacroParser.match(parsed, "outputs/image.jpg")
             []  # No match - first segment doesn't match
         """
-        raise NotImplementedError("MacroParser.match() not yet implemented")
+        msg = "MacroParser.match() not yet implemented"
+        raise NotImplementedError(msg)
 
 
 class MacroResolver:
@@ -206,7 +404,7 @@ class MacroResolver:
             variables: Variable name -> value mapping. Values can be:
                 - Direct values: "shots/"
                 - Env var references: "$SHOT" (resolved automatically)
-                - Integers: 5 (for format specs like {index:03d})
+                - Integers: 5 (for format specs like {index:03})
 
         Returns:
             Fully resolved string with all variables and env vars substituted
@@ -232,7 +430,7 @@ class MacroResolver:
             ... })
             'inputs/image.jpg'
 
-            >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03d}")
+            >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03}")
             >>> MacroResolver.resolve(parsed, {
             ...     "outputs": "$OUTPUT_DIR",  # Resolved from environment
             ...     "file_name": "render",
@@ -240,4 +438,5 @@ class MacroResolver:
             ... })
             '/path/to/outputs/render_005'
         """
-        raise NotImplementedError("MacroResolver.resolve() not yet implemented")
+        msg = "MacroResolver.resolve() not yet implemented"
+        raise NotImplementedError(msg)
