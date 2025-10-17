@@ -6,10 +6,10 @@ from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_parameters import (
     DiffusionPipelineParameters,
 )  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     IncomingConnection,

@@ -14,7 +14,6 @@ import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import requests
 from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape.artifacts import VideoUrlArtifact
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
 
@@ -24,6 +23,7 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from openpose_nodes_library.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]

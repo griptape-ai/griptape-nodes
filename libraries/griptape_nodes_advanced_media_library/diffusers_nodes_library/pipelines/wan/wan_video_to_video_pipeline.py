@@ -10,7 +10,6 @@ from diffusers.schedulers.scheduling_unipc_multistep import (  # type: ignore[re
     UniPCMultistepScheduler,
 )
 
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.wan.wan_loras_parameter import (
     WanLorasParameter,  # type: ignore[reportMissingImports]
@@ -23,6 +22,7 @@ from diffusers_nodes_library.pipelines.wan.wan_video_to_video_pipeline_parameter
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 

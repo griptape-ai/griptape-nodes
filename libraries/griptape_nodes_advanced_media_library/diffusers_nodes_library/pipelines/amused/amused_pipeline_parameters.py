@@ -8,12 +8,12 @@ from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import (  # type: ignore[reportMissingImports]
     HuggingFaceRepoParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 

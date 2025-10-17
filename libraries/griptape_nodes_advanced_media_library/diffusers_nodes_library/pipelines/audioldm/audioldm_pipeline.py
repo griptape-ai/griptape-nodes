@@ -5,7 +5,6 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.audioldm.audioldm_pipeline_memory_footprint import (
     optimize_audio_ldm_pipeline_memory_footprint,
@@ -15,6 +14,7 @@ from diffusers_nodes_library.pipelines.audioldm.audioldm_pipeline_parameters imp
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 

@@ -6,7 +6,6 @@ import cv2  # type: ignore[reportMissingImports]
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
@@ -18,6 +17,7 @@ from utils.image_utils import load_image_from_url_artifact  # type: ignore[repor
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from openpose_nodes_library.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )

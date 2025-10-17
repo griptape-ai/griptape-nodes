@@ -13,10 +13,10 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
-from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
-from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 

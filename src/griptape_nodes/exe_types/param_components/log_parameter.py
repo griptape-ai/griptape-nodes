@@ -1,9 +1,9 @@
 import contextlib
 import logging
 import sys
-from types import TracebackType
 import time
 from collections.abc import Callable, Iterator
+from types import TracebackType
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -53,6 +53,7 @@ class LogParameter:
 
     def clear_logs(self) -> None:
         self._node.publish_update_to_parameter("logs", "")
+
 
 class StdoutCapture:
     def __init__(self, callback: Callable[[str], None]) -> None:

@@ -9,7 +9,6 @@ import PIL.Image  # type: ignore[reportMissingImports]
 import requests
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape.artifacts import VideoUrlArtifact
@@ -19,6 +18,7 @@ from sam2.build_sam import HF_MODEL_ID_TO_FILENAMES, build_sam2_video_predictor 
 from dino_sam2_library.dino_sam_2_detector_parameters import DinoSam2DetectorParameters
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("sam2_nodes_library")

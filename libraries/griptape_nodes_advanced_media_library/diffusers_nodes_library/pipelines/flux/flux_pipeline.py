@@ -4,7 +4,6 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
 from diffusers_nodes_library.pipelines.flux.flux_loras_parameter import FluxLorasParameter
@@ -14,6 +13,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("griptape_nodes")
 

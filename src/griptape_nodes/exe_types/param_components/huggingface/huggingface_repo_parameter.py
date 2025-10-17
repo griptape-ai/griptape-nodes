@@ -1,11 +1,11 @@
 import logging
 
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_model_parameter import HuggingFaceModelParameter
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_utils import (
     list_all_repo_revisions_in_cache,
     list_repo_revisions_in_cache,
 )
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
 
