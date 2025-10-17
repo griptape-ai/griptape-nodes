@@ -2,6 +2,8 @@
 
 # ruff: noqa: PLR2004
 
+from typing import Any
+
 import pytest
 
 from griptape_nodes.common.macro_parser import (
@@ -401,16 +403,173 @@ class TestMacroParserPlaceholder:
             MacroParser.match(parsed, "test")
 
 
-class TestMacroResolverPlaceholder:
-    """Placeholder tests for MacroResolver (to be implemented)."""
+class TestMacroResolverResolve:
+    """Test cases for MacroResolver.resolve() method."""
 
-    def test_resolve_not_implemented(self) -> None:
-        """Test MacroResolver.resolve() raises NotImplementedError."""
-        from griptape_nodes.common.macro_parser import MacroResolver
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Any:
+        """Create a mock SecretsManager for testing."""
+        from unittest.mock import MagicMock
 
-        # Create a minimal ParsedMacro to test with
-        segments: list[ParsedSegment] = [ParsedStaticValue(text="test")]
-        parsed = ParsedMacro(template="test", segments=segments)
+        mock = MagicMock()
+        mock.get_secret.return_value = None
+        return mock
 
-        with pytest.raises(NotImplementedError):
-            MacroResolver.resolve(parsed, {})
+    def test_resolve_simple_variable(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with single variable."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{file_name}")
+        result = MacroResolver.resolve(parsed, {"file_name": "image.jpg"}, mock_secrets_manager)
+
+        assert result == "image.jpg"
+
+    def test_resolve_static_and_variable(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with static text and variable."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("inputs/{file_name}")
+        result = MacroResolver.resolve(parsed, {"file_name": "image.jpg"}, mock_secrets_manager)
+
+        assert result == "inputs/image.jpg"
+
+    def test_resolve_multiple_variables(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with multiple variables."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{inputs}/{workflow_name}/{file_name}")
+        result = MacroResolver.resolve(
+            parsed, {"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "image.jpg"}, mock_secrets_manager
+        )
+
+        assert result == "inputs/my_workflow/image.jpg"
+
+    def test_resolve_optional_variable_present(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with optional variable that is provided."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
+        result = MacroResolver.resolve(
+            parsed, {"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "image.jpg"}, mock_secrets_manager
+        )
+
+        assert result == "inputs/my_workflow_image.jpg"
+
+    def test_resolve_optional_variable_missing(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with optional variable that is not provided."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
+        result = MacroResolver.resolve(parsed, {"inputs": "inputs", "file_name": "image.jpg"}, mock_secrets_manager)
+
+        assert result == "inputs/image.jpg"
+
+    def test_resolve_with_numeric_padding(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with numeric padding format spec."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{outputs}/{file_name}_{index:03}")
+        result = MacroResolver.resolve(
+            parsed, {"outputs": "outputs", "file_name": "render", "index": 5}, mock_secrets_manager
+        )
+
+        assert result == "outputs/render_005"
+
+    def test_resolve_with_slug_format(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with slug format spec."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{outputs}/{file_name:slug}")
+        result = MacroResolver.resolve(
+            parsed, {"outputs": "outputs", "file_name": "My Cool File Name!"}, mock_secrets_manager
+        )
+
+        assert result == "outputs/my-cool-file-name"
+
+    def test_resolve_with_case_formats(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with case format specs."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed_lower = MacroParser.parse("{name:lower}")
+        result_lower = MacroResolver.resolve(parsed_lower, {"name": "MyFile"}, mock_secrets_manager)
+        assert result_lower == "myfile"
+
+        parsed_upper = MacroParser.parse("{name:upper}")
+        result_upper = MacroResolver.resolve(parsed_upper, {"name": "MyFile"}, mock_secrets_manager)
+        assert result_upper == "MYFILE"
+
+    def test_resolve_with_multiple_format_specs(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with multiple chained format specs."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{workflow_name?:slug:_}{file_name}")
+        result = MacroResolver.resolve(
+            parsed, {"workflow_name": "My Workflow", "file_name": "image.jpg"}, mock_secrets_manager
+        )
+
+        assert result == "my-workflow_image.jpg"
+
+    def test_resolve_required_variable_missing_fails(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template fails when required variable is missing."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolutionError, MacroResolver
+
+        parsed = MacroParser.parse("{inputs}/{file_name}")
+
+        with pytest.raises(MacroResolutionError, match="Required variable 'file_name' not found"):
+            MacroResolver.resolve(parsed, {"inputs": "inputs"}, mock_secrets_manager)
+
+    def test_resolve_env_var(self) -> None:
+        """Test resolving template with environment variable reference."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        mock_secrets = MagicMock()
+        mock_secrets.get_secret.return_value = "/path/to/outputs"
+
+        parsed = MacroParser.parse("{outputs}/{file_name}")
+        result = MacroResolver.resolve(parsed, {"outputs": "$TEST_OUTPUT_DIR", "file_name": "image.jpg"}, mock_secrets)
+
+        assert result == "/path/to/outputs/image.jpg"
+        mock_secrets.get_secret.assert_called_once_with("TEST_OUTPUT_DIR", should_error_on_not_found=False)
+
+    def test_resolve_env_var_missing_fails(self) -> None:
+        """Test resolving template fails when env var is not found."""
+        from unittest.mock import MagicMock
+
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolutionError, MacroResolver
+
+        mock_secrets = MagicMock()
+        mock_secrets.get_secret.return_value = None
+
+        parsed = MacroParser.parse("{outputs}/{file_name}")
+
+        with pytest.raises(MacroResolutionError, match="Environment variable 'NONEXISTENT_VAR' not found"):
+            MacroResolver.resolve(parsed, {"outputs": "$NONEXISTENT_VAR", "file_name": "image.jpg"}, mock_secrets)
+
+    def test_resolve_static_only_template(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with only static text."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("static/path/only")
+        result = MacroResolver.resolve(parsed, {}, mock_secrets_manager)
+
+        assert result == "static/path/only"
+
+    def test_resolve_empty_template(self, mock_secrets_manager: Any) -> None:
+        """Test resolving empty template."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("")
+        result = MacroResolver.resolve(parsed, {}, mock_secrets_manager)
+
+        assert result == ""
+
+    def test_resolve_integer_value(self, mock_secrets_manager: Any) -> None:
+        """Test resolving template with integer value (no format spec)."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroResolver
+
+        parsed = MacroParser.parse("{count}")
+        result = MacroResolver.resolve(parsed, {"count": 42}, mock_secrets_manager)
+
+        assert result == "42"

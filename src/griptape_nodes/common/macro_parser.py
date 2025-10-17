@@ -10,7 +10,10 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 
 class VariableInfo(NamedTuple):
@@ -493,15 +496,18 @@ class MacroParser:
         """
         # Remove quotes if present (for explicit separators like 'lower')
         if format_text.startswith("'") and format_text.endswith("'"):
+            # Quoted text is always a separator, even if it matches other keywords
             return SeparatorFormat(separator=format_text[1:-1])
 
         # Check for date format (starts with %)
         if format_text.startswith("%"):
+            # Date format pattern like %Y-%m-%d
             return DateFormat(pattern=format_text)
 
         # Check for numeric padding (e.g., "03", "04")
         if re.match(r"^\d+$", format_text):
             width = int(format_text)
+            # Numeric padding like 03 means pad to 3 digits with zeros
             return NumericPaddingFormat(width=width)
 
         # Check for known transformations
@@ -512,9 +518,10 @@ class MacroParser:
         }
 
         if format_text in known_transforms:
+            # Known transformation keyword (lower, upper, slug)
             return known_transforms[format_text]
 
-        # Otherwise, treat as separator
+        # Otherwise, treat as separator (unquoted text that doesn't match any format)
         return SeparatorFormat(separator=format_text)
 
 
@@ -527,7 +534,11 @@ class MacroResolver:
     """
 
     @staticmethod
-    def resolve(parsed_macro: ParsedMacro, variables: dict[str, str | int]) -> str:
+    def resolve(
+        parsed_macro: ParsedMacro,
+        variables: dict[str, str | int],
+        secrets_manager: SecretsManager,
+    ) -> str:
         """Fully resolve a macro template with variable values.
 
         Resolves all variables in the parsed template, including:
@@ -543,6 +554,7 @@ class MacroResolver:
                 - Direct values: "shots/"
                 - Env var references: "$SHOT" (resolved automatically)
                 - Integers: 5 (for format specs like {index:03})
+            secrets_manager: SecretsManager instance for resolving env vars.
 
         Returns:
             Fully resolved string with all variables and env vars substituted
@@ -559,13 +571,13 @@ class MacroResolver:
             ...     "inputs": "inputs",
             ...     "workflow_name": "my_workflow",
             ...     "file_name": "image.jpg"
-            ... })
+            ... }, secrets_manager)
             'inputs/my_workflow_image.jpg'
 
             >>> MacroResolver.resolve(parsed, {
             ...     "inputs": "inputs",
             ...     "file_name": "image.jpg"
-            ... })
+            ... }, secrets_manager)
             'inputs/image.jpg'
 
             >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03}")
@@ -573,8 +585,90 @@ class MacroResolver:
             ...     "outputs": "$OUTPUT_DIR",  # Resolved from environment
             ...     "file_name": "render",
             ...     "index": 5
-            ... })
+            ... }, secrets_manager)
             '/path/to/outputs/render_005'
         """
-        msg = "MacroResolver.resolve() not yet implemented"
-        raise NotImplementedError(msg)
+        result_parts: list[str] = []
+
+        for segment in parsed_macro.segments:
+            match segment:
+                case ParsedStaticValue():
+                    result_parts.append(segment.text)
+                case ParsedVariable():
+                    resolved_value = MacroResolver._resolve_variable(segment, variables, secrets_manager)
+                    if resolved_value is not None:
+                        # Optional variable was provided, add to result
+                        result_parts.append(resolved_value)
+                    # else: Optional variable not provided, skip it
+                case _:
+                    msg = f"Unexpected segment type: {type(segment).__name__}"
+                    raise MacroResolutionError(msg)
+
+        return "".join(result_parts)
+
+    @staticmethod
+    def _resolve_variable(
+        variable: ParsedVariable, variables: dict[str, str | int], secrets_manager: SecretsManager
+    ) -> str | None:
+        """Resolve a single variable with format specs and env var resolution.
+
+        Args:
+            variable: The parsed variable to resolve
+            variables: Variable name -> value mapping
+            secrets_manager: SecretsManager instance for resolving env vars
+
+        Returns:
+            Resolved string value, or None if optional variable not provided
+
+        Raises:
+            MacroResolutionError: If required variable missing or env var not found
+        """
+        variable_name = variable.info.name
+
+        if variable_name not in variables:
+            if variable.info.is_required:
+                msg = f"Required variable '{variable_name}' not found in variables dict"
+                raise MacroResolutionError(msg)
+            # Optional variable not provided, return None to signal it should be skipped
+            return None
+
+        value = variables[variable_name]
+        resolved_value: str | int = MacroResolver._resolve_env_var(value, secrets_manager)
+
+        for format_spec in variable.format_specs:
+            resolved_value = format_spec.apply(resolved_value)
+
+        # Return fully resolved value as string
+        return str(resolved_value)
+
+    @staticmethod
+    def _resolve_env_var(value: str | int, secrets_manager: SecretsManager) -> str | int:
+        """Resolve environment variables in a value.
+
+        Args:
+            value: Value that may contain env var reference (e.g., "$VAR")
+            secrets_manager: SecretsManager instance for resolving env vars
+
+        Returns:
+            Resolved value (env var substituted if found)
+
+        Raises:
+            MacroResolutionError: If value starts with $ but env var not found
+        """
+        if not isinstance(value, str):
+            # Integer values don't contain env vars, return as-is
+            return value
+
+        if not value.startswith("$"):
+            # String doesn't reference an env var, return as-is
+            return value
+
+        env_var_name = value[1:]
+        env_value = secrets_manager.get_secret(env_var_name, should_error_on_not_found=False)
+
+        if env_value is None:
+            msg = f"Environment variable '{env_var_name}' not found"
+            raise MacroResolutionError(msg)
+
+        # Return resolved env var value
+        return env_value
