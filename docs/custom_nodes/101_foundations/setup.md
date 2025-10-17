@@ -124,8 +124,8 @@ ______________________________________________________________________
 
 ## Next steps
 
-You now have a working sandbox and have successfully loaded your first test node.\
-From here, you can start adding your own Python files to the sandbox.\
+You now have a working sandbox and have successfully loaded your first test node.
+From here, you can start adding your own Python files to the sandbox.
 Each new file containing a valid node class will automatically show up in the Sandbox section of the node list after a refresh.
 
 Next, you’ll create your first custom node from scratch.
