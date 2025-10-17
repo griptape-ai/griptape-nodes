@@ -195,7 +195,7 @@ class StableDiffusionAttendAndExcitePipelineParameters:
         return self._node.get_parameter_value("attention_res")
 
     def get_generator(self) -> torch.Generator:
-        return self._seed_parameter.get_generator()
+        return torch.Generator().manual_seed(self._seed_parameter.get_seed())
 
     def get_pipe_kwargs(self, pipe: diffusers.StableDiffusionAttendAndExcitePipeline) -> dict[str, Any]:
         return {

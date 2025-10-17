@@ -3,6 +3,7 @@ import math
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
+import torch
 
 import PIL.Image
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
@@ -168,7 +169,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
             "width": self.get_width(),
             "height": self.get_height(),
             "num_inference_steps": self.get_num_inference_steps(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         }
 
     def latents_to_image_pil(self, pipe: DiffusionPipeline, latents: Any) -> Image:

@@ -193,7 +193,7 @@ class WuerstchenCombinedPipelineParameters:
         return float(self._node.get_parameter_value("decoder_guidance_scale"))
 
     def get_generator(self) -> torch.Generator:
-        return self._seed_parameter.get_generator()
+        return torch.Generator().manual_seed(self._seed_parameter.get_seed())
 
     def get_pipe_kwargs(self) -> dict[str, Any]:
         prompt = self._node.get_parameter_value("prompt")

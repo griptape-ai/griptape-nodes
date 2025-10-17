@@ -315,7 +315,7 @@ class WanVacePipelineParameters:
             "num_frames": self.get_num_frames(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
             "output_type": "pil",
         }
 

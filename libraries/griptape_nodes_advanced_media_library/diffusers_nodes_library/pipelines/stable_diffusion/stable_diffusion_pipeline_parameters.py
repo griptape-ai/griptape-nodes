@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+import torch
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -150,7 +151,7 @@ class StableDiffusionPipelineParameters:
             "height": self.get_height(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         }
 
         negative_prompt = self.get_negative_prompt()

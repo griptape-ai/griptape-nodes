@@ -227,7 +227,7 @@ class WanVideoToVideoPipelineParameters:
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
             "strength": self.get_strength(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
             "output_type": "pil",
         }
 

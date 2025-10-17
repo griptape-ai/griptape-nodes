@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+import torch
 
 import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
@@ -140,7 +141,7 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
             source_prompt=self.get_prompt(),
             target_prompt=self.get_mask_prompt(),
             guidance_scale=self.get_guidance_scale(),
-            generator=self._seed_parameter.get_generator(),
+            generator=torch.Generator().manual_seed(self._seed_parameter.get_seed()),
             output_type="np",
         )
 
@@ -167,7 +168,7 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
             prompt=self.get_mask_prompt(),
             guidance_scale=1.0,
             num_inference_steps=self.get_num_inference_steps(),
-            generator=self._seed_parameter.get_generator(),
+            generator=torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         ).latents
 
     def _get_pipe_kwargs(self) -> dict[str, Any]:
@@ -223,7 +224,7 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
             "image_latents": image_latents,
             "num_inference_steps": num_inference_steps,
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         }
 
         negative_prompt = self.get_negative_prompt()

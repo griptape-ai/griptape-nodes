@@ -148,7 +148,7 @@ class AmusedImg2ImgPipelineParameters:
         return int(self._node.get_parameter_value("num_inference_steps"))
 
     def get_generator(self) -> Any:
-        return self._seed_parameter.get_generator()
+        return torch.Generator().manual_seed(self._seed_parameter.get_seed())
 
     def get_pipe_kwargs(self) -> dict:
         return {

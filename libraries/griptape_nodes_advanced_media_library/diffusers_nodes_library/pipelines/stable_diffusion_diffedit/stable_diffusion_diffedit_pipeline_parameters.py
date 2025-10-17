@@ -168,7 +168,7 @@ class StableDiffusionDiffeditPipelineParameters:
         return float(self._node.get_parameter_value("guidance_scale"))
 
     def get_generator(self) -> torch.Generator:
-        return self._seed_parameter.get_generator()
+        return torch.Generator().manual_seed(self._seed_parameter.get_seed())
 
     def get_width(self) -> int:
         return int(self._node.get_parameter_value("width"))
