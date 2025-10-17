@@ -300,32 +300,6 @@ class MacroParser:
         raise NotImplementedError(msg)
 
     @staticmethod
-    def get_variables(template: str) -> list[VariableInfo]:
-        """Extract variable metadata from template without full parsing.
-
-        This is a lighter-weight alternative to parse() when you only need
-        to know what variables are present and whether they're required.
-
-        Args:
-            template: Template string to analyze
-
-        Returns:
-            List of VariableInfo tuples with name and is_required flag
-
-        Raises:
-            MacroSyntaxError: If template has invalid syntax
-
-        Examples:
-            >>> vars = MacroParser.get_variables("{inputs}/{workflow_name?}/{file_name}")
-            >>> vars
-            [VariableInfo(name='inputs', is_required=True),
-             VariableInfo(name='workflow_name', is_required=False),
-             VariableInfo(name='file_name', is_required=True)]
-        """
-        msg = "MacroParser.get_variables() not yet implemented"
-        raise NotImplementedError(msg)
-
-    @staticmethod
     def match(parsed_macro: ParsedMacro, path: str) -> list[dict[VariableInfo, str | int]]:
         """Check if a path matches a parsed template and extract variable values.
 
@@ -378,6 +352,94 @@ class MacroParser:
         """
         msg = "MacroParser.match() not yet implemented"
         raise NotImplementedError(msg)
+
+    # Private helper methods
+
+    @staticmethod
+    def _parse_variable(variable_content: str) -> ParsedVariable:
+        """Parse a variable from its content (text between braces).
+
+        Args:
+            variable_content: Content between braces (e.g., "workflow_name?:_:lower")
+
+        Returns:
+            ParsedVariable with name, format specs, and default value
+
+        Raises:
+            MacroSyntaxError: If variable syntax is invalid
+        """
+        # Parse variable content: name[?][:format[:format...]][|default]
+
+        # Check for default value (|)
+        default_value = None
+        if "|" in variable_content:
+            parts = variable_content.split("|", 1)
+            variable_content = parts[0]
+            default_value = parts[1]
+
+        # Check for format specifiers (:)
+        format_specs: list[FormatSpec] = []
+        if ":" in variable_content:
+            parts = variable_content.split(":")
+            variable_part = parts[0]
+            format_parts = parts[1:]
+
+            # Parse format specifiers
+            for format_part in format_parts:
+                format_spec = MacroParser._parse_format_spec(format_part)
+                format_specs.append(format_spec)
+        else:
+            variable_part = variable_content
+
+        # Check for optional marker (?)
+        if variable_part.endswith("?"):
+            name = variable_part[:-1]
+            is_required = False
+        else:
+            name = variable_part
+            is_required = True
+
+        info = VariableInfo(name=name, is_required=is_required)
+        return ParsedVariable(info=info, format_specs=format_specs, default_value=default_value)
+
+    @staticmethod
+    def _parse_format_spec(format_text: str) -> FormatSpec:
+        """Parse a single format specifier.
+
+        Args:
+            format_text: Format specifier text (e.g., "lower", "03", "_")
+
+        Returns:
+            Appropriate FormatSpec subclass instance
+
+        Raises:
+            MacroSyntaxError: If format specifier is invalid
+        """
+        # Remove quotes if present (for explicit separators like 'lower')
+        if format_text.startswith("'") and format_text.endswith("'"):
+            return SeparatorFormat(separator=format_text[1:-1])
+
+        # Check for date format (starts with %)
+        if format_text.startswith("%"):
+            return DateFormat(pattern=format_text)
+
+        # Check for numeric padding (e.g., "03", "04")
+        if re.match(r"^\d+$", format_text):
+            width = int(format_text)
+            return NumericPaddingFormat(width=width)
+
+        # Check for known transformations
+        known_transforms = {
+            "lower": LowerCaseFormat(),
+            "upper": UpperCaseFormat(),
+            "slug": SlugFormat(),
+        }
+
+        if format_text in known_transforms:
+            return known_transforms[format_text]
+
+        # Otherwise, treat as separator
+        return SeparatorFormat(separator=format_text)
 
 
 class MacroResolver:

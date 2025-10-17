@@ -8,9 +8,9 @@ from griptape_nodes.common.macro_parser import (
     DateFormat,
     LowerCaseFormat,
     MacroResolutionError,
-    MacroSyntaxError,
     NumericPaddingFormat,
     ParsedMacro,
+    ParsedSegment,
     ParsedStaticValue,
     ParsedVariable,
     SeparatorFormat,
@@ -164,7 +164,7 @@ class TestParsedMacro:
 
     def test_get_variables_empty_for_no_variables(self) -> None:
         """Test get_variables() returns empty list when no variables."""
-        segments = [ParsedStaticValue(text="static/path/only")]
+        segments: list[ParsedSegment] = [ParsedStaticValue(text="static/path/only")]
         macro = ParsedMacro(template="static/path/only", segments=segments)
 
         variables = macro.get_variables()
@@ -172,8 +172,89 @@ class TestParsedMacro:
         assert len(variables) == 0
 
 
+class TestMacroParserParseVariable:
+    """Test cases for MacroParser._parse_variable() (private helper)."""
+
+    def test_parse_variable_simple_required(self) -> None:
+        """Test parsing simple required variable."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("file_name")
+
+        assert variable.info.name == "file_name"
+        assert variable.info.is_required is True
+        assert len(variable.format_specs) == 0
+        assert variable.default_value is None
+
+    def test_parse_variable_optional(self) -> None:
+        """Test parsing optional variable."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("workflow_name?")
+
+        assert variable.info.name == "workflow_name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 0
+
+    def test_parse_variable_with_separator(self) -> None:
+        """Test parsing variable with separator format."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("workflow_name?:_")
+
+        assert variable.info.name == "workflow_name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "_"
+
+    def test_parse_variable_with_multiple_formats(self) -> None:
+        """Test parsing variable with multiple format specifiers."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("workflow_name?:_:lower")
+
+        assert variable.info.name == "workflow_name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 2
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert isinstance(variable.format_specs[1], LowerCaseFormat)
+
+    def test_parse_variable_with_numeric_padding(self) -> None:
+        """Test parsing variable with numeric padding format."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("index:03")
+
+        assert variable.info.name == "index"
+        assert variable.info.is_required is True
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], NumericPaddingFormat)
+        assert variable.format_specs[0].width == 3
+
+    def test_parse_variable_with_default_value(self) -> None:
+        """Test parsing variable with default value."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("name|default_value")
+
+        assert variable.info.name == "name"
+        assert variable.default_value == "default_value"
+
+    def test_parse_variable_with_quoted_separator(self) -> None:
+        """Test parsing variable with quoted separator (disambiguate from transformation)."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        variable = MacroParser._parse_variable("name:'lower'")
+
+        assert variable.info.name == "name"
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "lower"
+
+
 class TestMacroParserPlaceholder:
-    """Placeholder tests for MacroParser (to be implemented)."""
+    """Placeholder tests for MacroParser.parse() and match() (to be implemented)."""
 
     def test_parse_not_implemented(self) -> None:
         """Test MacroParser.parse() raises NotImplementedError."""
@@ -182,19 +263,12 @@ class TestMacroParserPlaceholder:
         with pytest.raises(NotImplementedError):
             MacroParser.parse("{inputs}/{file_name}")
 
-    def test_get_variables_not_implemented(self) -> None:
-        """Test MacroParser.get_variables() raises NotImplementedError."""
-        from griptape_nodes.common.macro_parser import MacroParser
-
-        with pytest.raises(NotImplementedError):
-            MacroParser.get_variables("{inputs}/{file_name}")
-
     def test_match_not_implemented(self) -> None:
         """Test MacroParser.match() raises NotImplementedError."""
         from griptape_nodes.common.macro_parser import MacroParser
 
         # Create a minimal ParsedMacro to test with
-        segments = [ParsedStaticValue(text="test")]
+        segments: list[ParsedSegment] = [ParsedStaticValue(text="test")]
         parsed = ParsedMacro(template="test", segments=segments)
 
         with pytest.raises(NotImplementedError):
@@ -209,7 +283,7 @@ class TestMacroResolverPlaceholder:
         from griptape_nodes.common.macro_parser import MacroResolver
 
         # Create a minimal ParsedMacro to test with
-        segments = [ParsedStaticValue(text="test")]
+        segments: list[ParsedSegment] = [ParsedStaticValue(text="test")]
         parsed = ParsedMacro(template="test", segments=segments)
 
         with pytest.raises(NotImplementedError):
