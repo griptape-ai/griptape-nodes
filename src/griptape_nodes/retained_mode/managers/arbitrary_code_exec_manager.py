@@ -40,9 +40,9 @@ class ArbitraryCodeExecManager:
         try:
             string_buffer = io.StringIO()
             with redirect_stdout(string_buffer):
-                # Use a shared namespace for both globals and locals in exec() to solve two critical issues:
+                # Use a shared namespace for both globals and locals in exec() to make some behavior possible and more intuitive:
                 #
-                # 1. RECURSION FIX: Without this, recursive functions defined inside exec() fail with
+                # 1. RECURSION: Without this namespace, recursive functions defined inside exec() fail with
                 #    "NameError: name 'function_name' is not defined" when they try to call themselves.
                 #    Why? When exec() runs with default parameters, functions defined in the exec'd code
                 #    exist in this method's local scope. But inside the exec'd functions, Python looks in the program's
@@ -53,8 +53,8 @@ class ArbitraryCodeExecManager:
                 #
                 # 2. ISOLATION: An isolated namespace prevents exec'd code from accessing or modifying
                 #    variables in the outer program scope, protecting read/write access to sensitive engine data.
-                # This is a very involved and complex bug; for more details see https://gist.github.com/SmoolPerson/144b37f656fc580ea86bbfdda8f29528
-                # For a relevant PR, see https://github.com/griptape-ai/griptape-nodes/pull/2087
+                # There is some involved and complex behavior happening here; for more details see https://gist.github.com/SmoolPerson/144b37f656fc580ea86bbfdda8f29528
+                # For the PR that implements this, see https://github.com/griptape-ai/griptape-nodes/pull/2087
 
                 namespace = {"__builtins__": __builtins__}
                 python_output = exec(  # noqa: S102
