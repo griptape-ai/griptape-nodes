@@ -20,6 +20,7 @@ The [official MCP servers repository](https://github.com/modelcontextprotocol/se
 
 These servers run locally on your machine and provide direct access to your software and files:
 
+- **[Blender](./blender.md)** - 3D modeling, scene creation, and manipulation (3rd party)
 - **[Fetch](./fetch.md)** - Web content fetching and processing
 - **[Filesystem](./filesystem.md)** - File and directory operations
 - **[Time](./time.md)** - Date and time operations
