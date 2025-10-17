@@ -19,6 +19,7 @@ from griptape_nodes.common.macro_parser import (
     UpperCaseFormat,
     VariableInfo,
 )
+from griptape_nodes.common.macro_parser.parsing import parse_variable
 
 
 class TestFormatSpecs:
@@ -148,11 +149,11 @@ class TestParsedMacro:
 
 
 class TestMacroParserParseVariable:
-    """Test cases for ParsedMacro("")._parse_variable() (private helper)."""
+    """Test cases for parse_variable() function."""
 
     def test_parse_variable_simple_required(self) -> None:
         """Test parsing simple required variable."""
-        variable = ParsedMacro("")._parse_variable("file_name")
+        variable = parse_variable("file_name")
 
         assert variable.info.name == "file_name"
         assert variable.info.is_required is True
@@ -161,7 +162,7 @@ class TestMacroParserParseVariable:
 
     def test_parse_variable_optional(self) -> None:
         """Test parsing optional variable."""
-        variable = ParsedMacro("")._parse_variable("workflow_name?")
+        variable = parse_variable("workflow_name?")
 
         assert variable.info.name == "workflow_name"
         assert variable.info.is_required is False
@@ -169,7 +170,7 @@ class TestMacroParserParseVariable:
 
     def test_parse_variable_with_separator(self) -> None:
         """Test parsing variable with separator format."""
-        variable = ParsedMacro("")._parse_variable("workflow_name?:_")
+        variable = parse_variable("workflow_name?:_")
 
         assert variable.info.name == "workflow_name"
         assert variable.info.is_required is False
@@ -179,7 +180,7 @@ class TestMacroParserParseVariable:
 
     def test_parse_variable_with_multiple_formats(self) -> None:
         """Test parsing variable with multiple format specifiers."""
-        variable = ParsedMacro("")._parse_variable("workflow_name?:_:lower")
+        variable = parse_variable("workflow_name?:_:lower")
 
         assert variable.info.name == "workflow_name"
         assert variable.info.is_required is False
@@ -189,7 +190,7 @@ class TestMacroParserParseVariable:
 
     def test_parse_variable_with_numeric_padding(self) -> None:
         """Test parsing variable with numeric padding format."""
-        variable = ParsedMacro("")._parse_variable("index:03")
+        variable = parse_variable("index:03")
 
         assert variable.info.name == "index"
         assert variable.info.is_required is True
@@ -199,14 +200,14 @@ class TestMacroParserParseVariable:
 
     def test_parse_variable_with_default_value(self) -> None:
         """Test parsing variable with default value."""
-        variable = ParsedMacro("")._parse_variable("name|default_value")
+        variable = parse_variable("name|default_value")
 
         assert variable.info.name == "name"
         assert variable.default_value == "default_value"
 
     def test_parse_variable_with_quoted_separator(self) -> None:
         """Test parsing variable with quoted separator (disambiguate from transformation)."""
-        variable = ParsedMacro("")._parse_variable("name:'lower'")
+        variable = parse_variable("name:'lower'")
 
         assert variable.info.name == "name"
         assert len(variable.format_specs) == 1
