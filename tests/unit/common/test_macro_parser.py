@@ -253,15 +253,141 @@ class TestMacroParserParseVariable:
         assert variable.format_specs[0].separator == "lower"
 
 
-class TestMacroParserPlaceholder:
-    """Placeholder tests for MacroParser.parse() and match() (to be implemented)."""
+class TestMacroParserParse:
+    """Test cases for MacroParser.parse() method."""
 
-    def test_parse_not_implemented(self) -> None:
-        """Test MacroParser.parse() raises NotImplementedError."""
+    def test_parse_simple_template_with_single_variable(self) -> None:
+        """Test parsing simple template with one variable."""
         from griptape_nodes.common.macro_parser import MacroParser
 
-        with pytest.raises(NotImplementedError):
-            MacroParser.parse("{inputs}/{file_name}")
+        parsed = MacroParser.parse("{file_name}")
+
+        assert parsed.template == "{file_name}"
+        assert len(parsed.segments) == 1
+        assert isinstance(parsed.segments[0], ParsedVariable)
+        assert parsed.segments[0].info.name == "file_name"
+
+    def test_parse_template_with_static_and_variable(self) -> None:
+        """Test parsing template with static text and variable."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("inputs/{file_name}")
+
+        assert parsed.template == "inputs/{file_name}"
+        assert len(parsed.segments) == 2
+        assert isinstance(parsed.segments[0], ParsedStaticValue)
+        assert parsed.segments[0].text == "inputs/"
+        assert isinstance(parsed.segments[1], ParsedVariable)
+        assert parsed.segments[1].info.name == "file_name"
+
+    def test_parse_template_with_multiple_variables(self) -> None:
+        """Test parsing template with multiple variables."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
+
+        assert len(parsed.segments) == 4
+        assert isinstance(parsed.segments[0], ParsedVariable)
+        assert parsed.segments[0].info.name == "inputs"
+        assert isinstance(parsed.segments[1], ParsedStaticValue)
+        assert parsed.segments[1].text == "/"
+        assert isinstance(parsed.segments[2], ParsedVariable)
+        assert parsed.segments[2].info.name == "workflow_name"
+        assert parsed.segments[2].info.is_required is False
+        assert isinstance(parsed.segments[3], ParsedVariable)
+        assert parsed.segments[3].info.name == "file_name"
+
+    def test_parse_template_with_adjacent_variables(self) -> None:
+        """Test parsing template with adjacent variables (no static text between)."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("{workflow_name}{file_name}")
+
+        assert len(parsed.segments) == 2
+        assert isinstance(parsed.segments[0], ParsedVariable)
+        assert parsed.segments[0].info.name == "workflow_name"
+        assert isinstance(parsed.segments[1], ParsedVariable)
+        assert parsed.segments[1].info.name == "file_name"
+
+    def test_parse_template_with_format_specs(self) -> None:
+        """Test parsing template with format specifiers."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("{outputs}/{file_name:slug}_{index:03}")
+
+        assert len(parsed.segments) == 5
+        # outputs variable
+        assert isinstance(parsed.segments[0], ParsedVariable)
+        assert parsed.segments[0].info.name == "outputs"
+        # "/" static
+        assert isinstance(parsed.segments[1], ParsedStaticValue)
+        assert parsed.segments[1].text == "/"
+        # file_name with slug format
+        assert isinstance(parsed.segments[2], ParsedVariable)
+        assert parsed.segments[2].info.name == "file_name"
+        assert len(parsed.segments[2].format_specs) == 1
+        assert isinstance(parsed.segments[2].format_specs[0], SlugFormat)
+        # "_" static
+        assert isinstance(parsed.segments[3], ParsedStaticValue)
+        assert parsed.segments[3].text == "_"
+        # index with numeric padding
+        assert isinstance(parsed.segments[4], ParsedVariable)
+        assert parsed.segments[4].info.name == "index"
+        assert len(parsed.segments[4].format_specs) == 1
+        assert isinstance(parsed.segments[4].format_specs[0], NumericPaddingFormat)
+
+    def test_parse_empty_template(self) -> None:
+        """Test parsing empty template returns empty static value."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("")
+
+        assert parsed.template == ""
+        assert len(parsed.segments) == 1
+        assert isinstance(parsed.segments[0], ParsedStaticValue)
+        assert parsed.segments[0].text == ""
+
+    def test_parse_static_only_template(self) -> None:
+        """Test parsing template with only static text."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("static/path/only")
+
+        assert len(parsed.segments) == 1
+        assert isinstance(parsed.segments[0], ParsedStaticValue)
+        assert parsed.segments[0].text == "static/path/only"
+
+    def test_parse_nested_braces_fails(self) -> None:
+        """Test parsing template with nested braces fails."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError, match="Nested braces are not allowed"):
+            MacroParser.parse("{outer{inner}}")
+
+    def test_parse_unclosed_brace_fails(self) -> None:
+        """Test parsing template with unclosed brace fails."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError, match="Unclosed brace"):
+            MacroParser.parse("{file_name")
+
+    def test_parse_unmatched_closing_brace_fails(self) -> None:
+        """Test parsing template with unmatched closing brace fails."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError, match="Unmatched closing brace"):
+            MacroParser.parse("file_name}")
+
+    def test_parse_empty_variable_fails(self) -> None:
+        """Test parsing template with empty variable fails."""
+        from griptape_nodes.common.macro_parser import MacroParser, MacroSyntaxError
+
+        with pytest.raises(MacroSyntaxError, match="Empty variable"):
+            MacroParser.parse("{}")
+
+
+class TestMacroParserPlaceholder:
+    """Placeholder tests for MacroParser.match() (to be implemented)."""
 
     def test_match_not_implemented(self) -> None:
         """Test MacroParser.match() raises NotImplementedError."""

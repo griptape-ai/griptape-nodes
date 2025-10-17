@@ -296,8 +296,16 @@ class MacroParser:
             >>> parsed = MacroParser.parse("{inputs}/{file_name}")
             >>> parsed = MacroParser.parse("{workflow_name?:_}{file_name}")
         """
-        msg = "MacroParser.parse() not yet implemented"
-        raise NotImplementedError(msg)
+        try:
+            segments = MacroParser._parse_segments(template)
+        except MacroSyntaxError as err:
+            msg = f"Attempted to parse template string '{template}'. Failed due to: {err}"
+            raise MacroSyntaxError(msg) from err
+
+        if not segments:
+            segments.append(ParsedStaticValue(text=""))
+
+        return ParsedMacro(template=template, segments=segments)
 
     @staticmethod
     def match(parsed_macro: ParsedMacro, path: str) -> list[dict[VariableInfo, str | int]]:
@@ -354,6 +362,74 @@ class MacroParser:
         raise NotImplementedError(msg)
 
     # Private helper methods
+
+    @staticmethod
+    def _parse_segments(template: str) -> list[ParsedSegment]:
+        """Parse template into alternating static/variable segments.
+
+        Args:
+            template: Template string to parse
+
+        Returns:
+            List of ParsedSegment (static and variable)
+
+        Raises:
+            MacroSyntaxError: If template syntax is invalid
+        """
+        segments: list[ParsedSegment] = []
+        current_pos = 0
+
+        while current_pos < len(template):
+            # Find next opening brace
+            brace_start = template.find("{", current_pos)
+
+            if brace_start == -1:
+                # No more variables, rest is static text
+                static_text = template[current_pos:]
+                if static_text:
+                    # Check for unmatched closing braces in remaining text
+                    if "}" in static_text:
+                        closing_pos = current_pos + static_text.index("}")
+                        msg = f"Unmatched closing brace at position {closing_pos}"
+                        raise MacroSyntaxError(msg)
+                    segments.append(ParsedStaticValue(text=static_text))
+                break
+
+            # Add static text before the brace (if any)
+            if brace_start > current_pos:
+                static_text = template[current_pos:brace_start]
+                # Check for unmatched closing braces in static text
+                if "}" in static_text:
+                    closing_pos = current_pos + static_text.index("}")
+                    msg = f"Unmatched closing brace at position {closing_pos}"
+                    raise MacroSyntaxError(msg)
+                segments.append(ParsedStaticValue(text=static_text))
+
+            # Find matching closing brace
+            brace_end = template.find("}", brace_start)
+            if brace_end == -1:
+                msg = f"Unclosed brace at position {brace_start}"
+                raise MacroSyntaxError(msg)
+
+            # Check for nested braces (opening brace before closing brace)
+            next_open = template.find("{", brace_start + 1)
+            if next_open != -1 and next_open < brace_end:
+                msg = f"Nested braces are not allowed at position {next_open}"
+                raise MacroSyntaxError(msg)
+
+            # Extract and parse the variable content
+            variable_content = template[brace_start + 1 : brace_end]
+            if not variable_content:
+                msg = f"Empty variable at position {brace_start}"
+                raise MacroSyntaxError(msg)
+
+            variable = MacroParser._parse_variable(variable_content)
+            segments.append(variable)
+
+            # Move past the closing brace
+            current_pos = brace_end + 1
+
+        return segments
 
     @staticmethod
     def _parse_variable(variable_content: str) -> ParsedVariable:
