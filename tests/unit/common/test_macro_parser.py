@@ -350,8 +350,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("static/path/only")
         result = parsed.find_matches_detailed("static/path/only", {}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         assert result == {}  # No variables to extract
 
     def test_find_matches_static_only_no_match(self, mock_secrets_manager: Any) -> None:
@@ -359,7 +358,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("static/path/only")
         result = parsed.find_matches_detailed("different/path", {}, mock_secrets_manager)
 
-        assert result == []
+        assert result is None
 
     def test_find_matches_single_unknown_variable(self, mock_secrets_manager: Any) -> None:
         """Test matching with single unknown variable."""
@@ -368,8 +367,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("{file_name}")
         result = parsed.find_matches_detailed("image.jpg", {}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         assert VariableInfo(name="file_name", is_required=True) in result
         assert result[VariableInfo(name="file_name", is_required=True)] == "image.jpg"
 
@@ -380,8 +378,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("{inputs}/{file_name}")
         result = parsed.find_matches_detailed("inputs/image.jpg", {"inputs": "inputs"}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         # Both inputs and file_name should be in results
         assert VariableInfo(name="inputs", is_required=True) in result
         assert VariableInfo(name="file_name", is_required=True) in result
@@ -393,7 +390,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("{inputs}/{file_name}")
         result = parsed.find_matches_detailed("outputs/image.jpg", {"inputs": "inputs"}, mock_secrets_manager)
 
-        assert result == []
+        assert result is None
 
     def test_find_matches_multiple_unknowns_with_delimiters(self, mock_secrets_manager: Any) -> None:
         """Test matching multiple unknown variables separated by static text."""
@@ -402,8 +399,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("{dir}/{file_name}")
         result = parsed.find_matches_detailed("inputs/image.jpg", {}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         assert result[VariableInfo(name="dir", is_required=True)] == "inputs"
         assert result[VariableInfo(name="file_name", is_required=True)] == "image.jpg"
 
@@ -414,8 +410,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("{file_name}_{index:03}")
         result = parsed.find_matches_detailed("render_005", {}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         assert result[VariableInfo(name="file_name", is_required=True)] == "render"
         assert result[VariableInfo(name="index", is_required=True)] == 5  # Reversed to int
 
@@ -424,8 +419,7 @@ class TestMacroParserFindMatchesDetailed:
         parsed = ParsedMacro("")
         result = parsed.find_matches_detailed("", {}, mock_secrets_manager)
 
-        assert len(result) == 1
-        result = result[0]
+        assert result is not None
         assert result == {}
 
 

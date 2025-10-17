@@ -285,7 +285,7 @@ class ParsedMacro:
         self.template = template
 
         try:
-            segments = self._parse_segments(template)
+            segments = self._parse_segments()
         except MacroSyntaxError as err:
             msg = f"Attempted to parse template string '{template}'. Failed due to: {err}"
             raise MacroSyntaxError(msg) from err
@@ -364,6 +364,66 @@ class ParsedMacro:
         # Convert to string
         return partial.to_string()
 
+    def matches(
+        self,
+        path: str,
+        known_variables: dict[str, str | int],
+        secrets_manager: SecretsManager,
+    ) -> bool:
+        """Check if a path matches this template.
+
+        This is the simplest matching API - returns True/False.
+
+        Args:
+            path: Path string to test against template
+            known_variables: Known variable values (reduces ambiguity)
+            secrets_manager: SecretsManager instance for resolving env vars
+
+        Returns:
+            True if path matches template, False otherwise
+
+        Examples:
+            >>> macro = ParsedMacro("{inputs}/{file}")
+            >>> macro.matches("inputs/photo.jpg", {"inputs": "inputs"}, secrets)
+            True
+            >>> macro.matches("outputs/photo.jpg", {"inputs": "inputs"}, secrets)
+            False
+        """
+        result = self.find_matches_detailed(path, known_variables, secrets_manager)
+        return result is not None
+
+    def extract_variables(
+        self,
+        path: str,
+        known_variables: dict[str, str | int],
+        secrets_manager: SecretsManager,
+    ) -> dict[str, str | int] | None:
+        """Extract variable values from a path (plain string keys).
+
+        Returns a dictionary with simple string keys mapping to values.
+        For advanced use cases needing VariableInfo metadata, use find_matches_detailed().
+
+        Args:
+            path: Path string to extract from
+            known_variables: Known variable values (reduces ambiguity)
+            secrets_manager: SecretsManager instance for resolving env vars
+
+        Returns:
+            Dict mapping variable names to values, or None if no match
+
+        Examples:
+            >>> macro = ParsedMacro("{inputs}/{file}")
+            >>> macro.extract_variables("inputs/photo.jpg", {"inputs": "inputs"}, secrets)
+            {"inputs": "inputs", "file": "photo.jpg"}
+            >>> macro.extract_variables("outputs/photo.jpg", {"inputs": "inputs"}, secrets)
+            None
+        """
+        detailed = self.find_matches_detailed(path, known_variables, secrets_manager)
+        if detailed is None:
+            return None
+        # Convert VariableInfo keys to plain string keys
+        return {var_info.name: value for var_info, value in detailed.items()}
+
     def find_matches(
         self,
         path: str,
@@ -406,29 +466,29 @@ class ParsedMacro:
             >>> macro.find_matches("inputs/my_workflow_photo.jpg", {}, secrets_manager)
             ["inputs/my_workflow_photo.jpg", "inputs/my_photo.jpg", "inputs/photo.jpg"]
         """
-        # Get detailed matches with variable metadata
-        detailed_matches = self.find_matches_detailed(path, known_variables, secrets_manager)
+        # Get detailed match with variable metadata
+        detailed_match = self.find_matches_detailed(path, known_variables, secrets_manager)
 
-        # Convert each detailed match back to a resolved path string
-        result: list[str] = []
-        for match in detailed_matches:
-            # Convert VariableInfo keys to string keys for resolve()
-            variables_dict: dict[str, str | int] = {var_info.name: value for var_info, value in match.items()}
-            resolved_path = self.resolve(variables_dict, secrets_manager)
-            result.append(resolved_path)
+        # No match found
+        if detailed_match is None:
+            return []
 
-        return result
+        # Convert VariableInfo keys to string keys for resolve()
+        variables_dict: dict[str, str | int] = {var_info.name: value for var_info, value in detailed_match.items()}
+        resolved_path = self.resolve(variables_dict, secrets_manager)
+
+        return [resolved_path]
 
     def find_matches_detailed(
         self,
         path: str,
         known_variables: dict[str, str | int],
         secrets_manager: SecretsManager,
-    ) -> list[dict[VariableInfo, str | int]]:
-        """Find all possible variable value combinations that match a path (detailed version).
+    ) -> dict[VariableInfo, str | int] | None:
+        """Extract variable values from a path with metadata (greedy match).
 
-        This is the advanced version that returns detailed variable metadata. Most callers
-        should use find_matches() instead, which returns simple path strings.
+        This is the advanced version that returns detailed variable metadata with VariableInfo keys.
+        Most callers should use extract_variables() for plain dict or matches() for boolean check.
 
         Given a parsed template and a path, extracts variable values by matching
         the path against the template pattern. Known variables are resolved before
@@ -534,9 +594,9 @@ class ParsedMacro:
                 for segment in self.segments:
                     if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
                         result[segment.info] = known_variables[segment.info.name]
-                return [result]
+                return result
             # Scenario B: no match
-            return []
+            return None
 
         # STEP 3: Pre-validate static segments (quick rejection)
         # Before expensive extraction, check if all static text appears in path
@@ -546,7 +606,7 @@ class ParsedMacro:
         # - Scenarios C, E-H: static text matches → continue
         if not self._validate_static_match(partial.segments, path):
             # Scenario D: known variable value doesn't match path
-            return []
+            return None
 
         # STEP 4: Extract unknown variables from path
         # Use static segments as anchors to extract variable values between them
@@ -563,15 +623,17 @@ class ParsedMacro:
             raise MacroResolutionError(msg)
 
         # Merge extracted unknowns with known variables to create complete result
-        # Each match dict contains only extracted unknowns, need to add knowns back in
+        # The extracted dict contains only extracted unknowns, need to add knowns back in
         #
-        # All scenarios C-H: merge known variables into each match result
-        for match in extracted:
+        # All scenarios C-H: merge known variables into the match result
+        if extracted:
+            first_match = extracted[0]
             for segment in self.segments:
                 if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
-                    match[segment.info] = known_variables[segment.info.name]
+                    first_match[segment.info] = known_variables[segment.info.name]
+            return first_match
 
-        return extracted
+        return None
 
     def _apply_format_specs(self, value: str | int, format_specs: list[FormatSpec]) -> str:
         """Apply format specs to value (same logic as resolve())."""
@@ -669,11 +731,8 @@ class ParsedMacro:
         # Return reversed value (might be int after NumericPaddingFormat.reverse)
         return result
 
-    def _parse_segments(self, template: str) -> list[ParsedSegment]:
+    def _parse_segments(self) -> list[ParsedSegment]:
         """Parse template into alternating static/variable segments.
-
-        Args:
-            template: Template string to parse
 
         Returns:
             List of ParsedSegment (static and variable)
@@ -683,6 +742,7 @@ class ParsedMacro:
         """
         segments: list[ParsedSegment] = []
         current_pos = 0
+        template = self.template
 
         while current_pos < len(template):
             # Find next opening brace
