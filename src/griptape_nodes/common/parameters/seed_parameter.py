@@ -50,7 +50,8 @@ class SeedParameter:
 
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):
-            seed = random.randint(0, 2**32 - 1)
+            # Not using for cryptographic purposes
+            seed = random.randint(0, 2**32 - 1)  # noqa: S311
             self._node.set_parameter_value("seed", seed)
             self._node.publish_update_to_parameter("seed", seed)
 

@@ -1,8 +1,8 @@
 import logging
 from typing import Any
-import torch
 
 import PIL.Image
+import torch
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
