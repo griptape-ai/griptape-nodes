@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 import PIL.Image
-import torch
+import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
-import torch
+import torch  # type: ignore[reportMissingImports]
 from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 
 from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (

@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-import torch
+import torch  # type: ignore[reportMissingImports]
 from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 

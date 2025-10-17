@@ -3,7 +3,7 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-import torch
+import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path

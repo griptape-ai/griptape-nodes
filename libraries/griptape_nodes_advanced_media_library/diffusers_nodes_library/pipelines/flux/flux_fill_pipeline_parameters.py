@@ -3,7 +3,7 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
-import torch
+import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]

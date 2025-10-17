@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import PIL.Image
-import torch
+import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
