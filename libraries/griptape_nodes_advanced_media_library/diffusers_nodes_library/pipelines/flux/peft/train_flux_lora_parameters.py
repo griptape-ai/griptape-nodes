@@ -5,12 +5,12 @@ from typing import Any
 
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
-    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.flux.peft.training.utils.dreambooth_dataset import (
     DreamBoothDataset,  # type: ignore[reportMissingImports]
+)
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.core_types import (  # type: ignore[reportMissingImports]
     Parameter,

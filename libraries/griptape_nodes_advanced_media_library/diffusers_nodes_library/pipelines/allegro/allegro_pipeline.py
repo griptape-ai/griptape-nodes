@@ -7,7 +7,9 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.log_parameter import LogParameter  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.parameters.log_parameter import (
+    LogParameter,  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.allegro.allegro_pipeline_memory_footprint import (  # type: ignore[reportMissingImports]
     optimize_allegro_pipeline_memory_footprint,
