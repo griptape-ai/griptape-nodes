@@ -618,7 +618,7 @@ class ParsedMacro:
         # - Scenario G: extract dir="render", file_name="output", ext="png" (multiple delimiters)
         # - Scenario H: extract frame="005", reverse format spec → 5
         extracted = self._extract_unknown_variables(partial.segments, path)
-        if not extracted:
+        if extracted is None:
             msg = f"INTERNAL ERROR: Failed when attempting to find matches against a macro. Static validation passed but extraction failed. Template: {self.template}, Path: {path}"
             raise MacroResolutionError(msg)
 
@@ -626,14 +626,11 @@ class ParsedMacro:
         # The extracted dict contains only extracted unknowns, need to add knowns back in
         #
         # All scenarios C-H: merge known variables into the match result
-        if extracted:
-            first_match = extracted[0]
-            for segment in self.segments:
-                if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
-                    first_match[segment.info] = known_variables[segment.info.name]
-            return first_match
+        for segment in self.segments:
+            if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
+                extracted[segment.info] = known_variables[segment.info.name]
 
-        return None
+        return extracted
 
     def _apply_format_specs(self, value: str | int, format_specs: list[FormatSpec]) -> str:
         """Apply format specs to value (same logic as resolve())."""
@@ -667,10 +664,12 @@ class ParsedMacro:
         self,
         pattern_segments: list[ParsedSegment],
         path: str,
-    ) -> list[dict[VariableInfo, str | int]]:
-        """Extract unknown variable values from path."""
+    ) -> dict[VariableInfo, str | int] | None:
+        """Extract unknown variable values from path (greedy matching).
+
+        Returns a single match using greedy matching strategy, or None if no match.
+        """
         # Simple implementation for now - just handle required variables delimited by static
-        matches: list[dict[VariableInfo, str | int]] = []
         current_match: dict[VariableInfo, str | int] = {}
         current_pos = 0
 
@@ -685,7 +684,7 @@ class ParsedMacro:
                         end_pos = path.find(next_static.text, current_pos)
                         if end_pos == -1:
                             # Can't find next static - no match
-                            return []
+                            return None
                     else:
                         # No more static segments - consume to end
                         end_pos = len(path)
@@ -697,7 +696,7 @@ class ParsedMacro:
                     reversed_value = self._reverse_format_specs(raw_value, segment.format_specs)
                     if reversed_value is None:
                         # Can't reverse format specs - no match
-                        return []
+                        return None
 
                     current_match[segment.info] = reversed_value
                     current_pos = end_pos
@@ -705,8 +704,7 @@ class ParsedMacro:
                     msg = f"Unexpected segment type: {type(segment).__name__}"
                     raise MacroSyntaxError(msg)
 
-        matches.append(current_match)
-        return matches
+        return current_match
 
     def _find_next_static(self, segments: list[ParsedSegment]) -> ParsedStaticValue | None:
         """Find next static segment in list."""
@@ -888,7 +886,7 @@ class ParsedMacro:
         self,
         variables: dict[str, str | int],
         secrets_manager: SecretsManager,
-    ) -> PartiallyResolvedMacro:
+    ) -> _PartiallyResolvedMacro:
         """Partially resolve the macro template with known variables.
 
         Resolves known variables (including env vars and format specs) into static
@@ -900,7 +898,7 @@ class ParsedMacro:
             secrets_manager: SecretsManager instance for resolving env vars
 
         Returns:
-            PartiallyResolvedMacro with resolved and unresolved segments
+            _PartiallyResolvedMacro with resolved and unresolved segments
 
         Raises:
             MacroResolutionError: If:
@@ -934,7 +932,7 @@ class ParsedMacro:
                     msg = f"Unexpected segment type: {type(segment).__name__}"
                     raise MacroResolutionError(msg)
 
-        return PartiallyResolvedMacro(
+        return _PartiallyResolvedMacro(
             original_template=self.template,
             segments=resolved_segments,
             known_variables=variables,
@@ -1007,7 +1005,7 @@ class ParsedMacro:
 
 
 @dataclass
-class PartiallyResolvedMacro:
+class _PartiallyResolvedMacro:
     """Result of partially resolving a macro with known variables.
 
     Contains both resolved segments (known variables → static text) and
