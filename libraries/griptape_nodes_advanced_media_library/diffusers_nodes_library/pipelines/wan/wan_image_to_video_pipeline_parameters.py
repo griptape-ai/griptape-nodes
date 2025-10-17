@@ -16,7 +16,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
 )
 
-from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
+from griptape_nodes.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
