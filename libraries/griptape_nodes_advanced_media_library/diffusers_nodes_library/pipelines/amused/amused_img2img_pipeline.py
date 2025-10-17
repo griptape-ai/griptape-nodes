@@ -4,9 +4,6 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.log_parameter import (
-    LogParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.amused.amused_img2img_pipeline_parameters import (  # type: ignore[reportMissingImports]
     AmusedImg2ImgPipelineParameters,
@@ -17,6 +14,7 @@ from diffusers_nodes_library.pipelines.amused.amused_pipeline_memory_footprint i
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 
