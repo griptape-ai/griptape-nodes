@@ -53,7 +53,7 @@ class ArbitraryCodeExecManager:
                 #
                 # 2. ISOLATION: An isolated namespace prevents exec'd code from accessing or modifying
                 #    variables in the outer program scope, protecting read/write access to sensitive engine data.
-                # For the PR that implements this behavior, see https://github.com/griptape-ai/griptape-nodes/pull/2087
+                # For the PR that implements this behavior alongside an Execute Python and List Files node, see https://github.com/griptape-ai/griptape-nodes/pull/2087
 
                 namespace = {"__builtins__": __builtins__}
                 python_output = exec(  # noqa: S102
