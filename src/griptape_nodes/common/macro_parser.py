@@ -424,61 +424,6 @@ class ParsedMacro:
         # Convert VariableInfo keys to plain string keys
         return {var_info.name: value for var_info, value in detailed.items()}
 
-    def find_matches(
-        self,
-        path: str,
-        known_variables: dict[str, str | int],
-        secrets_manager: SecretsManager,
-    ) -> list[str]:
-        """Find all possible paths that match against this template.
-
-        This is the simple version that returns resolved path strings. For advanced
-        use cases where you need detailed variable metadata, use find_matches_detailed().
-
-        Given a path to match, this method:
-        1. Extracts variable values from the path using the template pattern
-        2. Resolves those variables back into full path strings
-        3. Returns the list of matching path strings
-
-        Args:
-            path: Actual path string to match against template
-            known_variables: Dictionary of variables with known values. These will be
-                            resolved before matching to reduce ambiguity. Pass empty
-                            dict {} if no variables are known.
-            secrets_manager: SecretsManager instance for resolving env vars in known variables
-
-        Returns:
-            List of resolved path strings that match the template.
-            Empty list if path doesn't match the template pattern.
-            Multiple paths returned when optional variables create ambiguity.
-
-        Examples:
-            >>> macro = ParsedMacro("{inputs}/{file_name}")
-            >>> macro.find_matches("inputs/photo.jpg", {"inputs": "inputs"}, secrets_manager)
-            ["inputs/photo.jpg"]
-
-            >>> # Path doesn't match - returns empty list
-            >>> macro.find_matches("outputs/photo.jpg", {"inputs": "inputs"}, secrets_manager)
-            []
-
-            >>> # Multiple matches when optional variables create ambiguity
-            >>> macro = ParsedMacro("{dir}/{name?:_}{file}")
-            >>> macro.find_matches("inputs/my_workflow_photo.jpg", {}, secrets_manager)
-            ["inputs/my_workflow_photo.jpg", "inputs/my_photo.jpg", "inputs/photo.jpg"]
-        """
-        # Get detailed match with variable metadata
-        detailed_match = self.find_matches_detailed(path, known_variables, secrets_manager)
-
-        # No match found
-        if detailed_match is None:
-            return []
-
-        # Convert VariableInfo keys to string keys for resolve()
-        variables_dict: dict[str, str | int] = {var_info.name: value for var_info, value in detailed_match.items()}
-        resolved_path = self.resolve(variables_dict, secrets_manager)
-
-        return [resolved_path]
-
     def find_matches_detailed(
         self,
         path: str,
