@@ -31,6 +31,7 @@ class MultiOptions(Trait):
     show_search: bool = field(default=True)
     search_filter: str = field(default="")
     icon_size: str = field(default="small")
+    allow_user_created_options: bool = field(default=False)
 
     def __init__(  # noqa: PLR0913
         self,
@@ -41,6 +42,7 @@ class MultiOptions(Trait):
         show_search: bool = True,
         search_filter: str = "",
         icon_size: str = "small",
+        allow_user_created_options: bool = False,
     ) -> None:
         super().__init__()
         # Set choices through property to ensure dual sync from the start
@@ -51,6 +53,7 @@ class MultiOptions(Trait):
         self.max_selected_display = max_selected_display
         self.show_search = show_search
         self.search_filter = search_filter
+        self.allow_user_created_options = allow_user_created_options
 
         # Validate icon_size
         if icon_size not in ["small", "large"]:
@@ -135,7 +138,14 @@ class MultiOptions(Trait):
                     return []
                 value = [value]
 
-            # Filter out invalid choices and return valid ones
+            # When allow_user_created_options is enabled, accept any string values
+            # without validating against predefined choices
+            if self.allow_user_created_options:
+                # Filter out non-string values and ensure all options are valid strings
+                valid_options = [str(v) for v in value if v is not None and str(v).strip()]
+                return valid_options
+
+            # Standard multi-options mode: filter out invalid choices and return valid ones
             valid_choices = [v for v in value if v in self.choices]
 
             # If no valid choices, return empty list (allow empty selection)
@@ -157,7 +167,20 @@ class MultiOptions(Trait):
                 msg = "MultiOptions value must be a list"
                 raise TypeError(msg)
 
-            # Check that all selected values are valid choices
+            # When allow_user_created_options is enabled, validate that all values are strings
+            # but don't validate against predefined choices
+            if self.allow_user_created_options:
+                for option in value:
+                    if not isinstance(option, str):
+                        msg = f"All options must be strings, found: {type(option).__name__}"
+                        raise TypeError(msg)
+
+                    if not option.strip():
+                        msg = "Options cannot be empty strings"
+                        raise ValueError(msg)
+                return
+
+            # Standard multi-options mode: check that all selected values are valid choices
             invalid_choices = [v for v in value if v not in self.choices]
             if invalid_choices:
                 msg = f"Invalid choices: {invalid_choices}"
@@ -188,5 +211,6 @@ class MultiOptions(Trait):
                 "show_search": self.show_search,
                 "search_filter": self.search_filter,
                 "icon_size": self.icon_size,
+                "allow_user_created_options": self.allow_user_created_options,
             }
         }
