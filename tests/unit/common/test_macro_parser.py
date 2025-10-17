@@ -388,19 +388,91 @@ class TestMacroParserParse:
             MacroParser.parse("{}")
 
 
-class TestMacroParserPlaceholder:
-    """Placeholder tests for MacroParser.match() (to be implemented)."""
+class TestMacroParserFindMatches:
+    """Test cases for MacroParser.find_matches() method."""
 
-    def test_match_not_implemented(self) -> None:
-        """Test MacroParser.match() raises NotImplementedError."""
+    def test_find_matches_static_only_exact_match(self) -> None:
+        """Test matching static-only template with exact match."""
         from griptape_nodes.common.macro_parser import MacroParser
 
-        # Create a minimal ParsedMacro to test with
-        segments: list[ParsedSegment] = [ParsedStaticValue(text="test")]
-        parsed = ParsedMacro(template="test", segments=segments)
+        parsed = MacroParser.parse("static/path/only")
+        matches = MacroParser.find_matches(parsed, "static/path/only", {})
 
-        with pytest.raises(NotImplementedError):
-            MacroParser.match(parsed, "test")
+        assert len(matches) == 1
+        assert matches[0] == {}  # No variables to extract
+
+    def test_find_matches_static_only_no_match(self) -> None:
+        """Test matching static-only template with no match."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("static/path/only")
+        matches = MacroParser.find_matches(parsed, "different/path", {})
+
+        assert matches == []
+
+    def test_find_matches_single_unknown_variable(self) -> None:
+        """Test matching with single unknown variable."""
+        from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
+
+        parsed = MacroParser.parse("{file_name}")
+        matches = MacroParser.find_matches(parsed, "image.jpg", {})
+
+        assert len(matches) == 1
+        assert VariableInfo(name="file_name", is_required=True) in matches[0]
+        assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
+
+    def test_find_matches_with_known_variable(self) -> None:
+        """Test matching with known variable provided."""
+        from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
+
+        parsed = MacroParser.parse("{inputs}/{file_name}")
+        matches = MacroParser.find_matches(parsed, "inputs/image.jpg", {"inputs": "inputs"})
+
+        assert len(matches) == 1
+        # Only file_name should be in results (inputs was known)
+        assert VariableInfo(name="file_name", is_required=True) in matches[0]
+        assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
+
+    def test_find_matches_known_variable_mismatch(self) -> None:
+        """Test matching fails when known variable doesn't match path."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("{inputs}/{file_name}")
+        matches = MacroParser.find_matches(parsed, "outputs/image.jpg", {"inputs": "inputs"})
+
+        assert matches == []
+
+    def test_find_matches_multiple_unknowns_with_delimiters(self) -> None:
+        """Test matching multiple unknown variables separated by static text."""
+        from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
+
+        parsed = MacroParser.parse("{dir}/{file_name}")
+        matches = MacroParser.find_matches(parsed, "inputs/image.jpg", {})
+
+        assert len(matches) == 1
+        assert matches[0][VariableInfo(name="dir", is_required=True)] == "inputs"
+        assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
+
+    def test_find_matches_with_numeric_padding_format(self) -> None:
+        """Test matching with numeric padding format spec reversal."""
+        from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
+
+        parsed = MacroParser.parse("{file_name}_{index:03}")
+        matches = MacroParser.find_matches(parsed, "render_005", {})
+
+        assert len(matches) == 1
+        assert matches[0][VariableInfo(name="file_name", is_required=True)] == "render"
+        assert matches[0][VariableInfo(name="index", is_required=True)] == 5  # Reversed to int
+
+    def test_find_matches_empty_path(self) -> None:
+        """Test matching empty path against empty template."""
+        from griptape_nodes.common.macro_parser import MacroParser
+
+        parsed = MacroParser.parse("")
+        matches = MacroParser.find_matches(parsed, "", {})
+
+        assert len(matches) == 1
+        assert matches[0] == {}
 
 
 class TestMacroResolverResolve:

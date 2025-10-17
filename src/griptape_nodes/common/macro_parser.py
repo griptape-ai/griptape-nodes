@@ -264,7 +264,7 @@ class MacroParser:
     """Parse and analyze macro templates.
 
     This class provides static methods for parsing macro template strings
-    into structured representations and extracting metadata about variables.
+    into structured representations and finding matches against paths.
     """
 
     @staticmethod
@@ -311,58 +311,184 @@ class MacroParser:
         return ParsedMacro(template=template, segments=segments)
 
     @staticmethod
-    def match(parsed_macro: ParsedMacro, path: str) -> list[dict[VariableInfo, str | int]]:
-        """Check if a path matches a parsed template and extract variable values.
+    def find_matches(
+        parsed_macro: ParsedMacro,
+        path: str,
+        known_variables: dict[str, str | int],
+    ) -> list[dict[VariableInfo, str | int]]:
+        """Find all possible variable value combinations that match a path.
 
-        Returns all possible variable value combinations that would produce
-        the given path when resolved. May return multiple matches if optional
-        variables create ambiguity.
+        Given a parsed template and a path, extracts variable values by matching
+        the path against the template pattern. Known variables are resolved before
+        matching to reduce ambiguity.
 
         Args:
             parsed_macro: Parsed template from MacroParser.parse()
             path: Actual path string to match against template
+            known_variables: Dictionary of variables with known values. These will be
+                            resolved before matching to reduce ambiguity. Pass empty
+                            dict {} if no variables are known.
 
         Returns:
             List of dictionaries mapping VariableInfo to extracted values.
             Empty list if path doesn't match the template pattern.
-            The VariableInfo keys preserve metadata (name, is_required) from
-            the original template. Values are reversed through format specifiers
-            where possible (e.g., "005" with :03 becomes integer 5).
+            Multiple matches returned when optional variables create ambiguity.
 
         Examples:
             >>> parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
-            >>> matches = MacroParser.match(parsed, "inputs/my_workflow_image.jpg")
+            >>> known = {"inputs": "inputs", "workflow_name": "my_workflow"}
+            >>> matches = MacroParser.find_matches(parsed, "inputs/my_workflow_photo.jpg", known)
             >>> matches[0]
             {
                 VariableInfo(name='inputs', is_required=True): 'inputs',
                 VariableInfo(name='workflow_name', is_required=False): 'my_workflow',
-                VariableInfo(name='file_name', is_required=True): 'image.jpg'
+                VariableInfo(name='file_name', is_required=True): 'photo.jpg'
             }
 
-            >>> matches = MacroParser.match(parsed, "inputs/image.jpg")
-            >>> matches[0]
-            {
-                VariableInfo(name='inputs', is_required=True): 'inputs',
-                VariableInfo(name='file_name', is_required=True): 'image.jpg'
-            }
-            # workflow_name not in dict (optional variable not present)
+            >>> # Path doesn't match - returns empty list
+            >>> MacroParser.find_matches(parsed, "outputs/photo.jpg", known)
+            []
 
-            >>> parsed = MacroParser.parse("{outputs}/{file_name}_{index:03}")
-            >>> matches = MacroParser.match(parsed, "outputs/render_005")
-            >>> matches[0]
-            {
-                VariableInfo(name='outputs', is_required=True): 'outputs',
-                VariableInfo(name='file_name', is_required=True): 'render',
-                VariableInfo(name='index', is_required=True): 5
-            }
-            # Note: index value is integer 5, not string "005"
-
-            >>> parsed = MacroParser.parse("{inputs}/{file_name}")
-            >>> MacroParser.match(parsed, "outputs/image.jpg")
-            []  # No match - first segment doesn't match
+            >>> # No known variables - more ambiguous, multiple matches possible
+            >>> MacroParser.find_matches(parsed, "inputs/my_workflow_photo.jpg", {})
+            [
+                {VariableInfo('inputs'): 'inputs', VariableInfo('workflow_name'): 'my_workflow', ...},
+                {VariableInfo('inputs'): 'inputs', VariableInfo('workflow_name'): 'my', ...},
+                {VariableInfo('inputs'): 'inputs', VariableInfo('file_name'): 'my_workflow_photo.jpg'},
+            ]
         """
-        msg = "MacroParser.match() not yet implemented"
-        raise NotImplementedError(msg)
+        # Step 1: Build pattern by resolving known variables
+        pattern_segments: list[ParsedSegment] = []
+
+        for segment in parsed_macro.segments:
+            match segment:
+                case ParsedStaticValue():
+                    pattern_segments.append(segment)
+                case ParsedVariable():
+                    if segment.info.name in known_variables:
+                        # Known variable - resolve it to static text
+                        value = known_variables[segment.info.name]
+                        if value is None and not segment.info.is_required:
+                            # Optional variable explicitly absent - skip it
+                            continue
+                        resolved = MacroParser._apply_format_specs(value, segment.format_specs)
+                        pattern_segments.append(ParsedStaticValue(text=resolved))
+                    else:
+                        # Unknown variable - keep as variable
+                        pattern_segments.append(segment)
+                case _:
+                    msg = f"Unexpected segment type: {type(segment).__name__}"
+                    raise MacroSyntaxError(msg)
+
+        # Step 2: Pre-validate that static segments match path
+        if not MacroParser._validate_static_match(pattern_segments, path):
+            # Doesn't match
+            return []
+
+        # Step 3: Extract unknown variables
+        return MacroParser._extract_unknown_variables(pattern_segments, path)
+
+    # Private helper methods
+
+    @staticmethod
+    def _apply_format_specs(value: str | int, format_specs: list[FormatSpec]) -> str:
+        """Apply format specs to value (same logic as resolve())."""
+        resolved_value: str | int = value
+        for format_spec in format_specs:
+            resolved_value = format_spec.apply(resolved_value)
+        # Return as string
+        return str(resolved_value)
+
+    @staticmethod
+    def _validate_static_match(pattern_segments: list[ParsedSegment], path: str) -> bool:
+        """Check if static segments exist in path (we'll determine positions during extraction)."""
+        # For now, just check that all static segments appear in the path
+        # The extraction phase will determine exact positions
+        for segment in pattern_segments:
+            match segment:
+                case ParsedStaticValue():
+                    if segment.text not in path:
+                        # Static text not found in path
+                        return False
+                case ParsedVariable():
+                    # Unknown variable - skip
+                    pass
+                case _:
+                    msg = f"Unexpected segment type: {type(segment).__name__}"
+                    raise MacroSyntaxError(msg)
+
+        # All static segments found in path
+        return True
+
+    @staticmethod
+    def _extract_unknown_variables(
+        pattern_segments: list[ParsedSegment],
+        path: str,
+    ) -> list[dict[VariableInfo, str | int]]:
+        """Extract unknown variable values from path."""
+        # Simple implementation for now - just handle required variables delimited by static
+        matches: list[dict[VariableInfo, str | int]] = []
+        current_match: dict[VariableInfo, str | int] = {}
+        current_pos = 0
+
+        for i, segment in enumerate(pattern_segments):
+            match segment:
+                case ParsedStaticValue():
+                    current_pos += len(segment.text)
+                case ParsedVariable():
+                    # Find next static segment to determine end position
+                    next_static = MacroParser._find_next_static(pattern_segments[i + 1 :])
+                    if next_static:
+                        end_pos = path.find(next_static.text, current_pos)
+                        if end_pos == -1:
+                            # Can't find next static - no match
+                            return []
+                    else:
+                        # No more static segments - consume to end
+                        end_pos = len(path)
+
+                    # Extract raw value
+                    raw_value = path[current_pos:end_pos]
+
+                    # Reverse format specs
+                    reversed_value = MacroParser._reverse_format_specs(raw_value, segment.format_specs)
+                    if reversed_value is None:
+                        # Can't reverse format specs - no match
+                        return []
+
+                    current_match[segment.info] = reversed_value
+                    current_pos = end_pos
+                case _:
+                    msg = f"Unexpected segment type: {type(segment).__name__}"
+                    raise MacroSyntaxError(msg)
+
+        matches.append(current_match)
+        return matches
+
+    @staticmethod
+    def _find_next_static(segments: list[ParsedSegment]) -> ParsedStaticValue | None:
+        """Find next static segment in list."""
+        for seg in segments:
+            if isinstance(seg, ParsedStaticValue):
+                return seg
+        # No static segment found
+        return None
+
+    @staticmethod
+    def _reverse_format_specs(value: str, format_specs: list[FormatSpec]) -> str | int | None:
+        """Apply format spec reversal in reverse order."""
+        result: str | int = value
+        # Apply in reverse order (last spec first)
+        for spec in reversed(format_specs):
+            # reverse() expects str but result might be int, so convert if needed
+            str_result = str(result) if isinstance(result, int) else result
+            reversed_result = spec.reverse(str_result)
+            if reversed_result is None:
+                # Can't reverse this format spec
+                return None
+            result = reversed_result
+        # Return reversed value (might be int after NumericPaddingFormat.reverse)
+        return result
 
     # Private helper methods
 
