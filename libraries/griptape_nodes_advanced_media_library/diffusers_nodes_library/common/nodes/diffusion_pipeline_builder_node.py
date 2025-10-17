@@ -7,7 +7,7 @@ from diffusers_nodes_library.common.parameters.diffusion.builder_parameters impo
     DiffusionPipelineBuilderParameters,
 )
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
-from diffusers_nodes_library.common.parameters.log_parameter import LogParameter
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline

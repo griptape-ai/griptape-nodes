@@ -23,7 +23,7 @@ from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters impo
     DiffusionPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
-from griptape_nodes.common.parameters.huggingface.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file_parameter import HuggingFaceRepoFileParameter
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options

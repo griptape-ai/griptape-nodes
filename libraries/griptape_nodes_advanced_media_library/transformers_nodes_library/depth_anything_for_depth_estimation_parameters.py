@@ -8,7 +8,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  
 from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation  # type: ignore[reportMissingImports]
 
-from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 

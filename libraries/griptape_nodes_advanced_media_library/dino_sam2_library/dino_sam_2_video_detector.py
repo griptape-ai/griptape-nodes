@@ -9,9 +9,7 @@ import PIL.Image  # type: ignore[reportMissingImports]
 import requests
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.log_parameter import (
-    LogParameter,  # type: ignore[reportMissingImports]
-)
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device  # type: ignore[reportMissingImports]
 from griptape.artifacts import VideoUrlArtifact

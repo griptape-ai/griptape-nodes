@@ -14,9 +14,7 @@ import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import requests
 from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.log_parameter import (
-    LogParameter,  # type: ignore[reportMissingImports]
-)
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape.artifacts import VideoUrlArtifact
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
 

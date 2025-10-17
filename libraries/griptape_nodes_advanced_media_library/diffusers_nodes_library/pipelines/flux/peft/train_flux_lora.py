@@ -11,9 +11,7 @@ from typing import Any
 import torch  # type: ignore[reportMissingImports]
 from xdg_base_dirs import xdg_data_home  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
-    LogParameter,  # type: ignore[reportMissingImports]
-)
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from diffusers_nodes_library.pipelines.flux.peft.train_flux_lora_parameters import TrainFluxLoraParameters
 from griptape_nodes.exe_types.core_types import Parameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode  # type: ignore[reportMissingImports]
