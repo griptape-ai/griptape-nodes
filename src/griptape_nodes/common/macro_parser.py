@@ -492,7 +492,8 @@ class ParsedMacro:
 
         Given a parsed template and a path, extracts variable values by matching
         the path against the template pattern. Known variables are resolved before
-        matching to reduce ambiguity.
+        matching to reduce ambiguity. Uses greedy matching strategy to return a single
+        result instead of exploring all possible interpretations.
 
         MATCHING SCENARIOS (how this method handles different cases):
 
@@ -500,21 +501,21 @@ class ParsedMacro:
             Template: "{inputs}/{file_name}"
             Known: {"inputs": "inputs", "file_name": "photo.jpg"}
             Path: "inputs/photo.jpg"
-            Result: [{"inputs": "inputs", "file_name": "photo.jpg"}]
-            Flow: Step 1 → fully resolved → Step 2 → exact match → return single result
+            Result: {"inputs": "inputs", "file_name": "photo.jpg"}
+            Flow: Step 1 → fully resolved → Step 2 → exact match → return result
 
         Scenario B: All variables known, path doesn't match
             Template: "{inputs}/{file_name}"
             Known: {"inputs": "inputs", "file_name": "photo.jpg"}
             Path: "outputs/photo.jpg"
-            Result: []
-            Flow: Step 1 → fully resolved → Step 2 → no match → return []
+            Result: None
+            Flow: Step 1 → fully resolved → Step 2 → no match → return None
 
-        Scenario C: Some variables known, path matches, single result
+        Scenario C: Some variables known, path matches
             Template: "{inputs}/{workflow_name}/{file_name}"
             Known: {"inputs": "inputs"}
             Path: "inputs/my_workflow/photo.jpg"
-            Result: [{"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}]
+            Result: {"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}
             Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → static validated
                   → Step 4 → extract unknowns (workflow_name, file_name) → merge with knowns → return
 
@@ -522,14 +523,14 @@ class ParsedMacro:
             Template: "{inputs}/{workflow_name}/{file_name}"
             Known: {"inputs": "outputs"}
             Path: "inputs/my_workflow/photo.jpg"
-            Result: []
-            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → static mismatch → return []
+            Result: None
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → static mismatch → return None
 
         Scenario E: Optional variable present in path
             Template: "{inputs}/{workflow_name?:_}{file_name}"
             Known: {"inputs": "inputs"}
             Path: "inputs/my_workflow_photo.jpg"
-            Result: [{"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}]
+            Result: {"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}
             Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
                   → Step 4 → extract with separator matching → return
 
@@ -537,7 +538,7 @@ class ParsedMacro:
             Template: "{inputs}/{workflow_name?:_}{file_name}"
             Known: {"inputs": "inputs"}
             Path: "inputs/photo.jpg"
-            Result: [{"inputs": "inputs", "file_name": "photo.jpg"}]
+            Result: {"inputs": "inputs", "file_name": "photo.jpg"}
             Flow: Step 1 → partial resolve (optional removed) → Step 2 skipped → Step 3 → validated
                   → Step 4 → extract file_name only → return
 
@@ -545,7 +546,7 @@ class ParsedMacro:
             Template: "{inputs}/{dir}/{file_name}.{ext}"
             Known: {"inputs": "inputs"}
             Path: "inputs/render/output.png"
-            Result: [{"inputs": "inputs", "dir": "render", "file_name": "output", "ext": "png"}]
+            Result: {"inputs": "inputs", "dir": "render", "file_name": "output", "ext": "png"}
             Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
                   → Step 4 → extract dir, file_name, ext using "/" and "." delimiters → return
 
@@ -553,7 +554,7 @@ class ParsedMacro:
             Template: "{inputs}/{frame:03}.png"
             Known: {"inputs": "inputs"}
             Path: "inputs/005.png"
-            Result: [{"inputs": "inputs", "frame": 5}]  # Note: integer value
+            Result: {"inputs": "inputs", "frame": 5}  # Note: integer value
             Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
                   → Step 4 → extract "005", reverse format spec → 5 → return
 
@@ -565,9 +566,8 @@ class ParsedMacro:
             secrets_manager: SecretsManager instance for resolving env vars in known variables
 
         Returns:
-            List of dictionaries mapping VariableInfo to extracted values.
-            Empty list if path doesn't match the template pattern.
-            Multiple matches returned when optional variables create ambiguity.
+            Dictionary mapping VariableInfo to extracted values, or None if path doesn't
+            match the template pattern. Uses greedy matching to return a single result.
         """
         # STEP 1: Partial resolve - resolve known variables into static text
         # This reduces the matching problem from "match everything" to "match only the unknowns"
@@ -583,8 +583,8 @@ class ParsedMacro:
         # If so, we can do a direct string comparison
         #
         # Scenarios affected:
-        # - Scenario A: fully resolved, path matches → return [result]
-        # - Scenario B: fully resolved, path doesn't match → return []
+        # - Scenario A: fully resolved, path matches → return result dict
+        # - Scenario B: fully resolved, path doesn't match → return None
         # - Scenarios C-H: NOT fully resolved, skip this step
         if partial.is_fully_resolved():
             resolved_path = partial.to_string()
@@ -602,7 +602,7 @@ class ParsedMacro:
         # Before expensive extraction, check if all static text appears in path
         #
         # Scenarios affected:
-        # - Scenario D: static "outputs" doesn't match path starting with "inputs" → return []
+        # - Scenario D: static "outputs" doesn't match path starting with "inputs" → return None
         # - Scenarios C, E-H: static text matches → continue
         if not self._validate_static_match(partial.segments, path):
             # Scenario D: known variable value doesn't match path
@@ -622,23 +622,20 @@ class ParsedMacro:
             msg = f"INTERNAL ERROR: Failed when attempting to find matches against a macro. Static validation passed but extraction failed. Template: {self.template}, Path: {path}"
             raise MacroResolutionError(msg)
 
-        # Merge extracted unknowns with known variables to create complete result
+        # STEP 5: Merge extracted unknowns with known variables to create complete result
         # The extracted dict contains only extracted unknowns, need to add knowns back in
         #
-        # All scenarios C-H: merge known variables into the match result
+        # Scenarios affected (D was already eliminated in Step 3):
+        # - Scenario C: merge inputs="inputs" → final: {inputs, workflow_name, file_name}
+        # - Scenario E: merge inputs="inputs" → final: {inputs, workflow_name, file_name}
+        # - Scenario F: merge inputs="inputs" → final: {inputs, file_name}
+        # - Scenario G: merge inputs="inputs" → final: {inputs, dir, file_name, ext}
+        # - Scenario H: merge inputs="inputs" → final: {inputs, frame}
         for segment in self.segments:
             if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
                 extracted[segment.info] = known_variables[segment.info.name]
 
         return extracted
-
-    def _apply_format_specs(self, value: str | int, format_specs: list[FormatSpec]) -> str:
-        """Apply format specs to value (same logic as resolve())."""
-        resolved_value: str | int = value
-        for format_spec in format_specs:
-            resolved_value = format_spec.apply(resolved_value)
-        # Return as string
-        return str(resolved_value)
 
     def _validate_static_match(self, pattern_segments: list[ParsedSegment], path: str) -> bool:
         """Check if static segments exist in path (we'll determine positions during extraction)."""
