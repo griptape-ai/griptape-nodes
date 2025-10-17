@@ -1,9 +1,9 @@
 # Setup
 
-Normally, custom nodes will live inside a **node library**.\
+Normally, custom nodes will live inside a **node library**.
 A library provides structure, versioning, distribution, and a clean way to share nodes with others.
 
-But when you’re just starting out—or experimenting with new ideas—you don’t need that overhead.\
+But when you’re just starting out—or experimenting with new ideas—you don’t need that overhead.
 To make iteration fast, Griptape Nodes includes the abililty to use a **Sandbox**: a folder that’s automatically watched for Python files containing node definitions.
 
 Any valid node you save here is:
@@ -23,7 +23,7 @@ ______________________________________________________________________
 
 ## Creating or opening your sandbox
 
-Sandbox folders **don’t exist by default**.\
+Sandbox folders **don’t exist by default**.
 You’ll need to create one before you can add any nodes to it.
 
 The sandbox will be created inside the location you’ve already set as your workspace.
@@ -49,14 +49,15 @@ The sandbox will be created inside the location you’ve already set as your wor
 
 !!! tip
 
-    Once created, this folder will be automatically watched by Griptape Nodes.\
+    Once created, this folder will be automatically watched by Griptape Nodes.
+
     Any valid node placed here is discoverable and will appear under the **Sandbox** section in the node list once you reload Libraries.
 
 ______________________________________________________________________
 
 ## Verifying your sandbox
 
-Once your sandbox is created, you can confirm it’s working by adding a simple test node.\
+Once your sandbox is created, you can confirm it’s working by adding a simple test node.
 This ensures Griptape Nodes can discover and load Python files from your sandbox.
 
 1. **Click “Open”** in the Sandbox settings to open the folder in Finder or Explorer.
