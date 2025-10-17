@@ -260,6 +260,35 @@ class ParsedMacro:
         return [seg.info for seg in self.segments if isinstance(seg, ParsedVariable)]
 
 
+@dataclass
+class PartiallyResolvedMacro:
+    """Result of partially resolving a macro with known variables.
+
+    Contains both resolved segments (known variables → static text) and
+    unresolved segments (unknown variables still as variables).
+    """
+
+    original_template: str
+    segments: list[ParsedSegment]
+    known_variables: dict[str, str | int]
+
+    def is_fully_resolved(self) -> bool:
+        """Check if all variables have been resolved."""
+        return all(isinstance(seg, ParsedStaticValue) for seg in self.segments)
+
+    def to_string(self) -> str:
+        """Convert to string (only valid if fully resolved)."""
+        if not self.is_fully_resolved():
+            msg = "Cannot convert partially resolved macro to string - unresolved variables remain"
+            raise MacroResolutionError(msg)
+        # All segments are ParsedStaticValue at this point
+        return "".join(seg.text for seg in self.segments if isinstance(seg, ParsedStaticValue))
+
+    def get_unresolved_variables(self) -> list[ParsedVariable]:
+        """Get list of unresolved variables."""
+        return [seg for seg in self.segments if isinstance(seg, ParsedVariable)]
+
+
 class MacroParser:
     """Parse and analyze macro templates.
 
@@ -315,12 +344,17 @@ class MacroParser:
         parsed_macro: ParsedMacro,
         path: str,
         known_variables: dict[str, str | int],
-    ) -> list[dict[VariableInfo, str | int]]:
-        """Find all possible variable value combinations that match a path.
+        secrets_manager: SecretsManager,
+    ) -> list[str]:
+        """Find all possible paths that match against a macro template.
 
-        Given a parsed template and a path, extracts variable values by matching
-        the path against the template pattern. Known variables are resolved before
-        matching to reduce ambiguity.
+        This is the simple version that returns resolved path strings. For advanced
+        use cases where you need detailed variable metadata, use find_matches_detailed().
+
+        Given a parsed template and a path to match, this method:
+        1. Extracts variable values from the path using the template pattern
+        2. Resolves those variables back into full path strings
+        3. Returns the list of matching path strings
 
         Args:
             parsed_macro: Parsed template from MacroParser.parse()
@@ -328,65 +362,195 @@ class MacroParser:
             known_variables: Dictionary of variables with known values. These will be
                             resolved before matching to reduce ambiguity. Pass empty
                             dict {} if no variables are known.
+            secrets_manager: SecretsManager instance for resolving env vars in known variables
+
+        Returns:
+            List of resolved path strings that match the template.
+            Empty list if path doesn't match the template pattern.
+            Multiple paths returned when optional variables create ambiguity.
+
+        Examples:
+            >>> parsed = MacroParser.parse("{inputs}/{file_name}")
+            >>> MacroParser.find_matches(parsed, "inputs/photo.jpg", {"inputs": "inputs"}, secrets_manager)
+            ["inputs/photo.jpg"]
+
+            >>> # Path doesn't match - returns empty list
+            >>> MacroParser.find_matches(parsed, "outputs/photo.jpg", {"inputs": "inputs"}, secrets_manager)
+            []
+
+            >>> # Multiple matches when optional variables create ambiguity
+            >>> parsed = MacroParser.parse("{dir}/{name?:_}{file}")
+            >>> MacroParser.find_matches(parsed, "inputs/my_workflow_photo.jpg", {}, secrets_manager)
+            ["inputs/my_workflow_photo.jpg", "inputs/my_photo.jpg", "inputs/photo.jpg"]
+        """
+        # Get detailed matches with variable metadata
+        detailed_matches = MacroParser.find_matches_detailed(parsed_macro, path, known_variables, secrets_manager)
+
+        # Convert each detailed match back to a resolved path string
+        result: list[str] = []
+        for match in detailed_matches:
+            # Convert VariableInfo keys to string keys for resolve()
+            variables_dict: dict[str, str | int] = {var_info.name: value for var_info, value in match.items()}
+            resolved_path = MacroResolver.resolve(parsed_macro, variables_dict, secrets_manager)
+            result.append(resolved_path)
+
+        return result
+
+    @staticmethod
+    def find_matches_detailed(
+        parsed_macro: ParsedMacro,
+        path: str,
+        known_variables: dict[str, str | int],
+        secrets_manager: SecretsManager,
+    ) -> list[dict[VariableInfo, str | int]]:
+        """Find all possible variable value combinations that match a path (detailed version).
+
+        This is the advanced version that returns detailed variable metadata. Most callers
+        should use find_matches() instead, which returns simple path strings.
+
+        Given a parsed template and a path, extracts variable values by matching
+        the path against the template pattern. Known variables are resolved before
+        matching to reduce ambiguity.
+
+        MATCHING SCENARIOS (how this method handles different cases):
+
+        Scenario A: All variables known, path matches
+            Template: "{inputs}/{file_name}"
+            Known: {"inputs": "inputs", "file_name": "photo.jpg"}
+            Path: "inputs/photo.jpg"
+            Result: [{"inputs": "inputs", "file_name": "photo.jpg"}]
+            Flow: Step 1 → fully resolved → Step 2 → exact match → return single result
+
+        Scenario B: All variables known, path doesn't match
+            Template: "{inputs}/{file_name}"
+            Known: {"inputs": "inputs", "file_name": "photo.jpg"}
+            Path: "outputs/photo.jpg"
+            Result: []
+            Flow: Step 1 → fully resolved → Step 2 → no match → return []
+
+        Scenario C: Some variables known, path matches, single result
+            Template: "{inputs}/{workflow_name}/{file_name}"
+            Known: {"inputs": "inputs"}
+            Path: "inputs/my_workflow/photo.jpg"
+            Result: [{"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}]
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → static validated
+                  → Step 4 → extract unknowns (workflow_name, file_name) → merge with knowns → return
+
+        Scenario D: Some variables known, known variable value doesn't match path
+            Template: "{inputs}/{workflow_name}/{file_name}"
+            Known: {"inputs": "outputs"}
+            Path: "inputs/my_workflow/photo.jpg"
+            Result: []
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → static mismatch → return []
+
+        Scenario E: Optional variable present in path
+            Template: "{inputs}/{workflow_name?:_}{file_name}"
+            Known: {"inputs": "inputs"}
+            Path: "inputs/my_workflow_photo.jpg"
+            Result: [{"inputs": "inputs", "workflow_name": "my_workflow", "file_name": "photo.jpg"}]
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
+                  → Step 4 → extract with separator matching → return
+
+        Scenario F: Optional variable omitted from path
+            Template: "{inputs}/{workflow_name?:_}{file_name}"
+            Known: {"inputs": "inputs"}
+            Path: "inputs/photo.jpg"
+            Result: [{"inputs": "inputs", "file_name": "photo.jpg"}]
+            Flow: Step 1 → partial resolve (optional removed) → Step 2 skipped → Step 3 → validated
+                  → Step 4 → extract file_name only → return
+
+        Scenario G: Multiple unknowns with delimiters
+            Template: "{inputs}/{dir}/{file_name}.{ext}"
+            Known: {"inputs": "inputs"}
+            Path: "inputs/render/output.png"
+            Result: [{"inputs": "inputs", "dir": "render", "file_name": "output", "ext": "png"}]
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
+                  → Step 4 → extract dir, file_name, ext using "/" and "." delimiters → return
+
+        Scenario H: Format spec reversal (numeric padding)
+            Template: "{inputs}/{frame:03}.png"
+            Known: {"inputs": "inputs"}
+            Path: "inputs/005.png"
+            Result: [{"inputs": "inputs", "frame": 5}]  # Note: integer value
+            Flow: Step 1 → partial resolve → Step 2 skipped → Step 3 → validated
+                  → Step 4 → extract "005", reverse format spec → 5 → return
+
+        Args:
+            parsed_macro: Parsed template from MacroParser.parse()
+            path: Actual path string to match against template
+            known_variables: Dictionary of variables with known values. These will be
+                            resolved before matching to reduce ambiguity. Pass empty
+                            dict {} if no variables are known.
+            secrets_manager: SecretsManager instance for resolving env vars in known variables
 
         Returns:
             List of dictionaries mapping VariableInfo to extracted values.
             Empty list if path doesn't match the template pattern.
             Multiple matches returned when optional variables create ambiguity.
-
-        Examples:
-            >>> parsed = MacroParser.parse("{inputs}/{workflow_name?:_}{file_name}")
-            >>> known = {"inputs": "inputs", "workflow_name": "my_workflow"}
-            >>> matches = MacroParser.find_matches(parsed, "inputs/my_workflow_photo.jpg", known)
-            >>> matches[0]
-            {
-                VariableInfo(name='inputs', is_required=True): 'inputs',
-                VariableInfo(name='workflow_name', is_required=False): 'my_workflow',
-                VariableInfo(name='file_name', is_required=True): 'photo.jpg'
-            }
-
-            >>> # Path doesn't match - returns empty list
-            >>> MacroParser.find_matches(parsed, "outputs/photo.jpg", known)
-            []
-
-            >>> # No known variables - more ambiguous, multiple matches possible
-            >>> MacroParser.find_matches(parsed, "inputs/my_workflow_photo.jpg", {})
-            [
-                {VariableInfo('inputs'): 'inputs', VariableInfo('workflow_name'): 'my_workflow', ...},
-                {VariableInfo('inputs'): 'inputs', VariableInfo('workflow_name'): 'my', ...},
-                {VariableInfo('inputs'): 'inputs', VariableInfo('file_name'): 'my_workflow_photo.jpg'},
-            ]
         """
-        # Step 1: Build pattern by resolving known variables
-        pattern_segments: list[ParsedSegment] = []
+        # STEP 1: Partial resolve - resolve known variables into static text
+        # This reduces the matching problem from "match everything" to "match only the unknowns"
+        #
+        # Scenarios affected:
+        # - All scenarios: always runs first
+        # - Scenarios A, B: will be fully resolved (all variables known)
+        # - Scenarios C-H: will have mix of static and unknown variables
+        # - Scenarios E, F: optional variables not in known_variables are removed
+        partial = MacroResolver.partial_resolve(parsed_macro, known_variables, secrets_manager)
 
-        for segment in parsed_macro.segments:
-            match segment:
-                case ParsedStaticValue():
-                    pattern_segments.append(segment)
-                case ParsedVariable():
-                    if segment.info.name in known_variables:
-                        # Known variable - resolve it to static text
-                        value = known_variables[segment.info.name]
-                        if value is None and not segment.info.is_required:
-                            # Optional variable explicitly absent - skip it
-                            continue
-                        resolved = MacroParser._apply_format_specs(value, segment.format_specs)
-                        pattern_segments.append(ParsedStaticValue(text=resolved))
-                    else:
-                        # Unknown variable - keep as variable
-                        pattern_segments.append(segment)
-                case _:
-                    msg = f"Unexpected segment type: {type(segment).__name__}"
-                    raise MacroSyntaxError(msg)
-
-        # Step 2: Pre-validate that static segments match path
-        if not MacroParser._validate_static_match(pattern_segments, path):
-            # Doesn't match
+        # STEP 2: Check if fully resolved (all variables were known)
+        # If so, we can do a direct string comparison
+        #
+        # Scenarios affected:
+        # - Scenario A: fully resolved, path matches → return [result]
+        # - Scenario B: fully resolved, path doesn't match → return []
+        # - Scenarios C-H: NOT fully resolved, skip this step
+        if partial.is_fully_resolved():
+            resolved_path = partial.to_string()
+            if resolved_path == path:
+                # Scenario A: exact match
+                result: dict[VariableInfo, str | int] = {}
+                for segment in parsed_macro.segments:
+                    if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
+                        result[segment.info] = known_variables[segment.info.name]
+                return [result]
+            # Scenario B: no match
             return []
 
-        # Step 3: Extract unknown variables
-        return MacroParser._extract_unknown_variables(pattern_segments, path)
+        # STEP 3: Pre-validate static segments (quick rejection)
+        # Before expensive extraction, check if all static text appears in path
+        #
+        # Scenarios affected:
+        # - Scenario D: static "outputs" doesn't match path starting with "inputs" → return []
+        # - Scenarios C, E-H: static text matches → continue
+        if not MacroParser._validate_static_match(partial.segments, path):
+            # Scenario D: known variable value doesn't match path
+            return []
+
+        # STEP 4: Extract unknown variables from path
+        # Use static segments as anchors to extract variable values between them
+        #
+        # Scenarios affected:
+        # - Scenario C: extract workflow_name="my_workflow", file_name="photo.jpg"
+        # - Scenario E: extract workflow_name="my_workflow", file_name="photo.jpg" (separator matched)
+        # - Scenario F: extract file_name="photo.jpg" (optional was removed in Step 1)
+        # - Scenario G: extract dir="render", file_name="output", ext="png" (multiple delimiters)
+        # - Scenario H: extract frame="005", reverse format spec → 5
+        extracted = MacroParser._extract_unknown_variables(partial.segments, path)
+        if not extracted:
+            msg = f"INTERNAL ERROR: Failed when attempting to find matches against a macro. Static validation passed but extraction failed. Template: {parsed_macro.template}, Path: {path}"
+            raise MacroResolutionError(msg)
+
+        # Merge extracted unknowns with known variables to create complete result
+        # Each match dict contains only extracted unknowns, need to add knowns back in
+        #
+        # All scenarios C-H: merge known variables into each match result
+        for match in extracted:
+            for segment in parsed_macro.segments:
+                if isinstance(segment, ParsedVariable) and segment.info.name in known_variables:
+                    match[segment.info] = known_variables[segment.info.name]
+
+        return extracted
 
     # Private helper methods
 
@@ -660,6 +824,64 @@ class MacroResolver:
     """
 
     @staticmethod
+    def partial_resolve(
+        parsed_macro: ParsedMacro,
+        variables: dict[str, str | int],
+        secrets_manager: SecretsManager,
+    ) -> PartiallyResolvedMacro:
+        """Partially resolve a macro template with known variables.
+
+        Resolves known variables (including env vars and format specs) into static
+        text, leaving unknown variables as-is. This is the core resolution logic
+        used by both resolve() and find_matches().
+
+        Args:
+            parsed_macro: Parsed template from MacroParser.parse()
+            variables: Variable name -> value mapping for known variables
+            secrets_manager: SecretsManager instance for resolving env vars
+
+        Returns:
+            PartiallyResolvedMacro with resolved and unresolved segments
+
+        Raises:
+            MacroResolutionError: If:
+                - Required variable is provided but env var resolution fails
+                - Format specifier cannot be applied to value type
+        """
+        resolved_segments: list[ParsedSegment] = []
+
+        for segment in parsed_macro.segments:
+            match segment:
+                case ParsedStaticValue():
+                    resolved_segments.append(segment)
+                case ParsedVariable():
+                    if segment.info.name in variables:
+                        # Known variable - resolve it
+                        resolved_value = MacroResolver._resolve_variable(segment, variables, secrets_manager)
+                        if resolved_value is not None:
+                            # Variable was resolved, add as static
+                            resolved_segments.append(ParsedStaticValue(text=resolved_value))
+                        # else: Optional variable provided as None, skip it
+                        continue
+
+                    if segment.info.is_required:
+                        # Required variable not in variables dict - keep as unresolved
+                        resolved_segments.append(segment)
+                        continue
+
+                    # Optional variable not in variables dict - skip it
+                    continue
+                case _:
+                    msg = f"Unexpected segment type: {type(segment).__name__}"
+                    raise MacroResolutionError(msg)
+
+        return PartiallyResolvedMacro(
+            original_template=parsed_macro.template,
+            segments=resolved_segments,
+            known_variables=variables,
+        )
+
+    @staticmethod
     def resolve(
         parsed_macro: ParsedMacro,
         variables: dict[str, str | int],
@@ -714,23 +936,18 @@ class MacroResolver:
             ... }, secrets_manager)
             '/path/to/outputs/render_005'
         """
-        result_parts: list[str] = []
+        # Use partial_resolve to handle known variables
+        partial = MacroResolver.partial_resolve(parsed_macro, variables, secrets_manager)
 
-        for segment in parsed_macro.segments:
-            match segment:
-                case ParsedStaticValue():
-                    result_parts.append(segment.text)
-                case ParsedVariable():
-                    resolved_value = MacroResolver._resolve_variable(segment, variables, secrets_manager)
-                    if resolved_value is not None:
-                        # Optional variable was provided, add to result
-                        result_parts.append(resolved_value)
-                    # else: Optional variable not provided, skip it
-                case _:
-                    msg = f"Unexpected segment type: {type(segment).__name__}"
-                    raise MacroResolutionError(msg)
+        # Check if fully resolved
+        if not partial.is_fully_resolved():
+            unresolved = partial.get_unresolved_variables()
+            unresolved_names = [var.info.name for var in unresolved]
+            msg = f"Cannot fully resolve macro - missing required variables: {', '.join(unresolved_names)}"
+            raise MacroResolutionError(msg)
 
-        return "".join(result_parts)
+        # Convert to string
+        return partial.to_string()
 
     @staticmethod
     def _resolve_variable(

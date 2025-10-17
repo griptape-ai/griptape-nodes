@@ -388,88 +388,103 @@ class TestMacroParserParse:
             MacroParser.parse("{}")
 
 
-class TestMacroParserFindMatches:
-    """Test cases for MacroParser.find_matches() method."""
+class TestMacroParserFindMatchesDetailed:
+    """Test cases for MacroParser.find_matches_detailed() method."""
 
-    def test_find_matches_static_only_exact_match(self) -> None:
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Any:
+        """Create a mock SecretsManager for testing."""
+        from unittest.mock import MagicMock
+
+        mock = MagicMock()
+        mock.get_secret.return_value = None
+        return mock
+
+    def test_find_matches_static_only_exact_match(self, mock_secrets_manager: Any) -> None:
         """Test matching static-only template with exact match."""
         from griptape_nodes.common.macro_parser import MacroParser
 
         parsed = MacroParser.parse("static/path/only")
-        matches = MacroParser.find_matches(parsed, "static/path/only", {})
+        matches = MacroParser.find_matches_detailed(parsed, "static/path/only", {}, mock_secrets_manager)
 
         assert len(matches) == 1
         assert matches[0] == {}  # No variables to extract
 
-    def test_find_matches_static_only_no_match(self) -> None:
+    def test_find_matches_static_only_no_match(self, mock_secrets_manager: Any) -> None:
         """Test matching static-only template with no match."""
         from griptape_nodes.common.macro_parser import MacroParser
 
         parsed = MacroParser.parse("static/path/only")
-        matches = MacroParser.find_matches(parsed, "different/path", {})
+        matches = MacroParser.find_matches_detailed(parsed, "different/path", {}, mock_secrets_manager)
 
         assert matches == []
 
-    def test_find_matches_single_unknown_variable(self) -> None:
+    def test_find_matches_single_unknown_variable(self, mock_secrets_manager: Any) -> None:
         """Test matching with single unknown variable."""
         from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
 
         parsed = MacroParser.parse("{file_name}")
-        matches = MacroParser.find_matches(parsed, "image.jpg", {})
+        matches = MacroParser.find_matches_detailed(parsed, "image.jpg", {}, mock_secrets_manager)
 
         assert len(matches) == 1
         assert VariableInfo(name="file_name", is_required=True) in matches[0]
         assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
 
-    def test_find_matches_with_known_variable(self) -> None:
+    def test_find_matches_with_known_variable(self, mock_secrets_manager: Any) -> None:
         """Test matching with known variable provided."""
         from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
 
         parsed = MacroParser.parse("{inputs}/{file_name}")
-        matches = MacroParser.find_matches(parsed, "inputs/image.jpg", {"inputs": "inputs"})
+        matches = MacroParser.find_matches_detailed(
+            parsed, "inputs/image.jpg", {"inputs": "inputs"}, mock_secrets_manager
+        )
 
         assert len(matches) == 1
-        # Only file_name should be in results (inputs was known)
+        # Both inputs and file_name should be in results
+        assert VariableInfo(name="inputs", is_required=True) in matches[0]
         assert VariableInfo(name="file_name", is_required=True) in matches[0]
+        assert matches[0][VariableInfo(name="inputs", is_required=True)] == "inputs"
         assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
 
-    def test_find_matches_known_variable_mismatch(self) -> None:
+    def test_find_matches_known_variable_mismatch(self, mock_secrets_manager: Any) -> None:
         """Test matching fails when known variable doesn't match path."""
         from griptape_nodes.common.macro_parser import MacroParser
 
         parsed = MacroParser.parse("{inputs}/{file_name}")
-        matches = MacroParser.find_matches(parsed, "outputs/image.jpg", {"inputs": "inputs"})
+        matches = MacroParser.find_matches_detailed(
+            parsed, "outputs/image.jpg", {"inputs": "inputs"}, mock_secrets_manager
+        )
 
         assert matches == []
 
-    def test_find_matches_multiple_unknowns_with_delimiters(self) -> None:
+    def test_find_matches_multiple_unknowns_with_delimiters(self, mock_secrets_manager: Any) -> None:
         """Test matching multiple unknown variables separated by static text."""
         from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
 
         parsed = MacroParser.parse("{dir}/{file_name}")
-        matches = MacroParser.find_matches(parsed, "inputs/image.jpg", {})
+        matches = MacroParser.find_matches_detailed(parsed, "inputs/image.jpg", {}, mock_secrets_manager)
 
         assert len(matches) == 1
         assert matches[0][VariableInfo(name="dir", is_required=True)] == "inputs"
         assert matches[0][VariableInfo(name="file_name", is_required=True)] == "image.jpg"
 
-    def test_find_matches_with_numeric_padding_format(self) -> None:
+    def test_find_matches_with_numeric_padding_format(self, mock_secrets_manager: Any) -> None:
         """Test matching with numeric padding format spec reversal."""
         from griptape_nodes.common.macro_parser import MacroParser, VariableInfo
 
         parsed = MacroParser.parse("{file_name}_{index:03}")
-        matches = MacroParser.find_matches(parsed, "render_005", {})
+        matches = MacroParser.find_matches_detailed(parsed, "render_005", {}, mock_secrets_manager)
 
         assert len(matches) == 1
         assert matches[0][VariableInfo(name="file_name", is_required=True)] == "render"
         assert matches[0][VariableInfo(name="index", is_required=True)] == 5  # Reversed to int
 
-    def test_find_matches_empty_path(self) -> None:
+    def test_find_matches_empty_path(self, mock_secrets_manager: Any) -> None:
         """Test matching empty path against empty template."""
         from griptape_nodes.common.macro_parser import MacroParser
 
         parsed = MacroParser.parse("")
-        matches = MacroParser.find_matches(parsed, "", {})
+        matches = MacroParser.find_matches_detailed(parsed, "", {}, mock_secrets_manager)
 
         assert len(matches) == 1
         assert matches[0] == {}
@@ -587,7 +602,7 @@ class TestMacroResolverResolve:
 
         parsed = MacroParser.parse("{inputs}/{file_name}")
 
-        with pytest.raises(MacroResolutionError, match="Required variable 'file_name' not found"):
+        with pytest.raises(MacroResolutionError, match="Cannot fully resolve macro - missing required variables"):
             MacroResolver.resolve(parsed, {"inputs": "inputs"}, mock_secrets_manager)
 
     def test_resolve_env_var(self) -> None:
