@@ -4,6 +4,7 @@ from typing import Any
 import diffusers  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image
+import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
@@ -12,8 +13,8 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 )
 from utils.image_utils import load_image_from_url_artifact
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import HuggingFaceRepoParameter
-from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -191,7 +192,7 @@ class DiptychFluxFillPipelineParameters:
             "mask_image": self.get_dyptych_mask(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         }
 
     def publish_output_image_preview_placeholder(self) -> None:

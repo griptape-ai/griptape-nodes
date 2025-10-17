@@ -1,6 +1,5 @@
+import random
 from typing import Any
-
-import torch  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -51,12 +50,10 @@ class SeedParameter:
 
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):
-            seed = torch.Generator().seed()
+            # Not using for cryptographic purposes
+            seed = random.randint(0, 2**32 - 1)  # noqa: S311
             self._node.set_parameter_value("seed", seed)
             self._node.publish_update_to_parameter("seed", seed)
 
     def get_seed(self) -> int:
         return int(self._node.get_parameter_value("seed"))
-
-    def get_generator(self) -> torch.Generator:
-        return torch.Generator().manual_seed(self.get_seed())

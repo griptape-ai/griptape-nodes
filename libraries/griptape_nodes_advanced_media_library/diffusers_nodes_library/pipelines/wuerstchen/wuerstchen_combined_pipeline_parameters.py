@@ -7,10 +7,10 @@ import torch  # type: ignore[reportMissingImports]
 from PIL.Image import Image
 from pillow_nodes_library.utils import pil_to_image_artifact  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
+from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (
     HuggingFaceRepoParameter,
 )
-from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter
+from griptape_nodes.common.parameters.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -193,7 +193,7 @@ class WuerstchenCombinedPipelineParameters:
         return float(self._node.get_parameter_value("decoder_guidance_scale"))
 
     def get_generator(self) -> torch.Generator:
-        return self._seed_parameter.get_generator()
+        return torch.Generator().manual_seed(self._seed_parameter.get_seed())
 
     def get_pipe_kwargs(self) -> dict[str, Any]:
         prompt = self._node.get_parameter_value("prompt")
