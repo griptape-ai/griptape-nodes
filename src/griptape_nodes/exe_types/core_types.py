@@ -1459,6 +1459,207 @@ class ControlParameterOutput(ControlParameter):
         )
 
 
+class ParameterString(Parameter):
+    """A specialized Parameter class for string inputs with enhanced UI options.
+
+    This class provides a convenient way to create string parameters with common
+    UI customizations like multiline support, markdown rendering, and placeholder text.
+    It exposes these UI options as direct properties for easy runtime modification.
+
+    By default, the parameter accepts any input type and automatically converts it to a string,
+    making it flexible for connecting to parameters of different types. You can disable
+    this conversion to only accept string inputs.
+
+    Example:
+        # Create a multiline text area with markdown support (converts any input to string)
+        param = ParameterString(
+            name="description",
+            tooltip="Enter a description",
+            multiline=True,
+            markdown=True,
+            placeholder_text="Type your description here..."
+        )
+
+        # Dynamically change UI options at runtime
+        param.multiline = False  # Switch to single line
+        param.placeholder_text = "Single line only"
+
+        # Can accept any input type and converts to string
+        param.set_value(123)  # Becomes "123"
+        param.set_value([1, 2, 3])  # Becomes "[1, 2, 3]"
+
+        # Create a string-only parameter (no conversion)
+        string_only_param = ParameterString(
+            name="name",
+            tooltip="Enter your name",
+            convert_to_string=False  # Only accepts strings
+        )
+    """
+
+    def __init__(  # noqa: PLR0913
+        self,
+        name: str,
+        default_value: str | None = None,
+        *,
+        hide_label: bool = False,
+        markdown: bool = False,
+        multiline: bool = False,
+        placeholder_text: str | None = None,
+        tooltip: str | list[dict],
+        convert_to_string: bool = True,
+        **kwargs,
+    ) -> None:
+        """Initialize a ParameterString with enhanced UI options.
+
+        By default, the parameter accepts any input type and automatically converts it to a string,
+        making it flexible for connecting to parameters of different types. Set convert_to_string=False
+        to only accept string inputs.
+
+        Args:
+            name: The parameter name (required)
+            default_value: Default string value for the parameter
+            hide_label: Whether to hide the parameter label in the UI
+            markdown: Whether to render the text as markdown
+            multiline: Whether to display as a multiline text area
+            placeholder_text: Placeholder text shown when field is empty
+            tooltip: Help text displayed on hover
+            convert_to_string: Whether to convert any input type to string (default: True)
+            **kwargs: Additional arguments passed to the base Parameter class
+        """
+        # Build ui_options dictionary from the provided UI-specific parameters
+        # This allows us to expose common UI options as constructor parameters
+        # while still using the underlying ui_options system
+        ui_options = kwargs.get("ui_options", {})
+
+        # Only add UI options to the dictionary if they have truthy values
+        # This keeps the ui_options clean and avoids unnecessary entries
+        if hide_label:
+            ui_options["hide_label"] = hide_label
+        if markdown:
+            ui_options["markdown"] = markdown
+        if multiline:
+            ui_options["multiline"] = multiline
+        if placeholder_text:
+            ui_options["placeholder_text"] = placeholder_text
+        else:
+            # Provide a sensible default placeholder if none specified
+            ui_options["placeholder_text"] = "Enter some text"
+
+        # Generate a default tooltip if none provided
+        if not tooltip:
+            tooltip = f"Enter some text for the {name}"
+
+        # Get any existing converters from kwargs
+        existing_converters = kwargs.get("converters", [])
+
+        # Set up input types and converters based on convert_to_string setting
+        if convert_to_string:
+            # Create a converter that converts any input to string
+            def convert_to_string_func(value: Any) -> str:
+                """Convert any input value to a string."""
+                if value is None:
+                    return ""
+                return str(value)
+
+            input_types = ["str", "any"]  # Accept strings or any other type
+            converters = [convert_to_string_func, *existing_converters]
+        else:
+            # Only accept strings, no conversion
+            input_types = ["str"]
+            converters = existing_converters
+
+        # Initialize the base Parameter class with our processed options
+        super().__init__(
+            name=name,
+            tooltip=tooltip,
+            type="str",  # Always a string type
+            input_types=input_types,
+            output_type="str",  # Always output as string
+            default_value=default_value,
+            ui_options=ui_options,
+            converters=converters,
+            **kwargs,
+        )
+
+    @property
+    def hide_label(self) -> bool:
+        """Get whether the parameter label is hidden in the UI.
+
+        Returns:
+            True if the label should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide_label", False)
+
+    @hide_label.setter
+    def hide_label(self, value: bool) -> None:
+        """Set whether to hide the parameter label in the UI.
+
+        Args:
+            value: True to hide the label, False to show it
+        """
+        self.update_ui_options_key("hide_label", value)
+
+    @property
+    def markdown(self) -> bool:
+        """Get whether the text should be rendered as markdown.
+
+        Returns:
+            True if markdown rendering is enabled, False otherwise
+        """
+        return self.ui_options.get("markdown", False)
+
+    @markdown.setter
+    def markdown(self, value: bool) -> None:
+        """Set whether to render the text as markdown.
+
+        Args:
+            value: True to enable markdown rendering, False to disable
+        """
+        self.update_ui_options_key("markdown", value)
+
+    @property
+    def multiline(self) -> bool:
+        """Get whether the input should be displayed as a multiline text area.
+
+        Returns:
+            True if multiline input is enabled, False for single line
+        """
+        return self.ui_options.get("multiline", False)
+
+    @multiline.setter
+    def multiline(self, value: bool) -> None:
+        """Set whether to display as a multiline text area.
+
+        Args:
+            value: True for multiline text area, False for single line input
+        """
+        self.update_ui_options_key("multiline", value)
+
+    @property
+    def placeholder_text(self) -> str | None:
+        """Get the placeholder text shown when the field is empty.
+
+        Returns:
+            The placeholder text, or None if not set
+        """
+        return self.ui_options.get("placeholder_text")
+
+    @placeholder_text.setter
+    def placeholder_text(self, value: str | None) -> None:
+        """Set the placeholder text shown when the field is empty.
+
+        Args:
+            value: The placeholder text to display, or None to remove it
+        """
+        if value is None:
+            # Remove the key if value is None to keep ui_options clean
+            ui_options = self.ui_options.copy()
+            ui_options.pop("placeholder_text", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("placeholder_text", value)
+
+
 class ParameterContainer(Parameter, ABC):
     """Class managing a container (list/dict/tuple/etc.) of Parameters.
 
