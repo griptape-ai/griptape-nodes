@@ -654,6 +654,17 @@
       }
     },
     {
+      "class_name": "TrimAudio",
+      "file_path": "griptape_nodes_library/audio/trim_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Trim audio to a specific start and end time using FFmpeg",
+        "display_name": "Trim Audio",
+        "icon": "scissors",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "LoadVideo",
       "file_path": "griptape_nodes_library/video/load_video.py",
       "metadata": {

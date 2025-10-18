@@ -1,5 +1,7 @@
 import base64
 import uuid
+from typing import Any
+from urllib.parse import urlparse
 
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
@@ -34,3 +36,46 @@ def dict_to_audio_url_artifact(audio_dict: dict, audio_format: str | None = None
     url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)
 
     return AudioUrlArtifact(url)
+
+
+def to_audio_artifact(audio: Any | dict) -> Any:
+    """Convert an audio or a dictionary to an AudioArtifact."""
+    if isinstance(audio, dict):
+        return dict_to_audio_url_artifact(audio)
+    if isinstance(audio, str):
+        # If it's a string URL, create an AudioUrlArtifact directly
+        return AudioUrlArtifact(audio)
+    return audio
+
+
+def validate_url(url: str) -> bool:
+    """Validate that the URL is safe for ffmpeg processing."""
+    try:
+        parsed = urlparse(url)
+        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
+    except Exception:
+        return False
+
+
+def detect_audio_format(audio: Any) -> str | None:
+    """Detect audio format from various audio artifact types."""
+    if not (hasattr(audio, "value") and audio.value):
+        return None
+
+    # Try to detect from URL extension
+    url = audio.value
+    extension_map = {
+        ".mp3": "mp3",
+        ".wav": "wav",
+        ".aac": "aac",
+        ".flac": "flac",
+        ".ogg": "ogg",
+        ".m4a": "m4a",
+        ".wma": "wma",
+    }
+
+    for ext, format_name in extension_map.items():
+        if url.endswith(ext):
+            return format_name
+
+    return None
