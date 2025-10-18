@@ -1492,11 +1492,11 @@ class ParameterString(Parameter):
         string_only_param = ParameterString(
             name="name",
             tooltip="Enter your name",
-            convert_to_string=False  # Only accepts strings
+            accept_any=False  # Only accepts strings
         )
     """
 
-    def __init__(  # noqa: C901, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         default_value: str | None = None,
@@ -1508,13 +1508,13 @@ class ParameterString(Parameter):
         multiline: bool = False,
         placeholder_text: str | None = None,
         tooltip: str | list[dict],
-        convert_to_string: bool = True,
+        accept_any: bool = True,
         **kwargs,
     ) -> None:
         """Initialize a ParameterString with enhanced UI options.
 
         By default, the parameter accepts any input type and automatically converts it to a string,
-        making it flexible for connecting to parameters of different types. Set convert_to_string=False
+        making it flexible for connecting to parameters of different types. Set accept_any=False
         to only accept string inputs.
 
         Args:
@@ -1527,7 +1527,7 @@ class ParameterString(Parameter):
             multiline: Whether to display as a multiline text area
             placeholder_text: Placeholder text shown when field is empty
             tooltip: Help text displayed on hover
-            convert_to_string: Whether to convert any input type to string (default: True)
+            accept_any: Whether to convert any input type to string (default: True)
             **kwargs: Additional arguments passed to the base Parameter class
         """
         # Build ui_options dictionary from the provided UI-specific parameters
@@ -1560,17 +1560,10 @@ class ParameterString(Parameter):
         # Get any existing converters from kwargs
         existing_converters = kwargs.get("converters", [])
 
-        # Set up input types and converters based on convert_to_string setting
-        if convert_to_string:
-            # Create a converter that converts any input to string
-            def convert_to_string_func(value: Any) -> str:
-                """Convert any input value to a string."""
-                if value is None:
-                    return ""
-                return str(value)
-
-            input_types = ["str", "any"]  # Accept strings or any other type
-            converters = [convert_to_string_func, *existing_converters]
+        # Set up input types and converters based on accept_any setting
+        if accept_any:
+            input_types = ["any"]  # Accept any type
+            converters = [self._accept_any, *existing_converters]
         else:
             # Only accept strings, no conversion
             input_types = ["str"]
@@ -1588,6 +1581,32 @@ class ParameterString(Parameter):
             converters=converters,
             **kwargs,
         )
+
+    def _accept_any(self, value: Any) -> str:
+        """Safely convert any input value to a string.
+
+        Handles None values and objects that cannot be converted to string
+        by falling back to a descriptive representation.
+
+        Args:
+            value: The value to convert to string
+
+        Returns:
+            String representation of the value, with fallbacks for problematic objects
+        """
+        if value is None:
+            return ""
+
+        try:
+            return str(value)
+        except (TypeError, ValueError, AttributeError):
+            # Fallback for objects that cannot be converted to string
+            # Use repr() which is more likely to work for any object
+            try:
+                return repr(value)
+            except (TypeError, ValueError, AttributeError):
+                # Last resort: return a descriptive error message with parameter context
+                return f"{self.name}: Cannot convert {type(value).__name__} to string"
 
     @property
     def hide(self) -> bool:
