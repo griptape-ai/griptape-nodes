@@ -34,7 +34,7 @@ from griptape_cloud_client.models.structure_code_type_1 import StructureCodeType
 from griptape_cloud_client.models.update_structure_request_content import UpdateStructureRequestContent
 from griptape_cloud_client.models.update_structure_response_content import UpdateStructureResponseContent
 from httpx import Client
-from mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
+from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
 
 from griptape_cloud.publish_workflow import GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY
 from griptape_cloud.publish_workflow.griptape_cloud_workflow_builder import (
