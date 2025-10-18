@@ -20,22 +20,18 @@ from griptape_cloud_client.api.structures.update_structure import sync as update
 from griptape_cloud_client.client import AuthenticatedClient
 from griptape_cloud_client.models.assert_url_operation import AssertUrlOperation
 from griptape_cloud_client.models.create_asset_request_content import CreateAssetRequestContent
-from griptape_cloud_client.models.create_asset_response_content import (
-    CreateAssetResponseContent,
-)
+from griptape_cloud_client.models.create_asset_response_content import CreateAssetResponseContent
 from griptape_cloud_client.models.create_asset_url_request_content import CreateAssetUrlRequestContent
 from griptape_cloud_client.models.create_asset_url_response_content import CreateAssetUrlResponseContent
 from griptape_cloud_client.models.create_structure_request_content import CreateStructureRequestContent
-from griptape_cloud_client.models.create_structure_response_content import (
-    CreateStructureResponseContent,
-)
+from griptape_cloud_client.models.create_structure_response_content import CreateStructureResponseContent
 from griptape_cloud_client.models.data_lake_structure_code import DataLakeStructureCode
 from griptape_cloud_client.models.structure_code_type_1 import StructureCodeType1
 from griptape_cloud_client.models.update_structure_request_content import UpdateStructureRequestContent
 from griptape_cloud_client.models.update_structure_response_content import UpdateStructureResponseContent
 from httpx import Client
-from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
 
+from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
 from griptape_cloud.publish_workflow import GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY
 from griptape_cloud.publish_workflow.griptape_cloud_workflow_builder import (
     GriptapeCloudWorkflowBuilder,
@@ -60,9 +56,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import (
-    GriptapeNodes,
-)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
