@@ -1496,7 +1496,7 @@ class ParameterString(Parameter):
         )
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: C901, PLR0913
         self,
         name: str,
         default_value: str | None = None,
