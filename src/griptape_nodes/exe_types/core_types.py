@@ -1501,7 +1501,9 @@ class ParameterString(Parameter):
         name: str,
         default_value: str | None = None,
         *,
+        hide: bool = False,
         hide_label: bool = False,
+        hide_property: bool = False,
         markdown: bool = False,
         multiline: bool = False,
         placeholder_text: str | None = None,
@@ -1518,7 +1520,9 @@ class ParameterString(Parameter):
         Args:
             name: The parameter name (required)
             default_value: Default string value for the parameter
+            hide: Whether to hide the entire parameter in the UI
             hide_label: Whether to hide the parameter label in the UI
+            hide_property: Whether to hide the parameter in property mode
             markdown: Whether to render the text as markdown
             multiline: Whether to display as a multiline text area
             placeholder_text: Placeholder text shown when field is empty
@@ -1533,8 +1537,12 @@ class ParameterString(Parameter):
 
         # Only add UI options to the dictionary if they have truthy values
         # This keeps the ui_options clean and avoids unnecessary entries
+        if hide:
+            ui_options["hide"] = hide
         if hide_label:
             ui_options["hide_label"] = hide_label
+        if hide_property:
+            ui_options["hide_property"] = hide_property
         if markdown:
             ui_options["markdown"] = markdown
         if multiline:
@@ -1582,6 +1590,24 @@ class ParameterString(Parameter):
         )
 
     @property
+    def hide(self) -> bool:
+        """Get whether the entire parameter is hidden in the UI.
+
+        Returns:
+            True if the parameter should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide", False)
+
+    @hide.setter
+    def hide(self, value: bool) -> None:
+        """Set whether to hide the entire parameter in the UI.
+
+        Args:
+            value: True to hide the parameter, False to show it
+        """
+        self.update_ui_options_key("hide", value)
+
+    @property
     def hide_label(self) -> bool:
         """Get whether the parameter label is hidden in the UI.
 
@@ -1598,6 +1624,24 @@ class ParameterString(Parameter):
             value: True to hide the label, False to show it
         """
         self.update_ui_options_key("hide_label", value)
+
+    @property
+    def hide_property(self) -> bool:
+        """Get whether the parameter is hidden in property mode.
+
+        Returns:
+            True if the parameter should be hidden in property mode, False otherwise
+        """
+        return self.ui_options.get("hide_property", False)
+
+    @hide_property.setter
+    def hide_property(self, value: bool) -> None:
+        """Set whether to hide the parameter in property mode.
+
+        Args:
+            value: True to hide in property mode, False to show it
+        """
+        self.update_ui_options_key("hide_property", value)
 
     @property
     def markdown(self) -> bool:
