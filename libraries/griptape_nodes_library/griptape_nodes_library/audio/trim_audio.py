@@ -16,6 +16,13 @@ class TrimAudio(BaseAudioProcessor):
 
     def _setup_custom_parameters(self) -> None:
         """Setup custom parameters for audio trimming."""
+        # Add ui_options["range_selection"] = True to the audio parameter
+        self.audio_parameter = self.get_parameter_by_name("input_audio")
+        if self.audio_parameter is not None:
+            ui_options = self.audio_parameter.ui_options
+            ui_options["range_selection"] = True
+            self.audio_parameter.ui_options = ui_options
+
         # Start time parameter
         self.add_parameter(
             Parameter(
