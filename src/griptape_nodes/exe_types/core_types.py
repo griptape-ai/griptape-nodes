@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
@@ -957,10 +958,10 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     prev: Parameter | None = None
     parent_container_name: str | None = None
 
-    def __init__(  # noqa: PLR0913,PLR0912
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         name: str,
-        tooltip: str | list[dict],
+        tooltip: str | list[dict] | None = None,
         type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
@@ -974,6 +975,12 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
+        hide: bool = False,
+        hide_label: bool = False,
+        hide_property: bool = False,
+        allow_input: bool = True,
+        allow_property: bool = True,
+        allow_output: bool = True,
         settable: bool = True,
         serializable: bool = True,
         user_defined: bool = False,
@@ -987,6 +994,11 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             element_type = self.__class__.__name__
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
+
+        # Generate default tooltip if none provided
+        if not tooltip:
+            tooltip = self._generate_default_tooltip(name, type, input_types, output_type)
+
         self.tooltip = tooltip
         self.default_value = default_value
         self.tooltip_as_input = tooltip_as_input
@@ -995,10 +1007,36 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
+
+        # Process allowed_modes - use convenience parameters if allowed_modes not explicitly set
         if allowed_modes is None:
-            self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+            self._allowed_modes = set()
+            if allow_input:
+                self._allowed_modes.add(ParameterMode.INPUT)
+            if allow_property:
+                self._allowed_modes.add(ParameterMode.PROPERTY)
+            if allow_output:
+                self._allowed_modes.add(ParameterMode.OUTPUT)
         else:
             self._allowed_modes = allowed_modes
+
+            # Warn if both allowed_modes and convenience parameters are set
+            convenience_params_used = []
+            if not allow_input:
+                convenience_params_used.append("allow_input=False")
+            if not allow_property:
+                convenience_params_used.append("allow_property=False")
+            if not allow_output:
+                convenience_params_used.append("allow_output=False")
+
+            if convenience_params_used:
+                warnings.warn(
+                    f"Parameter '{name}': Both 'allowed_modes' and convenience parameters "
+                    f"({', '.join(convenience_params_used)}) are set. Using 'allowed_modes' "
+                    f"and ignoring convenience parameters.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if converters is None:
             self._converters = []
@@ -1009,10 +1047,20 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._validators = []
         else:
             self._validators = validators
+
+        # Process common UI options from constructor parameters
         if ui_options is None:
             self._ui_options = {}
         else:
-            self._ui_options = ui_options
+            self._ui_options = ui_options.copy()
+
+        # Add common UI options if they have truthy values
+        if hide:
+            self._ui_options["hide"] = hide
+        if hide_label:
+            self._ui_options["hide_label"] = hide_label
+        if hide_property:
+            self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
                 if not isinstance(trait, Trait):
@@ -1026,6 +1074,55 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.input_types = input_types
         self.output_type = output_type
         self.parent_container_name = parent_container_name
+
+    def _generate_default_tooltip(
+        self, name: str, type: str | None, input_types: list[str] | None, output_type: str | None
+    ) -> str:
+        """Generate a default tooltip describing the parameter type and usage.
+
+        Args:
+            name: The parameter name
+            type: The parameter type
+            input_types: List of accepted input types
+            output_type: The output type
+
+        Returns:
+            A descriptive tooltip string
+        """
+        # Determine the primary type to describe
+        primary_type = type
+        if not primary_type and input_types:
+            primary_type = input_types[0]
+        if not primary_type and output_type:
+            primary_type = output_type
+        if not primary_type:
+            primary_type = "any"
+
+        # Create a human-readable description
+        type_descriptions = {
+            "str": "text/string",
+            "bool": "boolean (true/false)",
+            "int": "integer number",
+            "float": "decimal number",
+            "any": "any type of data",
+            "list": "list/array",
+            "dict": "dictionary/object",
+            "parametercontroltype": "control flow",
+        }
+
+        type_desc = type_descriptions.get(primary_type.lower(), primary_type)
+
+        # Build the tooltip
+        tooltip_parts = [f"Enter {type_desc} for {name}"]
+
+        # Add input type info if different from primary type
+        if input_types and len(input_types) > 1:
+            input_desc = ", ".join(type_descriptions.get(t.lower(), t) for t in input_types[:3])
+            if len(input_types) > 3:
+                input_desc += f" or {len(input_types) - 3} other types"
+            tooltip_parts.append(f"Accepts: {input_desc}")
+
+        return ". ".join(tooltip_parts) + "."
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -1155,6 +1252,132 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
+
+    @property
+    def hide(self) -> bool:
+        """Get whether the entire parameter is hidden in the UI.
+
+        Returns:
+            True if the parameter should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide", False)
+
+    @hide.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide(self, value: bool) -> None:
+        """Set whether to hide the entire parameter in the UI.
+
+        Args:
+            value: True to hide the parameter, False to show it
+        """
+        self.update_ui_options_key("hide", value)
+
+    @property
+    def hide_label(self) -> bool:
+        """Get whether the parameter label is hidden in the UI.
+
+        Returns:
+            True if the label should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide_label", False)
+
+    @hide_label.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_label(self, value: bool) -> None:
+        """Set whether to hide the parameter label in the UI.
+
+        Args:
+            value: True to hide the label, False to show it
+        """
+        self.update_ui_options_key("hide_label", value)
+
+    @property
+    def hide_property(self) -> bool:
+        """Get whether the parameter is hidden in property mode.
+
+        Returns:
+            True if the parameter should be hidden in property mode, False otherwise
+        """
+        return self.ui_options.get("hide_property", False)
+
+    @hide_property.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_property(self, value: bool) -> None:
+        """Set whether to hide the parameter in property mode.
+
+        Args:
+            value: True to hide in property mode, False to show it
+        """
+        self.update_ui_options_key("hide_property", value)
+
+    @property
+    def allow_input(self) -> bool:
+        """Get whether the parameter allows INPUT mode.
+
+        Returns:
+            True if INPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.INPUT in self.allowed_modes
+
+    @allow_input.setter
+    def allow_input(self, value: bool) -> None:
+        """Set whether to allow INPUT mode.
+
+        Args:
+            value: True to allow INPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.INPUT)
+        else:
+            current_modes.discard(ParameterMode.INPUT)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_property(self) -> bool:
+        """Get whether the parameter allows PROPERTY mode.
+
+        Returns:
+            True if PROPERTY mode is allowed, False otherwise
+        """
+        return ParameterMode.PROPERTY in self.allowed_modes
+
+    @allow_property.setter
+    def allow_property(self, value: bool) -> None:
+        """Set whether to allow PROPERTY mode.
+
+        Args:
+            value: True to allow PROPERTY mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.PROPERTY)
+        else:
+            current_modes.discard(ParameterMode.PROPERTY)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_output(self) -> bool:
+        """Get whether the parameter allows OUTPUT mode.
+
+        Returns:
+            True if OUTPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.OUTPUT in self.allowed_modes
+
+    @allow_output.setter
+    def allow_output(self, value: bool) -> None:
+        """Set whether to allow OUTPUT mode.
+
+        Args:
+            value: True to allow OUTPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.OUTPUT)
+        else:
+            current_modes.discard(ParameterMode.OUTPUT)
+        self.allowed_modes = current_modes
 
     @property
     def input_types(self) -> list[str]:
@@ -1501,13 +1724,9 @@ class ParameterString(Parameter):
         name: str,
         default_value: str | None = None,
         *,
-        hide: bool = False,
-        hide_label: bool = False,
-        hide_property: bool = False,
         markdown: bool = False,
         multiline: bool = False,
         placeholder_text: str | None = None,
-        tooltip: str | list[dict],
         accept_any: bool = True,
         **kwargs,
     ) -> None:
@@ -1520,15 +1739,11 @@ class ParameterString(Parameter):
         Args:
             name: The parameter name (required)
             default_value: Default string value for the parameter
-            hide: Whether to hide the entire parameter in the UI
-            hide_label: Whether to hide the parameter label in the UI
-            hide_property: Whether to hide the parameter in property mode
             markdown: Whether to render the text as markdown
             multiline: Whether to display as a multiline text area
             placeholder_text: Placeholder text shown when field is empty
-            tooltip: Help text displayed on hover
             accept_any: Whether to convert any input type to string (default: True)
-            **kwargs: Additional arguments passed to the base Parameter class
+            **kwargs: Additional arguments passed to the base Parameter class (including hide, hide_label, hide_property)
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         # This allows us to expose common UI options as constructor parameters
@@ -1537,12 +1752,6 @@ class ParameterString(Parameter):
 
         # Only add UI options to the dictionary if they have truthy values
         # This keeps the ui_options clean and avoids unnecessary entries
-        if hide:
-            ui_options["hide"] = hide
-        if hide_label:
-            ui_options["hide_label"] = hide_label
-        if hide_property:
-            ui_options["hide_property"] = hide_property
         if markdown:
             ui_options["markdown"] = markdown
         if multiline:
@@ -1552,10 +1761,6 @@ class ParameterString(Parameter):
         else:
             # Provide a sensible default placeholder if none specified
             ui_options["placeholder_text"] = "Enter some text"
-
-        # Generate a default tooltip if none provided
-        if not tooltip:
-            tooltip = f"Enter some text for the {name}"
 
         # Get any existing converters from kwargs
         existing_converters = kwargs.get("converters", [])
@@ -1572,7 +1777,6 @@ class ParameterString(Parameter):
         # Initialize the base Parameter class with our processed options
         super().__init__(
             name=name,
-            tooltip=tooltip,
             type="str",  # Always a string type
             input_types=input_types,
             output_type="str",  # Always output as string
@@ -1607,60 +1811,6 @@ class ParameterString(Parameter):
             except (TypeError, ValueError, AttributeError):
                 # Last resort: return a descriptive error message with parameter context
                 return f"{self.name}: Cannot convert {type(value).__name__} to string"
-
-    @property
-    def hide(self) -> bool:
-        """Get whether the entire parameter is hidden in the UI.
-
-        Returns:
-            True if the parameter should be hidden, False otherwise
-        """
-        return self.ui_options.get("hide", False)
-
-    @hide.setter
-    def hide(self, value: bool) -> None:
-        """Set whether to hide the entire parameter in the UI.
-
-        Args:
-            value: True to hide the parameter, False to show it
-        """
-        self.update_ui_options_key("hide", value)
-
-    @property
-    def hide_label(self) -> bool:
-        """Get whether the parameter label is hidden in the UI.
-
-        Returns:
-            True if the label should be hidden, False otherwise
-        """
-        return self.ui_options.get("hide_label", False)
-
-    @hide_label.setter
-    def hide_label(self, value: bool) -> None:
-        """Set whether to hide the parameter label in the UI.
-
-        Args:
-            value: True to hide the label, False to show it
-        """
-        self.update_ui_options_key("hide_label", value)
-
-    @property
-    def hide_property(self) -> bool:
-        """Get whether the parameter is hidden in property mode.
-
-        Returns:
-            True if the parameter should be hidden in property mode, False otherwise
-        """
-        return self.ui_options.get("hide_property", False)
-
-    @hide_property.setter
-    def hide_property(self, value: bool) -> None:
-        """Set whether to hide the parameter in property mode.
-
-        Args:
-            value: True to hide in property mode, False to show it
-        """
-        self.update_ui_options_key("hide_property", value)
 
     @property
     def markdown(self) -> bool:
@@ -1793,6 +1943,171 @@ class ParameterContainer(Parameter, ABC):
     @abstractmethod
     def add_child_parameter(self) -> Parameter:
         pass
+
+
+class ParameterBool(Parameter):
+    """A specialized Parameter class for boolean inputs with enhanced UI options.
+
+    This class provides a convenient way to create boolean parameters with common
+    UI customizations like custom on/off labels. It exposes these UI options as
+    direct properties for easy runtime modification.
+
+    The parameter automatically handles boolean conversion and provides clear
+    on/off labels for better user experience.
+
+    Example:
+        # Create a boolean parameter with custom labels
+        param = ParameterBool(
+            name="enable_feature",
+            tooltip="Enable the new feature",
+            on_label="Enabled",
+            off_label="Disabled",
+            default_value=True
+        )
+
+        # Dynamically change UI options at runtime
+        param.on_label = "ON"
+        param.off_label = "OFF"
+
+        # Can accept various input types and converts to boolean
+        param.set_value("true")  # Becomes True
+        param.set_value(1)  # Becomes True
+        param.set_value("false")  # Becomes False
+        param.set_value(0)  # Becomes False
+    """
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        default_value: bool | None = None,
+        on_label: str | None = None,
+        off_label: str | None = None,
+        accept_any: bool = True,
+        **kwargs,
+    ) -> None:
+        """Initialize a ParameterBool with enhanced UI options.
+
+        Args:
+            name: The parameter name (required)
+            default_value: Default boolean value for the parameter
+            on_label: Custom label to display when the value is True
+            off_label: Custom label to display when the value is False
+            accept_any: Whether to accept any input type and convert to boolean (default: True)
+            **kwargs: Additional arguments passed to the base Parameter class (including hide, hide_label, hide_property)
+        """
+        # Build ui_options dictionary from the provided UI-specific parameters
+        ui_options = kwargs.get("ui_options", {})
+
+        # Add boolean-specific UI options if they have values
+        if on_label:
+            ui_options["on_label"] = on_label
+        if off_label:
+            ui_options["off_label"] = off_label
+
+        # Set up boolean conversion based on accept_any setting
+        existing_converters = kwargs.get("converters", [])
+
+        if accept_any:
+            input_types = ["any"]
+            converters = [self._convert_to_bool, *existing_converters]
+        else:
+            input_types = ["bool"]
+            converters = existing_converters
+
+        # Remove any conflicting parameters from kwargs
+        kwargs.pop("type", None)
+        kwargs.pop("input_types", None)
+        kwargs.pop("output_type", None)
+
+        super().__init__(
+            name=name,
+            type="bool",
+            input_types=input_types,
+            output_type="bool",
+            default_value=default_value,
+            ui_options=ui_options,
+            converters=converters,
+            **kwargs,
+        )
+
+    def _convert_to_bool(self, value: Any) -> bool:
+        """Safely convert any input value to a boolean.
+
+        Handles various input types including strings, numbers, and other objects.
+        Uses Python's truthiness evaluation with some common string conversions.
+
+        Args:
+            value: The value to convert to boolean
+
+        Returns:
+            Boolean representation of the value
+        """
+        if value is None:
+            return False
+
+        # Handle string inputs with common boolean representations
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower in ("true", "yes", "on", "1", "enabled"):
+                return True
+            if value_lower in ("false", "no", "off", "0", "disabled"):
+                return False
+            # For other strings, use truthiness (empty string = False, non-empty = True)
+            return bool(value)
+
+        # Handle numeric inputs
+        if isinstance(value, (int, float)):
+            return bool(value)
+
+        # For all other types, use Python's truthiness evaluation
+        return bool(value)
+
+    @property
+    def on_label(self) -> str | None:
+        """Get the custom label displayed when the value is True.
+
+        Returns:
+            The on label if set, None otherwise
+        """
+        return self.ui_options.get("on_label")
+
+    @on_label.setter
+    def on_label(self, value: str | None) -> None:
+        """Set the custom label displayed when the value is True.
+
+        Args:
+            value: The label to display when True, or None to use default
+        """
+        if value is None:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("on_label", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("on_label", value)
+
+    @property
+    def off_label(self) -> str | None:
+        """Get the custom label displayed when the value is False.
+
+        Returns:
+            The off label if set, None otherwise
+        """
+        return self.ui_options.get("off_label")
+
+    @off_label.setter
+    def off_label(self, value: str | None) -> None:
+        """Set the custom label displayed when the value is False.
+
+        Args:
+            value: The label to display when False, or None to use default
+        """
+        if value is None:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("off_label", None)
+            self.ui_options = ui_options
+        else:
+            self.update_ui_options_key("off_label", value)
 
 
 class ParameterList(ParameterContainer):
