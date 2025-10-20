@@ -48,28 +48,52 @@ def _start_engine() -> None:
 
 
 def _auto_update_self() -> None:
-    """Automatically updates the script to the latest version if the user confirms."""
+    """Automatically checks for and applies engine updates based on the auto_update_engine setting."""
     from griptape_nodes.retained_mode.events.app_events import (
         CheckEngineUpdateRequest,
         CheckEngineUpdateResultSuccess,
     )
+    from griptape_nodes.retained_mode.managers.settings import AutoUpdateMode
+
+    # Get the auto-update setting
+    config_manager = GriptapeNodes.ConfigManager()
+    auto_update_mode_str = config_manager.get_config_value("auto_update_engine", default="prompt")
+    auto_update_mode = AutoUpdateMode(auto_update_mode_str)
+
+    # If auto-update is disabled, skip entirely
+    if auto_update_mode == AutoUpdateMode.OFF:
+        return
 
     console.print("[bold green]Checking for updates...[/bold green]")
 
     request = CheckEngineUpdateRequest()
     result = GriptapeNodes.handle_request(request)
 
-    if isinstance(result, CheckEngineUpdateResultSuccess) and result.update_available:
-        current_version = result.current_version
-        latest_version = result.latest_version
-        install_source = result.install_source
+    if not isinstance(result, CheckEngineUpdateResultSuccess):
+        return
 
-        if install_source == "git":
-            update_message = f"Your current engine version, {current_version} ({install_source}), doesn't match the latest release, {latest_version}. Update now?"
-        else:
-            update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+    if not result.update_available:
+        return
 
-        update = Confirm.ask(update_message, default=True)
+    current_version = result.current_version
+    latest_version = result.latest_version
+    install_source = result.install_source
 
-        if update:
-            _update_self()
+    # Handle "on" mode - auto-update without prompting
+    if auto_update_mode == AutoUpdateMode.ON:
+        console.print(
+            f"[bold green]Update available: {current_version} -> {latest_version}. Auto-updating...[/bold green]"
+        )
+        _update_self()
+        return
+
+    # Handle "prompt" mode - ask the user
+    if install_source == "git":
+        update_message = f"Your current engine version, {current_version} ({install_source}), doesn't match the latest release, {latest_version}. Update now?"
+    else:
+        update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+
+    update = Confirm.ask(update_message, default=True)
+
+    if update:
+        _update_self()
