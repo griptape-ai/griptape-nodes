@@ -60,6 +60,14 @@ class LogLevel(StrEnum):
     DEBUG = "DEBUG"
 
 
+class AutoUpdateMode(StrEnum):
+    """Auto-update mode for the engine."""
+
+    OFF = "off"
+    PROMPT = "prompt"
+    ON = "on"
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for a single MCP server."""
 
@@ -177,6 +185,11 @@ class Settings(BaseModel):
         default=WorkflowExecutionMode.SEQUENTIAL,
         description="Workflow execution mode for node processing",
     )
+    auto_update_engine: AutoUpdateMode = Field(
+        category=EXECUTION,
+        default=AutoUpdateMode.PROMPT,
+        description="Auto-update mode for the engine: 'off' (never check), 'prompt' (check and ask), 'on' (auto-update)",
+    )
 
     @field_validator("workflow_execution_mode", mode="before")
     @classmethod
@@ -209,6 +222,22 @@ class Settings(BaseModel):
         else:
             # Return default for any other type
             return LogLevel.INFO
+
+    @field_validator("auto_update_engine", mode="before")
+    @classmethod
+    def validate_auto_update_engine(cls, v: Any) -> AutoUpdateMode:
+        """Convert string values to AutoUpdateMode enum."""
+        if isinstance(v, str):
+            try:
+                return AutoUpdateMode(v.lower())
+            except ValueError:
+                # Return default if invalid string
+                return AutoUpdateMode.PROMPT
+        elif isinstance(v, AutoUpdateMode):
+            return v
+        else:
+            # Return default for any other type
+            return AutoUpdateMode.PROMPT
 
     max_nodes_in_parallel: int | None = Field(
         category=EXECUTION,
