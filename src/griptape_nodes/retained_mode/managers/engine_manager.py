@@ -1,8 +1,9 @@
-"""Manages engine identity state.
+"""Manages engine state and operations.
 
-Centralizes engine identity management, providing a consistent interface for
-engine ID and name operations.
-Handles engine ID, name storage, and generation for unique engine identification.
+Centralizes engine management, providing a consistent interface for
+engine ID, name operations, and engine updates.
+Handles engine ID, name storage, generation for unique engine identification,
+and engine update operations.
 Supports multiple engines with selection via GTN_ENGINE_ID environment variable.
 """
 
@@ -11,20 +12,29 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+from rich.console import Console
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.cli.shared import GITHUB_UPDATE_URL, LATEST_TAG, PACKAGE_NAME, PYPI_UPDATE_URL
 from griptape_nodes.retained_mode.events.app_events import (
+    CheckEngineUpdateRequest,
+    CheckEngineUpdateResultFailure,
+    CheckEngineUpdateResultSuccess,
     GetEngineNameRequest,
     GetEngineNameResultFailure,
     GetEngineNameResultSuccess,
     SetEngineNameRequest,
     SetEngineNameResultFailure,
     SetEngineNameResultSuccess,
+    UpdateEngineRequest,
+    UpdateEngineResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import (
     BaseEvent,
@@ -32,6 +42,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultPayload,
 )
 from griptape_nodes.retained_mode.utils.name_generator import generate_engine_name
+from griptape_nodes.utils.version_utils import (
+    get_current_version,
+    get_install_source,
+    get_latest_version_git,
+    get_latest_version_pypi,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,6 +55,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+console = Console()
 
 
 class EngineData(BaseModel):
@@ -57,13 +74,13 @@ class EnginesStorage(BaseModel):
     default_engine_id: str | None = None
 
 
-class EngineIdentityManager:
-    """Manages engine identity and active engine state."""
+class EngineManager:
+    """Manages engine identity, active engine state, and engine operations."""
 
     _ENGINE_DATA_FILE = "engines.json"
 
     def __init__(self, event_manager: EventManager | None = None) -> None:
-        """Initialize the EngineIdentityManager.
+        """Initialize the EngineManager.
 
         Args:
             event_manager: The EventManager instance to use for event handling.
@@ -75,6 +92,10 @@ class EngineIdentityManager:
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(GetEngineNameRequest, self.handle_get_engine_name_request)
             event_manager.assign_manager_to_request_type(SetEngineNameRequest, self.handle_set_engine_name_request)
+            event_manager.assign_manager_to_request_type(UpdateEngineRequest, self.handle_update_engine_request)
+            event_manager.assign_manager_to_request_type(
+                CheckEngineUpdateRequest, self.handle_check_engine_update_request
+            )
 
     @property
     def active_engine_id(self) -> str | None:
@@ -168,6 +189,53 @@ class EngineIdentityManager:
             error_message = f"Failed to set engine name: {err}"
             logger.error(error_message)
             return SetEngineNameResultFailure(error_message=error_message, result_details=error_message)
+
+    def handle_update_engine_request(self, _request: UpdateEngineRequest) -> ResultPayload:
+        """Handle requests to update the engine to the latest version."""
+        console.print("[bold green]Starting updater...[/bold green]")
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        os_manager = GriptapeNodes.OSManager()
+
+        # Schedule process replacement after a short delay to allow cleanup
+        def _delayed_update() -> None:
+            os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
+
+        timer = threading.Timer(3.0, _delayed_update)
+        timer.daemon = True
+        timer.start()
+
+        return UpdateEngineResultSuccess(
+            message="Update process scheduled", result_details="Engine will restart in 3 seconds to apply update"
+        )
+
+    def handle_check_engine_update_request(self, _request: CheckEngineUpdateRequest) -> ResultPayload:
+        """Handle requests to check if an engine update is available."""
+        try:
+            current_version = get_current_version()
+            install_source, _ = get_install_source()
+
+            if install_source == "pypi":
+                latest_version = get_latest_version_pypi(PACKAGE_NAME, PYPI_UPDATE_URL)
+            elif install_source == "git":
+                latest_version = get_latest_version_git(PACKAGE_NAME, GITHUB_UPDATE_URL, LATEST_TAG)
+            else:
+                latest_version = current_version
+
+            update_available = latest_version != current_version
+
+            return CheckEngineUpdateResultSuccess(
+                current_version=current_version,
+                latest_version=latest_version,
+                update_available=update_available,
+                install_source=install_source,
+                result_details="Update check completed successfully.",
+            )
+        except Exception as err:
+            error_message = f"Failed to check for engine updates: {err}"
+            logger.error(error_message)
+            return CheckEngineUpdateResultFailure(error_message=error_message, result_details=error_message)
 
     def _get_or_initialize_engine_data(self) -> EngineData:
         """Get the current engine data, creating default if it doesn't exist.
@@ -278,7 +346,7 @@ class EngineIdentityManager:
     @staticmethod
     def _get_engine_data_file() -> Path:
         """Get the path to the engine data storage file."""
-        return EngineIdentityManager._get_engine_data_dir() / EngineIdentityManager._ENGINE_DATA_FILE
+        return EngineManager._get_engine_data_dir() / EngineManager._ENGINE_DATA_FILE
 
     @staticmethod
     def _find_engine_by_id(engines_data: EnginesStorage, engine_id: str) -> EngineData | None:

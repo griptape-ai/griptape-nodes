@@ -326,3 +326,81 @@ class GetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     error_message: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineRequest(RequestPayload):
+    """Update the engine to the latest version.
+
+    Use when: Updating the engine software, performing maintenance,
+    upgrading to new features, applying patches and fixes.
+
+    Results: UpdateEngineResultSuccess (update completed) | UpdateEngineResultFailure (update error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine update completed successfully.
+
+    Args:
+        message: Description of the update result
+    """
+
+    message: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine update failed.
+
+    Args:
+        error_message: Detailed error message describing the failure
+    """
+
+    error_message: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckEngineUpdateRequest(RequestPayload):
+    """Check if an engine update is available.
+
+    Use when: Checking for available updates, displaying update notifications,
+    determining if the engine is running the latest version.
+
+    Results: CheckEngineUpdateResultSuccess (with version info) | CheckEngineUpdateResultFailure (check error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckEngineUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Update check completed successfully.
+
+    Args:
+        current_version: Currently installed version (e.g., "v0.31.4")
+        latest_version: Latest available version (e.g., "v0.31.5")
+        update_available: Whether an update is available
+        install_source: Source of the installation ("pypi", "git", or "file")
+    """
+
+    current_version: str
+    latest_version: str
+    update_available: bool
+    install_source: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckEngineUpdateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Update check failed.
+
+    Args:
+        error_message: Detailed error message describing the failure
+    """
+
+    error_message: str
