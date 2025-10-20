@@ -51,7 +51,7 @@ VOICE_PRESET_MAP = {  # spellchecker:disable-line
 
 # Model-specific parameter visibility mapping
 MODEL_PARAMETERS = {
-    "eleven-music-v1": ["prompt", "music_duration_seconds", "output_format"],
+    "eleven-music-v1": ["text", "music_duration_seconds", "output_format"],
     "eleven_multilingual_v2": [
         "text",
         "voice_preset",
@@ -62,7 +62,7 @@ MODEL_PARAMETERS = {
         "next_text",
     ],
     "eleven_v3": ["text", "voice_preset", "custom_voice_id", "language_code", "seed", "previous_text", "next_text"],
-    "eleven_text_to_sound_v2": ["sound_text", "loop", "sound_duration_seconds", "prompt_influence"],
+    "eleven_text_to_sound_v2": ["text", "loop", "sound_duration_seconds", "prompt_influence"],
 }
 
 
@@ -119,18 +119,18 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             )
         )
 
-        # Parameters for Eleven Music v1
+        # Common text input parameter used across all models
         self.add_parameter(
             Parameter(
-                name="prompt",
+                name="text",
                 input_types=["str"],
                 type="str",
-                tooltip="Text prompt describing the music to generate (max 2000 characters)",
+                tooltip="Text input for generation (prompt for music/sounds, or text for speech)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
-                    "placeholder_text": "Describe the music you want to generate...",
-                    "display_name": "Prompt (Music)",
+                    "placeholder_text": "Enter text prompt or speech text...",
+                    "display_name": "Text",
                 },
             )
         )
@@ -180,22 +180,6 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
                     )
                 },
                 ui_options={"display_name": "Output Format"},
-            )
-        )
-
-        # Parameters for Eleven Multilingual v2 (Text-to-Speech)
-        self.add_parameter(
-            Parameter(
-                name="text",
-                input_types=["str"],
-                type="str",
-                tooltip="Text to be converted to speech",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Enter text to convert to speech...",
-                    "display_name": "Text",
-                },
             )
         )
 
@@ -307,21 +291,6 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         )
 
         # Parameters for Eleven Text to Sound v2
-        self.add_parameter(
-            Parameter(
-                name="sound_text",
-                input_types=["str"],
-                type="str",
-                tooltip="Text describing the sound effect to generate (max 450 characters)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the sound you want to generate...",
-                    "display_name": "Text",
-                },
-            )
-        )
-
         self.add_parameter(
             Parameter(
                 name="loop",
@@ -534,7 +503,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         raise ValueError(msg)
 
     def _get_music_parameters(self) -> dict[str, Any]:
-        prompt = self.get_parameter_value("prompt") or ""
+        text = self.get_parameter_value("text") or ""
         duration_seconds = self.get_parameter_value("music_duration_seconds")
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
 
@@ -544,7 +513,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             music_length_ms = int(duration_seconds * 1000)
 
         return {
-            "prompt": prompt,
+            "prompt": text,
             "music_length_ms": music_length_ms,
             "output_format": output_format,
         }
@@ -583,7 +552,7 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
         return params
 
     def _get_sound_parameters(self) -> dict[str, Any]:
-        text = self.get_parameter_value("sound_text") or ""
+        text = self.get_parameter_value("text") or ""
         loop = self.get_parameter_value("loop")
         duration_seconds = self.get_parameter_value("sound_duration_seconds")
         prompt_influence = self.get_parameter_value("prompt_influence")
