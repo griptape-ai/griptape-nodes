@@ -283,12 +283,12 @@ class OSManager:
         if request.path_to_file is None and request.file_entry is None:
             msg = "Either path_to_file or file_entry must be provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure(result_details=msg)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         if request.path_to_file is not None and request.file_entry is not None:
             msg = "Only one of path_to_file or file_entry should be provided, not both"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure(result_details=msg)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Get the file path to open
         if request.file_entry is not None:
@@ -301,13 +301,13 @@ class OSManager:
             # This should never happen due to validation above, but type checker needs it
             msg = "No valid file path provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure(result_details=msg)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # At this point, file_path_str is guaranteed to be a string
         if file_path_str is None:
             msg = "No valid file path provided"
             logger.error(msg)
-            return OpenAssociatedFileResultFailure(result_details=msg)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Sanitize and validate the path (file or directory)
         try:
@@ -316,12 +316,16 @@ class OSManager:
         except (ValueError, RuntimeError):
             details = f"Invalid file path: '{file_path_str}'"
             logger.info(details)
-            return OpenAssociatedFileResultFailure(result_details=details)
+            return OpenAssociatedFileResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH, result_details=details
+            )
 
         if not path.exists():
             details = f"Path does not exist: '{path}'"
             logger.info(details)
-            return OpenAssociatedFileResultFailure(result_details=details)
+            return OpenAssociatedFileResultFailure(
+                failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=details
+            )
 
         logger.info("Attempting to open path: %s on platform: %s", path, sys.platform)
 
@@ -350,7 +354,9 @@ class OSManager:
                 if not xdg_path:
                     details = "xdg-open not found in standard locations"
                     logger.info(details)
-                    return OpenAssociatedFileResultFailure(result_details=details)
+                    return OpenAssociatedFileResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR, result_details=details
+                    )
 
                 subprocess.run(  # noqa: S603
                     [xdg_path, self._normalize_path_for_platform(path)],
@@ -362,7 +368,9 @@ class OSManager:
             else:
                 details = f"Unsupported platform: '{platform_name}'"
                 logger.info(details)
-                return OpenAssociatedFileResultFailure(result_details=details)
+                return OpenAssociatedFileResultFailure(
+                    failure_reason=FileIOFailureReason.IO_ERROR, result_details=details
+                )
 
             return OpenAssociatedFileResultSuccess(result_details="File opened successfully in associated application.")
         except subprocess.CalledProcessError as e:
@@ -370,11 +378,11 @@ class OSManager:
                 f"Process error when opening file: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
             )
             logger.error(details)
-            return OpenAssociatedFileResultFailure(result_details=details)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=details)
         except Exception as e:
             details = f"Exception occurred when trying to open path: {e}"
             logger.error(details)
-            return OpenAssociatedFileResultFailure(result_details=details)
+            return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=details)
 
     def _detect_mime_type(self, file_path: Path) -> str | None:
         """Detect MIME type for a file. Returns None for directories or if detection fails."""
@@ -391,7 +399,7 @@ class OSManager:
             logger.warning(msg)
             return "text/plain"
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
@@ -409,18 +417,18 @@ class OSManager:
             if not directory.exists():
                 msg = f"Directory does not exist: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure(result_details=msg)
+                return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
             if not directory.is_dir():
-                msg = f"Directory is not a directory: {directory}"
+                msg = f"Path is not a directory: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure(result_details=msg)
+                return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
             # Check workspace constraints
             is_workspace_path, relative_or_abs_path = self._validate_workspace_path(directory)
             if request.workspace_only and not is_workspace_path:
                 msg = f"Directory is outside workspace: {directory}"
                 logger.error(msg)
-                return ListDirectoryResultFailure(result_details=msg)
+                return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
             entries = []
             try:
@@ -450,10 +458,16 @@ class OSManager:
                         logger.warning(msg)
                         continue
 
-            except (OSError, PermissionError) as e:
-                msg = f"Error listing directory {directory}: {e}"
+            except PermissionError as e:
+                msg = f"Permission denied listing directory {directory}: {e}"
                 logger.error(msg)
-                return ListDirectoryResultFailure(result_details=msg)
+                return ListDirectoryResultFailure(
+                    failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg
+                )
+            except OSError as e:
+                msg = f"I/O error listing directory {directory}: {e}"
+                logger.error(msg)
+                return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
             # Return appropriate path format based on mode
             if request.workspace_only:
@@ -475,7 +489,7 @@ class OSManager:
         except Exception as e:
             msg = f"Unexpected error in list_directory: {type(e).__name__}: {e}"
             logger.error(msg)
-            return ListDirectoryResultFailure(result_details=msg)
+            return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
     def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle a request to read file contents with automatic text/binary detection."""
@@ -954,37 +968,52 @@ class OSManager:
 
         return removed_count > 0
 
-    def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:
+    def on_create_file_request(self, request: CreateFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         """Handle a request to create a file or directory."""
+        # Get the full path
         try:
-            # Get the full path using the new method
             full_path_str = request.get_full_path()
+        except ValueError as e:
+            msg = f"Invalid path specification: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
-            # Determine if path is absolute (not constrained to workspace)
-            is_absolute = Path(full_path_str).is_absolute()
+        # Determine if path is absolute (not constrained to workspace)
+        is_absolute = Path(full_path_str).is_absolute()
 
-            # If workspace_only is True and path is absolute, it's outside workspace
-            if request.workspace_only and is_absolute:
-                msg = f"Absolute path is outside workspace: {full_path_str}"
-                logger.error(msg)
-                return CreateFileResultFailure(result_details=msg)
+        # If workspace_only is True and path is absolute, it's outside workspace
+        if request.workspace_only and is_absolute:
+            msg = f"Absolute path is outside workspace: {full_path_str}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
-            # Resolve path - if absolute, use as-is; if relative, align to workspace
-            if is_absolute:
-                file_path = Path(full_path_str).resolve()
-            else:
-                file_path = (self._get_workspace_path() / full_path_str).resolve()
+        # Resolve path - if absolute, use as-is; if relative, align to workspace
+        if is_absolute:
+            file_path = Path(full_path_str).resolve()
+        else:
+            file_path = (self._get_workspace_path() / full_path_str).resolve()
 
-            # Check if it already exists - warn but treat as success
-            if file_path.exists():
-                msg = f"Path already exists: {file_path}"
-                return CreateFileResultSuccess(
-                    created_path=str(file_path), result_details=ResultDetails(message=msg, level=logging.WARNING)
-                )
+        # Check if it already exists - warn but treat as success
+        if file_path.exists():
+            msg = f"Path already exists: {file_path}"
+            return CreateFileResultSuccess(
+                created_path=str(file_path), result_details=ResultDetails(message=msg, level=logging.WARNING)
+            )
 
-            # Create parent directories if needed
+        # Create parent directories if needed
+        try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            msg = f"Permission denied creating parent directory for {file_path}: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"I/O error creating parent directory for {file_path}: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
+        # Create file or directory
+        try:
             if request.is_directory:
                 file_path.mkdir()
                 logger.info("Created directory: %s", file_path)
@@ -996,65 +1025,104 @@ class OSManager:
             else:
                 file_path.touch()
                 logger.info("Created empty file: %s", file_path)
-
-            return CreateFileResultSuccess(
-                created_path=str(file_path),
-                result_details=f"{'Directory' if request.is_directory else 'File'} created successfully at {file_path}",
-            )
-
-        except Exception as e:
-            path_info = request.get_full_path() if hasattr(request, "get_full_path") else str(request.path)
-            msg = f"Failed to create {'directory' if request.is_directory else 'file'} at {path_info}: {e}"
+        except PermissionError as e:
+            msg = f"Permission denied creating {file_path}: {e}"
             logger.error(msg)
-            return CreateFileResultFailure(result_details=msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            # Check for disk full
+            if "No space left" in str(e) or "Disk full" in str(e):
+                msg = f"Disk full creating {file_path}: {e}"
+                logger.error(msg)
+                return CreateFileResultFailure(failure_reason=FileIOFailureReason.DISK_FULL, result_details=msg)
 
-    def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:
+            msg = f"I/O error creating {file_path}: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Unexpected error creating {file_path}: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return CreateFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH
+        return CreateFileResultSuccess(
+            created_path=str(file_path),
+            result_details=f"{'Directory' if request.is_directory else 'File'} created successfully at {file_path}",
+        )
+
+    def on_rename_file_request(self, request: RenameFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Handle a request to rename a file or directory."""
+        # Resolve and validate paths
         try:
-            # Resolve and validate old path
             old_path = self._resolve_file_path(request.old_path, workspace_only=request.workspace_only is True)
-
-            # Resolve and validate new path
-            new_path = self._resolve_file_path(request.new_path, workspace_only=request.workspace_only is True)
-
-            # Check if old path exists
-            if not old_path.exists():
-                msg = f"Source path does not exist: {old_path}"
-                logger.error(msg)
-                return RenameFileResultFailure(result_details=msg)
-
-            # Check if new path already exists
-            if new_path.exists():
-                msg = f"Destination path already exists: {new_path}"
-                logger.error(msg)
-                return RenameFileResultFailure(result_details=msg)
-
-            # Check workspace constraints for both paths
-            is_old_in_workspace, _ = self._validate_workspace_path(old_path)
-            is_new_in_workspace, _ = self._validate_workspace_path(new_path)
-
-            if request.workspace_only and (not is_old_in_workspace or not is_new_in_workspace):
-                msg = f"One or both paths are outside workspace: {old_path} -> {new_path}"
-                logger.error(msg)
-                return RenameFileResultFailure(result_details=msg)
-
-            # Create parent directories for new path if needed
-            new_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Perform the rename operation
-            old_path.rename(new_path)
-            details = f"Renamed: {old_path} -> {new_path}"
-
-            return RenameFileResultSuccess(
-                old_path=str(old_path),
-                new_path=str(new_path),
-                result_details=ResultDetails(message=details, level=logging.INFO),
-            )
-
-        except Exception as e:
-            msg = f"Failed to rename {request.old_path} to {request.new_path}: {e}"
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid source path: {e}"
             logger.error(msg)
-            return RenameFileResultFailure(result_details=msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        try:
+            new_path = self._resolve_file_path(request.new_path, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid destination path: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if old path exists
+        if not old_path.exists():
+            msg = f"Source path does not exist: {old_path}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Check if new path already exists
+        if new_path.exists():
+            msg = f"Destination path already exists: {new_path}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check workspace constraints for both paths
+        is_old_in_workspace, _ = self._validate_workspace_path(old_path)
+        is_new_in_workspace, _ = self._validate_workspace_path(new_path)
+
+        if request.workspace_only and (not is_old_in_workspace or not is_new_in_workspace):
+            msg = f"One or both paths are outside workspace: {old_path} -> {new_path}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Create parent directories for new path if needed
+        try:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            msg = f"Permission denied creating parent directory for {new_path}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"I/O error creating parent directory for {new_path}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        # Perform the rename operation
+        try:
+            old_path.rename(new_path)
+        except PermissionError as e:
+            msg = f"Permission denied renaming {old_path} to {new_path}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"I/O error renaming {old_path} to {new_path}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Unexpected error renaming {old_path} to {new_path}: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return RenameFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH
+        details = f"Renamed: {old_path} -> {new_path}"
+        return RenameFileResultSuccess(
+            old_path=str(old_path),
+            new_path=str(new_path),
+            result_details=ResultDetails(message=details, level=logging.INFO),
+        )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event by registering system resources."""

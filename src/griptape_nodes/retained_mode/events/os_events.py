@@ -88,7 +88,14 @@ class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File or directory opening failed. Common causes: path not found, no associated application, permission denied."""
+    """File or directory opening failed.
+
+    Attributes:
+        failure_reason: Classification of why the open failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -126,7 +133,14 @@ class ListDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class ListDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Directory listing failed. Common causes: access denied, path not found."""
+    """Directory listing failed.
+
+    Attributes:
+        failure_reason: Classification of why the listing failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -239,7 +253,14 @@ class CreateFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class CreateFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File/directory creation failed."""
+    """File/directory creation failed.
+
+    Attributes:
+        failure_reason: Classification of why the creation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -275,7 +296,14 @@ class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File/directory rename failed."""
+    """File/directory rename failed.
+
+    Attributes:
+        failure_reason: Classification of why the rename failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
