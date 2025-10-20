@@ -7,7 +7,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from binaryornot.check import is_binary
 from rich.console import Console
@@ -18,6 +18,8 @@ from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
+    ExistingFilePolicy,
+    FileIOFailureReason,
     FileSystemEntry,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
@@ -31,6 +33,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileRequest,
     RenameFileResultFailure,
     RenameFileResultSuccess,
+    WriteFileRequest,
+    WriteFileResultFailure,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
@@ -45,6 +50,9 @@ from griptape_nodes.retained_mode.managers.resource_types.os_resource import OSR
 
 console = Console()
 
+# Windows MAX_PATH limit - paths longer than this need \\?\ prefix
+WINDOWS_MAX_PATH = 260
+
 
 @dataclass
 class DiskSpaceInfo:
@@ -53,6 +61,16 @@ class DiskSpaceInfo:
     total: int
     used: int
     free: int
+
+
+class FileContentResult(NamedTuple):
+    """Result from reading file content."""
+
+    content: str | bytes
+    encoding: str | None
+    mime_type: str
+    compression_encoding: str | None
+    file_size: int
 
 
 class OSManager:
@@ -81,6 +99,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=RenameFileRequest, callback=self.on_rename_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=WriteFileRequest, callback=self.on_write_file_request
             )
 
             # Register for app initialization event to setup system resources
@@ -155,6 +177,31 @@ class OSManager:
         msg = f"Path is within workspace, relative path: {relative}"
         logger.debug(msg)
         return True, relative
+
+    def _normalize_path_for_platform(self, path: Path) -> str:
+        r"""Convert Path to string with Windows long path support if needed.
+
+        Windows has a 260 character path limit (MAX_PATH). Paths longer than this
+        need the \\?\ prefix to work correctly. This method transparently adds
+        the prefix when needed on Windows.
+
+        Args:
+            path: Path object to convert to string
+
+        Returns:
+            String representation of path, with Windows long path prefix if needed
+        """
+        path_str = str(path.resolve())
+
+        # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
+        if self.is_windows() and len(path_str) > WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
+            # UNC paths (\\server\share) need \\?\UNC\ prefix
+            if path_str.startswith("\\\\"):
+                return f"\\\\?\\UNC\\{path_str[2:]}"
+            # Regular paths need \\?\ prefix
+            return f"\\\\?\\{path_str}"
+
+        return path_str
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""
@@ -283,12 +330,12 @@ class OSManager:
             if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
-                os.startfile(str(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
+                os.startfile(self._normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
-                    ["/usr/bin/open", str(path)],
+                    ["/usr/bin/open", self._normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -306,7 +353,7 @@ class OSManager:
                     return OpenAssociatedFileResultFailure(result_details=details)
 
                 subprocess.run(  # noqa: S603
-                    [xdg_path, str(path)],
+                    [xdg_path, self._normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -335,7 +382,7 @@ class OSManager:
             return None
 
         try:
-            mime_type, _ = mimetypes.guess_type(str(file_path), strict=True)
+            mime_type, _ = mimetypes.guess_type(self._normalize_path_for_platform(file_path), strict=True)
             if mime_type is None:
                 mime_type = "text/plain"
             return mime_type  # noqa: TRY300
@@ -430,60 +477,76 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(result_details=msg)
 
-    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
+    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: PLR0911
         """Handle a request to read file contents with automatic text/binary detection."""
-        # Initialize variables that might be used in exception handlers
-        file_path: Path | None = None
-        file_path_str: str | None = None
-
+        # Validate request and get file path
         try:
-            # Validate request and get file path
-            file_path, file_path_str = self._validate_read_file_request(request)
-
-            # Read file content
-            content, encoding, mime_type, compression_encoding, file_size = self._read_file_content(file_path, request)
-
-            return ReadFileResultSuccess(
-                content=content,
-                file_size=file_size,
-                mime_type=mime_type,
-                encoding=encoding,
-                compression_encoding=compression_encoding,
-                result_details="File read successfully.",
-            )
-
-        except (ValueError, FileNotFoundError) as e:
-            file_info = f" for file: {file_path}" if file_path is not None else ""
-            msg = f"Validation error in read_file{file_info}: {e}"
+            file_path, _file_path_str = self._validate_read_file_request(request)
+        except FileNotFoundError as e:
+            msg = f"File not found: {e}"
             logger.error(msg)
-            return ReadFileResultFailure(result_details=msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+        except PermissionError as e:
+            msg = f"Permission denied: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid path: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+        except OSError as e:
+            msg = f"I/O error validating path: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        # Read file content
+        try:
+            result = self._read_file_content(file_path, request)
+        except PermissionError as e:
+            msg = f"Permission denied for file {file_path}: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except IsADirectoryError:
+            msg = f"Path is a directory, not a file: {file_path}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
+        except UnicodeDecodeError as e:
+            msg = f"Encoding error for file {file_path}: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.ENCODING_ERROR, result_details=msg)
+        except OSError as e:
+            msg = f"I/O error for file {file_path}: {e}"
+            logger.error(msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
         except Exception as e:
-            # Try to include file path in error message if available
-            path_info = ""
-            if file_path is not None:
-                path_info = f" for {file_path}"
-            elif file_path_str is not None:
-                path_info = f" for {file_path_str}"
-
-            msg = f"Unexpected error in read_file{path_info}: {type(e).__name__}: {e}"
+            msg = f"Unexpected error reading file {file_path}: {type(e).__name__}: {e}"
             logger.error(msg)
-            return ReadFileResultFailure(result_details=msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    def _read_file_content(
-        self, file_path: Path, request: ReadFileRequest
-    ) -> tuple[bytes | str, str | None, str, str | None, int]:
-        """Read file content and return content, encoding, mime_type, compression_encoding, and file_size."""
+        # SUCCESS PATH - Only reached if no exceptions occurred
+        return ReadFileResultSuccess(
+            content=result.content,
+            file_size=result.file_size,
+            mime_type=result.mime_type,
+            encoding=result.encoding,
+            compression_encoding=result.compression_encoding,
+            result_details="File read successfully.",
+        )
+
+    def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
+        """Read file content and return FileContentResult with all file information."""
         # Get file size
         file_size = file_path.stat().st_size
 
         # Determine MIME type and compression encoding
-        mime_type, compression_encoding = mimetypes.guess_type(str(file_path), strict=True)
+        normalized_path = self._normalize_path_for_platform(file_path)
+        mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
         if mime_type is None:
             mime_type = "text/plain"
 
         # Determine if file is binary
         try:
-            is_binary_file = is_binary(str(file_path))
+            is_binary_file = is_binary(normalized_path)
         except Exception as e:
             msg = f"binaryornot detection failed for {file_path}: {e}"
             logger.warning(msg)
@@ -497,7 +560,13 @@ class OSManager:
         else:
             content, encoding = self._read_binary_file(file_path, mime_type)
 
-        return content, encoding, mime_type, compression_encoding, file_size
+        return FileContentResult(
+            content=content,
+            encoding=encoding,
+            mime_type=mime_type,
+            compression_encoding=compression_encoding,
+            file_size=file_size,
+        )
 
     def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
         """Read file as text with fallback encodings."""
@@ -559,6 +628,137 @@ class OSManager:
             return data_url
         else:
             return static_url
+
+    def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+        """Handle a request to write content to a file."""
+        # Check for CREATE_NEW policy - not yet implemented
+        if request.existing_file_policy == ExistingFilePolicy.CREATE_NEW:
+            msg = "CREATE_NEW policy not yet implemented"
+            logger.error(msg)
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR,
+                result_details=msg,
+            )
+
+        # Resolve file path
+        try:
+            file_path = self._resolve_file_path(request.file_path, workspace_only=False)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid path: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Get normalized path for file operations (handles Windows long paths)
+        normalized_path = self._normalize_path_for_platform(file_path)
+
+        # Check existing file policy (only if not appending)
+        if not request.append and request.existing_file_policy == ExistingFilePolicy.FAIL:
+            try:
+                # Use os.path.exists with normalized path to handle Windows long paths
+                if os.path.exists(normalized_path):  # noqa: PTH110
+                    msg = f"File exists and existing_file_policy is FAIL: {file_path}"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+                        result_details=msg,
+                    )
+            except OSError as e:
+                msg = f"Error checking if file exists {file_path}: {e}"
+                logger.error(msg)
+                return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        # Check and create parent directory if needed
+        parent_normalized = self._normalize_path_for_platform(file_path.parent)
+        try:
+            if not os.path.exists(parent_normalized):  # noqa: PTH110
+                if not request.create_parents:
+                    msg = f"Parent directory does not exist and create_parents is False: {file_path.parent}"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS,
+                        result_details=msg,
+                    )
+
+                # Create parent directories using os.makedirs to handle Windows long paths
+                os.makedirs(parent_normalized, exist_ok=True)  # noqa: PTH103
+        except PermissionError as e:
+            msg = f"Permission denied creating parent directory {file_path.parent}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                result_details=msg,
+            )
+        except OSError as e:
+            msg = f"Error creating parent directory {file_path.parent}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        # Write file content
+        try:
+            bytes_written = self._write_file_content(
+                normalized_path, request.content, request.encoding, append=request.append
+            )
+        except PermissionError as e:
+            msg = f"Permission denied writing to file {file_path}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except IsADirectoryError:
+            msg = f"Path is a directory, not a file: {file_path}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
+        except UnicodeEncodeError as e:
+            msg = f"Encoding error writing to file {file_path}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.ENCODING_ERROR, result_details=msg)
+        except OSError as e:
+            # Check for disk full
+            if "No space left" in str(e) or "Disk full" in str(e):
+                msg = f"Disk full writing to file {file_path}: {e}"
+                logger.error(msg)
+                return WriteFileResultFailure(failure_reason=FileIOFailureReason.DISK_FULL, result_details=msg)
+
+            msg = f"I/O error writing to file {file_path}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Unexpected error writing to file {file_path}: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH - Only reached if no exceptions occurred
+        return WriteFileResultSuccess(
+            final_file_path=str(file_path),
+            bytes_written=bytes_written,
+            result_details=f"File written successfully: {file_path}",
+        )
+
+    def _write_file_content(self, normalized_path: str, content: str | bytes, encoding: str, *, append: bool) -> int:
+        """Write content to a file and return bytes written.
+
+        Args:
+            normalized_path: Normalized path string (with Windows long path prefix if needed)
+            content: Content to write (str for text, bytes for binary)
+            encoding: Text encoding (ignored for bytes)
+            append: If True, append to file; if False, overwrite
+
+        Returns:
+            Number of bytes written
+        """
+        # Determine mode based on content type and append flag
+        if isinstance(content, bytes):
+            mode = "ab" if append else "wb"
+            # Use open() instead of Path.open() to support Windows long paths with \\?\ prefix
+            with open(normalized_path, mode) as f:  # noqa: PTH123
+                f.write(content)
+            return len(content)
+
+        # Text content
+        mode = "a" if append else "w"
+        # Use open() instead of Path.open() to support Windows long paths with \\?\ prefix
+        with open(normalized_path, mode, encoding=encoding) as f:  # noqa: PTH123
+            f.write(content)
+        # Return byte count for text (encoded size)
+        return len(content.encode(encoding))
 
     @staticmethod
     def get_disk_space_info(path: Path) -> DiskSpaceInfo:

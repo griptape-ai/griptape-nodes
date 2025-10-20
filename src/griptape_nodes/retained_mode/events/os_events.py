@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import StrEnum
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -7,6 +8,43 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class ExistingFilePolicy(StrEnum):
+    """Policy for handling existing files during write operations."""
+
+    OVERWRITE = "overwrite"  # Replace existing file content
+    FAIL = "fail"  # Fail if file exists
+    CREATE_NEW = "create_new"  # Create new file with modified name (e.g., file_1.txt)
+
+
+class FileIOFailureReason(StrEnum):
+    """Classification of file I/O failure reasons.
+
+    Used by read and write operations to provide structured error information.
+    """
+
+    # Policy violations
+    POLICY_NO_OVERWRITE = "policy_no_overwrite"  # File exists and policy prohibits overwrite
+    POLICY_NO_CREATE_PARENT_DIRS = "policy_no_create_parent_dirs"  # Parent dir missing and policy prohibits creation
+
+    # Permission/access errors
+    PERMISSION_DENIED = "permission_denied"  # No read/write permission
+    FILE_NOT_FOUND = "file_not_found"  # File doesn't exist (read operations)
+
+    # Resource errors
+    DISK_FULL = "disk_full"  # Insufficient disk space
+
+    # Path errors
+    INVALID_PATH = "invalid_path"  # Malformed or invalid path
+    IS_DIRECTORY = "is_directory"  # Path is a directory, not a file
+
+    # Content errors
+    ENCODING_ERROR = "encoding_error"  # Text encoding/decoding failed
+
+    # Generic errors
+    IO_ERROR = "io_error"  # Generic I/O error
+    UNKNOWN = "unknown"  # Unexpected error
 
 
 @dataclass
@@ -105,6 +143,7 @@ class ReadFileRequest(RequestPayload):
         encoding: Text encoding to use if file is detected as text (default: 'utf-8')
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
                         If None, workspace constraints don't apply (e.g., cloud environments).
+                        TODO: Remove workspace_only parameter - see https://github.com/griptape-ai/griptape-nodes/issues/2753
 
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
@@ -112,7 +151,7 @@ class ReadFileRequest(RequestPayload):
     file_path: str | None = None
     file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
-    workspace_only: bool | None = True
+    workspace_only: bool | None = True  # TODO: Remove - see https://github.com/griptape-ai/griptape-nodes/issues/2753
 
 
 @dataclass
@@ -139,7 +178,14 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File reading failed. Common causes: file not found, permission denied, encoding error."""
+    """File reading failed.
+
+    Attributes:
+        failure_reason: Classification of why the read failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -230,3 +276,65 @@ class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """File/directory rename failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileRequest(RequestPayload):
+    """Write content to a file.
+
+    Automatically detects text vs binary mode based on content type.
+
+    Use when: Saving generated content, writing output files,
+    creating configuration files, writing binary data.
+
+    Args:
+        file_path: Path to the file to write
+        content: Content to write (str for text files, bytes for binary files)
+        encoding: Text encoding for str content (default: 'utf-8', ignored for bytes)
+        append: If True, append to existing file; if False, use existing_file_policy (default: False)
+        existing_file_policy: How to handle existing files when append=False:
+            - "overwrite": Replace file content (default)
+            - "fail": Return failure if file exists
+            - "create_new": Create new file with modified name (NOT YET IMPLEMENTED)
+        create_parents: If True, create parent directories if missing (default: True)
+
+    Results: WriteFileResultSuccess | WriteFileResultFailure
+
+    Note: existing_file_policy is ignored when append=True (append always allows existing files)
+    """
+
+    file_path: str
+    content: str | bytes
+    encoding: str = "utf-8"  # Ignored for bytes
+    append: bool = False
+    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    create_parents: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File written successfully.
+
+    Attributes:
+        final_file_path: The actual path where file was written
+                        (may differ from requested path if create_new policy used)
+        bytes_written: Number of bytes written to the file
+    """
+
+    final_file_path: str
+    bytes_written: int
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File write failed.
+
+    Attributes:
+        failure_reason: Classification of why the write failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
