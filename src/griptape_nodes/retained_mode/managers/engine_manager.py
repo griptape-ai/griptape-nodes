@@ -22,6 +22,9 @@ from rich.console import Console
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.retained_mode.events.app_events import (
+    CheckEngineUpdateRequest,
+    CheckEngineUpdateResultFailure,
+    CheckEngineUpdateResultSuccess,
     GetEngineNameRequest,
     GetEngineNameResultFailure,
     GetEngineNameResultSuccess,
@@ -82,6 +85,9 @@ class EngineManager:
             event_manager.assign_manager_to_request_type(GetEngineNameRequest, self.handle_get_engine_name_request)
             event_manager.assign_manager_to_request_type(SetEngineNameRequest, self.handle_set_engine_name_request)
             event_manager.assign_manager_to_request_type(UpdateEngineRequest, self.handle_update_engine_request)
+            event_manager.assign_manager_to_request_type(
+                CheckEngineUpdateRequest, self.handle_check_engine_update_request
+            )
 
     @property
     def active_engine_id(self) -> str | None:
@@ -314,3 +320,38 @@ class EngineManager:
 
         # This code will not be reached as replace_process replaces the current process
         return UpdateEngineResultSuccess(message="Update process started", result_details="Update process started")
+
+    def handle_check_engine_update_request(self, request: CheckEngineUpdateRequest) -> ResultPayload:  # noqa: ARG002
+        """Handle requests to check if an engine update is available."""
+        from griptape_nodes.cli.shared import GITHUB_UPDATE_URL, LATEST_TAG, PACKAGE_NAME, PYPI_UPDATE_URL
+        from griptape_nodes.utils.version_utils import (
+            get_current_version,
+            get_install_source,
+            get_latest_version_git,
+            get_latest_version_pypi,
+        )
+
+        try:
+            current_version = get_current_version()
+            install_source, _ = get_install_source()
+
+            if install_source == "pypi":
+                latest_version = get_latest_version_pypi(PACKAGE_NAME, PYPI_UPDATE_URL)
+            elif install_source == "git":
+                latest_version = get_latest_version_git(PACKAGE_NAME, GITHUB_UPDATE_URL, LATEST_TAG)
+            else:
+                latest_version = current_version
+
+            update_available = latest_version != current_version
+
+            return CheckEngineUpdateResultSuccess(
+                current_version=current_version,
+                latest_version=latest_version,
+                update_available=update_available,
+                install_source=install_source,
+                result_details="Update check completed successfully.",
+            )
+        except Exception as err:
+            error_message = f"Failed to check for engine updates: {err}"
+            logger.error(error_message)
+            return CheckEngineUpdateResultFailure(error_message=error_message, result_details=error_message)

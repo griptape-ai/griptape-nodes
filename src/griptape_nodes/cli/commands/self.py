@@ -7,19 +7,11 @@ import typer
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
     DATA_DIR,
-    GITHUB_UPDATE_URL,
-    LATEST_TAG,
-    PYPI_UPDATE_URL,
     console,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.uv_utils import find_uv_bin
-from griptape_nodes.utils.version_utils import (
-    get_complete_version_string,
-    get_current_version,
-    get_latest_version_git,
-    get_latest_version_pypi,
-)
+from griptape_nodes.utils.version_utils import get_complete_version_string
 
 config_manager = GriptapeNodes.ConfigManager()
 secrets_manager = GriptapeNodes.SecretsManager()
@@ -44,24 +36,6 @@ def uninstall() -> None:
 def version() -> None:
     """Print the CLI version."""
     _print_current_version()
-
-
-def _get_latest_version(package: str, install_source: str) -> str:
-    """Fetches the latest release tag from PyPI.
-
-    Args:
-        package: The name of the package to fetch the latest version for.
-        install_source: The source from which the package is installed (e.g., "pypi", "git", "file").
-
-    Returns:
-        str: Latest release tag (e.g., "v0.31.4")
-    """
-    if install_source == "pypi":
-        return get_latest_version_pypi(package, PYPI_UPDATE_URL)
-    if install_source == "git":
-        return get_latest_version_git(package, GITHUB_UPDATE_URL, LATEST_TAG)
-    # If the package is installed from a file, just return the current version since the user is likely managing it manually
-    return get_current_version()
 
 
 def _update_self() -> None:
