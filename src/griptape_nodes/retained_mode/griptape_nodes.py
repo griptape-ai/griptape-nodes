@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-    from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
+    from griptape_nodes.retained_mode.managers.engine_manager import EngineManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -91,7 +91,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _agent_manager: AgentManager
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
-    _engine_identity_manager: EngineIdentityManager
+    _engine_manager: EngineManager
     _mcp_manager: MCPManager
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
@@ -105,7 +105,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         )
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-        from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
+        from griptape_nodes.retained_mode.managers.engine_manager import EngineManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -158,8 +158,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             )
             self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
-            self._engine_identity_manager = EngineIdentityManager(self._event_manager)
-            self._session_manager = SessionManager(self._engine_identity_manager, self._event_manager)
+            self._engine_manager = EngineManager(self._event_manager)
+            self._session_manager = SessionManager(self._engine_manager, self._event_manager)
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
@@ -244,7 +244,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_engine_id(cls) -> str | None:
-        return GriptapeNodes.EngineIdentityManager().active_engine_id
+        return GriptapeNodes.EngineManager().active_engine_id
 
     @classmethod
     def EventManager(cls) -> EventManager:
@@ -319,8 +319,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._mcp_manager
 
     @classmethod
-    def EngineIdentityManager(cls) -> EngineIdentityManager:
-        return GriptapeNodes.get_instance()._engine_identity_manager
+    def EngineManager(cls) -> EngineManager:
+        return GriptapeNodes.get_instance()._engine_manager
 
     @classmethod
     def ResourceManager(cls) -> ResourceManager:
@@ -392,7 +392,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             workflow_info = self._get_current_workflow_info()
 
             # Get engine name
-            engine_name = GriptapeNodes.EngineIdentityManager().engine_name
+            engine_name = GriptapeNodes.EngineManager().engine_name
 
             # Get user and organization
             user = GriptapeNodes.UserManager().user
@@ -402,7 +402,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
                 engine_name=engine_name,
-                engine_id=GriptapeNodes.EngineIdentityManager().active_engine_id,
+                engine_id=GriptapeNodes.EngineManager().active_engine_id,
                 session_id=GriptapeNodes.SessionManager().active_session_id,
                 timestamp=datetime.now(tz=UTC).isoformat(),
                 user=user,

@@ -365,3 +365,39 @@ class GetEngineNameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     error_message: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineRequest(RequestPayload):
+    """Update the engine to the latest version.
+
+    Use when: Updating the engine software, performing maintenance,
+    upgrading to new features, applying patches and fixes.
+
+    Results: UpdateEngineResultSuccess (update completed) | UpdateEngineResultFailure (update error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Engine update completed successfully.
+
+    Args:
+        message: Description of the update result
+    """
+
+    message: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateEngineResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Engine update failed.
+
+    Args:
+        error_message: Detailed error message describing the failure
+    """
+
+    error_message: str

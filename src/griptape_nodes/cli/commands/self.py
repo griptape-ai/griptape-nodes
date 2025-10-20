@@ -1,7 +1,6 @@
 """Self command for Griptape Nodes CLI."""
 
 import shutil
-import sys
 
 import typer
 
@@ -67,9 +66,11 @@ def _get_latest_version(package: str, install_source: str) -> str:
 
 def _update_self() -> None:
     """Installs the latest release of the CLI *and* refreshes bundled libraries."""
-    console.print("[bold green]Starting updater...[/bold green]")
+    from griptape_nodes.retained_mode.events.app_events import UpdateEngineRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
+    request = UpdateEngineRequest()
+    GriptapeNodes.handle_request(request)
 
 
 def _print_current_version() -> None:

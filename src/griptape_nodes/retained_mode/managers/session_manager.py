@@ -34,7 +34,7 @@ from griptape_nodes.retained_mode.events.base_events import BaseEvent, ResultPay
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
+    from griptape_nodes.retained_mode.managers.engine_manager import EngineManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -62,16 +62,16 @@ class SessionManager:
 
     def __init__(
         self,
-        engine_identity_manager: EngineIdentityManager,
+        engine_manager: EngineManager,
         event_manager: EventManager | None = None,
     ) -> None:
         """Initialize the SessionManager.
 
         Args:
-            engine_identity_manager: The EngineIdentityManager instance to use for engine ID operations.
+            engine_manager: The EngineManager instance to use for engine ID operations.
             event_manager: The EventManager instance to use for event handling.
         """
-        self._engine_identity_manager = engine_identity_manager
+        self._engine_manager = engine_manager
         self._sessions_data = self._load_sessions_data()
         self._active_session_id = self._get_or_initialize_active_session()
         BaseEvent._session_id = self._active_session_id
@@ -231,7 +231,7 @@ class SessionManager:
         Returns:
             str | None: The current engine ID or None if not set
         """
-        return self._engine_identity_manager.active_engine_id
+        return self._engine_manager.active_engine_id
 
     def _load_sessions_data(self) -> SessionsStorage:
         """Load sessions data from storage.

@@ -1,8 +1,9 @@
-"""Manages engine identity state.
+"""Manages engine state and operations.
 
-Centralizes engine identity management, providing a consistent interface for
-engine ID and name operations.
-Handles engine ID, name storage, and generation for unique engine identification.
+Centralizes engine management, providing a consistent interface for
+engine ID, name operations, and engine updates.
+Handles engine ID, name storage, generation for unique engine identification,
+and engine update operations.
 Supports multiple engines with selection via GTN_ENGINE_ID environment variable.
 """
 
@@ -11,11 +12,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+from rich.console import Console
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.retained_mode.events.app_events import (
@@ -25,6 +28,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     SetEngineNameRequest,
     SetEngineNameResultFailure,
     SetEngineNameResultSuccess,
+    UpdateEngineRequest,
+    UpdateEngineResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import (
     BaseEvent,
@@ -39,6 +44,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+console = Console()
 
 
 class EngineData(BaseModel):
@@ -57,13 +63,13 @@ class EnginesStorage(BaseModel):
     default_engine_id: str | None = None
 
 
-class EngineIdentityManager:
-    """Manages engine identity and active engine state."""
+class EngineManager:
+    """Manages engine identity, active engine state, and engine operations."""
 
     _ENGINE_DATA_FILE = "engines.json"
 
     def __init__(self, event_manager: EventManager | None = None) -> None:
-        """Initialize the EngineIdentityManager.
+        """Initialize the EngineManager.
 
         Args:
             event_manager: The EventManager instance to use for event handling.
@@ -75,6 +81,7 @@ class EngineIdentityManager:
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(GetEngineNameRequest, self.handle_get_engine_name_request)
             event_manager.assign_manager_to_request_type(SetEngineNameRequest, self.handle_set_engine_name_request)
+            event_manager.assign_manager_to_request_type(UpdateEngineRequest, self.handle_update_engine_request)
 
     @property
     def active_engine_id(self) -> str | None:
@@ -278,7 +285,7 @@ class EngineIdentityManager:
     @staticmethod
     def _get_engine_data_file() -> Path:
         """Get the path to the engine data storage file."""
-        return EngineIdentityManager._get_engine_data_dir() / EngineIdentityManager._ENGINE_DATA_FILE
+        return EngineManager._get_engine_data_dir() / EngineManager._ENGINE_DATA_FILE
 
     @staticmethod
     def _find_engine_by_id(engines_data: EnginesStorage, engine_id: str) -> EngineData | None:
@@ -295,3 +302,15 @@ class EngineIdentityManager:
             if engine.id == engine_id:
                 return engine
         return None
+
+    def handle_update_engine_request(self, request: UpdateEngineRequest) -> ResultPayload:  # noqa: ARG002
+        """Handle requests to update the engine to the latest version."""
+        console.print("[bold green]Starting updater...[/bold green]")
+
+        from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+        os_manager = OSManager()
+        os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
+
+        # This code will not be reached as replace_process replaces the current process
+        return UpdateEngineResultSuccess(message="Update process started", result_details="Update process started")
