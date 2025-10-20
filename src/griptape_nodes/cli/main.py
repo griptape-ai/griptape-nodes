@@ -10,7 +10,7 @@ from rich.console import Console
 sys.path.append(str(Path.cwd()))
 
 from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
-from griptape_nodes.cli.commands.engine import _auto_update_self
+from griptape_nodes.cli.commands.self import _auto_update_self
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
 console = Console()
