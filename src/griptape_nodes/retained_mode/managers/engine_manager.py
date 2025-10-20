@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -196,10 +197,18 @@ class EngineManager:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         os_manager = GriptapeNodes.OSManager()
-        os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
 
-        # This code will not be reached as replace_process replaces the current process
-        return UpdateEngineResultSuccess(message="Update process started", result_details="Update process started")
+        # Schedule process replacement after a short delay to allow cleanup
+        def _delayed_update() -> None:
+            os_manager.replace_process([sys.executable, "-m", "griptape_nodes.updater"])
+
+        timer = threading.Timer(3.0, _delayed_update)
+        timer.daemon = True
+        timer.start()
+
+        return UpdateEngineResultSuccess(
+            message="Update process scheduled", result_details="Engine will restart in 3 seconds to apply update"
+        )
 
     def handle_check_engine_update_request(self, _request: CheckEngineUpdateRequest) -> ResultPayload:
         """Handle requests to check if an engine update is available."""
