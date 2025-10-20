@@ -2029,6 +2029,8 @@ class FlowManager:
             output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
 
         # Create parameter command for end node
+        # Make input/output/property all allowed, to allow for connection creation.
+
         add_param_request = AddParameterToNodeRequest(
             node_name=end_node_name,
             parameter_name=sanitized_param_name,
@@ -2036,6 +2038,9 @@ class FlowManager:
             default_value=None,
             tooltip=tooltip,
             initial_setup=True,
+            mode_allowed_input=True,
+            mode_allowed_output=True,
+            mode_allowed_property=True,
         )
         end_node_parameter_commands.append(add_param_request)
 
