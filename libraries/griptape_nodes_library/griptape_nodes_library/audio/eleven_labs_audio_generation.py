@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
 import os
@@ -70,12 +71,14 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
 
     Supports three models:
     - Eleven Music v1: Music generation from text prompts
-    - Eleven Multilingual v2: Text-to-speech with voice options
+    - Eleven Multilingual v2: Text-to-speech with voice options and character alignment
     - Eleven Text to Sound v2: Text-to-sound effects generation
 
     Outputs:
         - generation_id (str): Generation ID from the API
         - audio_url (AudioUrlArtifact): Generated audio as URL artifact
+        - alignment (dict): Character alignment data (eleven_multilingual_v2 only)
+        - normalized_alignment (dict): Normalized alignment data (eleven_multilingual_v2 only)
     """
 
     SERVICE_NAME = "Griptape"
@@ -380,6 +383,29 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             )
         )
 
+        # Alignment outputs (only populated for eleven_multilingual_v2)
+        self.add_parameter(
+            Parameter(
+                name="alignment",
+                output_type="dict",
+                type="dict",
+                tooltip="Character alignment data with start/end times (eleven_multilingual_v2 only)",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="normalized_alignment",
+                output_type="dict",
+                type="dict",
+                tooltip="Normalized character alignment data (eleven_multilingual_v2 only)",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
         # Create status output parameters for success/failure information
         self._create_status_parameters(
             result_details_tooltip="Details about the audio generation result or any errors encountered",
@@ -675,8 +701,64 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
+    def _handle_json_response(self, response_bytes: bytes, model: str) -> None:
+        """Handle JSON response format with base64 audio and alignment data.
+
+        This is used for eleven_multilingual_v2 model which returns:
+        {
+            "audio_base64": "...",
+            "alignment": {...},
+            "normalized_alignment": {...}
+        }
+        """
+        try:
+            # Parse JSON response
+            response_data = _json.loads(response_bytes.decode("utf-8"))
+
+            # Extract and decode base64 audio
+            audio_base64 = response_data.get("audio_base64")
+            if audio_base64:
+                audio_bytes = base64.b64decode(audio_base64)
+                self._save_audio_from_bytes(audio_bytes, model)
+            else:
+                self._log("No audio_base64 in JSON response")
+                self.parameter_output_values["audio_url"] = None
+
+            # Extract alignment data
+            alignment = response_data.get("alignment")
+            normalized_alignment = response_data.get("normalized_alignment")
+
+            if alignment:
+                self.parameter_output_values["alignment"] = alignment
+                self._log("Extracted character alignment data")
+            else:
+                self.parameter_output_values["alignment"] = None
+
+            if normalized_alignment:
+                self.parameter_output_values["normalized_alignment"] = normalized_alignment
+                self._log("Extracted normalized alignment data")
+            else:
+                self.parameter_output_values["normalized_alignment"] = None
+
+        except _json.JSONDecodeError as e:
+            self._log(f"Failed to parse JSON response: {e}")
+            self.parameter_output_values["audio_url"] = None
+            self.parameter_output_values["alignment"] = None
+            self.parameter_output_values["normalized_alignment"] = None
+            raise
+        except Exception as e:
+            self._log(f"Failed to process JSON response: {e}")
+            self.parameter_output_values["audio_url"] = None
+            self.parameter_output_values["alignment"] = None
+            self.parameter_output_values["normalized_alignment"] = None
+            raise
+
     def _handle_response(self, response_bytes: bytes, model: str) -> None:
-        if response_bytes:
+        # For eleven_multilingual_v2, we get JSON with base64 audio and alignment data
+        if model == "eleven_multilingual_v2":
+            self._handle_json_response(response_bytes, model)
+        elif response_bytes:
+            # For other models, we get raw audio bytes
             self._save_audio_from_bytes(response_bytes, model)
         else:
             self._log("No audio data in response")
@@ -721,3 +803,5 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["audio_url"] = None
+        self.parameter_output_values["alignment"] = None
+        self.parameter_output_values["normalized_alignment"] = None
