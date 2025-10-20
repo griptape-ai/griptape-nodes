@@ -17,7 +17,9 @@ class FluxLoraFromFile(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.flux_params = FluxPipelineParameters(self)
-        self.lora_file_path_params = FilePathParameter(self)
+        self.lora_file_path_params = FilePathParameter(
+            self, file_types=[".safetensors", ".pt", ".bin", ".json", ".lora"]
+        )
         self.lora_weight_and_output_params = FluxLoraParameters(self)
         self.lora_file_path_params.add_input_parameters()
         self.lora_weight_and_output_params.add_input_parameters()
