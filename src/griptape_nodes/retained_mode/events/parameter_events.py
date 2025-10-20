@@ -47,6 +47,7 @@ class AddParameterToNodeRequest(RequestPayload):
         mode_allowed_output: Whether parameter can be used as output
         is_user_defined: Whether this is a user-defined parameter (affects serialization)
         parent_container_name: Name of parent container if nested
+        parent_element_name: Name of parent element if nested
         initial_setup: Skip setup work when loading from file
         settable: Whether parameter can be set directly by the user or not
 
@@ -71,6 +72,7 @@ class AddParameterToNodeRequest(RequestPayload):
     is_user_defined: bool = Field(default=True)
     settable: bool = Field(default=True)
     parent_container_name: str | None = None
+    parent_element_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
 
@@ -79,6 +81,9 @@ class AddParameterToNodeRequest(RequestPayload):
         if "name" in kwargs:
             name = kwargs.pop("name")
             kwargs["parameter_name"] = name
+        if "parent_group_name" in kwargs:
+            parent_group_name = kwargs.pop("parent_group_name")
+            kwargs["parent_element_name"] = parent_group_name
         known_attrs = {k: v for k, v in kwargs.items() if k in cls.__annotations__}
         # Create instance with known attributes and extra_attrs dict
         instance = cls(**known_attrs)

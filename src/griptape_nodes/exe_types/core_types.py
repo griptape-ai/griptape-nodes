@@ -956,6 +956,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     next: Parameter | None = None
     prev: Parameter | None = None
     parent_container_name: str | None = None
+    parent_group_name: str | None = None
 
     def __init__(  # noqa: PLR0913,PLR0912
         self,
@@ -980,12 +981,13 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
+        parent_group_name: str | None = None,
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
         if not element_type:
             element_type = self.__class__.__name__
-        super().__init__(element_id=element_id, element_type=element_type)
+        super().__init__(element_id=element_id, element_type=element_type, parent_group_name=parent_group_name)
         self.name = name
         self.tooltip = tooltip
         self.default_value = default_value
@@ -1026,6 +1028,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.input_types = input_types
         self.output_type = output_type
         self.parent_container_name = parent_container_name
+        self.parent_group_name = parent_group_name
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -1055,6 +1058,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         our_dict["mode_allowed_property"] = allows_property
         our_dict["mode_allowed_output"] = allows_output
         our_dict["parent_container_name"] = self.parent_container_name
+        our_dict["parent_group_name"] = self.parent_group_name
 
         return our_dict
 
