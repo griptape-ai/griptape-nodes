@@ -81,9 +81,6 @@ class AddParameterToNodeRequest(RequestPayload):
         if "name" in kwargs:
             name = kwargs.pop("name")
             kwargs["parameter_name"] = name
-        if "parent_group_name" in kwargs:
-            parent_group_name = kwargs.pop("parent_group_name")
-            kwargs["parent_element_name"] = parent_group_name
         known_attrs = {k: v for k, v in kwargs.items() if k in cls.__annotations__}
         # Create instance with known attributes and extra_attrs dict
         instance = cls(**known_attrs)

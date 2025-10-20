@@ -1042,7 +1042,7 @@ class NodeManager:
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
             parent_container_name=request.parent_container_name,
-            parent_group_name=parent_group.name if parent_group is not None else None,
+            parent_element_name=parent_group.name if parent_group is not None else None,
             settable=request.settable,
         )
         try:
