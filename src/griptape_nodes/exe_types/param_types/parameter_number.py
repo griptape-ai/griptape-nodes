@@ -20,7 +20,7 @@ class ParameterNumber(Parameter):
     the appropriate type and conversion methods.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -211,10 +211,11 @@ class ParameterNumber(Parameter):
         msg = f"{self.name}: Subclasses must implement _convert_to_number"
         raise NotImplementedError(msg)
 
-    def _setup_constraint_traits(
+    def _setup_constraint_traits(  # noqa: PLR0913
         self,
         name: str,
         traits: set[type[Trait] | Trait] | None,
+        *,
         slider: bool,
         min_val: float,
         max_val: float,
