@@ -117,6 +117,121 @@ class TransitionPlan(NamedTuple):
     to_add: set[str]
 
 
+class DynamicParameterMixin:
+    """Mixin for nodes that dynamically add/remove parameters and want to preserve connections.
+
+    This mixin provides:
+    1. Automatic tracking of deleted parameter names
+    2. Caching of parameter attributes (allowed_modes, ui_options) before deletion
+    3. Restoration of cached attributes when parameters are recreated
+    4. Connection preservation by updating Connection references after parameter replacement
+
+    Usage:
+        1. Inherit from this mixin: class MyNode(DynamicParameterMixin, BaseNode)
+        2. Before deleting parameters: self.cache_param_attrs()
+        3. In add_parameter override: self.restore_cached_attrs(parameter)
+        4. After adding new parameters: self.complete_parameter_transition()
+
+    Example:
+        def regenerate_parameters(self):
+            self.cache_param_attrs()
+            self.remove_parameter_element_by_name("old_param")  # Auto-tracked
+            self.add_parameter(Parameter(...))  # Auto-restored in override
+            self.complete_parameter_transition()  # Updates connections
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize caches for parameter tracking and attribute preservation."""
+        super().__init__(*args, **kwargs)
+        self.param_names_cache: set[str] = set()
+        self.param_attrs_cache: dict[str, dict[str, Any]] = {}
+
+    def cache_param_attrs(self) -> None:
+        """Cache important parameter attributes before removal.
+
+        Saves allowed_modes and ui_options for all current parameters so they
+        can be restored if the parameter is recreated with the same name.
+        Call this before removing/regenerating parameters.
+        """
+        for element in self.root_ui_element.children:  # type: ignore[attr-defined]
+            parameter = self.get_parameter_by_name(element.name)  # type: ignore[attr-defined]
+            if parameter is not None:
+                self.param_attrs_cache[parameter.name] = {
+                    "allowed_modes": parameter._allowed_modes.copy(),
+                    "ui_options": parameter.ui_options.copy() if parameter.ui_options else {},
+                }
+
+    def restore_cached_attrs(self, parameter: Parameter) -> None:
+        """Restore cached attributes to a parameter if they exist.
+
+        Call this in your add_parameter override after adding the parameter to restore
+        user-modified attributes like allowed_modes or ui_options['hide'].
+
+        Args:
+            parameter: The parameter to restore cached attributes to
+        """
+        if parameter.name not in self.param_attrs_cache:
+            return
+
+        cached_attrs = self.param_attrs_cache[parameter.name]
+
+        if "allowed_modes" in cached_attrs:
+            parameter._allowed_modes = cached_attrs["allowed_modes"]
+
+        if "ui_options" in cached_attrs:
+            ui_options_to_restore = {"hide"}
+            parameter.ui_options = {
+                **parameter.ui_options,
+                **{k: v for k, v in cached_attrs["ui_options"].items() if k in ui_options_to_restore},
+            }
+
+    def complete_parameter_transition(self) -> None:
+        """Complete the parameter transition by updating connections and clearing caches.
+
+        This method:
+        1. Creates a TransitionPlan from cached old names and current new names
+        2. Updates Connection objects to reference new Parameter instances
+        3. Clears all caches
+
+        Call this after all new parameters have been added to finalize the transition.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        desired_param_names = {param.name for param in self.parameters}  # type: ignore[attr-defined]
+
+        plan = self.create_parameter_transition_plan(self.get_cached_param_names(), desired_param_names)  # type: ignore[attr-defined]
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        connections.update_parameter_references_after_replacement(self, plan.to_preserve)  # type: ignore[arg-type]
+
+        self.clear_param_attrs_cache()
+        self.clear_param_names_cache()
+
+    def remove_parameter_element_by_name(self, name: str) -> None:
+        """Override to automatically track parameter deletions.
+
+        Caches the parameter name before deletion so it can be used in the
+        transition plan to preserve connections.
+
+        Args:
+            name: Name of the parameter element to remove
+        """
+        self.param_names_cache.add(name)
+        super().remove_parameter_element_by_name(name)  # type: ignore[misc]
+
+    def get_cached_param_names(self) -> set[str]:
+        """Get the set of cached parameter names from deletions."""
+        return self.param_names_cache
+
+    def clear_param_names_cache(self) -> None:
+        """Clear the parameter names cache."""
+        self.param_names_cache.clear()
+
+    def clear_param_attrs_cache(self) -> None:
+        """Clear the parameter attributes cache."""
+        self.param_attrs_cache.clear()
+
+
 class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
 
