@@ -2599,7 +2599,7 @@ class NodeManager:
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
-            value_id = value
+            value_id = (type(value), value)
         except TypeError:
             # Couldn't get a hash. Use the object's ID
             value_id = id(value)
