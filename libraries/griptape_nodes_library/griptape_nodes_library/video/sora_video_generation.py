@@ -265,8 +265,8 @@ class SoraVideoGeneration(SuccessFailureNode):
                     result_details="No generation_id returned from API. Cannot proceed with generation.",
                 )
                 return
-        except RuntimeError as e:
-            # HTTP error during submission
+        except (RuntimeError, ValueError) as e:
+            # HTTP error or validation error (e.g., start frame dimensions) during submission
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
