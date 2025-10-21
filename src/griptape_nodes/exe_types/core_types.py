@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
@@ -923,6 +924,9 @@ class ParameterBase(BaseNodeElement, ABC):
 
 
 class Parameter(BaseNodeElement, UIOptionsMixin):
+    # Maximum number of input types to show in tooltip before truncating
+    _MAX_TOOLTIP_INPUT_TYPES = 3
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -958,10 +962,10 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     parent_container_name: str | None = None
     parent_element_name: str | None = None
 
-    def __init__(  # noqa: PLR0913,PLR0912
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         name: str,
-        tooltip: str | list[dict],
+        tooltip: str | list[dict] | None = None,
         type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
@@ -975,6 +979,12 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
+        hide: bool = False,
+        hide_label: bool = False,
+        hide_property: bool = False,
+        allow_input: bool = True,
+        allow_property: bool = True,
+        allow_output: bool = True,
         settable: bool = True,
         serializable: bool = True,
         user_defined: bool = False,
@@ -989,6 +999,11 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             element_type = self.__class__.__name__
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
+
+        # Generate default tooltip if none provided
+        if not tooltip:
+            tooltip = self._generate_default_tooltip(name, type, input_types, output_type)
+
         self.tooltip = tooltip
         self.default_value = default_value
         self.tooltip_as_input = tooltip_as_input
@@ -997,10 +1012,36 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
+
+        # Process allowed_modes - use convenience parameters if allowed_modes not explicitly set
         if allowed_modes is None:
-            self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+            self._allowed_modes = set()
+            if allow_input:
+                self._allowed_modes.add(ParameterMode.INPUT)
+            if allow_property:
+                self._allowed_modes.add(ParameterMode.PROPERTY)
+            if allow_output:
+                self._allowed_modes.add(ParameterMode.OUTPUT)
         else:
             self._allowed_modes = allowed_modes
+
+            # Warn if both allowed_modes and convenience parameters are set
+            convenience_params_used = []
+            if not allow_input:
+                convenience_params_used.append("allow_input=False")
+            if not allow_property:
+                convenience_params_used.append("allow_property=False")
+            if not allow_output:
+                convenience_params_used.append("allow_output=False")
+
+            if convenience_params_used:
+                warnings.warn(
+                    f"Parameter '{name}': Both 'allowed_modes' and convenience parameters "
+                    f"({', '.join(convenience_params_used)}) are set. Using 'allowed_modes' "
+                    f"and ignoring convenience parameters.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if converters is None:
             self._converters = []
@@ -1011,10 +1052,20 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._validators = []
         else:
             self._validators = validators
+
+        # Process common UI options from constructor parameters
         if ui_options is None:
             self._ui_options = {}
         else:
-            self._ui_options = ui_options
+            self._ui_options = ui_options.copy()
+
+        # Add common UI options if they have truthy values
+        if hide:
+            self._ui_options["hide"] = hide
+        if hide_label:
+            self._ui_options["hide_label"] = hide_label
+        if hide_property:
+            self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
                 if not isinstance(trait, Trait):
@@ -1029,6 +1080,61 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.output_type = output_type
         self.parent_container_name = parent_container_name
         self.parent_element_name = parent_element_name
+
+    def _generate_default_tooltip(
+        self,
+        name: str,
+        type: str | None,  # noqa: A002
+        input_types: list[str] | None,
+        output_type: str | None,
+    ) -> str:
+        """Generate a default tooltip describing the parameter type and usage.
+
+        Args:
+            name: The parameter name
+            type: The parameter type
+            input_types: List of accepted input types
+            output_type: The output type
+
+        Returns:
+            A descriptive tooltip string
+        """
+        # Determine the primary type to describe
+        primary_type = type
+        if not primary_type and input_types:
+            primary_type = input_types[0]
+        if not primary_type and output_type:
+            primary_type = output_type
+        if not primary_type:
+            primary_type = "any"
+
+        # Create a human-readable description
+        type_descriptions = {
+            "str": "text/string",
+            "bool": "boolean (true/false)",
+            "int": "integer number",
+            "float": "decimal number",
+            "any": "any type of data",
+            "list": "list/array",
+            "dict": "dictionary/object",
+            "parametercontroltype": "control flow",
+        }
+
+        type_desc = type_descriptions.get(primary_type.lower(), primary_type)
+
+        # Build the tooltip
+        tooltip_parts = [f"Enter {type_desc} for {name}"]
+
+        # Add input type info if different from primary type
+        if input_types and len(input_types) > 1:
+            input_desc = ", ".join(
+                type_descriptions.get(t.lower(), t) for t in input_types[: self._MAX_TOOLTIP_INPUT_TYPES]
+            )
+            if len(input_types) > self._MAX_TOOLTIP_INPUT_TYPES:
+                input_desc += f" or {len(input_types) - self._MAX_TOOLTIP_INPUT_TYPES} other types"
+            tooltip_parts.append(f"Accepts: {input_desc}")
+
+        return ". ".join(tooltip_parts) + "."
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -1160,6 +1266,132 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
+
+    @property
+    def hide(self) -> bool:
+        """Get whether the entire parameter is hidden in the UI.
+
+        Returns:
+            True if the parameter should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide", False)
+
+    @hide.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide(self, value: bool) -> None:
+        """Set whether to hide the entire parameter in the UI.
+
+        Args:
+            value: True to hide the parameter, False to show it
+        """
+        self.update_ui_options_key("hide", value)
+
+    @property
+    def hide_label(self) -> bool:
+        """Get whether the parameter label is hidden in the UI.
+
+        Returns:
+            True if the label should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide_label", False)
+
+    @hide_label.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_label(self, value: bool) -> None:
+        """Set whether to hide the parameter label in the UI.
+
+        Args:
+            value: True to hide the label, False to show it
+        """
+        self.update_ui_options_key("hide_label", value)
+
+    @property
+    def hide_property(self) -> bool:
+        """Get whether the parameter is hidden in property mode.
+
+        Returns:
+            True if the parameter should be hidden in property mode, False otherwise
+        """
+        return self.ui_options.get("hide_property", False)
+
+    @hide_property.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_property(self, value: bool) -> None:
+        """Set whether to hide the parameter in property mode.
+
+        Args:
+            value: True to hide in property mode, False to show it
+        """
+        self.update_ui_options_key("hide_property", value)
+
+    @property
+    def allow_input(self) -> bool:
+        """Get whether the parameter allows INPUT mode.
+
+        Returns:
+            True if INPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.INPUT in self.allowed_modes
+
+    @allow_input.setter
+    def allow_input(self, value: bool) -> None:
+        """Set whether to allow INPUT mode.
+
+        Args:
+            value: True to allow INPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.INPUT)
+        else:
+            current_modes.discard(ParameterMode.INPUT)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_property(self) -> bool:
+        """Get whether the parameter allows PROPERTY mode.
+
+        Returns:
+            True if PROPERTY mode is allowed, False otherwise
+        """
+        return ParameterMode.PROPERTY in self.allowed_modes
+
+    @allow_property.setter
+    def allow_property(self, value: bool) -> None:
+        """Set whether to allow PROPERTY mode.
+
+        Args:
+            value: True to allow PROPERTY mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.PROPERTY)
+        else:
+            current_modes.discard(ParameterMode.PROPERTY)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_output(self) -> bool:
+        """Get whether the parameter allows OUTPUT mode.
+
+        Returns:
+            True if OUTPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.OUTPUT in self.allowed_modes
+
+    @allow_output.setter
+    def allow_output(self, value: bool) -> None:
+        """Set whether to allow OUTPUT mode.
+
+        Args:
+            value: True to allow OUTPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.OUTPUT)
+        else:
+            current_modes.discard(ParameterMode.OUTPUT)
+        self.allowed_modes = current_modes
 
     @property
     def input_types(self) -> list[str]:
@@ -1462,270 +1694,6 @@ class ControlParameterOutput(ControlParameter):
             ui_options=ui_options,
             user_defined=user_defined,
         )
-
-
-class ParameterString(Parameter):
-    """A specialized Parameter class for string inputs with enhanced UI options.
-
-    This class provides a convenient way to create string parameters with common
-    UI customizations like multiline support, markdown rendering, and placeholder text.
-    It exposes these UI options as direct properties for easy runtime modification.
-
-    By default, the parameter accepts any input type and automatically converts it to a string,
-    making it flexible for connecting to parameters of different types. You can disable
-    this conversion to only accept string inputs.
-
-    Example:
-        # Create a multiline text area with markdown support (converts any input to string)
-        param = ParameterString(
-            name="description",
-            tooltip="Enter a description",
-            multiline=True,
-            markdown=True,
-            placeholder_text="Type your description here..."
-        )
-
-        # Dynamically change UI options at runtime
-        param.multiline = False  # Switch to single line
-        param.placeholder_text = "Single line only"
-
-        # Can accept any input type and converts to string
-        param.set_value(123)  # Becomes "123"
-        param.set_value([1, 2, 3])  # Becomes "[1, 2, 3]"
-
-        # Create a string-only parameter (no conversion)
-        string_only_param = ParameterString(
-            name="name",
-            tooltip="Enter your name",
-            accept_any=False  # Only accepts strings
-        )
-    """
-
-    def __init__(  # noqa: PLR0913
-        self,
-        name: str,
-        default_value: str | None = None,
-        *,
-        hide: bool = False,
-        hide_label: bool = False,
-        hide_property: bool = False,
-        markdown: bool = False,
-        multiline: bool = False,
-        placeholder_text: str | None = None,
-        tooltip: str | list[dict],
-        accept_any: bool = True,
-        **kwargs,
-    ) -> None:
-        """Initialize a ParameterString with enhanced UI options.
-
-        By default, the parameter accepts any input type and automatically converts it to a string,
-        making it flexible for connecting to parameters of different types. Set accept_any=False
-        to only accept string inputs.
-
-        Args:
-            name: The parameter name (required)
-            default_value: Default string value for the parameter
-            hide: Whether to hide the entire parameter in the UI
-            hide_label: Whether to hide the parameter label in the UI
-            hide_property: Whether to hide the parameter in property mode
-            markdown: Whether to render the text as markdown
-            multiline: Whether to display as a multiline text area
-            placeholder_text: Placeholder text shown when field is empty
-            tooltip: Help text displayed on hover
-            accept_any: Whether to convert any input type to string (default: True)
-            **kwargs: Additional arguments passed to the base Parameter class
-        """
-        # Build ui_options dictionary from the provided UI-specific parameters
-        # This allows us to expose common UI options as constructor parameters
-        # while still using the underlying ui_options system
-        ui_options = kwargs.get("ui_options", {})
-
-        # Only add UI options to the dictionary if they have truthy values
-        # This keeps the ui_options clean and avoids unnecessary entries
-        if hide:
-            ui_options["hide"] = hide
-        if hide_label:
-            ui_options["hide_label"] = hide_label
-        if hide_property:
-            ui_options["hide_property"] = hide_property
-        if markdown:
-            ui_options["markdown"] = markdown
-        if multiline:
-            ui_options["multiline"] = multiline
-        if placeholder_text:
-            ui_options["placeholder_text"] = placeholder_text
-        else:
-            # Provide a sensible default placeholder if none specified
-            ui_options["placeholder_text"] = "Enter some text"
-
-        # Generate a default tooltip if none provided
-        if not tooltip:
-            tooltip = f"Enter some text for the {name}"
-
-        # Get any existing converters from kwargs
-        existing_converters = kwargs.get("converters", [])
-
-        # Set up input types and converters based on accept_any setting
-        if accept_any:
-            input_types = ["any"]  # Accept any type
-            converters = [self._accept_any, *existing_converters]
-        else:
-            # Only accept strings, no conversion
-            input_types = ["str"]
-            converters = existing_converters
-
-        # Initialize the base Parameter class with our processed options
-        super().__init__(
-            name=name,
-            tooltip=tooltip,
-            type="str",  # Always a string type
-            input_types=input_types,
-            output_type="str",  # Always output as string
-            default_value=default_value,
-            ui_options=ui_options,
-            converters=converters,
-            **kwargs,
-        )
-
-    def _accept_any(self, value: Any) -> str:
-        """Safely convert any input value to a string.
-
-        Handles None values and objects that cannot be converted to string
-        by falling back to a descriptive representation.
-
-        Args:
-            value: The value to convert to string
-
-        Returns:
-            String representation of the value, with fallbacks for problematic objects
-        """
-        if value is None:
-            return ""
-
-        try:
-            return str(value)
-        except (TypeError, ValueError, AttributeError):
-            # Fallback for objects that cannot be converted to string
-            # Use repr() which is more likely to work for any object
-            try:
-                return repr(value)
-            except (TypeError, ValueError, AttributeError):
-                # Last resort: return a descriptive error message with parameter context
-                return f"{self.name}: Cannot convert {type(value).__name__} to string"
-
-    @property
-    def hide(self) -> bool:
-        """Get whether the entire parameter is hidden in the UI.
-
-        Returns:
-            True if the parameter should be hidden, False otherwise
-        """
-        return self.ui_options.get("hide", False)
-
-    @hide.setter
-    def hide(self, value: bool) -> None:
-        """Set whether to hide the entire parameter in the UI.
-
-        Args:
-            value: True to hide the parameter, False to show it
-        """
-        self.update_ui_options_key("hide", value)
-
-    @property
-    def hide_label(self) -> bool:
-        """Get whether the parameter label is hidden in the UI.
-
-        Returns:
-            True if the label should be hidden, False otherwise
-        """
-        return self.ui_options.get("hide_label", False)
-
-    @hide_label.setter
-    def hide_label(self, value: bool) -> None:
-        """Set whether to hide the parameter label in the UI.
-
-        Args:
-            value: True to hide the label, False to show it
-        """
-        self.update_ui_options_key("hide_label", value)
-
-    @property
-    def hide_property(self) -> bool:
-        """Get whether the parameter is hidden in property mode.
-
-        Returns:
-            True if the parameter should be hidden in property mode, False otherwise
-        """
-        return self.ui_options.get("hide_property", False)
-
-    @hide_property.setter
-    def hide_property(self, value: bool) -> None:
-        """Set whether to hide the parameter in property mode.
-
-        Args:
-            value: True to hide in property mode, False to show it
-        """
-        self.update_ui_options_key("hide_property", value)
-
-    @property
-    def markdown(self) -> bool:
-        """Get whether the text should be rendered as markdown.
-
-        Returns:
-            True if markdown rendering is enabled, False otherwise
-        """
-        return self.ui_options.get("markdown", False)
-
-    @markdown.setter
-    def markdown(self, value: bool) -> None:
-        """Set whether to render the text as markdown.
-
-        Args:
-            value: True to enable markdown rendering, False to disable
-        """
-        self.update_ui_options_key("markdown", value)
-
-    @property
-    def multiline(self) -> bool:
-        """Get whether the input should be displayed as a multiline text area.
-
-        Returns:
-            True if multiline input is enabled, False for single line
-        """
-        return self.ui_options.get("multiline", False)
-
-    @multiline.setter
-    def multiline(self, value: bool) -> None:
-        """Set whether to display as a multiline text area.
-
-        Args:
-            value: True for multiline text area, False for single line input
-        """
-        self.update_ui_options_key("multiline", value)
-
-    @property
-    def placeholder_text(self) -> str | None:
-        """Get the placeholder text shown when the field is empty.
-
-        Returns:
-            The placeholder text, or None if not set
-        """
-        return self.ui_options.get("placeholder_text")
-
-    @placeholder_text.setter
-    def placeholder_text(self, value: str | None) -> None:
-        """Set the placeholder text shown when the field is empty.
-
-        Args:
-            value: The placeholder text to display, or None to remove it
-        """
-        if value is None:
-            # Remove the key if value is None to keep ui_options clean
-            ui_options = self.ui_options.copy()
-            ui_options.pop("placeholder_text", None)
-            self.ui_options = ui_options
-        else:
-            self.update_ui_options_key("placeholder_text", value)
 
 
 class ParameterContainer(Parameter, ABC):
