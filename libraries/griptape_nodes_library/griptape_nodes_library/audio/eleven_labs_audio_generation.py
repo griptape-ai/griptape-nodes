@@ -414,6 +414,15 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             else:
                 self.hide_parameter_by_name("custom_voice_id")
 
+        # Show/hide alignment outputs based on model
+        # Only text-to-speech models (eleven_v3 and eleven_multilingual_v2) have alignment data
+        if model in {"eleven_v3", "eleven_multilingual_v2"}:
+            self.show_parameter_by_name("alignment")
+            self.show_parameter_by_name("normalized_alignment")
+        else:
+            self.hide_parameter_by_name("alignment")
+            self.hide_parameter_by_name("normalized_alignment")
+
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "eleven_v3"
@@ -723,8 +732,8 @@ class ElevenLabsAudioGeneration(SuccessFailureNode):
             raise
 
     def _handle_response(self, response_bytes: bytes, model: str) -> None:
-        # For eleven_multilingual_v2, we get JSON with base64 audio and alignment data
-        if model == "eleven_multilingual_v2":
+        # For eleven_multilingual_v2 and eleven_v3, we get JSON with base64 audio and alignment data
+        if model in {"eleven_multilingual_v2", "eleven_v3"}:
             self._handle_json_response(response_bytes, model)
         elif response_bytes:
             # For other models, we get raw audio bytes
