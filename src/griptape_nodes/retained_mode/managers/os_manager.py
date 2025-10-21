@@ -665,6 +665,17 @@ class OSManager:
         # Get normalized path for file operations (handles Windows long paths)
         normalized_path = self._normalize_path_for_platform(file_path)
 
+        # Check if path is a directory (must check before attempting to write)
+        try:
+            if Path(normalized_path).is_dir():
+                msg = f"Path is a directory, not a file: {file_path}"
+                logger.error(msg)
+                return WriteFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
+        except OSError as e:
+            msg = f"Error checking if path is directory {file_path}: {e}"
+            logger.error(msg)
+            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
         # Check existing file policy (only if not appending)
         if not request.append and request.existing_file_policy == ExistingFilePolicy.FAIL:
             try:
