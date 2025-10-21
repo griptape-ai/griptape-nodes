@@ -169,6 +169,7 @@ class LibraryManager:
         self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
         # LibraryDirectory owns the FSMs and manages library lifecycle
         self._library_directory = LibraryDirectory()
+        self._libraries_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -204,7 +205,7 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(GetAllInfoForLibraryRequest, self.get_all_info_for_library_request)
         event_manager.assign_manager_to_request_type(
-            GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
+            GetAllInfoForAllLibrariesRequest, self.on_get_all_info_for_all_libraries_request
         )
         event_manager.assign_manager_to_request_type(
             LoadMetadataForAllLibrariesRequest, self.load_metadata_for_all_libraries_request
@@ -1170,6 +1171,13 @@ class LibraryManager:
         )
         return result
 
+    async def on_get_all_info_for_all_libraries_request(
+        self, request: GetAllInfoForAllLibrariesRequest
+    ) -> ResultPayload:
+        """Async handler for GetAllInfoForAllLibrariesRequest that waits for library loading to complete."""
+        await self._libraries_loading_complete.wait()
+        return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
+
     def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
         # Does this library exist?
         try:
@@ -1500,48 +1508,53 @@ class LibraryManager:
         return node_class
 
     async def load_all_libraries_from_config(self) -> None:
-        # Load metadata for all libraries to determine which ones can be safely loaded
-        metadata_request = LoadMetadataForAllLibrariesRequest()
-        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
+        self._libraries_loading_complete.clear()
 
-        # Check if metadata loading succeeded
-        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
-            logger.error("Failed to load metadata for all libraries, skipping library registration")
-            return
+        try:
+            # Load metadata for all libraries to determine which ones can be safely loaded
+            metadata_request = LoadMetadataForAllLibrariesRequest()
+            metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
 
-        # Record all failed libraries in our tracking immediately
-        for failed_library in metadata_result.failed_libraries:
-            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
-                library_path=failed_library.library_path,
-                library_name=failed_library.library_name,
-                status=failed_library.status,
-                problems=failed_library.problems,
-            )
+            # Check if metadata loading succeeded
+            if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
+                logger.error("Failed to load metadata for all libraries, skipping library registration")
+                return
 
-        # Use metadata results to selectively load libraries
-        for library_result in metadata_result.successful_libraries:
-            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
-                # Handle sandbox library - use the schema we already have
-                await self._attempt_generate_sandbox_library_from_schema(
-                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+            # Record all failed libraries in our tracking immediately
+            for failed_library in metadata_result.failed_libraries:
+                self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                    library_path=failed_library.library_path,
+                    library_name=failed_library.library_name,
+                    status=failed_library.status,
+                    problems=failed_library.problems,
                 )
-            else:
-                # Handle config-based library - register it directly using the file path
-                register_request = RegisterLibraryFromFileRequest(
-                    file_path=library_result.file_path, load_as_default_library=False
-                )
-                register_result = await self.register_library_from_file_request(register_request)
-                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
-                    # Registration failed - the failure info is already recorded in _library_file_path_to_info
-                    # by register_library_from_file_request, so we just log it here for visibility
-                    logger.warning("Failed to register library from %s", library_result.file_path)
 
-        # Print 'em all pretty
-        self.print_library_load_status()
+            # Use metadata results to selectively load libraries
+            for library_result in metadata_result.successful_libraries:
+                if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                    # Handle sandbox library - use the schema we already have
+                    await self._attempt_generate_sandbox_library_from_schema(
+                        library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                    )
+                else:
+                    # Handle config-based library - register it directly using the file path
+                    register_request = RegisterLibraryFromFileRequest(
+                        file_path=library_result.file_path, load_as_default_library=False
+                    )
+                    register_result = await self.register_library_from_file_request(register_request)
+                    if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                        # Registration failed - the failure info is already recorded in _library_file_path_to_info
+                        # by register_library_from_file_request, so we just log it here for visibility
+                        logger.warning("Failed to register library from %s", library_result.file_path)
 
-        # Remove any missing libraries AFTER we've printed them for the user.
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+            # Print 'em all pretty
+            self.print_library_load_status()
+
+            # Remove any missing libraries AFTER we've printed them for the user.
+            user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+            self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+        finally:
+            self._libraries_loading_complete.set()
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
