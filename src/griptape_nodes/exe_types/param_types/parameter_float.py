@@ -27,7 +27,7 @@ class ParameterFloat(ParameterNumber):
         param.min = 10.0   # Change minimum value at runtime
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -129,7 +129,7 @@ class ParameterFloat(ParameterNumber):
             parent_container_name=parent_container_name,
         )
 
-    def _convert_to_number(self, value: Any) -> float:
+    def _convert_to_number(self, value: Any) -> float:  # noqa: PLR0911
         """Safely convert any input value to a float.
 
         Handles various input types including strings, integers, and other objects.

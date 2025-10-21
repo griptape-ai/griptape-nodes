@@ -24,7 +24,7 @@ class ParameterBool(Parameter):
         param.on_label = "Enable"  # Change labels at runtime
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,

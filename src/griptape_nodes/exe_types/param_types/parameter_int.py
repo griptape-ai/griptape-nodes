@@ -27,7 +27,7 @@ class ParameterInt(ParameterNumber):
         param.min = 10  # Change minimum value at runtime
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -129,7 +129,7 @@ class ParameterInt(ParameterNumber):
             parent_container_name=parent_container_name,
         )
 
-    def _convert_to_number(self, value: Any) -> int:
+    def _convert_to_number(self, value: Any) -> int:  # noqa: C901, PLR0911
         """Safely convert any input value to an integer.
 
         Handles various input types including strings, floats, and other objects.
