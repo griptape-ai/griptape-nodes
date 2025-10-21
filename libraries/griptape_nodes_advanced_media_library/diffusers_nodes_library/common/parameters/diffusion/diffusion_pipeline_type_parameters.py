@@ -64,6 +64,7 @@ class DiffusionPipelineTypeParameters(ABC):
         )
 
     def remove_input_parameters(self) -> None:
+        # Parameter names are automatically cached by remove_parameter_element_by_name override
         self._node.remove_parameter_element_by_name("pipeline_type")
         self.pipeline_type_pipeline_params.remove_input_parameters()
 
@@ -77,28 +78,40 @@ class DiffusionPipelineTypeParameters(ABC):
             self.regenerate_elements_for_pipeline_type(value)
 
     def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
-        self._node.save_ui_options()
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        self._node.save_param_attrs()
+
+        # Remove old pipeline-specific parameters (automatically cached via remove_parameter_element_by_name)
         self.pipeline_type_pipeline_params.remove_input_parameters()
+
+        # Switch to new pipeline type and add its parameters
         self.set_pipeline_type_pipeline_params(pipeline_type)
         self.pipeline_type_pipeline_params.add_input_parameters()
 
-        # Get all current element names
-        all_element_names = [element.name for element in self._node.root_ui_element.children]
+        # Get desired parameter names from what actually exists on the node now
+        desired_param_names = {param.name for param in self._node.parameters}
 
-        # Build parameter groupings
+        # Create transition plan using cached old names and actual new names
+        plan = self._node.create_parameter_transition_plan(self._node.get_cached_param_names(), desired_param_names)
+
+        # Update Connection objects to reference new Parameter instances
+        # (This preserves compatible connections and removes incompatible ones)
+        connections = GriptapeNodes.FlowManager().get_connections()
+        connections.update_parameter_references_after_replacement(self._node, plan.to_preserve)
+
+        # Reorder elements
+        all_element_names = [element.name for element in self._node.root_ui_element.children]
         hf_param_names = HuggingFacePipelineParameter.get_hf_pipeline_parameter_names()
         start_params = DiffusionPipelineTypeParameters.START_PARAMS
         end_params = [*hf_param_names, *DiffusionPipelineTypeParameters.END_PARAMS]
         excluded_params = {*start_params, *end_params}
-
-        # Assemble final order: start -> middle -> end
         middle_params = [name for name in all_element_names if name not in excluded_params]
         sorted_parameters = [*start_params, *middle_params, *end_params]
-
         self._node.reorder_elements(sorted_parameters)
 
-        self._node.clear_ui_options_cache()
+        self._node.clear_param_attrs_cache()
+        self._node.clear_param_names_cache()
 
     def get_config_kwargs(self) -> dict:
         return self.pipeline_type_pipeline_params.get_config_kwargs()

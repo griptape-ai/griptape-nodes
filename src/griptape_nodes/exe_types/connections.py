@@ -259,3 +259,118 @@ class Connections:
                                 )
                             )
                             self.unresolve_future_nodes(target_node)
+
+    def _update_incoming_connections_for_parameter(
+        self, node: BaseNode, param_name: str, new_param: Parameter, connections_to_delete: list[int]
+    ) -> None:
+        """Update incoming connections for a replaced parameter."""
+        if node.name not in self.incoming_index or param_name not in self.incoming_index[node.name]:
+            return
+
+        for conn_id in list(self.incoming_index[node.name][param_name]):
+            connection = self.connections[conn_id]
+            source_output_type = connection.source_parameter.output_type
+
+            # Check type compatibility
+            if source_output_type not in new_param.input_types:
+                logger.debug(
+                    "Removing incompatible incoming connection: %s.%s (%s) -> %s.%s (accepts %s)",
+                    connection.source_node.name,
+                    connection.source_parameter.name,
+                    source_output_type,
+                    node.name,
+                    param_name,
+                    new_param.input_types,
+                )
+                connections_to_delete.append(conn_id)
+                continue
+
+            # Type compatible - update the connection's target_parameter reference
+            connection.target_parameter = new_param
+            logger.debug(
+                "Updated incoming connection parameter reference: %s.%s -> %s.%s",
+                connection.source_node.name,
+                connection.source_parameter.name,
+                node.name,
+                param_name,
+            )
+
+    def _update_outgoing_connections_for_parameter(
+        self, node: BaseNode, param_name: str, new_param: Parameter, connections_to_delete: list[int]
+    ) -> None:
+        """Update outgoing connections for a replaced parameter."""
+        if node.name not in self.outgoing_index or param_name not in self.outgoing_index[node.name]:
+            return
+
+        for conn_id in list(self.outgoing_index[node.name][param_name]):
+            if conn_id not in self.connections:
+                continue
+
+            connection = self.connections[conn_id]
+            target_input_types = connection.target_parameter.input_types
+
+            # Check type compatibility
+            if new_param.output_type not in target_input_types:
+                logger.debug(
+                    "Removing incompatible outgoing connection: %s.%s (%s) -> %s.%s (accepts %s)",
+                    node.name,
+                    param_name,
+                    new_param.output_type,
+                    connection.target_node.name,
+                    connection.target_parameter.name,
+                    target_input_types,
+                )
+                connections_to_delete.append(conn_id)
+                continue
+
+            # Type compatible - update the connection's source_parameter reference
+            connection.source_parameter = new_param
+            logger.debug(
+                "Updated outgoing connection parameter reference: %s.%s -> %s.%s",
+                node.name,
+                param_name,
+                connection.target_node.name,
+                connection.target_parameter.name,
+            )
+
+    def update_parameter_references_after_replacement(self, node: BaseNode, param_names: set[str]) -> None:
+        """Update Connection objects to reference new Parameter instances after parameter replacement.
+
+        When parameters are removed and re-added with the same name, Connection objects
+        still reference the old Parameter instances. This method updates those references
+        to point to the new Parameter instances, removing connections that are no longer
+        type-compatible.
+
+        Args:
+            node: The node whose parameters were replaced
+            param_names: Names of parameters that were removed and re-added
+        """
+        connections_to_delete = []
+
+        for param_name in param_names:
+            # Get the new parameter instance
+            new_param = node.get_parameter_by_name(param_name)
+            if new_param is None:
+                logger.warning("Parameter '%s' not found on node '%s' after replacement", param_name, node.name)
+                # Delete all connections for this parameter
+                if node.name in self.incoming_index and param_name in self.incoming_index[node.name]:
+                    connections_to_delete.extend(self.incoming_index[node.name][param_name])
+                if node.name in self.outgoing_index and param_name in self.outgoing_index[node.name]:
+                    connections_to_delete.extend(self.outgoing_index[node.name][param_name])
+                continue
+
+            # Update incoming and outgoing connections
+            self._update_incoming_connections_for_parameter(node, param_name, new_param, connections_to_delete)
+            self._update_outgoing_connections_for_parameter(node, param_name, new_param, connections_to_delete)
+
+        # Delete incompatible connections
+        for conn_id in connections_to_delete:
+            if conn_id in self.connections:
+                conn = self.connections[conn_id]
+                self._remove_connection(
+                    conn_id,
+                    conn.source_node.name,
+                    conn.source_parameter.name,
+                    conn.target_node.name,
+                    conn.target_parameter.name,
+                )

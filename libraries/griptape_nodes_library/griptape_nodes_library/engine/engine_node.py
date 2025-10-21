@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterType,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode, TransitionPlan
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
@@ -61,14 +61,6 @@ class CategorizedParameters(NamedTuple):
     input_parameters: list[Parameter]
     success_output_parameters: list[Parameter]
     failure_output_parameters: list[Parameter]
-
-
-class TransitionPlan(NamedTuple):
-    """Generic plan for transitioning a set of parameters."""
-
-    to_preserve: set[str]
-    to_remove: set[str]
-    to_add: set[str]
 
 
 class EngineNode(SuccessFailureNode):
@@ -351,15 +343,7 @@ class EngineNode(SuccessFailureNode):
 
     def _outline_parameter_transition_plan(self, current_names: set[str], desired_names: set[str]) -> TransitionPlan:
         """Create a generic transition plan for a set of parameters."""
-        to_preserve = current_names & desired_names
-        to_remove = current_names - desired_names
-        to_add = desired_names - current_names
-
-        return TransitionPlan(
-            to_preserve=to_preserve,
-            to_remove=to_remove,
-            to_add=to_add,
-        )
+        return self.create_parameter_transition_plan(current_names, desired_names)
 
     def _get_desired_input_parameter_names(self, request_class: type) -> set[str]:
         """Get the set of input parameter names that should exist for this request class."""

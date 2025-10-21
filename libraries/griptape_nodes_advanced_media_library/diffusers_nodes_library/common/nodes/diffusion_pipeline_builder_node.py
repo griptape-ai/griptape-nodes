@@ -25,7 +25,8 @@ UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         self._initializing = True
-        self.ui_options_cache: dict[str, dict] = {}
+        self.param_names_cache: set[str] = set()
+        self.param_attrs_cache: dict[str, dict[str, Any]] = {}  # Cache parameter attributes for restoration
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
@@ -113,13 +114,19 @@ class DiffusionPipelineBuilderNode(ControlNode):
         if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
 
-            # Restore cached ui_options if available
-            ui_options_to_restore = {"hide"}
-            if parameter.name in self.ui_options_cache:
-                parameter.ui_options = {
-                    **parameter.ui_options,
-                    **{k: v for k, v in self.ui_options_cache[parameter.name].items() if k in ui_options_to_restore},
-                }
+            # Restore cached parameter attributes if available
+            if parameter.name in self.param_attrs_cache:
+                cached_attrs = self.param_attrs_cache[parameter.name]
+                # Restore important attributes that users might have modified
+                if "allowed_modes" in cached_attrs:
+                    parameter._allowed_modes = cached_attrs["allowed_modes"]
+                if "ui_options" in cached_attrs:
+                    # Only restore specific ui_options that users can modify
+                    ui_options_to_restore = {"hide"}
+                    parameter.ui_options = {
+                        **parameter.ui_options,
+                        **{k: v for k, v in cached_attrs["ui_options"].items() if k in ui_options_to_restore},
+                    }
 
             super().add_parameter(parameter)
 
@@ -156,16 +163,39 @@ class DiffusionPipelineBuilderNode(ControlNode):
     def preprocess(self) -> None:
         self.log_params.clear_logs()
 
-    def save_ui_options(self) -> None:
-        """Save ui_options for all current parameters to cache."""
+    def save_param_attrs(self) -> None:
+        """Save important parameter attributes to cache before removal."""
         for element in self.root_ui_element.children:
             parameter = self.get_parameter_by_name(element.name)
-            if parameter is not None and parameter.ui_options:
-                self.ui_options_cache[parameter.name] = parameter.ui_options.copy()
+            if parameter is not None:
+                # Cache attributes that users might have modified
+                self.param_attrs_cache[parameter.name] = {
+                    "allowed_modes": parameter._allowed_modes.copy(),
+                    "ui_options": parameter.ui_options.copy() if parameter.ui_options else {},
+                }
 
-    def clear_ui_options_cache(self) -> None:
-        """Clear the ui_options cache."""
-        self.ui_options_cache.clear()
+    def clear_param_attrs_cache(self) -> None:
+        """Clear the parameter attributes cache."""
+        self.param_attrs_cache.clear()
+
+    def remove_parameter_element_by_name(self, name: str) -> None:
+        """Override to track parameter deletions for connection preservation."""
+        # Cache this parameter name before deletion
+        self.param_names_cache.add(name)
+        # Call parent implementation to actually remove it
+        super().remove_parameter_element_by_name(name)
+
+    def save_param_names(self, param_names: set[str]) -> None:
+        """Add parameter names to cache (accumulative)."""
+        self.param_names_cache.update(param_names)
+
+    def get_cached_param_names(self) -> set[str]:
+        """Get cached parameter names."""
+        return self.param_names_cache
+
+    def clear_param_names_cache(self) -> None:
+        """Clear the parameter names cache."""
+        self.param_names_cache.clear()
 
     def process(self) -> AsyncResult:
         self.preprocess()
