@@ -16,9 +16,6 @@ from utils.image_utils import load_image_from_url_artifact
 from diffusers_nodes_library.common.misc.tiling_image_processor import (
     TilingImageProcessor,  # type: ignore[reportMissingImports]
 )
-from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
-    LogParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.math_utils import next_multiple_ge  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.pipeline_utils import clear_diffusion_pipeline
@@ -29,6 +26,7 @@ from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("diffusers_nodes_library")

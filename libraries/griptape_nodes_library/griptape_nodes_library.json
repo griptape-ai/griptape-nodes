@@ -466,6 +466,16 @@
       }
     },
     {
+      "class_name": "ExecutePython",
+      "file_path": "griptape_nodes_library/engine/execute_python.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Execute Python code with input variables and capture output",
+        "display_name": "Execute Python",
+        "icon": "Code"
+      }
+    },
+    {
       "class_name": "CreateIntList",
       "file_path": "griptape_nodes_library/lists/create_int_list.py",
       "metadata": {
@@ -2084,6 +2094,16 @@
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle",
         "group": "describe"
+      }
+    },
+    {
+      "class_name": "ListFiles",
+      "file_path": "griptape_nodes_library/engine/list_files.py",
+      "metadata": {
+        "category": "engine",
+        "description": "List files in a directory with optional pattern matching and recursive search",
+        "display_name": "List Files",
+        "icon": "FolderOpen"
       }
     }
   ],

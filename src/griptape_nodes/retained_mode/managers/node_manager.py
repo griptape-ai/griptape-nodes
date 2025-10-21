@@ -918,6 +918,7 @@ class NodeManager:
     def on_add_parameter_to_node_request(self, request: AddParameterToNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
+        parent_group: ParameterGroup | None = None
 
         if node_name is None:
             # Get from the current context.
@@ -968,6 +969,15 @@ class NodeManager:
                 node_name=node_name,
                 result_details=f"Successfully added parameter '{new_param.name}' to container parameter '{request.parent_container_name}' in node '{node_name}'.",
             )
+        if request.parent_element_name is not None:
+            parent_element = node.get_element_by_name_and_type(request.parent_element_name)
+            if parent_element is None:
+                details = f"Attempted to add Parameter to Parent Element '{request.parent_element_name}' in node '{node_name}'. Failed because element didn't exist."
+                result = AddParameterToNodeResultFailure(result_details=details)
+                return result
+            # Handle ParameterGroup parentage with potential to expand in future to other element types.
+            if isinstance(parent_element, ParameterGroup):
+                parent_group = parent_element
         if request.parameter_name is None or request.tooltip is None:
             details = f"Attempted to add Parameter to node '{node_name}'. Failed because default_value, tooltip, or parameter_name was not defined."
             result = AddParameterToNodeResultFailure(result_details=details)
@@ -1032,6 +1042,7 @@ class NodeManager:
             allowed_modes=allowed_modes,
             ui_options=request.ui_options,
             parent_container_name=request.parent_container_name,
+            parent_element_name=parent_group.name if parent_group is not None else None,
             settable=request.settable,
         )
         try:
@@ -1039,6 +1050,8 @@ class NodeManager:
                 parameter_parent = node.get_parameter_by_name(request.parent_container_name)
                 if parameter_parent is not None:
                     parameter_parent.add_child(new_param)
+            elif parent_group is not None:
+                parent_group.add_child(new_param)
             else:
                 node.add_parameter(new_param)
         except Exception as e:
@@ -2586,7 +2599,7 @@ class NodeManager:
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
-            value_id = value
+            value_id = (type(value), value)
         except TypeError:
             # Couldn't get a hash. Use the object's ID
             value_id = id(value)

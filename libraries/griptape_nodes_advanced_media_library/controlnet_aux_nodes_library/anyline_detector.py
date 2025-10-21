@@ -16,11 +16,11 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
 )
 from utils.image_utils import load_image_from_url_artifact
 
-from griptape_nodes.common.parameters.huggingface.huggingface_repo_parameter import (
-    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
-)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 

@@ -10,9 +10,6 @@ from diffusers.schedulers.scheduling_flow_match_euler_discrete import (  # type:
     FlowMatchEulerDiscreteScheduler,
 )
 
-from diffusers_nodes_library.common.parameters.log_parameter import (  # type: ignore[reportMissingImports]
-    LogParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.pipelines.wan.wan_loras_parameter import (
     WanLorasParameter,  # type: ignore[reportMissingImports]
@@ -25,6 +22,7 @@ from diffusers_nodes_library.pipelines.wan.wan_vace_pipeline_parameters import (
 )
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 

@@ -38,21 +38,6 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
-                name="negative_prompt",
-                default_value="",
-                type="str",
-                tooltip="The prompt or prompts not to guide the image generation.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_2",
-                type="str",
-                tooltip="The prompt or prompts not to guide the image generation to be sent to tokenizer_2 and text_encoder_2. If not defined, negative_prompt is used in all the text-encoders.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
@@ -77,31 +62,24 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
 
         self._node.hide_parameter_by_name("prompt_2")
-        self._node.hide_parameter_by_name("negative_prompt_2")
 
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("input_image")
         self._node.remove_parameter_element_by_name("mask_image")
         self._node.remove_parameter_element_by_name("prompt")
         self._node.remove_parameter_element_by_name("prompt_2")
-        self._node.remove_parameter_element_by_name("negative_prompt")
-        self._node.remove_parameter_element_by_name("negative_prompt_2")
         self._node.remove_parameter_element_by_name("guidance_scale")
 
     def _get_pipe_kwargs(self) -> dict:
         kwargs = {
             "prompt": self._node.get_parameter_value("prompt"),
             "prompt_2": self._node.get_parameter_value("prompt_2"),
-            "negative_prompt": self._node.get_parameter_value("negative_prompt"),
-            "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "image": self.get_input_image_pil(),
             "mask_image": self.get_mask_image_pil(),
         }
         if kwargs["prompt_2"] is None or kwargs["prompt_2"] == "":
             del kwargs["prompt_2"]
-        if kwargs["negative_prompt_2"] is None or kwargs["negative_prompt_2"] == "":
-            del kwargs["negative_prompt_2"]
         return kwargs
 
     def validate_before_node_run(self) -> list[Exception] | None:

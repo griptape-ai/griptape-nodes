@@ -5,9 +5,6 @@ import PIL.Image  # type: ignore[reportMissingImports]
 import PIL.ImageDraw  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.log_parameter import (
-    LogParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from griptape.artifacts import ImageUrlArtifact
@@ -24,6 +21,7 @@ from utils.image_utils import load_image_from_url_artifact
 from dino_sam2_library.dino_sam_2_detector_parameters import DinoSam2DetectorParameters
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("sam2_nodes_library")
 
