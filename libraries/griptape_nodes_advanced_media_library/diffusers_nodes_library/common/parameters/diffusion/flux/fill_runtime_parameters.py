@@ -38,21 +38,6 @@ class FluxFillPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
-                name="negative_prompt",
-                default_value="",
-                type="str",
-                tooltip="The prompt or prompts not to guide the image generation.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="negative_prompt_2",
-                type="str",
-                tooltip="The prompt or prompts not to guide the image generation to be sent to tokenizer_2 and text_encoder_2. If not defined, negative_prompt is used in all the text-encoders.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
