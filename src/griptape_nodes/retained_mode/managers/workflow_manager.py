@@ -3280,6 +3280,7 @@ class WorkflowManager:
             "settable",
             "is_user_defined",
             "parent_container_name",
+            "parent_element_name",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
         minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
