@@ -537,7 +537,7 @@ class LibraryManager:
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.MISSING,
                 problems=[details],
-                result_details=ResultDetails(message=details, level=logging.WARNING),
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
