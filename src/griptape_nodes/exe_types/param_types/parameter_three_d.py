@@ -1,4 +1,4 @@
-"""ParameterAudio component for audio inputs with enhanced UI options."""
+"""Parameter3D component for 3D model inputs with enhanced UI options."""
 
 from collections.abc import Callable
 from typing import Any
@@ -6,20 +6,19 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
 
-class ParameterAudio(Parameter):
-    """A specialized Parameter class for audio inputs with enhanced UI options.
+class Parameter3D(Parameter):
+    """A specialized Parameter class for 3D model inputs with enhanced UI options.
 
-    This class provides a convenient way to create audio parameters with common
-    UI customizations like file browser, microphone capture, and audio editing.
+    This class provides a convenient way to create 3D model parameters with common
+    UI customizations like file browser and expander functionality.
     It exposes these UI options as direct properties for easy runtime modification.
 
     Example:
-        param = ParameterAudio(
-            name="input_audio",
-            tooltip="Select an audio file",
+        param = Parameter3D(
+            name="input_3d",
+            tooltip="Select a 3D model",
             clickable_file_browser=True,
-            microphone_capture_audio=True,
-            edit_audio=True
+            expander=True
         )
         param.pulse_on_run = True  # Change UI options at runtime
     """
@@ -29,9 +28,9 @@ class ParameterAudio(Parameter):
         name: str,
         tooltip: str | None = None,
         *,
-        type: str = "AudioUrlArtifact",  # noqa: A002, ARG002
+        type: str = "ThreeDUrlArtifact",  # noqa: A002, ARG002
         input_types: list[str] | None = None,  # noqa: ARG002
-        output_type: str = "AudioUrlArtifact",  # noqa: ARG002
+        output_type: str = "ThreeDUrlArtifact",  # noqa: ARG002
         default_value: Any = None,
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
@@ -43,8 +42,7 @@ class ParameterAudio(Parameter):
         ui_options: dict | None = None,
         pulse_on_run: bool = False,
         clickable_file_browser: bool = True,
-        microphone_capture_audio: bool = False,
-        edit_audio: bool = False,
+        expander: bool = False,
         accept_any: bool = True,
         hide: bool = False,
         hide_label: bool = False,
@@ -59,14 +57,14 @@ class ParameterAudio(Parameter):
         element_type: str | None = None,
         parent_container_name: str | None = None,
     ) -> None:
-        """Initialize an audio parameter with enhanced UI options.
+        """Initialize a 3D model parameter with enhanced UI options.
 
         Args:
             name: Parameter name
             tooltip: Parameter tooltip
-            type: Parameter type (ignored, always "AudioUrlArtifact" for ParameterAudio)
+            type: Parameter type (ignored, always "ThreeDUrlArtifact" for Parameter3D)
             input_types: Allowed input types (ignored, set based on accept_any)
-            output_type: Output type (ignored, always "AudioUrlArtifact" for ParameterAudio)
+            output_type: Output type (ignored, always "ThreeDUrlArtifact" for Parameter3D)
             default_value: Default parameter value
             tooltip_as_input: Tooltip for input mode
             tooltip_as_property: Tooltip for property mode
@@ -78,9 +76,8 @@ class ParameterAudio(Parameter):
             ui_options: Dictionary of UI options
             pulse_on_run: Whether to pulse the parameter on run
             clickable_file_browser: Whether to show clickable file browser
-            microphone_capture_audio: Whether to enable microphone capture
-            edit_audio: Whether to enable audio editing functionality
-            accept_any: Whether to accept any input type and convert to audio (default: True)
+            expander: Whether to enable expander functionality
+            accept_any: Whether to accept any input type and convert to 3D (default: True)
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
             hide_property: Whether to hide the parameter in property mode
@@ -100,15 +97,13 @@ class ParameterAudio(Parameter):
         else:
             ui_options = ui_options.copy()
 
-        # Add audio-specific UI options if they have values
+        # Add 3D-specific UI options if they have values
         if pulse_on_run:
             ui_options["pulse_on_run"] = pulse_on_run
         if clickable_file_browser:
             ui_options["clickable_file_browser"] = clickable_file_browser
-        if microphone_capture_audio:
-            ui_options["microphone_capture_audio"] = microphone_capture_audio
-        if edit_audio:
-            ui_options["edit_audio"] = edit_audio
+        if expander:
+            ui_options["expander"] = expander
 
         # Auto-disable clickable_file_browser if neither input nor property modes are allowed
         if not allow_input and not allow_property and clickable_file_browser:
@@ -118,15 +113,15 @@ class ParameterAudio(Parameter):
         if accept_any:
             final_input_types = ["any"]
         else:
-            final_input_types = ["AudioUrlArtifact"]
+            final_input_types = ["ThreeDUrlArtifact"]
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
             tooltip=tooltip,
-            type="AudioUrlArtifact",  # Always an AudioUrlArtifact type for ParameterAudio
+            type="ThreeDUrlArtifact",  # Always a ThreeDUrlArtifact type for Parameter3D
             input_types=final_input_types,
-            output_type="AudioUrlArtifact",  # Always output as AudioUrlArtifact
+            output_type="ThreeDUrlArtifact",  # Always output as ThreeDUrlArtifact
             default_value=default_value,
             tooltip_as_input=tooltip_as_input,
             tooltip_as_property=tooltip_as_property,
@@ -197,47 +192,24 @@ class ParameterAudio(Parameter):
             self.ui_options = ui_options
 
     @property
-    def microphone_capture_audio(self) -> bool:
-        """Get whether microphone capture audio is enabled.
+    def expander(self) -> bool:
+        """Get whether expander is enabled.
 
         Returns:
-            True if microphone capture audio is enabled, False otherwise
+            True if expander is enabled, False otherwise
         """
-        return self.ui_options.get("microphone_capture_audio", False)
+        return self.ui_options.get("expander", False)
 
-    @microphone_capture_audio.setter
-    def microphone_capture_audio(self, value: bool) -> None:
-        """Set whether microphone capture audio is enabled.
+    @expander.setter
+    def expander(self, value: bool) -> None:
+        """Set whether expander is enabled.
 
         Args:
-            value: Whether to enable microphone capture audio
+            value: Whether to enable expander
         """
         if value:
-            self.update_ui_options_key("microphone_capture_audio", value)
+            self.update_ui_options_key("expander", value)
         else:
             ui_options = self.ui_options.copy()
-            ui_options.pop("microphone_capture_audio", None)
-            self.ui_options = ui_options
-
-    @property
-    def edit_audio(self) -> bool:
-        """Get whether edit audio is enabled.
-
-        Returns:
-            True if edit audio is enabled, False otherwise
-        """
-        return self.ui_options.get("edit_audio", False)
-
-    @edit_audio.setter
-    def edit_audio(self, value: bool) -> None:
-        """Set whether edit audio is enabled.
-
-        Args:
-            value: Whether to enable edit audio
-        """
-        if value:
-            self.update_ui_options_key("edit_audio", value)
-        else:
-            ui_options = self.ui_options.copy()
-            ui_options.pop("edit_audio", None)
+            ui_options.pop("expander", None)
             self.ui_options = ui_options

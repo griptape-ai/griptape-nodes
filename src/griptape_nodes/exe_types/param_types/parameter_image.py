@@ -114,18 +114,11 @@ class ParameterImage(Parameter):
         if not allow_input and not allow_property and clickable_file_browser:
             ui_options.pop("clickable_file_browser", None)
 
-        # Set up image conversion based on accept_any setting
-        if converters is None:
-            existing_converters = []
-        else:
-            existing_converters = converters
-
+        # Set up input types based on accept_any setting
         if accept_any:
             final_input_types = ["any"]
-            final_converters = [self._accept_any, *existing_converters]
         else:
             final_input_types = ["ImageUrlArtifact"]
-            final_converters = existing_converters
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
@@ -140,7 +133,7 @@ class ParameterImage(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=traits,
-            converters=final_converters,
+            converters=converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,
@@ -156,19 +149,6 @@ class ParameterImage(Parameter):
             element_type=element_type,
             parent_container_name=parent_container_name,
         )
-
-    def _accept_any(self, value: Any) -> Any:
-        """Convert any input value to an image-compatible format.
-
-        Args:
-            value: The value to convert to image format
-
-        Returns:
-            Image-compatible representation of the value
-        """
-        # For now, just return the value as-is since image handling
-        # is typically done by the underlying image processing libraries
-        return value
 
     @property
     def pulse_on_run(self) -> bool:
