@@ -14,9 +14,6 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("griptape_nodes")
 
-# Maximum number of input types to show in tooltip before truncating
-_MAX_TOOLTIP_INPUT_TYPES = 3
-
 
 class NodeMessagePayload(BaseModel):
     """Structured payload for node messages.
@@ -927,6 +924,9 @@ class ParameterBase(BaseNodeElement, ABC):
 
 
 class Parameter(BaseNodeElement, UIOptionsMixin):
+    # Maximum number of input types to show in tooltip before truncating
+    _MAX_TOOLTIP_INPUT_TYPES = 3
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -1124,9 +1124,11 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
 
         # Add input type info if different from primary type
         if input_types and len(input_types) > 1:
-            input_desc = ", ".join(type_descriptions.get(t.lower(), t) for t in input_types[:_MAX_TOOLTIP_INPUT_TYPES])
-            if len(input_types) > _MAX_TOOLTIP_INPUT_TYPES:
-                input_desc += f" or {len(input_types) - _MAX_TOOLTIP_INPUT_TYPES} other types"
+            input_desc = ", ".join(
+                type_descriptions.get(t.lower(), t) for t in input_types[: self._MAX_TOOLTIP_INPUT_TYPES]
+            )
+            if len(input_types) > self._MAX_TOOLTIP_INPUT_TYPES:
+                input_desc += f" or {len(input_types) - self._MAX_TOOLTIP_INPUT_TYPES} other types"
             tooltip_parts.append(f"Accepts: {input_desc}")
 
         return ". ".join(tooltip_parts) + "."
