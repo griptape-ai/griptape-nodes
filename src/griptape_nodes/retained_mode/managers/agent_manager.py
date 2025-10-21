@@ -208,8 +208,8 @@ class AgentManager:
     def _create_agent(self, additional_mcp_servers: list[str] | None = None) -> Agent:
         output_schema = Schema(
             {
-                "generated_image_urls": [str],
                 "conversation_output": str,
+                "generated_image_urls": [str],
             }
         )
 
@@ -249,10 +249,11 @@ class AgentManager:
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
             agent = self._create_agent(additional_mcp_servers=request.additional_mcp_servers)
-            *events, last_event = agent.run_stream([request.input, *artifacts])
+            event_stream = agent.run_stream([request.input, *artifacts])
             full_result = ""
             last_conversation_output = ""
-            for event in events:
+            last_event = None
+            for event in event_stream:
                 if isinstance(event, TextChunkEvent):
                     full_result += event.token
                     try:
@@ -273,6 +274,7 @@ class AgentManager:
                                 last_conversation_output = new_conversation_output
                     except json.JSONDecodeError:
                         pass  # Ignore incomplete JSON
+                last_event = event
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(
