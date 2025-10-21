@@ -15,7 +15,7 @@ import httpx
 from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
@@ -34,7 +34,7 @@ SIZE_OPTIONS = {
 }
 
 
-class SoraVideoGeneration(DataNode):
+class SoraVideoGeneration(SuccessFailureNode):
     """Generate a video using Sora 2 models via Griptape Cloud model proxy.
 
     Inputs:
@@ -49,6 +49,8 @@ class SoraVideoGeneration(DataNode):
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (initial POST)
         - video_url (VideoUrlArtifact): Saved static video URL
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
 
     Note: When a start_frame is provided, the size parameter will automatically update
     to match the image dimensions if they match a supported resolution.
@@ -173,6 +175,13 @@ class SoraVideoGeneration(DataNode):
             )
         )
 
+        # Create status parameters for success/failure tracking (at the end)
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
@@ -230,15 +239,36 @@ class SoraVideoGeneration(DataNode):
         await self._process()
 
     async def _process(self) -> None:
+        # Clear execution status at the start
+        self._clear_execution_status()
+
         # Get parameters and validate API key
         params = self._get_parameters()
-        api_key = self._validate_api_key()
+
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
         headers = {"Authorization": f"Bearer {api_key}"}
 
         # Build and submit request
-        generation_id = await self._submit_request(params, headers)
-        if not generation_id:
-            self.parameter_output_values["video_url"] = None
+        try:
+            generation_id = await self._submit_request(params, headers)
+            if not generation_id:
+                self.parameter_output_values["video_url"] = None
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                )
+                return
+        except RuntimeError as e:
+            # HTTP error during submission
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
             return
 
         # Poll for result
@@ -374,6 +404,10 @@ class SoraVideoGeneration(DataNode):
                 if monotonic() - start_time > timeout_s:
                     self.parameter_output_values["video_url"] = None
                     self._log("Polling timed out waiting for result")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                    )
                     return
 
                 try:
@@ -390,10 +424,14 @@ class SoraVideoGeneration(DataNode):
 
                     # Otherwise, parse JSON status response
                     last_json = get_resp.json()
+                    # Update provider_response with latest polling data
+                    self.parameter_output_values["provider_response"] = last_json
                 except Exception as exc:
                     self._log(f"GET generation failed: {exc}")
-                    msg = f"{self.name} GET generation failed: {exc}"
-                    raise RuntimeError(msg) from exc
+                    error_msg = f"Failed to poll generation status: {exc}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    self._handle_failure_exception(RuntimeError(error_msg))
+                    return
 
                 try:
                     status = last_json.get("status", "running") if last_json else "running"
@@ -409,14 +447,58 @@ class SoraVideoGeneration(DataNode):
                     if status_lower in {"failed", "error"}:
                         self._log(f"Generation failed with status: {status}")
                         self.parameter_output_values["video_url"] = None
+
+                        # Extract error details from the response (last_json already set in provider_response)
+                        error_details = self._extract_error_details(last_json)
+                        self._set_status_results(was_successful=False, result_details=error_details)
                         return
 
                 await asyncio.sleep(poll_interval_s)
+
+    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+        """Extract error details from API response.
+
+        Args:
+            response_json: The JSON response from the API that may contain error information
+
+        Returns:
+            A formatted error message string
+        """
+        if not response_json:
+            return "Generation failed with no error details provided by API."
+
+        # Check for error field in response
+        error_field = response_json.get("error")
+        if error_field:
+            # Extract error message based on type
+            if isinstance(error_field, dict):
+                error_msg = error_field.get("message") or error_field.get("error") or str(error_field)
+                return f"Generation failed with error: {error_msg}\n\nFull error details:\n{error_field}"
+
+            # For string or other types, convert to string
+            return f"Generation failed with error: {error_field!s}"
+
+        # Check for provider_response which might contain error details
+        provider_response = response_json.get("provider_response")
+        if provider_response and isinstance(provider_response, dict):
+            provider_error = provider_response.get("error")
+            if provider_error:
+                # Extract provider error message based on type
+                if isinstance(provider_error, dict):
+                    error_msg = provider_error.get("message") or provider_error.get("error") or str(provider_error)
+                else:
+                    error_msg = str(provider_error)
+                return f"Generation failed. Provider error: {error_msg}\n\nFull provider response:\n{provider_response}"
+
+        # Fallback: dump the entire response as JSON for debugging
+        status = response_json.get("status", "unknown")
+        return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
 
     def _handle_video_completion(self, video_bytes: bytes) -> None:
         """Handle completion when video data is received."""
         if not video_bytes:
             self.parameter_output_values["video_url"] = None
+            self._set_status_results(was_successful=False, result_details="Received empty video data from API.")
             return
 
         try:
@@ -425,9 +507,15 @@ class SoraVideoGeneration(DataNode):
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
             self._log(f"Saved video to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         except Exception as e:
             self._log(f"Failed to save video: {e}")
             self.parameter_output_values["video_url"] = None
+            self._set_status_results(
+                was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
+            )
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
