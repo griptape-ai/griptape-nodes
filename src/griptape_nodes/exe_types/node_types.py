@@ -458,7 +458,13 @@ class BaseNode(ABC):
         if self.does_name_exist(param.name):
             msg = f"Cannot have duplicate names on parameters. Encountered two instances of '{param.name}'."
             raise ValueError(msg)
-        self.add_node_element(param)
+        parameter_group = (
+            self.get_group_by_name_or_element_id(param.parent_element_name) if param.parent_element_name else None
+        )
+        if parameter_group is not None:
+            parameter_group.add_child(param)
+        else:
+            self.add_node_element(param)
         self._emit_parameter_lifecycle_event(param)
 
     def remove_parameter_element_by_name(self, element_name: str) -> None:
