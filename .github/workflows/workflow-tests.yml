@@ -2,9 +2,9 @@ name: Workflow Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   merge_group:
     types: [checks_requested]
 
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-ubuntu:
+  workflow-test-ubuntu:
     runs-on: ubuntu-latest
     env:
       GT_CLOUD_API_KEY: ${{ secrets.GT_CLOUD_API_KEY }}
@@ -24,11 +24,11 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v4
-      - name: Init environment 
-        uses: ./.github/actions/init-environment 
+      - name: Init environment
+        uses: ./.github/actions/init-environment
       - name: Run workflow tests
         run: make test/workflows
-  test-windows:
+  workflow-test-windows:
     runs-on: windows-latest
     env:
       GT_CLOUD_API_KEY: ${{ secrets.GT_CLOUD_API_KEY }}
@@ -44,7 +44,7 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v4
-      - name: Init environment 
+      - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run workflow tests
         # TODO: make test/unit fails with the following error:
