@@ -374,7 +374,13 @@ class SoraVideoGeneration(SuccessFailureNode):
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
             self._log(f"Proxy POST error status={post_resp.status_code} body={post_resp.text}")
-            msg = f"{self.name} Proxy POST error: {post_resp.status_code} - {post_resp.text}"
+            # Try to parse error response body
+            try:
+                error_json = post_resp.json()
+                error_details = self._extract_error_details(error_json)
+                msg = f"{error_details}"
+            except Exception:
+                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
             raise RuntimeError(msg)
 
         post_json = post_resp.json()
@@ -467,32 +473,69 @@ class SoraVideoGeneration(SuccessFailureNode):
         if not response_json:
             return "Generation failed with no error details provided by API."
 
-        # Check for error field in response
-        error_field = response_json.get("error")
-        if error_field:
-            # Extract error message based on type
-            if isinstance(error_field, dict):
-                error_msg = error_field.get("message") or error_field.get("error") or str(error_field)
-                return f"Generation failed with error: {error_msg}\n\nFull error details:\n{error_field}"
+        top_level_error = response_json.get("error")
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
 
-            # For string or other types, convert to string
-            return f"Generation failed with error: {error_field!s}"
+        # Try to extract from provider response first (more detailed)
+        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+        if provider_error_msg:
+            return provider_error_msg
 
-        # Check for provider_response which might contain error details
-        provider_response = response_json.get("provider_response")
-        if provider_response and isinstance(provider_response, dict):
-            provider_error = provider_response.get("error")
-            if provider_error:
-                # Extract provider error message based on type
-                if isinstance(provider_error, dict):
-                    error_msg = provider_error.get("message") or provider_error.get("error") or str(provider_error)
-                else:
-                    error_msg = str(provider_error)
-                return f"Generation failed. Provider error: {error_msg}\n\nFull provider response:\n{provider_response}"
+        # Fall back to top-level error
+        if top_level_error:
+            return self._format_top_level_error(top_level_error)
 
-        # Fallback: dump the entire response as JSON for debugging
+        # Final fallback
         status = response_json.get("status", "unknown")
         return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
+
+    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
+        """Parse provider_response if it's a JSON string."""
+        if isinstance(provider_response, str):
+            try:
+                import json as _json
+
+                return _json.loads(provider_response)
+            except Exception:
+                return None
+        if isinstance(provider_response, dict):
+            return provider_response
+        return None
+
+    def _format_provider_error(
+        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
+    ) -> str | None:
+        """Format error message from parsed provider response."""
+        if not parsed_provider_response:
+            return None
+
+        provider_error = parsed_provider_response.get("error")
+        if not provider_error:
+            return None
+
+        if isinstance(provider_error, dict):
+            error_message = provider_error.get("message", "")
+            details = f"{error_message}"
+
+            if error_code := provider_error.get("code"):
+                details += f"\nError Code: {error_code}"
+            if error_type := provider_error.get("type"):
+                details += f"\nError Type: {error_type}"
+            if top_level_error:
+                details = f"{top_level_error}\n\n{details}"
+            return details
+
+        error_msg = str(provider_error)
+        if top_level_error:
+            return f"{top_level_error}\n\nProvider error: {error_msg}"
+        return f"Generation failed. Provider error: {error_msg}"
+
+    def _format_top_level_error(self, top_level_error: Any) -> str:
+        """Format error message from top-level error field."""
+        if isinstance(top_level_error, dict):
+            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
+            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
+        return f"Generation failed with error: {top_level_error!s}"
 
     def _handle_video_completion(self, video_bytes: bytes) -> None:
         """Handle completion when video data is received."""
