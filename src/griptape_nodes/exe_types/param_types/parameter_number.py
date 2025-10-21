@@ -1,5 +1,6 @@
 """ParameterNumber base class for numeric parameters with step validation support."""
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -7,9 +8,6 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.minmax import MinMax
 from griptape_nodes.traits.slider import Slider
-
-# Floating point precision tolerance for step validation
-_FLOAT_PRECISION_TOLERANCE = 1e-10
 
 
 class ParameterNumber(Parameter):
@@ -185,9 +183,11 @@ class ParameterNumber(Parameter):
 
             # For numbers, we need to check if the value is approximately a multiple of step
             # due to floating point precision issues
-            remainder = abs(value % current_step)
-            # Allow for small floating point errors
-            if remainder > _FLOAT_PRECISION_TOLERANCE and abs(remainder - current_step) > _FLOAT_PRECISION_TOLERANCE:
+            remainder = value % current_step
+            # Use math.isclose() for proper floating-point comparison
+            if not (
+                math.isclose(remainder, 0.0, abs_tol=1e-10) or math.isclose(remainder, current_step, abs_tol=1e-10)
+            ):
                 msg = f"Value {value} is not a multiple of step {current_step}"
                 raise ValueError(msg)
 

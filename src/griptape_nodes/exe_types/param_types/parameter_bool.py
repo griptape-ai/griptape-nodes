@@ -30,8 +30,6 @@ class ParameterBool(Parameter):
         tooltip: str | None = None,
         *,
         type: str = "bool",  # noqa: A002, ARG002
-        input_types: list[str] | None = None,  # noqa: ARG002
-        output_type: str = "bool",  # noqa: ARG002
         default_value: Any = None,
         tooltip_as_input: str | None = None,
         tooltip_as_property: str | None = None,
@@ -63,8 +61,6 @@ class ParameterBool(Parameter):
             name: Parameter name
             tooltip: Parameter tooltip
             type: Parameter type (ignored, always "bool" for ParameterBool)
-            input_types: Allowed input types (ignored, set based on accept_any)
-            output_type: Output type (ignored, always "bool" for ParameterBool)
             default_value: Default parameter value
             tooltip_as_input: Tooltip for input mode
             tooltip_as_property: Tooltip for property mode
