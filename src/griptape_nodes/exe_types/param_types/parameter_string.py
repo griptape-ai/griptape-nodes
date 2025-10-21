@@ -24,7 +24,7 @@ class ParameterString(Parameter):
         param.multiline = False  # Change UI options at runtime
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -37,7 +37,7 @@ class ParameterString(Parameter):
         tooltip_as_property: str | None = None,
         tooltip_as_output: str | None = None,
         allowed_modes: set[ParameterMode] | None = None,
-        traits: set[Trait] | None = None,
+        traits: set[type[Trait] | Trait] | None = None,
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
