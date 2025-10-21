@@ -175,11 +175,7 @@ class ParameterBool(Parameter):
             # For other strings, use truthiness
             return bool(value)
 
-        # Handle numeric inputs
-        if isinstance(value, (int, float)):
-            return bool(value)
-
-        # For all other types, use Python's built-in bool conversion
+        # For all other types (including numeric), use Python's built-in bool conversion
         return bool(value)
 
     @property

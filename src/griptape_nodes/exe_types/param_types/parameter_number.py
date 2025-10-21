@@ -4,6 +4,9 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.traits.clamp import Clamp
+from griptape_nodes.traits.minmax import MinMax
+from griptape_nodes.traits.slider import Slider
 
 # Floating point precision tolerance for step validation
 _FLOAT_PRECISION_TOLERANCE = 1e-10
@@ -35,6 +38,10 @@ class ParameterNumber(Parameter):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         ui_options: dict | None = None,
         step: float | None = None,
+        slider: bool = False,
+        min_val: float = 0,
+        max_val: float = 100,
+        validate_min_max: bool = False,
         accept_any: bool = True,
         hide: bool = False,
         hide_label: bool = False,
@@ -67,6 +74,10 @@ class ParameterNumber(Parameter):
             validators: Parameter validators
             ui_options: Dictionary of UI options
             step: Step size for numeric input controls
+            slider: Whether to use slider trait
+            min_val: Minimum value for constraints
+            max_val: Maximum value for constraints
+            validate_min_max: Whether to validate min/max with error
             accept_any: Whether to accept any input type and convert to number (default: True)
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
@@ -115,6 +126,11 @@ class ParameterNumber(Parameter):
         if step is not None:
             final_validators.append(self._create_step_validator(step))
 
+        # Set up constraint traits based on parameters
+        self._setup_constraint_traits(
+            name=name, traits=traits, slider=slider, min_val=min_val, max_val=max_val, validate_min_max=validate_min_max
+        )
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
@@ -127,7 +143,7 @@ class ParameterNumber(Parameter):
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
-            traits=traits,
+            traits=self._constraint_traits,
             converters=final_converters,
             validators=final_validators,
             ui_options=ui_options,
@@ -145,7 +161,7 @@ class ParameterNumber(Parameter):
             parent_container_name=parent_container_name,
         )
 
-    def _create_step_validator(self, step_value: float) -> Callable[[Parameter, Any], None]:
+    def _create_step_validator(self, step_value: float) -> Callable[[Parameter, Any], None]:  # noqa: ARG002
         """Create a validator function that enforces step constraints for numbers.
 
         Args:
@@ -194,3 +210,169 @@ class ParameterNumber(Parameter):
         """
         msg = f"{self.name}: Subclasses must implement _convert_to_number"
         raise NotImplementedError(msg)
+
+    def _setup_constraint_traits(
+        self,
+        name: str,
+        traits: set[type[Trait] | Trait] | None,
+        slider: bool,
+        min_val: float,
+        max_val: float,
+        validate_min_max: bool,
+    ) -> None:
+        """Set up constraint traits based on parameters.
+
+        Args:
+            traits: Existing traits set
+            slider: Whether to use slider trait
+            min_val: Minimum value
+            max_val: Maximum value
+            validate_min_max: Whether to validate min/max with error
+        """
+        # Validation rules
+        if min_val is not None and max_val is None:
+            msg = f"{name}: If min_val is provided, max_val must also be provided"
+            raise ValueError(msg)
+        if max_val is not None and min_val is None:
+            msg = f"{name}: If max_val is provided, min_val must also be provided"
+            raise ValueError(msg)
+        if slider and (min_val is None or max_val is None):
+            msg = f"{name}: If slider is True, both min_val and max_val must be provided"
+            raise ValueError(msg)
+        if validate_min_max and (min_val is None or max_val is None):
+            msg = f"{name}: If validate_min_max is True, both min_val and max_val must be provided"
+            raise ValueError(msg)
+
+        # Set up traits based on parameters
+        if traits is None:
+            traits = set()
+        else:
+            traits = set(traits)
+
+        # Add constraint trait based on priority: Slider > MinMax > Clamp
+        if slider and min_val is not None and max_val is not None:
+            traits.add(Slider(min_val=min_val, max_val=max_val))
+        elif validate_min_max and min_val is not None and max_val is not None:
+            traits.add(MinMax(min_val=min_val, max_val=max_val))
+        elif min_val is not None and max_val is not None:
+            traits.add(Clamp(min_val=min_val, max_val=max_val))
+
+        # Store traits for later use
+        self._constraint_traits = traits
+
+        # Store min/max values for runtime property access
+        self._min_val = min_val
+        self._max_val = max_val
+
+    @property
+    def slider(self) -> bool:
+        """Whether slider trait is active."""
+        return any(isinstance(trait, Slider) for trait in self.find_elements_by_type(Trait))
+
+    @slider.setter
+    def slider(self, value: bool) -> None:
+        """Set slider trait."""
+        if value:
+            if not hasattr(self, "_constraint_traits") or not self._constraint_traits:
+                msg = f"{self.name}: Cannot enable slider without min_val and max_val"
+                raise ValueError(msg)
+            # Find existing constraint traits and replace with slider
+            self._remove_constraint_traits()
+            # Get min/max from existing traits or use defaults
+            min_val = getattr(self, "_min_val", 0)
+            max_val = getattr(self, "_max_val", 100)
+            self.add_trait(Slider(min_val=min_val, max_val=max_val))
+        else:
+            # Remove slider trait
+            slider_traits = self.find_elements_by_type(Slider)
+            for trait in slider_traits:
+                self.remove_trait(trait)
+
+    @property
+    def min_val(self) -> float | None:
+        """Get minimum value from constraint traits."""
+        for trait in self.find_elements_by_type(Trait):
+            if hasattr(trait, "min"):
+                return getattr(trait, "min", None)
+        return None
+
+    @min_val.setter
+    def min_val(self, value: float | None) -> None:
+        """Set minimum value and update constraint traits."""
+        if value is not None and self.max_val is None:
+            msg = f"{self.name}: Cannot set min_val without max_val"
+            raise ValueError(msg)
+        self._min_val = value
+        self._update_constraint_traits()
+
+    @property
+    def max_val(self) -> float | None:
+        """Get maximum value from constraint traits."""
+        for trait in self.find_elements_by_type(Trait):
+            if hasattr(trait, "max"):
+                return getattr(trait, "max", None)
+        return None
+
+    @max_val.setter
+    def max_val(self, value: float | None) -> None:
+        """Set maximum value and update constraint traits."""
+        if value is not None and self.min_val is None:
+            msg = f"{self.name}: Cannot set max_val without min_val"
+            raise ValueError(msg)
+        self._max_val = value
+        self._update_constraint_traits()
+
+    @property
+    def validate_min_max(self) -> bool:
+        """Whether MinMax trait is active."""
+        return any(isinstance(trait, MinMax) for trait in self.find_elements_by_type(Trait))
+
+    @validate_min_max.setter
+    def validate_min_max(self, value: bool) -> None:
+        """Set MinMax validation."""
+        if value:
+            # Check if we have stored min/max values
+            min_val = getattr(self, "_min_val", None)
+            max_val = getattr(self, "_max_val", None)
+            if min_val is None or max_val is None:
+                msg = f"{self.name}: Cannot enable validate_min_max without min_val and max_val"
+                raise ValueError(msg)
+            # Replace existing constraint traits with MinMax
+            self._remove_constraint_traits()
+            self.add_trait(MinMax(min_val=min_val, max_val=max_val))
+        else:
+            # Remove MinMax trait and replace with Clamp if we have min/max
+            min_max_traits = self.find_elements_by_type(MinMax)
+            for trait in min_max_traits:
+                self.remove_trait(trait)
+            min_val = getattr(self, "_min_val", None)
+            max_val = getattr(self, "_max_val", None)
+            if min_val is not None and max_val is not None:
+                self.add_trait(Clamp(min_val=min_val, max_val=max_val))
+
+    def _remove_constraint_traits(self) -> None:
+        """Remove all constraint traits."""
+        for trait_type in [Slider, MinMax, Clamp]:
+            traits = self.find_elements_by_type(trait_type)
+            for trait in traits:
+                self.remove_trait(trait)
+
+    def _update_constraint_traits(self) -> None:
+        """Update constraint traits based on current min/max values."""
+        min_val = getattr(self, "_min_val", None)
+        max_val = getattr(self, "_max_val", None)
+
+        if min_val is None or max_val is None:
+            self._remove_constraint_traits()
+            return
+
+        # Determine which trait to use based on current state
+        if self.slider:
+            self._remove_constraint_traits()
+            self.add_trait(Slider(min_val=min_val, max_val=max_val))
+        elif self.validate_min_max:
+            self._remove_constraint_traits()
+            self.add_trait(MinMax(min_val=min_val, max_val=max_val))
+        else:
+            self._remove_constraint_traits()
+            self.add_trait(Clamp(min_val=min_val, max_val=max_val))
