@@ -75,6 +75,10 @@ class ParameterFloat(ParameterNumber):
             validators: Parameter validators
             ui_options: Dictionary of UI options
             step: Step size for numeric input controls
+            slider: Whether to use slider trait
+            min_val: Minimum value for constraints
+            max_val: Maximum value for constraints
+            validate_min_max: Whether to validate min/max with error
             accept_any: Whether to accept any input type and convert to float (default: True)
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
@@ -140,27 +144,32 @@ class ParameterFloat(ParameterNumber):
         Raises:
             ValueError: If the value cannot be converted to a float
         """
+        # Handle None and empty string cases first
         if value is None:
             return 0.0
 
-        # Handle string inputs
         if isinstance(value, str):
             value = value.strip()
             if not value:
                 return 0.0
-            try:
-                return float(value)
-            except ValueError as e:
-                msg = f"Cannot convert '{value}' to float"
-                raise ValueError(msg) from e
+
+        # Handle boolean inputs
+        if isinstance(value, bool):
+            if value:
+                return 1.0
+            return 0.0
 
         # Handle numeric inputs
         if isinstance(value, (int, float)):
             return float(value)
 
-        # Handle boolean inputs
-        if isinstance(value, bool):
-            return 1.0 if value else 0.0
+        # Handle string inputs
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError as e:
+                msg = f"Cannot convert '{value}' to float"
+                raise ValueError(msg) from e
 
         # For all other types, try direct conversion
         try:

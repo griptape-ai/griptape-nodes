@@ -75,6 +75,10 @@ class ParameterInt(ParameterNumber):
             validators: Parameter validators
             ui_options: Dictionary of UI options
             step: Step size for numeric input controls
+            slider: Whether to use slider trait
+            min_val: Minimum value for constraints
+            max_val: Maximum value for constraints
+            validate_min_max: Whether to validate min/max with error
             accept_any: Whether to accept any input type and convert to integer (default: True)
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
@@ -140,14 +144,27 @@ class ParameterInt(ParameterNumber):
         Raises:
             ValueError: If the value cannot be converted to an integer
         """
+        # Handle None and empty string cases first
         if value is None:
             return 0
 
-        # Handle string inputs
         if isinstance(value, str):
             value = value.strip()
             if not value:
                 return 0
+
+        # Handle boolean inputs
+        if isinstance(value, bool):
+            if value:
+                return 1
+            return 0
+
+        # Handle numeric inputs
+        if isinstance(value, (int, float)):
+            return int(value)
+
+        # Handle string inputs
+        if isinstance(value, str):
             try:
                 return int(value)
             except ValueError:
@@ -157,14 +174,6 @@ class ParameterInt(ParameterNumber):
                 except (ValueError, TypeError) as e:
                     msg = f"Cannot convert '{value}' to integer"
                     raise ValueError(msg) from e
-
-        # Handle numeric inputs
-        if isinstance(value, (int, float)):
-            return int(value)
-
-        # Handle boolean inputs
-        if isinstance(value, bool):
-            return 1 if value else 0
 
         # For all other types, try direct conversion
         try:

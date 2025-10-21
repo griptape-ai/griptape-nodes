@@ -223,6 +223,7 @@ class ParameterNumber(Parameter):
         """Set up constraint traits based on parameters.
 
         Args:
+            name: Parameter name for error messages
             traits: Existing traits set
             slider: Whether to use slider trait
             min_val: Minimum value
