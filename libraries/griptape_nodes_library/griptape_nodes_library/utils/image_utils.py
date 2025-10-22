@@ -657,8 +657,7 @@ def get_image_color_info(image: Image.Image) -> ImageColorInfo:
         "LA": 2,  # L with alpha
         "PA": 2,  # P with alpha
         "RGBX": 4,  # RGB with padding
-        # typos:disable-next-line - RGBa is a valid PIL image mode name
-        "RGBa": 4,  # RGB with premultiplied alpha (a = alpha channel)
+        "RGBa": 4,  # RGB with premultiplied alpha (a = alpha channel)  # spellchecker:disable-line
         "La": 2,  # L with premultiplied alpha (a = alpha channel)
     }
 
