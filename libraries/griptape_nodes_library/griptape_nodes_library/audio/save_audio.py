@@ -13,8 +13,8 @@ from griptape_nodes_library.utils.audio_utils import (
     SUPPORTED_AUDIO_EXTENSIONS,
     download_audio_to_temp_file,
     extract_url_from_audio_object,
-    is_downloadable_audio_url,
     is_audio_url_artifact,
+    is_downloadable_audio_url,
 )
 
 DEFAULT_FILENAME = "griptape_nodes.mp3"

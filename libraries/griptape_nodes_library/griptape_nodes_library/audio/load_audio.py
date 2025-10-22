@@ -12,7 +12,6 @@ from griptape_nodes_library.utils.audio_utils import SUPPORTED_AUDIO_EXTENSIONS,
 
 
 class LoadAudio(DataNode):
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
