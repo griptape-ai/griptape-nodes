@@ -40,90 +40,80 @@ class ImageDetails(DataNode):
 
         # Dimensions group (default open)
         with ParameterGroup(name="Dimensions") as dimensions_group:
-            self.add_parameter(
-                Parameter(
-                    name="width",
-                    type="int",
-                    default_value=0,
-                    output_type="int",
-                    tooltip="Image width in pixels",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+            self._width_parameter = Parameter(
+                name="width",
+                type="int",
+                default_value=0,
+                output_type="int",
+                tooltip="Image width in pixels",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
-            self.add_parameter(
-                Parameter(
-                    name="height",
-                    type="int",
-                    default_value=0,
-                    output_type="int",
-                    tooltip="Image height in pixels",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+
+            self._height_parameter = Parameter(
+                name="height",
+                type="int",
+                default_value=0,
+                output_type="int",
+                tooltip="Image height in pixels",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
-            self.add_parameter(
-                Parameter(
-                    name="ratio_str",
-                    type="str",
-                    default_value="0:0",
-                    output_type="str",
-                    tooltip="Aspect ratio as string (e.g., '16:9')",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+
+            self._ratio_str_parameter = Parameter(
+                name="ratio_str",
+                type="str",
+                default_value="0:0",
+                output_type="str",
+                tooltip="Aspect ratio as string (e.g., '16:9')",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
-            self.add_parameter(
-                Parameter(
-                    name="ratio_decimal",
-                    type="float",
-                    default_value=0.0,
-                    output_type="float",
-                    tooltip="Aspect ratio as decimal (width/height)",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+
+            self._ratio_decimal_parameter = Parameter(
+                name="ratio_decimal",
+                type="float",
+                default_value=0.0,
+                output_type="float",
+                tooltip="Aspect ratio as decimal (width/height)",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
         self.add_node_element(dimensions_group)
 
-        # Color Details group (initially closed)
-        with ParameterGroup(name="Color Details", ui_options={"initially_closed": True}) as color_group:
-            self.add_parameter(
-                Parameter(
-                    name="color_space",
-                    type="str",
-                    default_value="UNKNOWN",
-                    output_type="str",
-                    tooltip="Color space/mode (e.g., 'RGB', 'RGBA', 'L')",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+        # Color Details group (collapsed by default)
+        with ParameterGroup(name="Color Details", ui_options={"collapsed": True}) as color_group:
+            self._color_space_parameter = Parameter(
+                name="color_space",
+                type="str",
+                default_value="UNKNOWN",
+                output_type="str",
+                tooltip="Color space/mode (e.g., 'RGB', 'RGBA', 'L')",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
-            self.add_parameter(
-                Parameter(
-                    name="channels",
-                    type="int",
-                    default_value=0,
-                    output_type="int",
-                    tooltip="Number of color channels",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+
+            self._channels_parameter = Parameter(
+                name="channels",
+                type="int",
+                default_value=0,
+                output_type="int",
+                tooltip="Number of color channels",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
         self.add_node_element(color_group)
 
-        # Image Format group (initially closed)
-        with ParameterGroup(name="Image Format", ui_options={"initially_closed": True}) as format_group:
-            self.add_parameter(
-                Parameter(
-                    name="format",
-                    type="str",
-                    default_value="UNKNOWN",
-                    output_type="str",
-                    tooltip="Image format (e.g., 'JPEG', 'PNG', 'WEBP')",
-                    allowed_modes={ParameterMode.OUTPUT},
-                    settable=False,
-                )
+        # Image Format group (collapsed by default)
+        with ParameterGroup(name="Image Format", ui_options={"collapsed": True}) as format_group:
+            self._format_parameter = Parameter(
+                name="format",
+                type="str",
+                default_value="UNKNOWN",
+                output_type="str",
+                tooltip="Image format (e.g., 'JPEG', 'PNG', 'WEBP')",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
             )
         self.add_node_element(format_group)
 
