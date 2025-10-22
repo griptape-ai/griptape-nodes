@@ -652,18 +652,40 @@
         "icon": "music",
         "group": "create",
         "deprecation": {
-          "deprecation_message": "Please use the Eleven Labs Audio Generation node instead.",
+          "deprecation_message": "Please use the Eleven Labs Music Generation node instead.",
           "removal_version": "0.64.0"
         }
       }
     },
     {
-      "class_name": "ElevenLabsAudioGeneration",
-      "file_path": "griptape_nodes_library/audio/eleven_labs_audio_generation.py",
+      "class_name": "ElevenLabsTextToSpeechGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_text_to_speech.py",
       "metadata": {
         "category": "audio",
-        "description": "Generate audio using Eleven Labs models",
-        "display_name": "Eleven Labs Audio Generation",
+        "description": "Generate speech from text using Eleven Labs text-to-speech models",
+        "display_name": "Eleven Labs Text to Speech Generation",
+        "icon": "mic",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "ElevenLabsSoundEffectGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_sound_effect.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate sound effects from text prompts using Eleven Labs",
+        "display_name": "Eleven Labs Sound Effect Generation",
+        "icon": "volume-2",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "ElevenLabsMusicGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_music_generation.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate music from text prompts using Eleven Labs",
+        "display_name": "Eleven Labs Music Generation",
         "icon": "music",
         "group": "create"
       }
