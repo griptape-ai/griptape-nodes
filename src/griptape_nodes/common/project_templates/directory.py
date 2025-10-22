@@ -59,3 +59,40 @@ class DirectoryDefinition:
         return {
             "path_schema": self.path_schema,
         }
+
+    @staticmethod
+    def merge(
+        base: DirectoryDefinition,
+        overlay_data: dict[str, Any],
+        field_path: str,
+        validation_info: ProjectValidationInfo,
+        line_info: YAMLLineInfo,
+    ) -> DirectoryDefinition:
+        """Merge overlay fields onto base directory.
+
+        Field-level merge behavior:
+        - path_schema: Use overlay if present, else base
+
+        Args:
+            base: Complete base directory
+            overlay_data: Partial directory dict from overlay
+            field_path: Path for validation errors (e.g., "directories.inputs")
+            validation_info: Shared validation info
+            line_info: Line tracking from overlay
+
+        Returns:
+            New merged DirectoryDefinition (constructed via from_dict)
+        """
+        # Start with base fields
+        merged_data = {"name": base.name, "path_schema": base.path_schema}
+
+        # Apply overlay if present
+        if "path_schema" in overlay_data:
+            merged_data["path_schema"] = overlay_data["path_schema"]
+
+        return DirectoryDefinition.from_dict(
+            data=merged_data,
+            field_path=field_path,
+            validation_info=validation_info,
+            line_info=line_info,
+        )

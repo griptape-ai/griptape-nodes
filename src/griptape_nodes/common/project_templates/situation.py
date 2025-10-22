@@ -230,3 +230,78 @@ class SituationTemplate:
             result["description"] = self.description
 
         return result
+
+    @staticmethod
+    def merge(
+        base: SituationTemplate,
+        overlay_data: dict[str, Any],
+        field_path: str,
+        validation_info: ProjectValidationInfo,
+        line_info: YAMLLineInfo,
+    ) -> SituationTemplate:
+        """Merge overlay fields onto base situation.
+
+        Field-level merge behavior:
+        - schema: Use overlay if present, else base
+        - description: Use overlay if present, else base
+        - fallback: Use overlay if present, else base
+        - policy: Use overlay if present (must be complete), else base
+        - situation_template_schema_version: Use overlay if present, else base
+
+        Policy validation:
+        - If policy provided in overlay, must contain both on_collision and create_dirs
+        - Adds error to validation_info if incomplete
+
+        Args:
+            base: Complete base situation to start from
+            overlay_data: Partial situation dict from overlay YAML
+            field_path: Path for validation errors (e.g., "situations.save_file")
+            validation_info: Shared validation info
+            line_info: Line tracking from overlay YAML
+
+        Returns:
+            New merged SituationTemplate (constructed via from_dict)
+        """
+        # Start with base fields as dict
+        merged_data = base.to_dict()
+
+        # Apply overlay fields if present
+        if "schema" in overlay_data:
+            merged_data["schema"] = overlay_data["schema"]
+
+        if "description" in overlay_data:
+            merged_data["description"] = overlay_data["description"]
+
+        if "fallback" in overlay_data:
+            merged_data["fallback"] = overlay_data["fallback"]
+
+        if "situation_template_schema_version" in overlay_data:
+            merged_data["situation_template_schema_version"] = overlay_data["situation_template_schema_version"]
+
+        # Policy must be complete if provided
+        if "policy" in overlay_data:
+            policy = overlay_data["policy"]
+            if not isinstance(policy, dict):
+                validation_info.add_error(
+                    field_path=f"{field_path}.policy",
+                    message="Policy must be a dict",
+                    line_number=line_info.get_line(f"{field_path}.policy"),
+                )
+            elif "on_collision" not in policy or "create_dirs" not in policy:
+                validation_info.add_error(
+                    field_path=f"{field_path}.policy",
+                    message="Policy must include both on_collision and create_dirs",
+                    line_number=line_info.get_line(f"{field_path}.policy"),
+                )
+            else:
+                merged_data["policy"] = policy
+
+        # Build merged situation using from_dict for full validation
+        # Note: name field is not in overlay_data, use base.name
+        merged_data_with_name = {"name": base.name, **merged_data}
+        return SituationTemplate.from_dict(
+            data=merged_data_with_name,
+            field_path=field_path,
+            validation_info=validation_info,
+            line_info=line_info,
+        )

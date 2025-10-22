@@ -52,15 +52,30 @@ class ProjectValidationProblem:
 
 
 @dataclass
+class ProjectOverride:
+    """Record of a template override during merge.
+
+    Tracks what was customized in the overlay without affecting validation status.
+    """
+
+    category: ProjectOverrideCategory
+    name: str
+    action: ProjectOverrideAction
+
+
+@dataclass
 class ProjectValidationInfo:
     """Validation result for a project template.
 
     Shared across construction chain - problems are accumulated as
     the template is built from YAML.
+
+    Overrides track what was customized during merge without affecting status.
     """
 
     status: ProjectValidationStatus
     problems: list[ProjectValidationProblem] = field(default_factory=list)
+    overrides: list[ProjectOverride] = field(default_factory=list)
 
     def add_error(self, field_path: str, message: str, line_number: int | None = None) -> None:
         """Add an error to the problems list.
@@ -102,3 +117,20 @@ class ProjectValidationInfo:
 
         if self.status == ProjectValidationStatus.GOOD:
             self.status = ProjectValidationStatus.FLAWED
+
+    def add_override(
+        self,
+        category: ProjectOverrideCategory,
+        name: str,
+        action: ProjectOverrideAction,
+    ) -> None:
+        """Record an override without affecting validation status.
+
+        Used during template merge to track what was customized in the overlay.
+
+        Args:
+            category: Type of override (situation, directory, environment, metadata)
+            name: Name of the item that was overridden
+            action: Whether it was modified (existed in base) or added (new in overlay)
+        """
+        self.overrides.append(ProjectOverride(category=category, name=name, action=action))
