@@ -52,13 +52,20 @@ class RescaleImage(BaseImageProcessor):
                 self.show_parameter_by_name("target_width")
                 self.show_parameter_by_name("target_height")
                 self.show_parameter_by_name("fit_mode")
-                self.show_parameter_by_name("background_color")
+                # Background color visibility will be controlled by fit_mode
+                self.hide_parameter_by_name("background_color")
             else:
                 self.hide_parameter_by_name("percentage_scale")
                 self.show_parameter_by_name("target_size")
                 self.hide_parameter_by_name("target_width")
                 self.hide_parameter_by_name("target_height")
                 self.hide_parameter_by_name("fit_mode")
+                self.hide_parameter_by_name("background_color")
+        elif parameter.name == "fit_mode":
+            # Show background color only for fit mode
+            if value == self.FIT_MODE_FIT:
+                self.show_parameter_by_name("background_color")
+            else:
                 self.hide_parameter_by_name("background_color")
         return super().after_value_set(parameter, value)
 
