@@ -11,7 +11,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, DynamicParameterMixin, NodeResolutionState
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -22,9 +22,11 @@ logger = logging.getLogger("diffusers_nodes_library")
 UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 
 
-class DiffusionPipelineBuilderNode(DynamicParameterMixin, ControlNode):
+class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         self._initializing = True
+        self.param_names_cache: set[str] = set()
+        self.param_attrs_cache: dict[str, dict[str, Any]] = {}
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
@@ -111,7 +113,19 @@ class DiffusionPipelineBuilderNode(DynamicParameterMixin, ControlNode):
         # Dynamic mode: prevent duplicates and mark as user-defined
         if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
-            self.restore_cached_attrs(parameter)
+
+            # Restore cached parameter attributes if available
+            if parameter.name in self.param_attrs_cache:
+                cached_attrs = self.param_attrs_cache[parameter.name]
+                if "allowed_modes" in cached_attrs:
+                    parameter._allowed_modes = cached_attrs["allowed_modes"]
+                if "ui_options" in cached_attrs:
+                    ui_options_to_restore = {"hide"}
+                    parameter.ui_options = {
+                        **parameter.ui_options,
+                        **{k: v for k, v in cached_attrs["ui_options"].items() if k in ui_options_to_restore},
+                    }
+
             super().add_parameter(parameter)
 
     def set_parameter_value(
@@ -146,6 +160,33 @@ class DiffusionPipelineBuilderNode(DynamicParameterMixin, ControlNode):
 
     def preprocess(self) -> None:
         self.log_params.clear_logs()
+
+    def cache_param_attrs(self) -> None:
+        """Cache important parameter attributes before removal."""
+        for element in self.root_ui_element.children:
+            parameter = self.get_parameter_by_name(element.name)
+            if parameter is not None:
+                self.param_attrs_cache[parameter.name] = {
+                    "allowed_modes": parameter._allowed_modes.copy(),
+                    "ui_options": parameter.ui_options.copy() if parameter.ui_options else {},
+                }
+
+    def remove_parameter_element_by_name(self, name: str) -> None:
+        """Override to track parameter deletions for connection preservation."""
+        self.param_names_cache.add(name)
+        super().remove_parameter_element_by_name(name)
+
+    def get_cached_param_names(self) -> set[str]:
+        """Get cached parameter names."""
+        return self.param_names_cache
+
+    def clear_param_names_cache(self) -> None:
+        """Clear the parameter names cache."""
+        self.param_names_cache.clear()
+
+    def clear_param_attrs_cache(self) -> None:
+        """Clear the parameter attributes cache."""
+        self.param_attrs_cache.clear()
 
     def process(self) -> AsyncResult:
         self.preprocess()

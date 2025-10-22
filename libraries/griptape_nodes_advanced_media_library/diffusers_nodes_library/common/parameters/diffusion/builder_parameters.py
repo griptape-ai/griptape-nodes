@@ -120,6 +120,8 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         self._node.cache_param_attrs()
 
         # Remove old parameters (automatically caches param names via remove_parameter_element_by_name)
@@ -129,12 +131,22 @@ class DiffusionPipelineBuilderParameters:
         self.set_pipeline_type_parameters(provider)
         self.pipeline_type_parameters.add_input_parameters()
 
-        # Complete the transition (creates plan, updates connections, clears caches)
-        self._node.complete_parameter_transition()
+        # Get desired parameter names from what actually exists on the node now
+        desired_param_names = {param.name for param in self._node.parameters}
+
+        # Create transition plan using cached old names and actual new names
+        plan = self._node.create_parameter_transition_plan(self._node.get_cached_param_names(), desired_param_names)
+
+        # Update Connection objects to reference new Parameter instances
+        connections = GriptapeNodes.FlowManager().get_connections()
+        connections.update_parameter_references_after_replacement(self._node, plan.to_preserve)
 
         # Set the pipeline_type parameter to the first available type
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
         self._node.set_parameter_value("pipeline_type", first_pipeline_type)
+
+        self._node.clear_param_attrs_cache()
+        self._node.clear_param_names_cache()
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:
