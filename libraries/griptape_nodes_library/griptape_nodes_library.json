@@ -1657,6 +1657,16 @@
       }
     },
     {
+      "class_name": "ImagesToPdf",
+      "file_path": "griptape_nodes_library/image/images_to_pdf.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert multiple images to a single PDF file",
+        "display_name": "Images to PDF",
+        "icon": "file-text"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
