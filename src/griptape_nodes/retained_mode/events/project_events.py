@@ -5,7 +5,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.common.project_templates_stub import ProjectTemplate, ProjectValidationInfo
+from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroParseFailure, VariableInfo
+from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -281,3 +282,110 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """
 
     project_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class MatchPathAgainstMacroRequest(RequestPayload):
+    """Check if a path matches a macro schema and extract variables.
+
+    Use when: Validating paths, extracting info from file paths,
+    identifying which schema produced a file.
+
+    Args:
+        project_path: Path to project.yml (for directory resolution)
+        macro_schema: Macro template string
+        file_path: Path to test
+        known_variables: Variables we already know
+
+    Results: MatchPathAgainstMacroResultSuccess | MatchPathAgainstMacroResultFailure
+    """
+
+    project_path: Path
+    macro_schema: str
+    file_path: str
+    known_variables: MacroVariables
+
+
+@dataclass
+@PayloadRegistry.register
+class MatchPathAgainstMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Path matched the macro schema."""
+
+    extracted_variables: MacroVariables
+
+
+@dataclass
+@PayloadRegistry.register
+class MatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Path did not match the macro schema."""
+
+    match_failure: MacroMatchFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class GetVariablesForMacroRequest(RequestPayload):
+    """Get list of all variables in a macro schema.
+
+    Use when: Building UI forms, showing what variables a schema needs,
+    validating before resolution.
+
+    Args:
+        macro_schema: Macro template string to inspect
+
+    Results: GetVariablesForMacroResultSuccess | GetVariablesForMacroResultFailure
+    """
+
+    macro_schema: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetVariablesForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Variables found in the macro schema."""
+
+    variables: list[VariableInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetVariablesForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to parse macro schema."""
+
+    parse_failure: MacroParseFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateMacroSyntaxRequest(RequestPayload):
+    """Validate a macro schema string for syntax errors.
+
+    Use when: User editing schemas in UI, before saving templates,
+    real-time validation.
+
+    Args:
+        macro_schema: Schema string to validate
+
+    Results: ValidateMacroSyntaxResultSuccess | ValidateMacroSyntaxResultFailure
+    """
+
+    macro_schema: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateMacroSyntaxResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Syntax is valid."""
+
+    variables: list[VariableInfo]
+    warnings: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ValidateMacroSyntaxResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Syntax is invalid."""
+
+    parse_failure: MacroParseFailure
+    partial_variables: list[VariableInfo]

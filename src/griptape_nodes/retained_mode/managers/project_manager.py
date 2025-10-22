@@ -6,12 +6,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.project_templates_stub import (
+from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_YAML_PATH,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
+    load_project_template_from_yaml,
 )
+from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectRequest,
     GetCurrentProjectResultSuccess,
@@ -22,13 +24,19 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetProjectTemplateRequest,
     GetProjectTemplateResultFailure,
     GetProjectTemplateResultSuccess,
+    GetVariablesForMacroRequest,
+    GetVariablesForMacroResultFailure,
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
+    MatchPathAgainstMacroRequest,
+    MatchPathAgainstMacroResultFailure,
     PathResolutionFailureReason,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
+    ValidateMacroSyntaxRequest,
+    ValidateMacroSyntaxResultFailure,
 )
 
 if TYPE_CHECKING:
@@ -36,7 +44,9 @@ if TYPE_CHECKING:
 
     from griptape_nodes.common.macro_parser import ParsedMacro
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
+    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -75,12 +85,22 @@ class ProjectManager:
     This allows UI to query validation status even when template failed to load.
     """
 
-    def __init__(self, event_manager: EventManager | None = None) -> None:
+    def __init__(
+        self,
+        event_manager: EventManager | None = None,
+        config_manager: ConfigManager | None = None,
+        secrets_manager: SecretsManager | None = None,
+    ) -> None:
         """Initialize the ProjectManager.
 
         Args:
-            event_manager: The EventManager instance to use for event handling.
+            event_manager: The EventManager instance to use for event handling
+            config_manager: ConfigManager instance for accessing configuration
+            secrets_manager: SecretsManager instance for macro resolution
         """
+        self.config_manager = config_manager
+        self.secrets_manager = secrets_manager
+
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
         self.registered_template_status: dict[Path, ProjectValidationInfo] = {}
 
@@ -93,9 +113,6 @@ class ProjectManager:
 
         # Track which project.yml user has selected
         self.current_project_path: Path | None = None
-
-        # Load system defaults once at initialization
-        self._load_system_defaults()
 
         # Register event handlers
         if event_manager is not None:
@@ -114,44 +131,34 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 SaveProjectTemplateRequest, self.on_save_project_template_request
             )
+            event_manager.assign_manager_to_request_type(
+                MatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+            )
+            event_manager.assign_manager_to_request_type(
+                GetVariablesForMacroRequest, self.on_get_variables_for_macro_request
+            )
+            event_manager.assign_manager_to_request_type(
+                ValidateMacroSyntaxRequest, self.on_validate_macro_syntax_request
+            )
 
-    def _load_system_defaults(self) -> None:
-        """Load bundled system default template.
-
-        System defaults MUST be valid (fail-fast if they're not).
-        This is called once at initialization.
-        """
-        # Replace with actual loading logic when template system merges
-        # For now, create a minimal stub template
-        logger.info("Loading system default template from: %s", DEFAULT_PROJECT_YAML_PATH)
-
-        # Stub implementation - will be replaced with actual file loading
-        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-
-        # For now, just track that we attempted to load system defaults
-        # The actual loading will use ReadFileRequest via OSManager
-        self.registered_template_status[DEFAULT_PROJECT_YAML_PATH] = validation
-
-        logger.info("System default template loaded successfully")
-
-    # Event handler methods
+    # Event handler methods (public)
 
     def on_load_project_template_request(self, request: LoadProjectTemplateRequest) -> ResultPayload:
         """Load user's project.yml and merge with system defaults.
 
         Flow:
-        1. Set validation status to MISSING
-        2. Issue ReadFileRequest to OSManager
-        3. Parse YAML and load partial template (overlay)
-        4. Merge with system defaults
-        5. Cache in registered_template_status and successful_templates (if usable)
-        6. Return success or failure result
+        1. Issue ReadFileRequest to OSManager (for proper Windows long path handling)
+        2. Parse YAML and load partial template (overlay) using load_partial_project_template()
+        3. Merge with system defaults using ProjectTemplate.merge()
+        4. Cache validation in registered_template_status
+        5. If usable, cache template in successful_templates
+        6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
 
-        TODO: Implement full loading logic when template system merges
+        Implementation pending: Will use ReadFileRequest via GriptapeNodes.handle_request()
         """
         logger.info("Loading project template: %s", request.project_path)
 
-        # Stub implementation
+        # Stub implementation - will use ReadFileRequest when implemented
         validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
         self.registered_template_status[request.project_path] = validation
 
@@ -260,3 +267,126 @@ class ProjectManager:
             project_path=request.project_path,
             result_details="Template saving not yet implemented (stub)",
         )
+
+    def on_match_path_against_macro_request(self, request: MatchPathAgainstMacroRequest) -> ResultPayload:
+        """Check if a path matches a macro schema and extract variables.
+
+        Flow:
+        1. Parse macro schema into ParsedMacro
+        2. Call ParsedMacro.extract_variables() with path and known variables
+        3. If match succeeds, return extracted variables
+        4. If match fails, return MacroMatchFailure with details
+
+        TODO: Implement macro matching logic
+        """
+        from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroMatchFailureReason
+
+        logger.debug("Matching path against macro: %s", request.macro_schema)
+
+        return MatchPathAgainstMacroResultFailure(
+            match_failure=MacroMatchFailure(
+                failure_reason=MacroMatchFailureReason.NO_MATCH,
+                expected_pattern=request.macro_schema,
+                known_variables_used=request.known_variables,
+                error_details="Macro matching not yet implemented (stub)",
+            ),
+            result_details="Macro matching not yet implemented",
+        )
+
+    def on_get_variables_for_macro_request(self, request: GetVariablesForMacroRequest) -> ResultPayload:
+        """Get list of all variables in a macro schema.
+
+        Flow:
+        1. Parse macro schema into ParsedMacro
+        2. Call ParsedMacro.get_variables() to extract variable metadata
+        3. Return list of VariableInfo
+
+        TODO: Implement variable extraction logic
+        """
+        from griptape_nodes.common.macro_parser import MacroParseFailure, MacroParseFailureReason
+
+        logger.debug("Getting variables for macro: %s", request.macro_schema)
+
+        return GetVariablesForMacroResultFailure(
+            parse_failure=MacroParseFailure(
+                failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+                error_position=None,
+                error_details="Variable extraction not yet implemented (stub)",
+            ),
+            result_details="Variable extraction not yet implemented",
+        )
+
+    def on_validate_macro_syntax_request(self, request: ValidateMacroSyntaxRequest) -> ResultPayload:
+        """Validate a macro schema string for syntax errors.
+
+        Flow:
+        1. Try to parse macro schema with ParsedMacro()
+        2. If successful, return variables found and any warnings
+        3. If syntax error, return MacroParseFailure with details
+
+        TODO: Implement syntax validation logic
+        """
+        from griptape_nodes.common.macro_parser import MacroParseFailure, MacroParseFailureReason
+
+        logger.debug("Validating macro syntax: %s", request.macro_schema)
+
+        return ValidateMacroSyntaxResultFailure(
+            parse_failure=MacroParseFailure(
+                failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+                error_position=None,
+                error_details="Syntax validation not yet implemented (stub)",
+            ),
+            partial_variables=[],
+            result_details="Syntax validation not yet implemented",
+        )
+
+    # Private helper methods
+
+    def _load_system_defaults(self) -> None:
+        """Load bundled system default template.
+
+        System defaults MUST be valid (fail-fast if they're not).
+        Uses ReadFileRequest for proper cross-platform path handling.
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        logger.info("Loading system default template from: %s", DEFAULT_PROJECT_YAML_PATH)
+
+        # Use ReadFileRequest for proper path normalization (Windows long paths, etc.)
+        read_request = ReadFileRequest(
+            file_path=str(DEFAULT_PROJECT_YAML_PATH),
+            encoding="utf-8",
+            workspace_only=False,  # System default is not in workspace
+        )
+        read_result = GriptapeNodes.handle_request(read_request)
+
+        if read_result.failed():
+            msg = f"Failed to read system default template: {read_result.result_details}"
+            raise FileNotFoundError(msg)
+
+        if not isinstance(read_result, ReadFileResultSuccess):
+            msg = "Unexpected result type from ReadFileRequest"
+            raise TypeError(msg)
+
+        yaml_text = read_result.content
+        if not isinstance(yaml_text, str):
+            msg = "System default template must be text, got binary content"
+            raise TypeError(msg)
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        template = load_project_template_from_yaml(yaml_text, validation)
+
+        if template is None:
+            error_messages = [f"{p.field_path}: {p.message}" for p in validation.problems]
+            msg = f"Failed to load system defaults: {'; '.join(error_messages)}"
+            raise RuntimeError(msg)
+
+        if not validation.is_usable():
+            error_messages = [f"{p.field_path}: {p.message}" for p in validation.problems]
+            msg = f"System defaults are not usable (status: {validation.status}): {'; '.join(error_messages)}"
+            raise RuntimeError(msg)
+
+        logger.info("System defaults loaded successfully (status: %s)", validation.status)
+
+        self.registered_template_status[DEFAULT_PROJECT_YAML_PATH] = validation
+        self.successful_templates[DEFAULT_PROJECT_YAML_PATH] = template
