@@ -133,13 +133,14 @@ class DiffusionPipelineBuilderParameters:
 
         # Get desired parameter names from what actually exists on the node now
         desired_param_names = {param.name for param in self._node.parameters}
+        cached_param_names = self._node.get_cached_param_names()
 
-        # Create transition plan using cached old names and actual new names
-        plan = self._node.create_parameter_transition_plan(self._node.get_cached_param_names(), desired_param_names)
+        # Determine which parameters to preserve (exist in both old and new)
+        params_to_preserve = cached_param_names & desired_param_names
 
         # Update Connection objects to reference new Parameter instances
         connections = GriptapeNodes.FlowManager().get_connections()
-        connections.update_parameter_references_after_replacement(self._node, plan.to_preserve)
+        connections.update_parameter_references_after_replacement(self._node, params_to_preserve)
 
         # Set the pipeline_type parameter to the first available type
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]

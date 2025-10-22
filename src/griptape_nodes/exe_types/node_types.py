@@ -100,23 +100,6 @@ class NodeDependencies:
         self.libraries.update(other.libraries)
 
 
-class TransitionPlan(NamedTuple):
-    """Generic plan for transitioning a set of parameters.
-
-    Used when switching between different configurations to intelligently
-    preserve, remove, and add parameters while maintaining connections where possible.
-
-    Attributes:
-        to_preserve: Parameter names that exist in both old and new configurations
-        to_remove: Parameter names that only exist in the old configuration
-        to_add: Parameter names that only exist in the new configuration
-    """
-
-    to_preserve: set[str]
-    to_remove: set[str]
-    to_add: set[str]
-
-
 class NodeResolutionState(StrEnum):
     """Possible states for a node during resolution."""
 
@@ -656,24 +639,6 @@ class BaseNode(ABC):
         else:
             msg = f"Parameter '{param_name}' not found in node configuration."
             raise ValueError(msg)
-
-    def create_parameter_transition_plan(
-        self, current_param_names: set[str], desired_param_names: set[str]
-    ) -> TransitionPlan:
-        """Create a transition plan for switching between parameter sets.
-
-        Args:
-            current_param_names: Parameter names in current configuration
-            desired_param_names: Parameter names in desired configuration
-
-        Returns:
-            TransitionPlan with parameters to preserve, remove, and add
-        """
-        return TransitionPlan(
-            to_preserve=current_param_names & desired_param_names,
-            to_remove=current_param_names - desired_param_names,
-            to_add=desired_param_names - current_param_names,
-        )
 
     def initialize_spotlight(self) -> None:
         # Create a linked list of parameters for spotlight navigation.

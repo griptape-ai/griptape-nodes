@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterType,
     ParameterTypeBuiltin,
 )
-from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode, TransitionPlan
+from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultDetails,
@@ -28,6 +28,22 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger(__name__)
+
+
+class TransitionPlan(NamedTuple):
+    """Plan for transitioning between parameter sets.
+
+    Used to manage parameter changes when switching between different configurations.
+
+    Attributes:
+        to_preserve: Parameter names that exist in both old and new configurations
+        to_remove: Parameter names that only exist in the old configuration
+        to_add: Parameter names that only exist in the new configuration
+    """
+
+    to_preserve: set[str]
+    to_remove: set[str]
+    to_add: set[str]
 
 
 class ParamType(Enum):
@@ -343,7 +359,11 @@ class EngineNode(SuccessFailureNode):
 
     def _outline_parameter_transition_plan(self, current_names: set[str], desired_names: set[str]) -> TransitionPlan:
         """Create a generic transition plan for a set of parameters."""
-        return self.create_parameter_transition_plan(current_names, desired_names)
+        return TransitionPlan(
+            to_preserve=current_names & desired_names,
+            to_remove=current_names - desired_names,
+            to_add=desired_names - current_names,
+        )
 
     def _get_desired_input_parameter_names(self, request_class: type) -> set[str]:
         """Get the set of input parameter names that should exist for this request class."""
