@@ -532,13 +532,13 @@ class LibraryManager:
         sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
 
         if not sandbox_library_dir.exists():
-            details = "Sandbox directory does not exist."
+            details = "Sandbox directory does not exist. If you wish to create a Sandbox directory to develop custom nodes: in the Griptape Nodes editor, go to Settings -> Libraries and navigate to the Sandbox Settings."
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.MISSING,
                 problems=[details],
-                result_details=details,
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
