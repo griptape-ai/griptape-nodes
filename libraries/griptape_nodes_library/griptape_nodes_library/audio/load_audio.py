@@ -1,4 +1,4 @@
-from typing import Any, ClassVar
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
@@ -8,13 +8,10 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactTetheringConfig,
     default_extract_url_from_artifact_value,
 )
-from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact
+from griptape_nodes_library.utils.audio_utils import SUPPORTED_AUDIO_EXTENSIONS, dict_to_audio_url_artifact
 
 
 class LoadAudio(DataNode):
-    # Supported audio file extensions
-    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"}
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -24,7 +21,7 @@ class LoadAudio(DataNode):
             extract_url_func=lambda value: default_extract_url_from_artifact_value(
                 artifact_value=value, artifact_classes=AudioUrlArtifact
             ),
-            supported_extensions=self.SUPPORTED_EXTENSIONS,
+            supported_extensions=SUPPORTED_AUDIO_EXTENSIONS,
             default_extension="mp3",
             url_content_type_prefix="audio/",
         )
