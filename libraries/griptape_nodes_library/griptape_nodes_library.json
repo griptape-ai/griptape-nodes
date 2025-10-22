@@ -1392,6 +1392,17 @@
       }
     },
     {
+      "class_name": "ImageDetails",
+      "file_path": "griptape_nodes_library/image/image_details.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract detailed information from an image including dimensions, aspect ratio, color space, and format",
+        "display_name": "Image Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "CropImage",
       "file_path": "griptape_nodes_library/image/crop_image.py",
       "metadata": {

@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.error import URLError
 from urllib.parse import urlparse
 
@@ -596,3 +596,123 @@ def cleanup_temp_files() -> None:
     # This is a placeholder function for compatibility
     # In this implementation, we don't need to clean up temp files
     # as we're using the static file manager
+
+
+class ImageColorInfo(NamedTuple):
+    """Color information for an image."""
+
+    color_space: str
+    channels: int
+
+
+def calculate_aspect_ratio(width: int, height: int) -> tuple[int, int] | None:
+    """Calculate GCD-reduced aspect ratio from width and height.
+
+    Args:
+        width: Image width in pixels
+        height: Image height in pixels
+
+    Returns:
+        Tuple of (ratio_width, ratio_height) or None if invalid dimensions
+    """
+    from math import gcd
+
+    if width == 0 or height == 0:
+        return (0, 0)
+
+    if width < 0 or height < 0:
+        return None
+
+    divisor = gcd(width, height)
+    ratio_width = width // divisor
+    ratio_height = height // divisor
+
+    return (ratio_width, ratio_height)
+
+
+def get_image_color_info(image: Image.Image) -> ImageColorInfo:
+    """Get color space and channel count from a PIL Image.
+
+    Args:
+        image: PIL Image object
+
+    Returns:
+        ImageColorInfo with color_space and channels
+    """
+    color_space = image.mode
+
+    # Map PIL modes to channel counts
+    mode_to_channels = {
+        "1": 1,  # 1-bit pixels, black and white
+        "L": 1,  # 8-bit pixels, grayscale
+        "P": 1,  # 8-bit pixels, mapped to any other mode using a color palette
+        "RGB": 3,  # 3x8-bit pixels, true color
+        "RGBA": 4,  # 4x8-bit pixels, true color with transparency mask
+        "CMYK": 4,  # 4x8-bit pixels, color separation
+        "YCbCr": 3,  # 3x8-bit pixels, color video format
+        "LAB": 3,  # 3x8-bit pixels, the L*a*b color space
+        "HSV": 3,  # 3x8-bit pixels, Hue, Saturation, Value color space
+        "I": 1,  # 32-bit signed integer pixels
+        "F": 1,  # 32-bit floating point pixels
+        "LA": 2,  # L with alpha
+        "PA": 2,  # P with alpha
+        "RGBX": 4,  # RGB with padding
+        "RGBa": 4,  # RGB with premultiplied alpha (a = alpha channel)  # spellchecker:disable-line
+        "La": 2,  # L with premultiplied alpha (a = alpha channel)
+    }
+
+    channel_count = mode_to_channels.get(color_space, len(image.getbands()))
+
+    return ImageColorInfo(color_space=color_space, channels=channel_count)
+
+
+def get_image_format_from_artifact(image_artifact: ImageUrlArtifact | ImageArtifact) -> str:
+    """Determine image format from an image artifact.
+
+    Args:
+        image_artifact: ImageUrlArtifact or ImageArtifact
+
+    Returns:
+        Image format string (e.g., "JPEG", "PNG", "WEBP")
+    """
+    if isinstance(image_artifact, ImageArtifact):
+        return image_artifact.format or "UNKNOWN"
+
+    if isinstance(image_artifact, ImageUrlArtifact):
+        try:
+            pil_image = load_pil_from_url(image_artifact.value)
+        except Exception:
+            return "UNKNOWN"
+        else:
+            return pil_image.format or "UNKNOWN"
+
+    return "UNKNOWN"
+
+
+def get_image_dimensions_from_artifact(
+    image_artifact: ImageUrlArtifact | ImageArtifact | None,
+) -> tuple[int, int]:
+    """Get image dimensions from an image artifact.
+
+    Args:
+        image_artifact: ImageUrlArtifact or ImageArtifact
+
+    Returns:
+        Tuple of (width, height) or (0, 0) if unable to determine
+    """
+    if image_artifact is None:
+        return (0, 0)
+
+    if isinstance(image_artifact, ImageArtifact):
+        return (image_artifact.width, image_artifact.height)
+
+    if isinstance(image_artifact, ImageUrlArtifact):
+        try:
+            pil_image = load_pil_from_url(image_artifact.value)
+        except Exception:
+            logger.warning("Could not determine image dimensions from ImageUrlArtifact")
+            return (0, 0)
+        else:
+            return (pil_image.width, pil_image.height)
+
+    return (0, 0)
