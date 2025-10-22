@@ -5,7 +5,7 @@ from typing import Any
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -75,8 +75,14 @@ class ExtractLastFrame(BaseVideoProcessor):
         """Get the output filename suffix."""
         return "_last_frame"
 
-    def process(self) -> AsyncResult[None]:
+    def process(self) -> None:
         """Extract the last frame from the input video and save as ImageUrlArtifact."""
+        # Reset execution state and result details at the start of each run
+        self._clear_execution_status()
+
+        # Clear output values to prevent downstream nodes from getting stale data on errors
+        self.parameter_output_values["output"] = None
+
         # Get video input data from base class
         input_url, detected_format = self._get_video_input_data()
         self._log_format_detection(detected_format)
@@ -85,16 +91,21 @@ class ExtractLastFrame(BaseVideoProcessor):
         self.append_value_to_parameter("logs", "[Processing extract last frame..]\n")
 
         try:
-            # Run the video processing asynchronously
+            # Run the frame extraction
             self.append_value_to_parameter("logs", "[Started extracting last frame..]\n")
-            yield lambda: self._process_extract_frame(input_url)
+            self._process_extract_frame(input_url)
             self.append_value_to_parameter("logs", "[Finished extracting last frame.]\n")
 
+            # Success case
+            success_details = "Successfully extracted last frame from video"
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+            logger.info(f"{self.__class__.__name__} '{self.name}': {success_details}")
+
         except Exception as e:
-            error_message = str(e)
-            msg = f"{self.name}: Error extracting last frame: {error_message}"
-            self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+            error_details = f"Failed to extract last frame: {e}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"{self.__class__.__name__} '{self.name}': {error_details}")
+            self._handle_failure_exception(e)
 
     def _process_extract_frame(self, input_url: str) -> None:
         """Extract the last frame and save as ImageUrlArtifact."""

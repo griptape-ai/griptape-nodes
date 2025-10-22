@@ -3,8 +3,7 @@ from typing import Any
 from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult
-from griptape_nodes.traits.options import Options
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
@@ -23,79 +22,6 @@ class MergeVideoAudio(BaseVideoProcessor):
     MAX_VOLUME = 2.0
     DEFAULT_VOLUME = 1.0
 
-    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
-        # Initialize the base ControlNode first (skip BaseVideoProcessor custom init)
-        from griptape_nodes.exe_types.node_types import ControlNode
-
-        ControlNode.__init__(self, name, metadata)
-
-        # Add video input parameter
-        self.add_parameter(
-            Parameter(
-                name="video",
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
-                type="VideoUrlArtifact",
-                tooltip="The video to merge audio with",
-                ui_options={
-                    "clickable_file_browser": True,
-                    "expander": True,
-                    "display_name": "Video Input",
-                },
-            )
-        )
-
-        # Add audio input parameter
-        self.add_parameter(
-            Parameter(
-                name="audio",
-                input_types=["AudioArtifact", "AudioUrlArtifact"],
-                type="AudioUrlArtifact",
-                tooltip="The audio to merge with the video",
-                ui_options={
-                    "clickable_file_browser": True,
-                    "expander": True,
-                    "display_name": "Audio Input",
-                },
-            )
-        )
-
-        # Setup custom parameters
-        self._setup_custom_parameters()
-
-        # Add frame rate parameter
-        frame_rate_param = Parameter(
-            name="output_frame_rate",
-            type="str",
-            default_value="auto",
-            tooltip="Output frame rate. Choose 'auto' to preserve input frame rate, or select a specific rate for your target platform.",
-        )
-        frame_rate_param.add_trait(Options(choices=list(BaseVideoProcessor.FRAME_RATE_OPTIONS.keys())))
-        self.add_parameter(frame_rate_param)
-
-        # Add processing speed parameter
-        speed_param = Parameter(
-            name="processing_speed",
-            type="str",
-            default_value="balanced",
-            tooltip="Processing speed vs quality trade-off",
-        )
-        speed_param.add_trait(Options(choices=["fast", "balanced", "quality"]))
-        self.add_parameter(speed_param)
-
-        # Add output parameter
-        self.add_parameter(
-            Parameter(
-                name="output",
-                output_type="VideoUrlArtifact",
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="The merged video with audio",
-                ui_options={"pulse_on_run": True, "expander": True},
-            )
-        )
-
-        # Setup logging group
-        self._setup_logging_group()
-
     def _setup_logging_group(self) -> None:
         """Setup the common logging parameter group."""
         with ParameterGroup(name="Logs") as logs_group:
@@ -111,6 +37,21 @@ class MergeVideoAudio(BaseVideoProcessor):
 
     def _setup_custom_parameters(self) -> None:
         """Setup custom parameters for video/audio merging."""
+        # Add audio input parameter
+        self.add_parameter(
+            Parameter(
+                name="audio",
+                input_types=["AudioArtifact", "AudioUrlArtifact"],
+                type="AudioUrlArtifact",
+                tooltip="The audio to merge with the video",
+                ui_options={
+                    "clickable_file_browser": True,
+                    "expander": True,
+                    "display_name": "Audio Input",
+                },
+            )
+        )
+
         with ParameterGroup(name="merge_settings", ui_options={"collapsed": False}) as merge_group:
             # Audio volume parameter
             volume_parameter = Parameter(
@@ -160,7 +101,7 @@ class MergeVideoAudio(BaseVideoProcessor):
     def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:  # noqa: ARG002
         """Build FFmpeg command for video/audio merging."""
         # Get FFmpeg paths from base class
-        ffmpeg_path, _ = self._get_ffmpeg_paths()
+        ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
 
         # Get parameters
         audio_url = kwargs.get("audio_url", "")
@@ -183,10 +124,11 @@ class MergeVideoAudio(BaseVideoProcessor):
         if audio_volume != 1.0:
             audio_filters.append(f"volume={audio_volume}")
 
+        # Get video duration once for both fade effects and audio cutting
+        _, _, video_duration = self._detect_video_properties(input_url, ffprobe_path)
+
         # Add fade effects
         if fade_in_duration > 0 or fade_out_duration > 0:
-            # Detect video duration for fade out calculation (video is typically longer)
-            video_duration = self._detect_video_duration(input_url)
             fade_filter = self._build_fade_filter(fade_in_duration, fade_out_duration, video_duration)
             if fade_filter:
                 audio_filters.append(fade_filter)
@@ -195,6 +137,10 @@ class MergeVideoAudio(BaseVideoProcessor):
         if audio_filters:
             audio_filter_complex = ",".join(audio_filters)
             cmd.extend(["-af", audio_filter_complex])
+
+        # Cut audio to video duration to prevent audio from being longer than video
+        if video_duration > 0:
+            cmd.extend(["-t", str(video_duration)])
 
         # Set audio codec and mixing behavior
         if replace_audio:
@@ -247,29 +193,6 @@ class MergeVideoAudio(BaseVideoProcessor):
                 pass
 
         return ",".join(fade_parts) if fade_parts else ""
-
-    def _detect_video_duration(self, video_url: str) -> float | None:
-        """Detect video duration using ffprobe."""
-        try:
-            # Get FFmpeg paths from base class
-            _, ffprobe_path = self._get_ffmpeg_paths()
-            # Use ffprobe to get video duration
-            cmd = [ffprobe_path, "-v", "quiet", "-print_format", "json", "-show_entries", "format=duration", video_url]
-
-            import subprocess
-
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
-            import json
-
-            data = json.loads(result.stdout)
-            duration = data.get("format", {}).get("duration")
-
-            if duration:
-                return float(duration)
-            return None
-        except Exception as e:
-            self.append_value_to_parameter("logs", f"Warning: Could not detect video duration: {e}\n")
-            return None
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate inputs before processing."""
@@ -362,8 +285,14 @@ class MergeVideoAudio(BaseVideoProcessor):
 
         return f"_merged_{'_'.join(suffix_parts)}" if suffix_parts else "_merged"
 
-    def process(self) -> AsyncResult[None]:
+    def process(self) -> None:
         """Merge video and audio and save as VideoUrlArtifact."""
+        # Reset execution state and result details at the start of each run
+        self._clear_execution_status()
+
+        # Clear output values to prevent downstream nodes from getting stale data on errors
+        self.parameter_output_values["output"] = None
+
         # Get video input data
         input_url, detected_format = self._get_video_input_data()
         self._log_format_detection(detected_format)
@@ -375,13 +304,18 @@ class MergeVideoAudio(BaseVideoProcessor):
         self.append_value_to_parameter("logs", f"[Processing {self._get_processing_description()}..]\n")
 
         try:
-            # Run the video processing asynchronously
+            # Run the video processing
             self.append_value_to_parameter("logs", "[Started video/audio merging..]\n")
-            yield lambda: self._process(input_url, detected_format, **custom_params)
+            self._process(input_url, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished video/audio merging.]\n")
 
+            # Success case
+            success_details = f"Successfully merged video and audio: {self._get_processing_description()}"
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+            logger.info(f"{self.__class__.__name__} '{self.name}': {success_details}")
+
         except Exception as e:
-            error_message = str(e)
-            msg = f"{self.name}: Error merging video and audio: {error_message}"
-            self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+            error_details = f"Failed to merge video and audio: {e}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+            logger.error(f"{self.__class__.__name__} '{self.name}': {error_details}")
+            self._handle_failure_exception(e)
