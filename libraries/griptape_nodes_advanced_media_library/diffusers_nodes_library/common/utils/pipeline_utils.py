@@ -185,8 +185,8 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
             return
 
         logger.warning("Insufficient memory on %s for Pipeline.", device)
-        logger.info("Enabling vae slicing")
         if hasattr(pipe, "enable_vae_slicing"):
+            logger.info("Enabling vae slicing")
             pipe.enable_vae_slicing()
 
         # Final check after VAE slicing
