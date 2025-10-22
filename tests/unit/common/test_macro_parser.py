@@ -9,6 +9,10 @@ import pytest
 from griptape_nodes.common.macro_parser import (
     DateFormat,
     LowerCaseFormat,
+    MacroMatchFailure,
+    MacroMatchFailureReason,
+    MacroParseFailure,
+    MacroParseFailureReason,
     MacroResolutionError,
     NumericPaddingFormat,
     ParsedMacro,
@@ -562,3 +566,68 @@ class TestMacroResolverResolve:
         result = parsed.resolve({"count": 42}, mock_secrets_manager)
 
         assert result == "42"
+
+
+class TestMacroFailureTypes:
+    """Test cases for macro failure dataclasses."""
+
+    def test_macro_match_failure_creation(self) -> None:
+        """Test creating MacroMatchFailure with all fields."""
+        failure = MacroMatchFailure(
+            failure_reason=MacroMatchFailureReason.NO_MATCH,
+            expected_pattern="{inputs}/{file_name}",
+            known_variables_used={"inputs": "outputs"},
+            error_details="Static segment mismatch: expected 'inputs/' but found 'outputs/'",
+        )
+
+        assert failure.failure_reason == MacroMatchFailureReason.NO_MATCH
+        assert failure.expected_pattern == "{inputs}/{file_name}"
+        assert failure.known_variables_used == {"inputs": "outputs"}
+        assert "Static segment mismatch" in failure.error_details
+
+    def test_macro_match_failure_invalid_syntax(self) -> None:
+        """Test MacroMatchFailure with INVALID_MACRO_SYNTAX reason."""
+        failure = MacroMatchFailure(
+            failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
+            expected_pattern="{inputs}/{file_name",
+            known_variables_used={},
+            error_details="Unbalanced braces in macro schema",
+        )
+
+        assert failure.failure_reason == MacroMatchFailureReason.INVALID_MACRO_SYNTAX
+        assert failure.expected_pattern == "{inputs}/{file_name"
+        assert failure.known_variables_used == {}
+
+    def test_macro_parse_failure_creation(self) -> None:
+        """Test creating MacroParseFailure with all fields."""
+        failure = MacroParseFailure(
+            failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+            error_position=15,
+            error_details="Missing closing brace after position 15",
+        )
+
+        assert failure.failure_reason == MacroParseFailureReason.SYNTAX_ERROR
+        assert failure.error_position == 15
+        assert "Missing closing brace" in failure.error_details
+
+    def test_macro_parse_failure_no_position(self) -> None:
+        """Test MacroParseFailure when error position is unknown."""
+        failure = MacroParseFailure(
+            failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+            error_position=None,
+            error_details="General syntax error",
+        )
+
+        assert failure.failure_reason == MacroParseFailureReason.SYNTAX_ERROR
+        assert failure.error_position is None
+
+    def test_macro_match_failure_reason_values(self) -> None:
+        """Test MacroMatchFailureReason enum values."""
+        assert MacroMatchFailureReason.NO_MATCH == "NO_MATCH"
+        assert MacroMatchFailureReason.INVALID_MACRO_SYNTAX == "INVALID_MACRO_SYNTAX"
+        assert len(MacroMatchFailureReason) == 2
+
+    def test_macro_parse_failure_reason_values(self) -> None:
+        """Test MacroParseFailureReason enum values."""
+        assert MacroParseFailureReason.SYNTAX_ERROR == "SYNTAX_ERROR"
+        assert len(MacroParseFailureReason) == 1
