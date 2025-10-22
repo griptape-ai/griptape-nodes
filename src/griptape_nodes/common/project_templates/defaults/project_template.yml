@@ -1,0 +1,89 @@
+# System Default Project Template
+# Version: 0.1.0
+#
+# This is the default configuration used when no project.yml exists.
+# You can copy this file to your project root and customize it.
+
+project_template_schema_version: "0.1.0"
+name: "Default Project"
+description: "System default configuration"
+
+# Directory Definitions
+#
+# Define logical directories used in situation schemas.
+# Paths can be:
+#   - Relative: "inputs", "outputs/renders"
+#   - Absolute: "/tmp/cache", "C:/Projects/assets"
+#   - With macros: Path schemas will be resolved by ProjectManager
+directories:
+  inputs:
+    path_schema: "inputs"
+  outputs:
+    path_schema: "outputs"
+  temp:
+    path_schema: "temp"
+  previews:
+    path_schema: "previews"
+
+# Environment Variables (Optional)
+#
+# Define project-specific variables or document which system env vars are used.
+# System automatically detects all env vars - this section is for documentation
+# and project-specific overrides.
+environment: {}
+
+# Situation Configurations
+#
+# Each situation defines how files are saved in a specific scenario.
+# The schema uses macro syntax: {variable_name} or {variable_name?} for optional
+situations:
+
+  # Base situation - others fall back to this
+  save_file:
+    situation_template_schema_version: "0.1.0"
+    description: "Generic file save operation"
+    schema: "{file_name_base}{_index:03?}.{file_extension}"
+    policy:
+      on_collision: "create_new"  # Increment {_index}: file_001.jpg, file_002.jpg
+      create_dirs: true
+    fallback: null
+
+  # User copies external file to project
+  copy_external_file:
+    situation_template_schema_version: "0.1.0"
+    description: "User copies external file to project"
+    schema: "{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index:03?}.{file_extension}"
+    policy:
+      on_collision: "create_new"
+      create_dirs: true
+    fallback: "save_file"
+
+  # Download file from URL
+  download_url:
+    situation_template_schema_version: "0.1.0"
+    description: "Download file from URL"
+    schema: "{inputs}/{sanitized_url}"
+    policy:
+      on_collision: "overwrite"  # Same URL = same content, safe to replace
+      create_dirs: true
+    fallback: "save_file"
+
+  # Node generates and saves output
+  save_node_output:
+    situation_template_schema_version: "0.1.0"
+    description: "Node generates and saves output"
+    schema: "{outputs}/{node_name?:_}{file_name_base}{_index:03?}.{file_extension}"
+    policy:
+      on_collision: "create_new"
+      create_dirs: true
+    fallback: "save_file"
+
+  # Generate preview/thumbnail
+  save_preview:
+    situation_template_schema_version: "0.1.0"
+    description: "Generate preview/thumbnail"
+    schema: "{previews}/{original_file_path}"
+    policy:
+      on_collision: "overwrite"  # Preview should match source, safe to replace
+      create_dirs: true
+    fallback: "save_file"
