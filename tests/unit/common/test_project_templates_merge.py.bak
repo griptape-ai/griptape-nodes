@@ -1,18 +1,14 @@
 """Tests for project template layering and merge functionality."""
 
 from griptape_nodes.common.project_templates import (
-    DEFAULT_PROJECT_YAML_PATH,
     ProjectOverrideAction,
     ProjectOverrideCategory,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
+    get_default_project_template,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
-
-# Load system defaults once for all tests
-_SYSTEM_DEFAULTS_YAML = DEFAULT_PROJECT_YAML_PATH.read_text(encoding="utf-8")
 
 
 class TestPartialLoading:
@@ -99,7 +95,7 @@ environment:
 project_template_schema_version: "0.1.0"
 """
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        load_partial_project_template(yaml_text, validation)
+        overlay = load_partial_project_template(yaml_text, validation)
 
         assert validation.status == ProjectValidationStatus.UNUSABLE
         assert any("name" in p.field_path for p in validation.problems)
@@ -110,7 +106,7 @@ project_template_schema_version: "0.1.0"
 name: "Test Project"
 """
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        load_partial_project_template(yaml_text, validation)
+        overlay = load_partial_project_template(yaml_text, validation)
 
         assert validation.status == ProjectValidationStatus.UNUSABLE
         assert any("project_template_schema_version" in p.field_path for p in validation.problems)
@@ -143,7 +139,7 @@ name: "My Custom Project"
         assert overlay is not None
 
         base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        default_template = get_default_project_template(base_validation)
         assert default_template is not None
 
         merge_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -172,18 +168,12 @@ situations:
       on_collision: "overwrite"
       create_dirs: true
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -208,18 +198,12 @@ situations:
       create_dirs: true
     fallback: "save_file"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -228,7 +212,7 @@ situations:
         assert "my_new_situation" in merged.situations
         assert merged.situations["my_new_situation"].schema == "{outputs}/new_{file_name}.{file_extension}"
         # Check base situations are still there
-        assert len(merged.situations) == len(default_template.situations) + 1
+        assert len(merged.situations) == len(DEFAULT_PROJECT_TEMPLATE.situations) + 1
 
     def test_merge_partial_situation_override(self) -> None:
         """Test merging overlay that only overrides schema, inherits other fields."""
@@ -239,18 +223,12 @@ situations:
   save_node_output:
     schema: "{outputs}/different_schema.{file_extension}"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -258,7 +236,7 @@ situations:
         # Check schema was overridden
         assert merged.situations["save_node_output"].schema == "{outputs}/different_schema.{file_extension}"
         # Check policy was inherited from base
-        base_policy = default_template.situations["save_node_output"].policy
+        base_policy = DEFAULT_PROJECT_TEMPLATE.situations["save_node_output"].policy
         merged_policy = merged.situations["save_node_output"].policy
         assert merged_policy.on_collision == base_policy.on_collision
         assert merged_policy.create_dirs == base_policy.create_dirs
@@ -272,18 +250,12 @@ directories:
   outputs:
     path_schema: "my_custom_outputs"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -302,18 +274,12 @@ directories:
   custom_dir:
     path_schema: "path/to/custom"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -322,7 +288,7 @@ directories:
         assert "custom_dir" in merged.directories
         assert merged.directories["custom_dir"].path_schema == "path/to/custom"
         # Check base directories are still there
-        assert len(merged.directories) == len(default_template.directories) + 1
+        assert len(merged.directories) == len(DEFAULT_PROJECT_TEMPLATE.directories) + 1
 
     def test_merge_environment_variables(self) -> None:
         """Test merging environment variables."""
@@ -333,18 +299,12 @@ environment:
   NEW_VAR: "new_value"
   ANOTHER_VAR: "another_value"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         merged = ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -363,18 +323,12 @@ class TestOverrideTracking:
 project_template_schema_version: "0.1.0"
 name: "Custom Project"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -398,18 +352,12 @@ situations:
       on_collision: "fail"
       create_dirs: false
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -435,18 +383,12 @@ situations:
       create_dirs: true
     fallback: null
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -469,18 +411,12 @@ directories:
   inputs:
     path_schema: "custom_inputs"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -501,18 +437,12 @@ directories:
   new_directory:
     path_schema: "path/to/new"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -535,25 +465,20 @@ name: "Custom Project"
 environment:
   EXISTING_VAR: "modified_value"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         # Create a base template with the env var
         base_with_env = ProjectTemplate(
             project_template_schema_version="0.1.0",
             name="Base",
-            situations=default_template.situations,
-            directories=default_template.directories,
+            situations=DEFAULT_PROJECT_TEMPLATE.situations,
+            directories=DEFAULT_PROJECT_TEMPLATE.directories,
             environment={"EXISTING_VAR": "original_value"},
             description=None,
+            validation_info=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
         )
-
-        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
             base=base_with_env,
@@ -578,18 +503,12 @@ name: "Custom Project"
 environment:
   NEW_VAR: "new_value"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -629,18 +548,12 @@ environment:
   VAR1: "value1"
   VAR2: "value2"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -678,18 +591,12 @@ situations:
       create_dirs: true
     fallback: null
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )
@@ -708,18 +615,12 @@ situations:
     policy:
       on_collision: "overwrite"
 """
-        overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        overlay = load_partial_project_template(yaml_text, overlay_validation)
-        assert overlay is not None
-
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
-        assert default_template is not None
-
+        result = load_partial_project_template(yaml_text)
+        overlay = result.overlay
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
         ProjectTemplate.merge(
-            base=default_template,
+            base=DEFAULT_PROJECT_TEMPLATE,
             overlay=overlay,
             validation_info=validation,
         )

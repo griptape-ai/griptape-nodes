@@ -14,13 +14,9 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
-from griptape_nodes.common.project_templates.validation import (
-    ProjectValidationInfo,
-    ProjectValidationStatus,
-)
-
 if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.project import ProjectTemplate
+    from griptape_nodes.common.project_templates.validation import ProjectValidationInfo
 
 
 @dataclass
@@ -63,16 +59,6 @@ class ProjectOverlayData(NamedTuple):
     environment: dict[str, str]
     description: str | None
     line_info: YAMLLineInfo
-
-
-class PartialTemplateResult(NamedTuple):
-    """Result of loading a partial project template for merging.
-
-    Contains the overlay data and validation information from structural checks.
-    """
-
-    overlay: ProjectOverlayData
-    validation: ProjectValidationInfo
 
 
 def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
@@ -135,15 +121,22 @@ def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
     return YAMLParseResult(data=data, line_info=line_info)
 
 
-def load_project_template_from_yaml(yaml_text: str) -> ProjectTemplate:
+def load_project_template_from_yaml(
+    yaml_text: str,
+    validation_info: ProjectValidationInfo,
+) -> ProjectTemplate | None:
     """Parse project.yml text into ProjectTemplate.
 
     Two-pass approach:
     1. Load raw YAML with line tracking (may raise YAMLError)
     2. Build ProjectTemplate via from_dict(), collecting validation problems
 
-    Returns ProjectTemplate with validation_info populated.
-    Status will be GOOD, FLAWED, or UNUSABLE depending on problems found.
+    Args:
+        yaml_text: YAML text to parse
+        validation_info: Validation info to populate (caller-owned, will be mutated)
+
+    Returns:
+        ProjectTemplate on success, None if fatal errors prevent construction
     """
     # Lazy import required: circular dependency between this module and project module
     # loader imports from project, project imports from directory/situation, which import YAMLLineInfo from loader
@@ -153,32 +146,24 @@ def load_project_template_from_yaml(yaml_text: str) -> ProjectTemplate:
     try:
         result = load_yaml_with_line_tracking(yaml_text)
     except YAMLError as e:
-        # YAML syntax error - return UNUSABLE template
-        validation_info = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+        # YAML syntax error - cannot proceed
         validation_info.add_error(
             field_path="<root>",
             message=f"YAML syntax error: {e}",
             line_number=None,
         )
-        # Return a minimal template with validation errors
-        return ProjectTemplate(
-            project_template_schema_version="0.1.0",
-            name="Invalid Project",
-            situations={},
-            directories={},
-            environment={},
-            description=None,
-            validation_info=validation_info,
-        )
+        return None
 
     # Pass 2: Build ProjectTemplate with validation
-    validation_info = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
     template = ProjectTemplate.from_dict(result.data, validation_info, result.line_info)
 
     return template
 
 
-def load_partial_project_template(yaml_text: str) -> PartialTemplateResult:
+def load_partial_project_template(
+    yaml_text: str,
+    validation_info: ProjectValidationInfo,
+) -> ProjectOverlayData | None:
     """Load project template overlay for merging without full construction.
 
     Performs minimal structural validation:
@@ -194,11 +179,13 @@ def load_partial_project_template(yaml_text: str) -> PartialTemplateResult:
     Use this for loading user overlay templates before merge.
     After merge, full validation happens during object construction.
 
-    Returns:
-        PartialTemplateResult containing overlay data and validation info
-    """
-    validation_info = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+    Args:
+        yaml_text: YAML text to parse
+        validation_info: Validation info to populate (caller-owned, will be mutated)
 
+    Returns:
+        ProjectOverlayData on success, None if fatal errors prevent construction
+    """
     # Parse YAML with line tracking
     try:
         result = load_yaml_with_line_tracking(yaml_text)
@@ -210,19 +197,7 @@ def load_partial_project_template(yaml_text: str) -> PartialTemplateResult:
             message=f"YAML syntax error: {e}",
             line_number=None,
         )
-        # Return minimal partial data with error
-        return PartialTemplateResult(
-            overlay=ProjectOverlayData(
-                name="Invalid Project",
-                project_template_schema_version="0.1.0",
-                situations={},
-                directories={},
-                environment={},
-                description=None,
-                line_info=YAMLLineInfo(),
-            ),
-            validation=validation_info,
-        )
+        return None
 
     # Validate required field: name
     name = data.get("name")
@@ -298,15 +273,12 @@ def load_partial_project_template(yaml_text: str) -> PartialTemplateResult:
         )
         description = None
 
-    return PartialTemplateResult(
-        overlay=ProjectOverlayData(
-            name=name,
-            project_template_schema_version=schema_version,
-            situations=situations,
-            directories=directories,
-            environment=environment,
-            description=description,
-            line_info=line_info,
-        ),
-        validation=validation_info,
+    return ProjectOverlayData(
+        name=name,
+        project_template_schema_version=schema_version,
+        situations=situations,
+        directories=directories,
+        environment=environment,
+        description=description,
+        line_info=line_info,
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ruamel.yaml import YAML
@@ -14,7 +14,6 @@ from griptape_nodes.common.project_templates.validation import (
     ProjectOverrideAction,
     ProjectOverrideCategory,
     ProjectValidationInfo,
-    ProjectValidationStatus,
 )
 
 if TYPE_CHECKING:
@@ -33,10 +32,6 @@ class ProjectTemplate:
     directories: dict[str, DirectoryDefinition]  # logical_name -> definition
     environment: dict[str, str]  # Custom environment variables
     description: str | None = None
-
-    validation_info: ProjectValidationInfo = field(
-        default_factory=lambda: ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-    )
 
     @staticmethod
     def from_dict(  # noqa: C901, PLR0912, PLR0915
@@ -198,7 +193,6 @@ class ProjectTemplate:
             directories=directories,
             environment=environment,
             description=description,
-            validation_info=validation_info,
         )
 
     def get_situation(self, situation_name: str) -> SituationTemplate | None:
@@ -208,10 +202,6 @@ class ProjectTemplate:
     def get_directory(self, directory_name: str) -> DirectoryDefinition | None:
         """Get a directory definition by logical name."""
         return self.directories.get(directory_name)
-
-    def is_valid(self) -> bool:
-        """Check if template is valid (GOOD or FLAWED status)."""
-        return self.validation_info.status in (ProjectValidationStatus.GOOD, ProjectValidationStatus.FLAWED)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary suitable for YAML export."""
@@ -415,5 +405,4 @@ class ProjectTemplate:
             directories=merged_directories,
             environment=merged_environment,
             description=merged_description,
-            validation_info=validation_info,
         )

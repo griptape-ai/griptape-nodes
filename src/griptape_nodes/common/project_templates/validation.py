@@ -134,3 +134,7 @@ class ProjectValidationInfo:
             action: Whether it was modified (existed in base) or added (new in overlay)
         """
         self.overrides.append(ProjectOverride(category=category, name=name, action=action))
+
+    def is_usable(self) -> bool:
+        """Check if template can be used (GOOD or FLAWED status)."""
+        return self.status in (ProjectValidationStatus.GOOD, ProjectValidationStatus.FLAWED)
