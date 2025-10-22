@@ -895,6 +895,17 @@
       }
     },
     {
+      "class_name": "MergeVideoAudio",
+      "file_path": "griptape_nodes_library/video/merge_video_audio.py",
+      "metadata": {
+        "category": "video",
+        "description": "Merge video and audio files with optional fade in/out effects and volume control",
+        "display_name": "Merge Video Audio",
+        "icon": "volume-2",
+        "group": "merge"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
