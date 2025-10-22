@@ -379,7 +379,6 @@ class CopyTreeRequest(RequestPayload):
     Args:
         source_path: Path to the source directory to copy
         destination_path: Path where the directory tree should be copied
-        workspace_only: If True, constrain to workspace directory
         symlinks: If True, copy symbolic links as links (default: False)
         ignore_dangling_symlinks: If True, ignore dangling symlinks (default: False)
         dirs_exist_ok: If True, allow destination to exist (default: False)
@@ -390,7 +389,6 @@ class CopyTreeRequest(RequestPayload):
 
     source_path: str
     destination_path: str
-    workspace_only: bool | None = True
     symlinks: bool = False
     ignore_dangling_symlinks: bool = False
     dirs_exist_ok: bool = False
@@ -439,7 +437,6 @@ class CopyFileRequest(RequestPayload):
     Args:
         source_path: Path to the source file to copy
         destination_path: Path where the file should be copied
-        workspace_only: If True, constrain to workspace directory
         overwrite: If True, overwrite destination if it exists (default: False)
 
     Results: CopyFileResultSuccess | CopyFileResultFailure
@@ -447,7 +444,6 @@ class CopyFileRequest(RequestPayload):
 
     source_path: str
     destination_path: str
-    workspace_only: bool | None = True
     overwrite: bool = False
 
 

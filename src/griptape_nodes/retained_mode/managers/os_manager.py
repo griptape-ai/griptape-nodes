@@ -1195,7 +1195,7 @@ class OSManager:
         """Handle a request to copy a single file."""
         # Resolve source path
         try:
-            source_path = self._resolve_file_path(request.source_path, workspace_only=request.workspace_only is True)
+            source_path = self._resolve_file_path(request.source_path, workspace_only=False)
             source_normalized = self._normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
@@ -1216,9 +1216,7 @@ class OSManager:
 
         # Resolve destination path
         try:
-            destination_path = self._resolve_file_path(
-                request.destination_path, workspace_only=request.workspace_only is True
-            )
+            destination_path = self._resolve_file_path(request.destination_path, workspace_only=False)
             dest_normalized = self._normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
@@ -1275,7 +1273,7 @@ class OSManager:
         )
 
     def _validate_copy_tree_paths(
-        self, source_str: str, dest_str: str, *, workspace_only: bool, dirs_exist_ok: bool
+        self, source_str: str, dest_str: str, *, dirs_exist_ok: bool
     ) -> CopyTreeValidationResult | CopyTreeResultFailure:
         """Validate and normalize source and destination paths for copy tree operation.
 
@@ -1284,7 +1282,7 @@ class OSManager:
         """
         # Resolve and normalize source path
         try:
-            source_path = self._resolve_file_path(source_str, workspace_only=workspace_only)
+            source_path = self._resolve_file_path(source_str, workspace_only=False)
             source_normalized = self._normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
@@ -1305,7 +1303,7 @@ class OSManager:
 
         # Resolve and normalize destination path
         try:
-            destination_path = self._resolve_file_path(dest_str, workspace_only=workspace_only)
+            destination_path = self._resolve_file_path(dest_str, workspace_only=False)
             dest_normalized = self._normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
@@ -1435,7 +1433,6 @@ class OSManager:
         validation_result = self._validate_copy_tree_paths(
             request.source_path,
             request.destination_path,
-            workspace_only=request.workspace_only is True,
             dirs_exist_ok=request.dirs_exist_ok,
         )
 
