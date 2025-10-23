@@ -15,6 +15,12 @@ from rich.console import Console
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
+    CopyFileRequest,
+    CopyFileResultFailure,
+    CopyFileResultSuccess,
+    CopyTreeRequest,
+    CopyTreeResultFailure,
+    CopyTreeResultSuccess,
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
@@ -73,6 +79,24 @@ class FileContentResult(NamedTuple):
     file_size: int
 
 
+@dataclass
+class CopyTreeValidationResult:
+    """Result from validating copy tree paths."""
+
+    source_normalized: str
+    dest_normalized: str
+    source_path: Path
+    destination_path: Path
+
+
+@dataclass
+class CopyTreeStats:
+    """Statistics from copying a directory tree."""
+
+    files_copied: int
+    total_bytes_copied: int
+
+
 class OSManager:
     """A class to manage OS-level scenarios.
 
@@ -103,6 +127,14 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=WriteFileRequest, callback=self.on_write_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=CopyTreeRequest, callback=self.on_copy_tree_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=CopyFileRequest, callback=self.on_copy_file_request
             )
 
             # Register for app initialization event to setup system resources
@@ -757,6 +789,30 @@ class OSManager:
             result_details=f"File written successfully: {file_path}",
         )
 
+    def _copy_file(self, src_path: Path, dest_path: Path) -> int:
+        """Copy a single file from source to destination with platform path normalization.
+
+        Args:
+            src_path: Source file path (Path object)
+            dest_path: Destination file path (Path object)
+
+        Returns:
+            Number of bytes copied
+
+        Raises:
+            OSError: If copy operation fails
+            PermissionError: If permission denied
+        """
+        # Normalize both paths for platform (handles Windows long paths)
+        src_normalized = self._normalize_path_for_platform(src_path)
+        dest_normalized = self._normalize_path_for_platform(dest_path)
+
+        # Copy file preserving metadata
+        shutil.copy2(src_normalized, dest_normalized)
+
+        # Return size of copied file
+        return os.path.getsize(src_normalized)  # noqa: PTH202
+
     def _write_file_content(self, normalized_path: str, content: str | bytes, encoding: str, *, append: bool) -> int:
         """Write content to a file and return bytes written.
 
@@ -1133,6 +1189,295 @@ class OSManager:
             old_path=str(old_path),
             new_path=str(new_path),
             result_details=ResultDetails(message=details, level=logging.INFO),
+        )
+
+    def on_copy_file_request(self, request: CopyFileRequest) -> ResultPayload:  # noqa: PLR0911, C901
+        """Handle a request to copy a single file."""
+        # Resolve source path
+        try:
+            source_path = self._resolve_file_path(request.source_path, workspace_only=False)
+            source_normalized = self._normalize_path_for_platform(source_path)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid source path: {e}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if source exists
+        if not Path(source_normalized).exists():
+            msg = f"Source file does not exist: {source_path}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Check if source is a file (not a directory)
+        if not Path(source_normalized).is_file():
+            msg = f"Source path is not a file: {source_path}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve destination path
+        try:
+            destination_path = self._resolve_file_path(request.destination_path, workspace_only=False)
+            dest_normalized = self._normalize_path_for_platform(destination_path)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid destination path: {e}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if destination already exists (unless overwrite is True)
+        if Path(dest_normalized).exists() and not request.overwrite:
+            msg = f"Destination file already exists: {destination_path}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Create parent directory if it doesn't exist
+        dest_parent = Path(dest_normalized).parent
+        if not dest_parent.exists():
+            try:
+                dest_parent.mkdir(parents=True)
+            except PermissionError as e:
+                msg = f"Permission denied creating parent directory {dest_parent}: {e}"
+                logger.error(msg)
+                return CopyFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+            except OSError as e:
+                msg = f"I/O error creating parent directory {dest_parent}: {e}"
+                logger.error(msg)
+                return CopyFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+
+        # Copy the file
+        try:
+            bytes_copied = self._copy_file(source_path, destination_path)
+        except PermissionError as e:
+            msg = f"Permission denied copying {source_path} to {destination_path}: {e}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            if "No space left" in str(e) or "Disk full" in str(e):
+                msg = f"Disk full copying {source_path} to {destination_path}: {e}"
+                logger.error(msg)
+                return CopyFileResultFailure(failure_reason=FileIOFailureReason.DISK_FULL, result_details=msg)
+
+            msg = f"I/O error copying {source_path} to {destination_path}: {e}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Unexpected error copying {source_path} to {destination_path}: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return CopyFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH
+        return CopyFileResultSuccess(
+            source_path=str(source_path),
+            destination_path=str(destination_path),
+            bytes_copied=bytes_copied,
+            result_details=f"File copied successfully: {source_path} -> {destination_path}",
+        )
+
+    def _validate_copy_tree_paths(
+        self, source_str: str, dest_str: str, *, dirs_exist_ok: bool
+    ) -> CopyTreeValidationResult | CopyTreeResultFailure:
+        """Validate and normalize source and destination paths for copy tree operation.
+
+        Returns:
+            CopyTreeValidationResult on success, CopyTreeResultFailure on validation failure
+        """
+        # Resolve and normalize source path
+        try:
+            source_path = self._resolve_file_path(source_str, workspace_only=False)
+            source_normalized = self._normalize_path_for_platform(source_path)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid source path: {e}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if source exists
+        if not Path(source_normalized).exists():
+            msg = f"Source path does not exist: {source_path}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Check if source is a directory
+        if not Path(source_normalized).is_dir():
+            msg = f"Source path is not a directory: {source_path}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and normalize destination path
+        try:
+            destination_path = self._resolve_file_path(dest_str, workspace_only=False)
+            dest_normalized = self._normalize_path_for_platform(destination_path)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Invalid destination path: {e}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if destination already exists (unless dirs_exist_ok is True)
+        if Path(dest_normalized).exists() and not dirs_exist_ok:
+            msg = f"Destination path already exists: {destination_path}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        return CopyTreeValidationResult(
+            source_normalized=source_normalized,
+            dest_normalized=dest_normalized,
+            source_path=source_path,
+            destination_path=destination_path,
+        )
+
+    def _copy_directory_tree(  # noqa: PLR0912, C901
+        self,
+        source_normalized: str,
+        dest_normalized: str,
+        *,
+        symlinks: bool,
+        ignore_dangling_symlinks: bool,
+        ignore_patterns: list[str] | None = None,
+    ) -> CopyTreeStats:
+        """Copy directory tree from source to destination.
+
+        Args:
+            source_normalized: Normalized source path
+            dest_normalized: Normalized destination path
+            symlinks: If True, copy symbolic links as links
+            ignore_dangling_symlinks: If True, ignore dangling symlinks
+            ignore_patterns: List of glob patterns to ignore (e.g., ["__pycache__", "*.pyc"])
+
+        Returns:
+            CopyTreeStats with files copied and bytes copied
+
+        Raises:
+            OSError: If copy operation fails
+            PermissionError: If permission denied
+        """
+        from fnmatch import fnmatch
+
+        files_copied = 0
+        total_bytes_copied = 0
+        ignore_patterns = ignore_patterns or []
+
+        def should_ignore(name: str) -> bool:
+            """Check if a file/directory name matches any ignore pattern."""
+            return any(fnmatch(name, pattern) for pattern in ignore_patterns)
+
+        # Create destination directory if it doesn't exist
+        dest_path_obj = Path(dest_normalized)
+        if not dest_path_obj.exists():
+            dest_path_obj.mkdir(parents=True)
+
+        # Walk through source directory and copy files/directories
+        for root, dirs, files in os.walk(source_normalized):
+            # Calculate relative path from source
+            root_path = Path(root)
+            source_path_obj = Path(source_normalized)
+            rel_path = root_path.relative_to(source_path_obj)
+
+            # Create corresponding directory in destination
+            if str(rel_path) != ".":
+                dest_dir = dest_path_obj / rel_path
+            else:
+                dest_dir = dest_path_obj
+
+            # Filter out ignored directories and create remaining ones
+            dirs_to_remove = []
+            for dir_name in dirs:
+                if should_ignore(dir_name):
+                    dirs_to_remove.append(dir_name)
+                    continue
+
+                src_dir = root_path / dir_name
+                dst_dir = dest_dir / dir_name
+
+                # Handle symlinks if requested
+                if src_dir.is_symlink():
+                    if symlinks:
+                        link_target = src_dir.readlink()
+                        dst_dir.symlink_to(link_target)
+                    continue
+
+                if not dst_dir.exists():
+                    dst_dir.mkdir(parents=True)
+
+            # Remove ignored directories from dirs list to prevent os.walk from descending into them
+            for dir_name in dirs_to_remove:
+                dirs.remove(dir_name)
+
+            # Copy files
+            for file_name in files:
+                # Skip ignored files
+                if should_ignore(file_name):
+                    continue
+
+                src_file = root_path / file_name
+                dst_file = dest_dir / file_name
+
+                # Handle symlinks if requested
+                if src_file.is_symlink():
+                    if symlinks:
+                        try:
+                            link_target = src_file.readlink()
+                            dst_file.symlink_to(link_target)
+                        except OSError:
+                            if not ignore_dangling_symlinks:
+                                raise
+                    continue
+
+                # Copy file
+                bytes_copied = self._copy_file(src_file, dst_file)
+                files_copied += 1
+                total_bytes_copied += bytes_copied
+
+        return CopyTreeStats(files_copied=files_copied, total_bytes_copied=total_bytes_copied)
+
+    def on_copy_tree_request(self, request: CopyTreeRequest) -> ResultPayload:
+        """Handle a request to copy a directory tree."""
+        # Validate paths
+        validation_result = self._validate_copy_tree_paths(
+            request.source_path,
+            request.destination_path,
+            dirs_exist_ok=request.dirs_exist_ok,
+        )
+
+        if isinstance(validation_result, CopyTreeResultFailure):
+            return validation_result
+
+        source_normalized = validation_result.source_normalized
+        dest_normalized = validation_result.dest_normalized
+        source_path = validation_result.source_path
+        destination_path = validation_result.destination_path
+
+        # Copy directory tree
+        try:
+            stats = self._copy_directory_tree(
+                source_normalized,
+                dest_normalized,
+                symlinks=request.symlinks,
+                ignore_dangling_symlinks=request.ignore_dangling_symlinks,
+                ignore_patterns=request.ignore_patterns,
+            )
+        except PermissionError as e:
+            msg = f"Permission denied copying {source_path} to {destination_path}: {e}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            if "No space left" in str(e) or "Disk full" in str(e):
+                msg = f"Disk full copying {source_path} to {destination_path}: {e}"
+                logger.error(msg)
+                return CopyTreeResultFailure(failure_reason=FileIOFailureReason.DISK_FULL, result_details=msg)
+
+            msg = f"I/O error copying {source_path} to {destination_path}: {e}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Unexpected error copying {source_path} to {destination_path}: {type(e).__name__}: {e}"
+            logger.error(msg)
+            return CopyTreeResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH
+        return CopyTreeResultSuccess(
+            source_path=str(source_path),
+            destination_path=str(destination_path),
+            files_copied=stats.files_copied,
+            total_bytes_copied=stats.total_bytes_copied,
+            result_details=f"Directory tree copied successfully: {source_path} -> {destination_path}",
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:

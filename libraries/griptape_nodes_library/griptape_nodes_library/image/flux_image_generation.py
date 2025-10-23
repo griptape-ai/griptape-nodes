@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import os
@@ -9,11 +10,11 @@ from copy import deepcopy
 from typing import Any
 from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -33,8 +34,17 @@ OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 # Model options
 MODEL_OPTIONS = ["flux-kontext-pro"]
 
+# Safety tolerance options
+SAFETY_TOLERANCE_OPTIONS = ["least restrictive", "moderate", "most restrictive"]
 
-class FluxImageGeneration(DataNode):
+# Response status constants
+STATUS_FAILED = "Failed"
+STATUS_ERROR = "Error"
+STATUS_REQUEST_MODERATED = "Request Moderated"
+STATUS_CONTENT_MODERATED = "Content Moderated"
+
+
+class FluxImageGeneration(SuccessFailureNode):
     """Generate images using Flux models via Griptape model proxy.
 
     Inputs:
@@ -45,11 +55,14 @@ class FluxImageGeneration(DataNode):
         - seed (int): Random seed for reproducible results (-1 for random)
         - prompt_upsampling (bool): If true, performs upsampling on the prompt
         - output_format (str): Desired format of the output image ("jpeg" or "png")
+        - safety_tolerance (str): Content moderation preset ("least restrictive", "moderate", or "most restrictive")
 
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
         - image_url (ImageUrlArtifact): Generated image as URL artifact
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
     """
 
     SERVICE_NAME = "Griptape"
@@ -158,6 +171,19 @@ class FluxImageGeneration(DataNode):
             )
         )
 
+        # Safety tolerance parameter
+        self.add_parameter(
+            Parameter(
+                name="safety_tolerance",
+                input_types=["str"],
+                type="str",
+                default_value=SAFETY_TOLERANCE_OPTIONS[0],
+                tooltip="Content moderation level",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=SAFETY_TOLERANCE_OPTIONS)},
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -192,29 +218,63 @@ class FluxImageGeneration(DataNode):
             )
         )
 
+        # Create status parameters for success/failure tracking (at the end)
+        self._create_status_parameters(
+            result_details_tooltip="Details about the image generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+    async def aprocess(self) -> None:
+        await self._process()
 
-    def _process(self) -> None:
-        params = self._get_parameters()
-        api_key = self._validate_api_key()
+    async def _process(self) -> None:
+        # Clear execution status at the start
+        self._clear_execution_status()
+
+        try:
+            params = self._get_parameters()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         model = params["model"]
         self._log(f"Generating image with {model}")
 
         # Submit request to get generation ID
-        generation_id = self._submit_request(params, headers)
-        if not generation_id:
-            self._set_safe_defaults()
+        try:
+            generation_id = await self._submit_request(params, headers)
+            if not generation_id:
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                )
+                return
+        except RuntimeError as e:
+            # HTTP error during submission
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
             return
 
         # Poll for result
-        self._poll_for_result(generation_id, headers)
+        await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
@@ -225,7 +285,34 @@ class FluxImageGeneration(DataNode):
             "seed": self.get_parameter_value("seed") or -1,
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
+            "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
         }
+
+    def _parse_safety_tolerance(self, value: str | None) -> int:
+        """Parse safety tolerance integer from preset string value.
+
+        Args:
+            value: One of "least restrictive", "moderate", or "most restrictive"
+
+        Returns:
+            Integer value: 6 for least restrictive, 3 for moderate, 0 for most restrictive
+
+        Raises:
+            ValueError: If value is None or not one of the expected options
+        """
+        if not value:
+            msg = "safety_tolerance cannot be None or empty"
+            raise ValueError(msg)
+
+        if value == "most restrictive":
+            return 0
+        if value == "moderate":
+            return 3
+        if value == "least restrictive":
+            return 6
+
+        msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
+        raise ValueError(msg)
 
     def _validate_api_key(self) -> str:
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
@@ -235,21 +322,28 @@ class FluxImageGeneration(DataNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        payload = self._build_payload(params)
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+        payload = await self._build_payload(params)
         proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
         self._log(f"Submitting request to Griptape model proxy with {params['model']}")
         self._log_request(payload)
 
         try:
-            response = requests.post(proxy_url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            response_json = response.json()
-            self._log("Request submitted successfully")
-        except requests.exceptions.HTTPError as e:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
+                response_json = response.json()
+                self._log("Request submitted successfully")
+        except httpx.HTTPStatusError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            msg = f"{self.name} API error: {e.response.status_code}"
+            # Try to parse error response body
+            try:
+                error_json = e.response.json()
+                error_details = self._extract_error_details(error_json)
+                msg = f"{error_details}"
+            except Exception:
+                msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
         except Exception as e:
             self._log(f"Request failed: {e}")
@@ -265,13 +359,13 @@ class FluxImageGeneration(DataNode):
         self._log("No generation_id returned from POST response")
         return None
 
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "prompt": params["prompt"],
             "aspect_ratio": params["aspect_ratio"],
             "prompt_upsampling": params["prompt_upsampling"],
             "output_format": params["output_format"],
-            "safety_tolerance": 6,  # Use default value as requested
+            "safety_tolerance": params["safety_tolerance"],
         }
 
         # Add seed if not -1 (random)
@@ -279,13 +373,13 @@ class FluxImageGeneration(DataNode):
             payload["seed"] = params["seed"]
 
         # Add input image if provided
-        input_image_data = self._process_input_image(params["input_image"])
+        input_image_data = await self._process_input_image(params["input_image"])
         if input_image_data:
             payload["input_image"] = input_image_data
 
         return payload
 
-    def _process_input_image(self, image_input: Any) -> str | None:
+    async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""
         if not image_input:
             return None
@@ -295,7 +389,7 @@ class FluxImageGeneration(DataNode):
         if not image_value:
             return None
 
-        return self._convert_to_base64_data_uri(image_value)
+        return await self._convert_to_base64_data_uri(image_value)
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
@@ -319,7 +413,7 @@ class FluxImageGeneration(DataNode):
 
         return None
 
-    def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
+    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
         # If it's already a data URI, return it
         if image_value.startswith("data:image/"):
@@ -327,15 +421,15 @@ class FluxImageGeneration(DataNode):
 
         # If it's a URL, download and convert to base64
         if image_value.startswith(("http://", "https://")):
-            return self._download_and_encode_image(image_value)
+            return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix
         return f"data:image/png;base64,{image_value}"
 
-    def _download_and_encode_image(self, url: str) -> str | None:
+    async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            image_bytes = self._download_bytes_from_url(url)
+            image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
                 import base64
 
@@ -363,65 +457,84 @@ class FluxImageGeneration(DataNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
         """Poll the generations endpoint until ready."""
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         max_attempts = 120  # 10 minutes with 5s intervals
         poll_interval = 5
 
-        for attempt in range(max_attempts):
-            try:
-                self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                response = requests.get(get_url, headers=headers, timeout=60)
-                response.raise_for_status()
-                result_json = response.json()
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_attempts):
+                try:
+                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
+                    response = await client.get(get_url, headers=headers, timeout=60)
+                    response.raise_for_status()
+                    result_json = response.json()
 
-                status = result_json.get("status", "unknown")
-                self._log(f"Status: {status}")
+                    # Update provider_response with latest polling data
+                    self.parameter_output_values["provider_response"] = result_json
 
-                if status == "Ready":
-                    # Extract the image URL from result.sample
-                    sample_url = result_json.get("result", {}).get("sample")
-                    if sample_url:
-                        self._handle_success(result_json, sample_url)
-                    else:
-                        self._log("No sample URL found in ready result")
+                    status = result_json.get("status", "unknown")
+                    self._log(f"Status: {status}")
+
+                    if status == "Ready":
+                        # Extract the image URL from result.sample
+                        sample_url = result_json.get("result", {}).get("sample")
+                        if sample_url:
+                            await self._handle_success(result_json, sample_url)
+                        else:
+                            self._log("No sample URL found in ready result")
+                            self._set_safe_defaults()
+                            self._set_status_results(
+                                was_successful=False,
+                                result_details="Generation completed but no image URL was found in the response.",
+                            )
+                        return
+                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
+                        self._log(f"Generation failed with status: {status}")
                         self._set_safe_defaults()
-                    return
-                if status in ["Failed", "Error"]:
-                    self._log(f"Generation failed with status: {status}")
-                    self._set_safe_defaults()
-                    return
+                        # Extract error details from the response
+                        error_details = self._extract_error_details(result_json)
+                        self._set_status_results(was_successful=False, result_details=error_details)
+                        return
 
-                # Still processing, wait before next poll
-                if attempt < max_attempts - 1:
-                    time.sleep(poll_interval)
+                    # Still processing, wait before next poll
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(poll_interval)
 
-            except requests.exceptions.HTTPError as e:
-                self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                if attempt == max_attempts - 1:
-                    self._set_safe_defaults()
-                    return
-            except Exception as e:
-                self._log(f"Error while polling: {e}")
-                if attempt == max_attempts - 1:
-                    self._set_safe_defaults()
-                    return
+                except httpx.HTTPStatusError as e:
+                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
+                        self._set_status_results(was_successful=False, result_details=error_msg)
+                        return
+                except Exception as e:
+                    self._log(f"Error while polling: {e}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        error_msg = f"Failed to poll generation status: {e}"
+                        self._set_status_results(was_successful=False, result_details=error_msg)
+                        return
 
-        # Timeout reached
-        self._log("Polling timed out waiting for result")
-        self._set_safe_defaults()
+            # Timeout reached
+            self._log("Polling timed out waiting for result")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
+            )
 
-    def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
+    async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
         """Handle successful generation result."""
         self.parameter_output_values["provider_response"] = response
-        self._save_image_from_url(image_url)
+        await self._save_image_from_url(image_url)
 
-    def _save_image_from_url(self, image_url: str) -> None:
+    async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = self._download_bytes_from_url(image_url)
+            image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = f"flux_image_{int(time.time())}.jpg"
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
@@ -430,11 +543,122 @@ class FluxImageGeneration(DataNode):
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
                 self._log(f"Saved image to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+                )
             else:
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+                )
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
+            )
+
+    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+        """Extract error details from API response.
+
+        Args:
+            response_json: The JSON response from the API that may contain error information
+
+        Returns:
+            A formatted error message string
+        """
+        if not response_json:
+            return "Generation failed with no error details provided by API."
+
+        top_level_error = response_json.get("error")
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+
+        # Try to extract from provider response first (more detailed)
+        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+        if provider_error_msg:
+            return provider_error_msg
+
+        # Fall back to top-level error
+        if top_level_error:
+            return self._format_top_level_error(top_level_error)
+
+        # Check for status-based errors
+        status = response_json.get("status")
+
+        # Handle moderation specifically
+        if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
+            return self._format_moderation_error(response_json)
+
+        # Handle other failure statuses
+        if status in [STATUS_FAILED, STATUS_ERROR]:
+            return self._format_failure_status_error(response_json, status)
+
+        # Final fallback
+        return f"Generation failed.\n\nFull API response:\n{response_json}"
+
+    def _format_moderation_error(self, response_json: dict[str, Any]) -> str:
+        """Format error message for moderated content."""
+        details = response_json.get("details", {})
+        moderation_reasons = details.get("Moderation Reasons", [])
+        if moderation_reasons:
+            reasons_str = ", ".join(moderation_reasons)
+            return f"Content was moderated and blocked.\nModeration Reasons: {reasons_str}"
+        return "Content was moderated and blocked by safety filters."
+
+    def _format_failure_status_error(self, response_json: dict[str, Any], status: str) -> str:
+        """Format error message for failed/error status."""
+        result = response_json.get("result", {})
+        if isinstance(result, dict) and result.get("error"):
+            return f"Generation failed: {result['error']}"
+        return f"Generation failed with status '{status}'."
+
+    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
+        """Parse provider_response if it's a JSON string."""
+        if isinstance(provider_response, str):
+            try:
+                return _json.loads(provider_response)
+            except Exception:
+                return None
+        if isinstance(provider_response, dict):
+            return provider_response
+        return None
+
+    def _format_provider_error(
+        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
+    ) -> str | None:
+        """Format error message from parsed provider response."""
+        if not parsed_provider_response:
+            return None
+
+        provider_error = parsed_provider_response.get("error")
+        if not provider_error:
+            return None
+
+        if isinstance(provider_error, dict):
+            error_message = provider_error.get("message", "")
+            details = f"{error_message}"
+
+            if error_code := provider_error.get("code"):
+                details += f"\nError Code: {error_code}"
+            if error_type := provider_error.get("type"):
+                details += f"\nError Type: {error_type}"
+            if top_level_error:
+                details = f"{top_level_error}\n\n{details}"
+            return details
+
+        error_msg = str(provider_error)
+        if top_level_error:
+            return f"{top_level_error}\n\nProvider error: {error_msg}"
+        return f"Generation failed. Provider error: {error_msg}"
+
+    def _format_top_level_error(self, top_level_error: Any) -> str:
+        """Format error message from top-level error field."""
+        if isinstance(top_level_error, dict):
+            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
+            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
+        return f"Generation failed with error: {top_level_error!s}"
 
     def _set_safe_defaults(self) -> None:
         """Set safe default values for outputs."""
@@ -443,12 +667,12 @@ class FluxImageGeneration(DataNode):
         self.parameter_output_values["image_url"] = None
 
     @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
+    async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL."""
         try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=120)
+                resp.raise_for_status()
+                return resp.content
         except Exception:
             return None
-        else:
-            return resp.content

@@ -366,3 +366,111 @@ class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeRequest(RequestPayload):
+    """Copy an entire directory tree from source to destination.
+
+    Use when: Copying directories recursively, backing up directory structures,
+    duplicating folder hierarchies with all contents.
+
+    Args:
+        source_path: Path to the source directory to copy
+        destination_path: Path where the directory tree should be copied
+        symlinks: If True, copy symbolic links as links (default: False)
+        ignore_dangling_symlinks: If True, ignore dangling symlinks (default: False)
+        dirs_exist_ok: If True, allow destination to exist (default: False)
+        ignore_patterns: List of glob patterns to ignore (e.g., ["__pycache__", "*.pyc", ".git"])
+
+    Results: CopyTreeResultSuccess | CopyTreeResultFailure
+    """
+
+    source_path: str
+    destination_path: str
+    symlinks: bool = False
+    ignore_dangling_symlinks: bool = False
+    dirs_exist_ok: bool = False
+    ignore_patterns: list[str] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Directory tree copied successfully.
+
+    Attributes:
+        source_path: Source path that was copied
+        destination_path: Destination path where tree was copied
+        files_copied: Number of files copied
+        total_bytes_copied: Total bytes copied
+    """
+
+    source_path: str
+    destination_path: str
+    files_copied: int
+    total_bytes_copied: int
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Directory tree copy failed.
+
+    Attributes:
+        failure_reason: Classification of why the copy failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileRequest(RequestPayload):
+    """Copy a single file from source to destination.
+
+    Use when: Copying individual files, duplicating files,
+    backing up single files.
+
+    Args:
+        source_path: Path to the source file to copy
+        destination_path: Path where the file should be copied
+        overwrite: If True, overwrite destination if it exists (default: False)
+
+    Results: CopyFileResultSuccess | CopyFileResultFailure
+    """
+
+    source_path: str
+    destination_path: str
+    overwrite: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File copied successfully.
+
+    Attributes:
+        source_path: Source path that was copied
+        destination_path: Destination path where file was copied
+        bytes_copied: Number of bytes copied
+    """
+
+    source_path: str
+    destination_path: str
+    bytes_copied: int
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File copy failed.
+
+    Attributes:
+        failure_reason: Classification of why the copy failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason

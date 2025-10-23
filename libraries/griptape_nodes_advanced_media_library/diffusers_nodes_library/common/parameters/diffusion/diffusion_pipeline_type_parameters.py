@@ -77,7 +77,7 @@ class DiffusionPipelineTypeParameters(ABC):
             self.regenerate_elements_for_pipeline_type(value)
 
     def regenerate_elements_for_pipeline_type(self, pipeline_type: str) -> None:
-        self._node.save_ui_options()
+        self._node.save_parameter_properties()
 
         self.pipeline_type_pipeline_params.remove_input_parameters()
         self.set_pipeline_type_pipeline_params(pipeline_type)
@@ -98,7 +98,7 @@ class DiffusionPipelineTypeParameters(ABC):
 
         self._node.reorder_elements(sorted_parameters)
 
-        self._node.clear_ui_options_cache()
+        self._node.clear_parameter_cache()
 
     def get_config_kwargs(self) -> dict:
         return self.pipeline_type_pipeline_params.get_config_kwargs()
