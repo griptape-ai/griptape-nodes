@@ -11,15 +11,13 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
-from griptape_nodes.retained_mode.events.connection_events import (
-    CreateConnectionRequest,
-    IncomingConnection,
-    ListConnectionsForNodeRequest,
-    ListConnectionsForNodeResultSuccess,
-    OutgoingConnection,
+from griptape_nodes.exe_types.node_types import (
+    AsyncResult,
+    ControlNode,
+    NodeResolutionState,
+    ParameterConnectionPreservationMixin,
 )
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -29,14 +27,13 @@ logger = logging.getLogger("diffusers_nodes_library")
 UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 
 
-class DiffusionPipelineBuilderNode(ControlNode):
+class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, ControlNode):
     STATIC_PARAMS: ClassVar = ["provider", "pipeline"]
     START_PARAMS: ClassVar = ["provider"]
     END_PARAMS: ClassVar = ["logs", "pipeline"]
 
     def __init__(self, **kwargs) -> None:
         self._initializing = True
-        self.parameter_cache: dict[str, dict[str, Any]] = {}
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
@@ -124,21 +121,8 @@ class DiffusionPipelineBuilderNode(ControlNode):
         if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
 
-            # Restore cached parameter properties if available
-            if parameter.name in self.parameter_cache:
-                cached = self.parameter_cache[parameter.name]
-
-                # Restore ui_options
-                ui_options_to_restore = {"hide"}
-                if "ui_options" in cached:
-                    parameter.ui_options = {
-                        **parameter.ui_options,
-                        **{k: v for k, v in cached["ui_options"].items() if k in ui_options_to_restore},
-                    }
-
-                # Restore allowed_modes
-                if "allowed_modes" in cached:
-                    parameter.allowed_modes = cached["allowed_modes"]
+            # Restore cached parameter properties using mixin method
+            self.restore_cached_parameter_properties(parameter)
 
             super().add_parameter(parameter)
 
@@ -175,21 +159,6 @@ class DiffusionPipelineBuilderNode(ControlNode):
     def preprocess(self) -> None:
         self.log_params.clear_logs()
 
-    def save_ui_options(self) -> None:
-        """Save ui_options and allowed_modes for all current parameters to cache."""
-        for element in self.root_ui_element.children:
-            parameter = self.get_parameter_by_name(element.name)
-            if parameter is not None:
-                self.parameter_cache[parameter.name] = {}
-                if parameter.ui_options:
-                    self.parameter_cache[parameter.name]["ui_options"] = parameter.ui_options.copy()
-                if parameter.allowed_modes:
-                    self.parameter_cache[parameter.name]["allowed_modes"] = parameter.allowed_modes.copy()
-
-    def clear_ui_options_cache(self) -> None:
-        """Clear the parameter cache."""
-        self.parameter_cache.clear()
-
     def process(self) -> AsyncResult:
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
@@ -218,49 +187,3 @@ class DiffusionPipelineBuilderNode(ControlNode):
 
         self.log_params.append_to_logs("Pipeline creation complete.\n")
         return pipe
-
-    def _save_connections(self) -> tuple[list[IncomingConnection], list[OutgoingConnection]]:
-        """Save all incoming and outgoing connections for this node, excluding static parameters."""
-        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self.name))
-        if not isinstance(result, ListConnectionsForNodeResultSuccess):
-            logger.error("Failed to list connections for node '%s'", self.name)
-            return [], []
-
-        # Exclude static parameters since restoring them will trigger cascade of changes
-        incoming = [
-            conn
-            for conn in result.incoming_connections
-            if conn.target_parameter_name not in DiffusionPipelineBuilderNode.STATIC_PARAMS
-        ]
-        outgoing = [
-            conn
-            for conn in result.outgoing_connections
-            if conn.source_parameter_name not in DiffusionPipelineBuilderNode.STATIC_PARAMS
-        ]
-        return incoming, outgoing
-
-    def _restore_connections(
-        self, saved_incoming: list[IncomingConnection], saved_outgoing: list[OutgoingConnection]
-    ) -> None:
-        """Restore connections for parameters that still exist after parameter changes."""
-        for conn in saved_incoming:
-            if self.does_name_exist(conn.target_parameter_name):
-                GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=conn.source_node_name,
-                        source_parameter_name=conn.source_parameter_name,
-                        target_node_name=self.name,
-                        target_parameter_name=conn.target_parameter_name,
-                    )
-                )
-
-        for conn in saved_outgoing:
-            if self.does_name_exist(conn.source_parameter_name):
-                GriptapeNodes.handle_request(
-                    CreateConnectionRequest(
-                        source_node_name=self.name,
-                        source_parameter_name=conn.source_parameter_name,
-                        target_node_name=conn.target_node_name,
-                        target_parameter_name=conn.target_parameter_name,
-                    )
-                )

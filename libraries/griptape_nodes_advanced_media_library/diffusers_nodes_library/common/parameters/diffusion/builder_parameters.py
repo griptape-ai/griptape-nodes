@@ -120,9 +120,8 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
-        self._node.save_ui_options()
-
-        # Save connections before removing parameters
+        # Save parameter properties and connections before removing parameters
+        self._node.save_parameter_properties()
         saved_incoming, saved_outgoing = self._node._save_connections()
 
         self.pipeline_type_parameters.remove_input_parameters()
@@ -136,20 +135,9 @@ class DiffusionPipelineBuilderParameters:
         self._node._restore_connections(saved_incoming, saved_outgoing)
 
         # Reorder parameters to maintain consistent layout
-        from diffusers_nodes_library.common.nodes.diffusion_pipeline_builder_node import DiffusionPipelineBuilderNode
+        self._node.reorder_parameters_by_groups()
 
-        start_params = DiffusionPipelineBuilderNode.START_PARAMS
-        end_params = DiffusionPipelineBuilderNode.END_PARAMS
-        excluded_params = {*start_params, *end_params}
-
-        middle_elements = [
-            element.name for element in self._node.root_ui_element._children if element.name not in excluded_params
-        ]
-        sorted_parameters = [*start_params, *middle_elements, *end_params]
-
-        self._node.reorder_elements(sorted_parameters)
-
-        self._node.clear_ui_options_cache()
+        self._node.clear_parameter_cache()
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:
