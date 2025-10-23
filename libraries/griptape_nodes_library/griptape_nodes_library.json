@@ -943,6 +943,17 @@
       }
     },
     {
+      "class_name": "AddAudioToVideo",
+      "file_path": "griptape_nodes_library/video/add_audio_to_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Add an audio track to a video with volume control, looping, timing, and fade effects",
+        "display_name": "Add Audio To Video",
+        "icon": "music",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "ToBool",
       "file_path": "griptape_nodes_library/convert/to_bool.py",
       "metadata": {
