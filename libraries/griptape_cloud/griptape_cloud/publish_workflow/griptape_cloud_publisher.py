@@ -43,7 +43,12 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ResultDetail,
+    ResultDetails,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
@@ -53,6 +58,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
     GetAllSecretValuesResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
+    PublishWorkflowProgressEvent,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
 )
@@ -76,13 +82,11 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         self,
         workflow_name: str,
         *,
-        execute_on_publish: bool = False,
         published_workflow_file_name: str | None = None,
         pickle_control_flow_result: bool = False,
     ) -> None:
         self._workflow_name = workflow_name
         self._published_workflow_file_name = published_workflow_file_name
-        self.execute_on_publish = execute_on_publish
         self._client = Client()
         self._gtc_client = AuthenticatedClient(
             base_url=self._get_base_url(),
@@ -91,9 +95,11 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         )
         self._gt_cloud_bucket_id: str | None = None
         self.pickle_control_flow_result = pickle_control_flow_result
+        self._progress: float = 0.0
 
     def publish_workflow(self) -> ResultPayload:
         try:
+            self._emit_progress_event(10.0, "Validating workflow before publish...")
             validation_exceptions = self._validate_before_publish()
             if validation_exceptions:
                 result_details: list[ResultDetail] = [
@@ -102,23 +108,29 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 return PublishWorkflowResultFailure(result_details=ResultDetails(*result_details))
 
             # Get the workflow shape
+            self._emit_progress_event(10.0, "Extracting workflow details...")
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
             self._create_run_input = self._gather_griptape_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
+            self._emit_progress_event(20.0, "Packaging workflow...")
             package_path = self._package_workflow(self._workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
             # Deploy the workflow to Griptape Cloud
+            self._emit_progress_event(20.0, "Deploying workflow to Griptape Cloud...")
             structure = self._deploy_workflow_to_cloud(package_path)
             logger.info(
                 "Workflow '%s' published successfully to Structure: %s", self._workflow_name, structure.structure_id
             )
 
             # Generate an executor workflow that can invoke the published structure
+            self._emit_progress_event(20.0, "Generating executor workflow...")
             executor_workflow_path = self._generate_executor_workflow(structure.structure_id, workflow_shape)
+
+            self._emit_progress_event(20.0, "Successfully published workflow!")
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
@@ -130,6 +142,19 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             return PublishWorkflowResultFailure(
                 result_details=details,
             )
+
+    def _emit_progress_event(self, additional_progress: float, message: str) -> None:
+        self._progress += additional_progress
+        self._progress = min(self._progress, 100.0)
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=PublishWorkflowProgressEvent(
+                    progress=self._progress,
+                    message=message,
+                )
+            )
+        )
+        GriptapeNodes.EventManager().put_event(event)
 
     @classmethod
     def _get_base_url(cls) -> str:
