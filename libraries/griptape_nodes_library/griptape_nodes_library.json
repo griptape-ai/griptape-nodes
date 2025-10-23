@@ -610,6 +610,16 @@
       }
     },
     {
+      "class_name": "ListToDictKeys",
+      "file_path": "griptape_nodes_library/convert/list_to_dict_keys.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts a list to dictionary keys with empty string values",
+        "display_name": "List To Dict Keys",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
