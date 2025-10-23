@@ -37,6 +37,11 @@ MODEL_OPTIONS = ["flux-kontext-pro"]
 # Safety tolerance options
 SAFETY_TOLERANCE_OPTIONS = ["least restrictive", "moderate", "most restrictive"]
 
+# Response status constants
+STATUS_FAILED = "Failed"
+STATUS_ERROR = "Error"
+STATUS_REQUEST_MODERATED = "Request Moderated"
+STATUS_CONTENT_MODERATED = "Content Moderated"
 
 class FluxImageGeneration(SuccessFailureNode):
     """Generate images using Flux models via Griptape model proxy.
@@ -484,7 +489,7 @@ class FluxImageGeneration(SuccessFailureNode):
                                 result_details="Generation completed but no image URL was found in the response.",
                             )
                         return
-                    if status in ["Failed", "Error", "Request Moderated", "Content Moderated"]:
+                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
                         self._log(f"Generation failed with status: {status}")
                         self._set_safe_defaults()
                         # Extract error details from the response
@@ -582,11 +587,11 @@ class FluxImageGeneration(SuccessFailureNode):
         status = response_json.get("status")
 
         # Handle moderation specifically
-        if status in ["Request Moderated", "Content Moderated"]:
+        if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
             return self._format_moderation_error(response_json)
 
         # Handle other failure statuses
-        if status in ["Failed", "Error"]:
+        if status in [STATUS_FAILED, STATUS_ERROR]:
             return self._format_failure_status_error(response_json, status)
 
         # Final fallback
