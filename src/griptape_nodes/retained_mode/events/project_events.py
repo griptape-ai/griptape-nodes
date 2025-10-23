@@ -389,3 +389,25 @@ class ValidateMacroSyntaxResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
     parse_failure: MacroParseFailure
     partial_variables: list[VariableInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetAllSituationsForProjectRequest(RequestPayload):
+    """Get all situation names and schemas from a project template."""
+
+    project_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class GetAllSituationsForProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Success result containing all situations."""
+
+    situations: dict[str, str]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failure result when cannot get situations."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.macro_parser import (
@@ -11,6 +12,8 @@ from griptape_nodes.common.macro_parser import (
     MacroMatchFailureReason,
     MacroParseFailure,
     MacroParseFailureReason,
+    MacroResolutionError,
+    MacroResolutionFailureReason,
     MacroSyntaxError,
     ParsedMacro,
 )
@@ -23,12 +26,17 @@ from griptape_nodes.common.project_templates import (
 )
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
+    GetAllSituationsForProjectRequest,
+    GetAllSituationsForProjectResultFailure,
+    GetAllSituationsForProjectResultSuccess,
     GetCurrentProjectRequest,
     GetCurrentProjectResultSuccess,
     GetMacroForSituationRequest,
     GetMacroForSituationResultFailure,
+    GetMacroForSituationResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
+    GetPathForMacroResultSuccess,
     GetProjectTemplateRequest,
     GetProjectTemplateResultFailure,
     GetProjectTemplateResultSuccess,
@@ -37,6 +45,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetVariablesForMacroResultSuccess,
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
+    LoadProjectTemplateResultSuccess,
     MatchPathAgainstMacroRequest,
     MatchPathAgainstMacroResultFailure,
     MatchPathAgainstMacroResultSuccess,
@@ -51,8 +60,7 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
+    from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -163,19 +171,78 @@ class ProjectManager:
         4. Cache validation in registered_template_status
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
-
-        Implementation pending: Will use ReadFileRequest via GriptapeNodes.handle_request()
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         logger.info("Loading project template: %s", request.project_path)
 
-        # Stub implementation - will use ReadFileRequest when implemented
-        validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
-        self.registered_template_status[request.project_path] = validation
+        read_request = ReadFileRequest(
+            file_path=str(request.project_path),
+            encoding="utf-8",
+            workspace_only=False,
+        )
+        read_result = GriptapeNodes.handle_request(read_request)
 
-        return LoadProjectTemplateResultFailure(
+        if read_result.failed():
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
+            self.registered_template_status[request.project_path] = validation
+
+            return LoadProjectTemplateResultFailure(
+                project_path=request.project_path,
+                validation=validation,
+                result_details=f"File not found: {request.project_path}",
+            )
+
+        if not isinstance(read_result, ReadFileResultSuccess):
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+            self.registered_template_status[request.project_path] = validation
+
+            return LoadProjectTemplateResultFailure(
+                project_path=request.project_path,
+                validation=validation,
+                result_details="Unexpected result type from ReadFileRequest",
+            )
+
+        yaml_text = read_result.content
+        if not isinstance(yaml_text, str):
+            validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+            self.registered_template_status[request.project_path] = validation
+
+            return LoadProjectTemplateResultFailure(
+                project_path=request.project_path,
+                validation=validation,
+                result_details="Template must be text, got binary content",
+            )
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        template = load_project_template_from_yaml(yaml_text, validation)
+
+        if template is None:
+            self.registered_template_status[request.project_path] = validation
+            return LoadProjectTemplateResultFailure(
+                project_path=request.project_path,
+                validation=validation,
+                result_details="Failed to parse YAML template",
+            )
+
+        if not validation.is_usable():
+            self.registered_template_status[request.project_path] = validation
+            return LoadProjectTemplateResultFailure(
+                project_path=request.project_path,
+                validation=validation,
+                result_details=f"Template not usable (status: {validation.status})",
+            )
+
+        logger.info("Template loaded successfully (status: %s)", validation.status)
+
+        self.registered_template_status[request.project_path] = validation
+        self.successful_templates[request.project_path] = template
+
+        return LoadProjectTemplateResultSuccess(
             project_path=request.project_path,
+            template=template,
             validation=validation,
-            result_details="Template loading not yet implemented (stub)",
+            result_details=f"Template loaded successfully with status: {validation.status}",
         )
 
     def on_get_project_template_request(self, request: GetProjectTemplateRequest) -> ResultPayload:
@@ -206,16 +273,27 @@ class ProjectManager:
         1. Get template from successful_templates
         2. Get situation from template
         3. Return situation's macro schema
-
-        TODO: Implement when template system merges
         """
         logger.debug("Getting macro for situation: %s in project: %s", request.situation_name, request.project_path)
 
-        return GetMacroForSituationResultFailure(
-            result_details="Macro retrieval not yet implemented (stub)",
+        template = self.successful_templates.get(request.project_path)
+        if template is None:
+            return GetMacroForSituationResultFailure(
+                result_details=f"Project template not loaded: {request.project_path}",
+            )
+
+        situation = template.situations.get(request.situation_name)
+        if situation is None:
+            return GetMacroForSituationResultFailure(
+                result_details=f"Situation not found: {request.situation_name}",
+            )
+
+        return GetMacroForSituationResultSuccess(
+            macro_schema=situation.schema,
+            result_details=f"Retrieved schema for situation: {request.situation_name}",
         )
 
-    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:
+    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Resolve ANY macro schema with variables to final Path.
 
         Flow:
@@ -229,15 +307,87 @@ class ProjectManager:
         4. If any missing → ERROR: MISSING_REQUIRED_VARIABLES
         5. Resolve macro with complete variable bag
         6. Return resolved Path
-
-        TODO: Implement macro resolution when template system merges
         """
         logger.debug("Resolving macro: %s in project: %s", request.macro_schema, request.project_path)
 
-        return GetPathForMacroResultFailure(
-            failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-            error_details="Path resolution not yet implemented (stub)",
-            result_details="Path resolution not yet implemented",
+        try:
+            parsed_macro = ParsedMacro(request.macro_schema)
+        except MacroSyntaxError as e:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                error_details=str(e),
+                result_details=f"Invalid macro syntax: {e}",
+            )
+
+        template = self.successful_templates.get(request.project_path)
+        if template is None:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                error_details="Project template not loaded",
+                result_details=f"Project template not loaded: {request.project_path}",
+            )
+
+        variable_infos = parsed_macro.get_variables()
+        directory_names = set(template.directories.keys())
+        user_provided_names = set(request.variables.keys())
+
+        conflicting = directory_names & user_provided_names
+        if conflicting:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                conflicting_variables=sorted(conflicting),
+                result_details=f"Variables conflict with directory names: {', '.join(sorted(conflicting))}",
+            )
+
+        resolution_bag: dict[str, str | int] = {}
+
+        for var_info in variable_infos:
+            var_name = var_info.name
+
+            if var_name in directory_names:
+                directory_def = template.directories[var_name]
+                resolution_bag[var_name] = directory_def.path_schema
+            elif var_name in user_provided_names:
+                resolution_bag[var_name] = request.variables[var_name]
+
+        required_vars = {v.name for v in variable_infos if v.is_required}
+        provided_vars = set(resolution_bag.keys())
+        missing = required_vars - provided_vars
+
+        if missing:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                missing_variables=sorted(missing),
+                result_details=f"Missing required variables: {', '.join(sorted(missing))}",
+            )
+
+        if self.secrets_manager is None:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                error_details="SecretsManager not available",
+                result_details="SecretsManager not available",
+            )
+
+        try:
+            resolved_string = parsed_macro.resolve(resolution_bag, self.secrets_manager)
+        except MacroResolutionError as e:
+            if e.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES:
+                path_failure_reason = PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES
+            else:
+                path_failure_reason = PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+
+            return GetPathForMacroResultFailure(
+                failure_reason=path_failure_reason,
+                missing_variables=e.missing_variables,
+                error_details=str(e),
+                result_details=f"Macro resolution failed: {e}",
+            )
+
+        resolved_path = Path(resolved_string)
+
+        return GetPathForMacroResultSuccess(
+            resolved_path=resolved_path,
+            result_details=f"Resolved to: {resolved_path}",
         )
 
     def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> ResultPayload:
@@ -393,6 +543,44 @@ class ProjectManager:
             variables=variables,
             warnings=[],
             result_details=f"Macro syntax is valid with {len(variables)} variables",
+        )
+
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        """Load system default project template when app initializes.
+
+        Called by EventManager after all libraries are loaded.
+        """
+        logger.info("ProjectManager: Loading system default project template")
+
+        try:
+            self._load_system_defaults()
+
+            # Set as current project
+            set_request = SetCurrentProjectRequest(project_path=DEFAULT_PROJECT_YAML_PATH)
+            self.on_set_current_project_request(set_request)
+
+            logger.info("Successfully loaded default project template")
+        except Exception as e:
+            logger.error("Failed to load default project template: %s", e)
+
+    def on_get_all_situations_for_project_request(self, request: GetAllSituationsForProjectRequest) -> ResultPayload:
+        """Get all situation names and schemas from a project template."""
+        logger.debug("Getting all situations for project: %s", request.project_path)
+
+        template_info = self.registered_template_status.get(request.project_path)
+
+        if template_info is None:
+            self._load_system_defaults()
+            template_info = self.registered_template_status.get(request.project_path)
+
+        if template_info is None or template_info.status != ProjectValidationStatus.GOOD:
+            return GetAllSituationsForProjectResultFailure(result_details="Project template not available or invalid")
+
+        template = self.successful_templates[request.project_path]
+        situations = {situation_name: situation.schema for situation_name, situation in template.situations.items()}
+
+        return GetAllSituationsForProjectResultSuccess(
+            situations=situations, result_details=f"Found {len(situations)} situations"
         )
 
     # Private helper methods
