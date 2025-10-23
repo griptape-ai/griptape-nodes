@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 from diffusers_nodes_library.common.parameters.diffusion.builder_parameters import (
     DiffusionPipelineBuilderParameters,
@@ -11,12 +11,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
 from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import (
-    AsyncResult,
-    ControlNode,
-    NodeResolutionState,
-    ParameterConnectionPreservationMixin,
-)
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -27,13 +22,10 @@ logger = logging.getLogger("diffusers_nodes_library")
 UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 
 
-class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, ControlNode):
-    STATIC_PARAMS: ClassVar = ["provider", "pipeline"]
-    START_PARAMS: ClassVar = ["provider"]
-    END_PARAMS: ClassVar = ["logs", "pipeline"]
-
+class DiffusionPipelineBuilderNode(ControlNode):
     def __init__(self, **kwargs) -> None:
         self._initializing = True
+        self.ui_options_cache: dict[str, dict] = {}
         super().__init__(**kwargs)
         self.params = DiffusionPipelineBuilderParameters(self)
         self.huggingface_pipeline_params = HuggingFacePipelineParameter(self)
@@ -121,8 +113,13 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         if not self.does_name_exist(parameter.name):
             parameter.user_defined = True
 
-            # Restore cached parameter properties using mixin method
-            self.restore_cached_parameter_properties(parameter)
+            # Restore cached ui_options if available
+            ui_options_to_restore = {"hide"}
+            if parameter.name in self.ui_options_cache:
+                parameter.ui_options = {
+                    **parameter.ui_options,
+                    **{k: v for k, v in self.ui_options_cache[parameter.name].items() if k in ui_options_to_restore},
+                }
 
             super().add_parameter(parameter)
 
@@ -158,6 +155,17 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
 
     def preprocess(self) -> None:
         self.log_params.clear_logs()
+
+    def save_ui_options(self) -> None:
+        """Save ui_options for all current parameters to cache."""
+        for element in self.root_ui_element.children:
+            parameter = self.get_parameter_by_name(element.name)
+            if parameter is not None and parameter.ui_options:
+                self.ui_options_cache[parameter.name] = parameter.ui_options.copy()
+
+    def clear_ui_options_cache(self) -> None:
+        """Clear the ui_options cache."""
+        self.ui_options_cache.clear()
 
     def process(self) -> AsyncResult:
         self.preprocess()

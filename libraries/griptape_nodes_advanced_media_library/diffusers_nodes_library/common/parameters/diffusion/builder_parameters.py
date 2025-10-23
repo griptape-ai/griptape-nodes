@@ -120,9 +120,7 @@ class DiffusionPipelineBuilderParameters:
         self.pipeline_type_parameters.after_value_set(parameter, value)
 
     def regenerate_pipeline_type_parameters_for_provider(self, provider: str) -> None:
-        # Save parameter properties and connections before removing parameters
-        self._node.save_parameter_properties()
-        saved_incoming, saved_outgoing = self._node._save_connections()
+        self._node.save_ui_options()
 
         self.pipeline_type_parameters.remove_input_parameters()
         self.set_pipeline_type_parameters(provider)
@@ -131,13 +129,7 @@ class DiffusionPipelineBuilderParameters:
         first_pipeline_type = self.pipeline_type_parameters.pipeline_types[0]
         self._node.set_parameter_value("pipeline_type", first_pipeline_type)
 
-        # Restore connections after adding parameters
-        self._node._restore_connections(saved_incoming, saved_outgoing)
-
-        # Reorder parameters to maintain consistent layout
-        self._node.reorder_parameters_by_groups()
-
-        self._node.clear_parameter_cache()
+        self._node.clear_ui_options_cache()
 
     @property
     def pipeline_type_parameters(self) -> DiffusionPipelineTypeParameters:
