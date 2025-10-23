@@ -43,6 +43,7 @@ STATUS_ERROR = "Error"
 STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
+
 class FluxImageGeneration(SuccessFailureNode):
     """Generate images using Flux models via Griptape model proxy.
 
