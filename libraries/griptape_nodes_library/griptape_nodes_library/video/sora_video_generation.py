@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 import os
 import time
@@ -16,6 +18,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +42,16 @@ class SoraVideoGeneration(DataNode):
         - model (str): Model to use (default: sora-2, options: sora-2, sora-2-pro)
         - seconds (int): Clip duration in seconds (optional, options: 4, 6, 8)
         - size (str): Output resolution as widthxheight (default: 720x1280)
+        - start_frame (ImageUrlArtifact): Optional starting frame image (auto-updates size if supported)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (initial POST)
         - video_url (VideoUrlArtifact): Saved static video URL
+
+    Note: When a start_frame is provided, the size parameter will automatically update
+    to match the image dimensions if they match a supported resolution.
     """
 
     SERVICE_NAME = "Griptape"
@@ -118,6 +125,21 @@ class SoraVideoGeneration(DataNode):
             )
         )
 
+        self.add_parameter(
+            Parameter(
+                name="start_frame",
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                type="ImageUrlArtifact",
+                tooltip="Optional: Starting frame image (auto-updates size if dimensions are supported)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "display_name": "Start Frame",
+                    "clickable_file_browser": True,
+                    "expander": True,
+                },
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -156,7 +178,7 @@ class SoraVideoGeneration(DataNode):
             logger.info(message)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Update size options based on model selection."""
+        """Update size options based on model selection and auto-update size from start_frame."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             new_choices = SIZE_OPTIONS[value]
             current_size = self.get_parameter_value("size")
@@ -169,7 +191,40 @@ class SoraVideoGeneration(DataNode):
                 # Keep current size but update available choices
                 self._update_option_choices("size", new_choices, current_size)
 
+        elif parameter.name == "start_frame" and value:
+            # Auto-update size parameter to match image dimensions if supported
+            self._auto_update_size_from_image(value)
+
         return super().after_value_set(parameter, value)
+
+    def _auto_update_size_from_image(self, image_value: Any) -> None:
+        """Automatically update the size parameter to match the image dimensions if supported."""
+        try:
+            # Convert to ImageUrlArtifact if needed
+            if isinstance(image_value, dict):
+                image_value = dict_to_image_url_artifact(image_value)
+
+            if not hasattr(image_value, "value") or not image_value.value:
+                return
+
+            # Load PIL image to get dimensions
+            pil_image = load_pil_from_url(image_value.value)
+            image_size = f"{pil_image.width}x{pil_image.height}"
+
+            # Get available size options for current model
+            current_model = self.get_parameter_value("model") or "sora-2"
+            available_sizes = SIZE_OPTIONS.get(current_model, SIZE_OPTIONS["sora-2"])
+
+            # If image size matches one of the supported sizes, update the size parameter
+            if image_size in available_sizes:
+                self.set_parameter_value("size", image_size)
+                self._log(f"Auto-updated size to {image_size} to match start_frame dimensions")
+            else:
+                self._log(
+                    f"Start frame size {image_size} not in supported sizes {available_sizes} for model {current_model}"
+                )
+        except Exception as e:
+            self._log(f"Could not auto-update size from image: {e}")
 
     async def aprocess(self) -> None:
         await self._process()
@@ -199,6 +254,7 @@ class SoraVideoGeneration(DataNode):
             "model": self.get_parameter_value("model") or "sora-2",
             "seconds": seconds_value,
             "size": self.get_parameter_value("size") or "720x1280",
+            "start_frame": self.get_parameter_value("start_frame"),
         }
 
     def _validate_api_key(self) -> str:
@@ -208,6 +264,50 @@ class SoraVideoGeneration(DataNode):
             msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
             raise ValueError(msg)
         return api_key
+
+    def _process_start_frame(self, start_frame: Any, expected_size: str) -> str | None:
+        """Process start_frame image: validate dimensions and encode to base64.
+
+        Args:
+            start_frame: Image artifact or None
+            expected_size: Expected size as 'widthxheight' (e.g., '720x1280')
+
+        Returns:
+            Base64-encoded image string or None if no start_frame provided
+
+        Raises:
+            ValueError: If image dimensions don't match expected size
+        """
+        if not start_frame:
+            return None
+
+        # Convert to ImageUrlArtifact if needed
+        if isinstance(start_frame, dict):
+            start_frame = dict_to_image_url_artifact(start_frame)
+
+        if not hasattr(start_frame, "value") or not start_frame.value:
+            return None
+
+        # Load PIL image
+        pil_image = load_pil_from_url(start_frame.value)
+
+        # Parse expected dimensions
+        expected_width, expected_height = map(int, expected_size.split("x"))
+
+        # Validate dimensions
+        if pil_image.width != expected_width or pil_image.height != expected_height:
+            msg = (
+                f"Start frame dimensions ({pil_image.width}x{pil_image.height}) must match video size ({expected_size})"
+            )
+            raise ValueError(msg)
+
+        # Convert to base64
+        buffer = io.BytesIO()
+        pil_image.save(buffer, format="PNG")
+        image_bytes = buffer.getvalue()
+        base64_string = base64.b64encode(image_bytes).decode("utf-8")
+
+        return base64_string
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
@@ -222,10 +322,20 @@ class SoraVideoGeneration(DataNode):
         if params["seconds"]:
             json_data["seconds"] = str(params["seconds"])
 
+        # Process and add start_frame if provided
+        if params["start_frame"]:
+            base64_image = self._process_start_frame(params["start_frame"], params["size"])
+            if base64_image:
+                json_data["input_reference"] = base64_image
+
         self._log(f"Submitting request to proxy model={params['model']}")
         self._log(f"POST {post_url}")
-        self._log(f"JSON payload: {json_data}")
-        self._log(f"JSON payload types: {[(k, type(v).__name__, v) for k, v in json_data.items()]}")
+        self._log(f"JSON payload keys: {list(json_data.keys())}")
+        if "input_reference" in json_data:
+            self._log("Including start_frame as input_reference")
+        self._log(
+            f"JSON payload types: {[(k, type(v).__name__, len(v) if k == 'input_reference' else v) for k, v in json_data.items()]}"
+        )
 
         # Make request with JSON data
         async with httpx.AsyncClient() as client:

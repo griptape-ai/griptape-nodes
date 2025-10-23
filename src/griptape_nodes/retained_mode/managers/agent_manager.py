@@ -208,8 +208,8 @@ class AgentManager:
     def _create_agent(self, additional_mcp_servers: list[str] | None = None) -> Agent:
         output_schema = Schema(
             {
-                "generated_image_urls": [str],
                 "conversation_output": str,
+                "generated_image_urls": [str],
             }
         )
 
@@ -249,15 +249,17 @@ class AgentManager:
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
             agent = self._create_agent(additional_mcp_servers=request.additional_mcp_servers)
-            *events, last_event = agent.run_stream([request.input, *artifacts])
+            event_stream = agent.run_stream([request.input, *artifacts])
             full_result = ""
             last_conversation_output = ""
-            for event in events:
+            last_event = None
+            for event in event_stream:
                 if isinstance(event, TextChunkEvent):
                     full_result += event.token
                     try:
                         result_json = json.loads(repair_json(full_result))
-                        if "conversation_output" in result_json:
+
+                        if isinstance(result_json, dict) and "conversation_output" in result_json:
                             new_conversation_output = result_json["conversation_output"]
                             if new_conversation_output != last_conversation_output:
                                 GriptapeNodes.EventManager().put_event(
@@ -272,6 +274,7 @@ class AgentManager:
                                 last_conversation_output = new_conversation_output
                     except json.JSONDecodeError:
                         pass  # Ignore incomplete JSON
+                last_event = event
             if isinstance(last_event, FinishTaskEvent):
                 if isinstance(last_event.task_output, ErrorArtifact):
                     return RunAgentResultFailure(
@@ -286,7 +289,7 @@ class AgentManager:
             return RunAgentResultFailure(error=ErrorArtifact(last_event).to_dict(), result_details=err_msg)
         except Exception as e:
             err_msg = f"Error running agent: {e}"
-            logger.error(err_msg)
+            logger.exception(err_msg)
             return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:

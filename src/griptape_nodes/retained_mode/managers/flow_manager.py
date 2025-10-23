@@ -21,6 +21,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
+    NodeGroupProxyNode,
     NodeResolutionState,
     StartLoopNode,
     StartNode,
@@ -106,9 +107,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
     OriginalNodeParameter,
-    PackageNodeAsSerializedFlowRequest,
-    PackageNodeAsSerializedFlowResultFailure,
-    PackageNodeAsSerializedFlowResultSuccess,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultFailure,
     PackageNodesAsSerializedFlowResultSuccess,
@@ -261,9 +259,6 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
-        )
-        event_manager.assign_manager_to_request_type(
-            PackageNodeAsSerializedFlowRequest, self.on_package_node_as_serialized_flow_request
         )
         event_manager.assign_manager_to_request_type(
             PackageNodesAsSerializedFlowRequest, self.on_package_nodes_as_serialized_flow_request
@@ -1108,521 +1103,7 @@ class FlowManager:
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
 
-    def on_package_node_as_serialized_flow_request(self, request: PackageNodeAsSerializedFlowRequest) -> ResultPayload:  # noqa: PLR0911
-        """Handle request to package a node as a serialized flow.
-
-        Creates a self-contained flow with Start node -> Package node -> End node structure,
-        where artificial start/end nodes match the package node's connections.
-        """
-        # Step 1: Validate package node and flow
-        package_node_info = self._validate_package_node_and_flow(request=request)
-        if isinstance(package_node_info, PackageNodeAsSerializedFlowResultFailure):
-            return package_node_info
-
-        # Step 2: Validate library and get version
-        library_version = self._validate_and_get_library_info(request=request)
-        if isinstance(library_version, PackageNodeAsSerializedFlowResultFailure):
-            return library_version
-
-        # Step 3: Analyze package node connections
-        connection_analysis = self._analyze_package_node_connections(
-            package_node=package_node_info.package_node,
-            node_name=package_node_info.package_node.name,
-        )
-        if isinstance(connection_analysis, PackageNodeAsSerializedFlowResultFailure):
-            return connection_analysis
-
-        # Step 4: Serialize the package node
-        unique_parameter_uuid_to_values = {}
-        serialized_parameter_value_tracker = SerializedParameterValueTracker()
-        package_node = package_node_info.package_node
-        # Set to LOCAL_EXECUTION before packaging to prevent recursive loop.
-        previous_value = package_node.get_parameter_value("execution_environment")
-        package_node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
-        serialized_package_result = self._serialize_package_node(
-            node_name=package_node_info.package_node.name,
-            package_node=package_node_info.package_node,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-        )
-        # Now that we've serialized the value as LOCAL_EXECUTION, we need to restore it to whatever it was before
-        package_node.set_parameter_value("execution_environment", previous_value)
-        if isinstance(serialized_package_result, PackageNodeAsSerializedFlowResultFailure):
-            return serialized_package_result
-        # Step 5: Create start node commands and data connections
-        start_node_result = self._create_start_node_commands(
-            request=request,
-            incoming_data_connections=connection_analysis.incoming_data_connections,
-            package_node=package_node_info.package_node,
-            package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
-            library_version=library_version,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-        )
-        if isinstance(start_node_result, PackageNodeAsSerializedFlowResultFailure):
-            return start_node_result
-
-        # Step 6: Create end node commands and data connections
-        end_node_result = self._create_end_node_commands(
-            request=request,
-            package_node=package_node_info.package_node,
-            package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
-            library_version=library_version,
-        )
-        if isinstance(end_node_result, PackageNodeAsSerializedFlowResultFailure):
-            return end_node_result
-
-        # Step 7a: Create start node control flow connection
-        start_control_connection_result = self._create_start_node_control_connection(
-            entry_control_parameter_name=request.entry_control_parameter_name,
-            start_node_uuid=start_node_result.start_node_commands.node_uuid,
-            package_node_uuid=serialized_package_result.serialized_node_commands.node_uuid,
-            package_node=package_node_info.package_node,
-        )
-        if isinstance(start_control_connection_result, PackageNodeAsSerializedFlowResultFailure):
-            return start_control_connection_result
-
-        start_control_connections = [start_control_connection_result]
-
-        # Use only start control connections for now (end node control connections not implemented yet)
-        control_flow_connections = start_control_connections
-
-        # Step 8: Assemble the complete serialized flow
-        packaged_flow = self._assemble_serialized_flow(
-            serialized_package_result=serialized_package_result,
-            start_node_result=start_node_result,
-            end_node_result=end_node_result,
-            control_flow_connections=control_flow_connections,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            library_version=library_version,
-            request=request,
-        )
-
-        # Step 9: Build WorkflowShape from collected parameter shape data
-        workflow_shape = GriptapeNodes.WorkflowManager().build_workflow_shape_from_parameter_info(
-            input_node_params=start_node_result.input_shape_data, output_node_params=end_node_result.output_shape_data
-        )
-        # Return success result
-        return PackageNodeAsSerializedFlowResultSuccess(
-            result_details=f'Successfully packaged node "{package_node_info.package_node.name}" from flow "{package_node_info.package_flow_name}" as serialized flow with start node type "{request.start_node_type}" and end node type "{request.end_node_type}" from library "{request.start_end_specific_library_name}".',
-            serialized_flow_commands=packaged_flow,
-            workflow_shape=workflow_shape,
-        )
-
-    def _validate_package_node_and_flow(  # noqa: PLR0911
-        self, request: PackageNodeAsSerializedFlowRequest
-    ) -> PackageNodeInfo | PackageNodeAsSerializedFlowResultFailure:
-        """Validate and retrieve the package node and its parent flow."""
-        node_name = request.node_name
-        package_node = None
-
-        if node_name is None:
-            # First check if we have a current node
-            if not GriptapeNodes.ContextManager().has_current_node():
-                details = (
-                    "Attempted to package node from Current Context. Failed because the Current Context was empty."
-                )
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-            # Get the current node from context
-            package_node = GriptapeNodes.ContextManager().get_current_node()
-            node_name = package_node.name
-
-        if package_node is None:
-            try:
-                package_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-            except ValueError as err:
-                details = f"Attempted to package node '{node_name}'. Failed because node does not exist. Error: {err}."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        # Get the flow containing this node using the same pattern
-        package_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(node_name)
-        if package_flow_name is None:
-            details = f"Attempted to package node '{node_name}'. Failed because node is not assigned to any flow."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        try:
-            self.get_flow_by_name(flow_name=package_flow_name)
-        except KeyError as err:
-            details = f"Attempted to package node '{node_name}' from flow '{package_flow_name}'. Failed because flow does not exist. Error: {err}."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        # Validate entry control parameter if specified
-        if request.entry_control_parameter_name is not None:
-            entry_param = package_node.get_parameter_by_name(request.entry_control_parameter_name)
-            if entry_param is None:
-                details = f"Attempted to package node '{node_name}' with entry control parameter '{request.entry_control_parameter_name}'. Failed because the parameter does not exist on the node."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-            # Verify it's actually a control parameter
-            if ParameterTypeBuiltin.CONTROL_TYPE.value not in entry_param.input_types:
-                details = f"Attempted to package node '{node_name}' with entry control parameter '{request.entry_control_parameter_name}'. Failed because the parameter is not a control type parameter."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        return PackageNodeInfo(package_node=package_node, package_flow_name=package_flow_name)
-
-    def _validate_and_get_library_info(
-        self, request: PackageNodeAsSerializedFlowRequest
-    ) -> str | PackageNodeAsSerializedFlowResultFailure:
-        """Validate start/end node types exist in library and return library version."""
-        # Early validation - ensure both start and end node types exist in the specified library
-        try:
-            start_end_library = LibraryRegistry.get_library_for_node_type(
-                node_type=request.start_node_type, specific_library_name=request.start_end_specific_library_name
-            )
-        except KeyError as err:
-            details = f"Attempted to package node with start node type '{request.start_node_type}' from library '{request.start_end_specific_library_name}'. Failed because start node type was not found in library. Error: {err}."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        try:
-            LibraryRegistry.get_library_for_node_type(
-                node_type=request.end_node_type, specific_library_name=request.start_end_specific_library_name
-            )
-        except KeyError as err:
-            details = f"Attempted to package node with end node type '{request.end_node_type}' from library '{request.start_end_specific_library_name}'. Failed because end node type was not found in library. Error: {err}."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        # Get the actual library version
-        start_end_library_metadata = start_end_library.get_metadata()
-        return start_end_library_metadata.library_version
-
-    def _serialize_package_node(
-        self,
-        node_name: str,
-        package_node: BaseNode,
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        serialized_parameter_value_tracker: SerializedParameterValueTracker,
-    ) -> SerializeNodeToCommandsResultSuccess | PackageNodeAsSerializedFlowResultFailure:
-        """Serialize the package node to commands, adding OUTPUT mode to PROPERTY-only parameters."""
-        # Use the provided parameter tracking structures
-
-        # Create serialization request for the package node
-        serialize_node_request = SerializeNodeToCommandsRequest(
-            node_name=node_name,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-        )
-
-        # Execute the serialization
-        serialize_node_result = GriptapeNodes.handle_request(serialize_node_request)
-        if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):
-            details = f"Attempted to serialize package node '{node_name}'. Failed because node serialization failed."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-        # Add ALTER parameter commands for PROPERTY-only parameters to enable OUTPUT mode
-        # We need these to emit their values back so that the orchestrator/caller
-        # can reconcile the packaged node's values after it is executed.
-        package_alter_parameter_commands = []
-        for package_param in package_node.parameters:
-            has_output_mode = ParameterMode.OUTPUT in package_param.allowed_modes
-            has_property_mode = ParameterMode.PROPERTY in package_param.allowed_modes
-
-            # If has PROPERTY but not OUTPUT, add ALTER command to enable OUTPUT
-            if has_property_mode and not has_output_mode:
-                alter_param_request = AlterParameterDetailsRequest(
-                    parameter_name=package_param.name,
-                    node_name=package_node.name,
-                    mode_allowed_output=True,
-                )
-                package_alter_parameter_commands.append(alter_param_request)
-
-        # If we have alter parameter commands, append them to the existing element_modification_commands
-        if package_alter_parameter_commands:
-            serialize_node_result.serialized_node_commands.element_modification_commands.extend(
-                package_alter_parameter_commands
-            )
-
-        return serialize_node_result
-
-    def _create_start_node_commands(  # noqa: PLR0913
-        self,
-        request: PackageNodeAsSerializedFlowRequest,
-        incoming_data_connections: list[IncomingConnection],
-        package_node: BaseNode,
-        package_node_uuid: SerializedNodeCommands.NodeUUID,
-        library_version: str,
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        serialized_parameter_value_tracker: SerializedParameterValueTracker,
-    ) -> PackagingStartNodeResult | PackageNodeAsSerializedFlowResultFailure:
-        """Create start node commands and connections for incoming data connections."""
-        # Generate UUID and name for start node
-        start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
-        start_node_name = f"Start_Package_{package_node.name}"
-
-        # Build start node CreateNodeRequest
-        start_create_node_command = CreateNodeRequest(
-            node_type=request.start_node_type,
-            specific_library_name=request.start_end_specific_library_name,
-            node_name=start_node_name,
-            metadata={},
-            initial_setup=True,
-            create_error_proxy_on_failure=False,
-        )
-
-        # Create library details
-        start_node_library_details = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
-            library_version=library_version,
-        )
-
-        # Create parameter modification commands and connection mappings for the start node based on incoming DATA connections
-        start_node_parameter_commands = []
-        start_to_package_connections = []
-        start_node_parameter_value_commands = []
-        input_shape_data: WorkflowShapeNodes = {}
-
-        for incoming_conn in incoming_data_connections:
-            # Parameter name: use the package node's parameter name
-            param_name = incoming_conn.target_parameter_name
-
-            # Get the source node to determine parameter type
-            try:
-                source_node = GriptapeNodes.NodeManager().get_node_by_name(incoming_conn.source_node_name)
-            except ValueError as err:
-                details = f"Attempted to package node '{package_node.name}'. Failed because source node '{incoming_conn.source_node_name}' from incoming connection could not be found. Error: {err}."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-            # Get the source parameter
-            source_param = source_node.get_parameter_by_name(incoming_conn.source_parameter_name)
-            if not source_param:
-                details = f"Attempted to package node '{package_node.name}'. Failed because source parameter '{incoming_conn.source_parameter_name}' on node '{incoming_conn.source_node_name}' from incoming connection could not be found."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
-
-            # Extract parameter shape info for workflow shape (inputs from external sources)
-            param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
-                source_param, include_control_params=True
-            )
-            if param_shape_info is not None:
-                if start_node_name not in input_shape_data:
-                    input_shape_data[start_node_name] = {}
-                input_shape_data[start_node_name][param_name] = param_shape_info
-
-            # Extract parameter value from source node to set on start node
-            param_value_commands = GriptapeNodes.NodeManager().handle_parameter_value_saving(
-                parameter=source_param,
-                node=source_node,
-                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                create_node_request=start_create_node_command,
-            )
-            if param_value_commands is not None:
-                # Modify each command to target the start node parameter instead
-                for param_value_command in param_value_commands:
-                    param_value_command.set_parameter_value_command.node_name = start_node_name
-                    param_value_command.set_parameter_value_command.parameter_name = param_name
-                    start_node_parameter_value_commands.append(param_value_command)
-
-            # Create parameter command for start node
-            add_param_request = AddParameterToNodeRequest(
-                node_name=start_node_name,
-                parameter_name=param_name,
-                # Use the source parameter's output_type as the type for our start node parameter
-                # since we want to match what the original connection was providing
-                type=source_param.output_type,
-                default_value=None,
-                tooltip=f"Parameter {param_name} from packaged flow",
-                initial_setup=True,
-            )
-            start_node_parameter_commands.append(add_param_request)
-
-            # Create connection from start node to package node
-            start_to_package_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                source_node_uuid=start_node_uuid,
-                source_parameter_name=param_name,
-                target_node_uuid=package_node_uuid,
-                target_parameter_name=param_name,
-            )
-            start_to_package_connections.append(start_to_package_connection)
-
-        # Build complete SerializedNodeCommands for start node
-        start_node_dependencies = NodeDependencies()
-        start_node_dependencies.libraries.add(start_node_library_details)
-
-        start_node_commands = SerializedNodeCommands(
-            create_node_command=start_create_node_command,
-            element_modification_commands=start_node_parameter_commands,
-            node_dependencies=start_node_dependencies,
-            node_uuid=start_node_uuid,
-        )
-
-        return PackagingStartNodeResult(
-            start_node_commands=start_node_commands,
-            start_to_package_connections=start_to_package_connections,
-            input_shape_data=input_shape_data,
-            start_node_parameter_value_commands=start_node_parameter_value_commands,
-        )
-
-    def _create_end_node_commands(
-        self,
-        request: PackageNodeAsSerializedFlowRequest,
-        package_node: BaseNode,
-        package_node_uuid: SerializedNodeCommands.NodeUUID,
-        library_version: str,
-    ) -> PackagingEndNodeResult | PackageNodeAsSerializedFlowResultFailure:
-        """Create end node commands and connections for ALL package parameters that meet criteria."""
-        # Generate UUID and name for end node
-        end_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
-        end_node_name = f"End_Package_{package_node.name}"
-
-        # Build end node CreateNodeRequest
-        end_create_node_command = CreateNodeRequest(
-            node_type=request.end_node_type,
-            specific_library_name=request.start_end_specific_library_name,
-            node_name=end_node_name,
-            metadata={},
-            initial_setup=True,
-            create_error_proxy_on_failure=False,
-        )
-
-        # Create library details
-        end_node_library_details = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
-            library_version=library_version,
-        )
-
-        # Process ALL package node parameters to create end node parameters and connections
-        # Note: PROPERTY-only parameters are guaranteed to have OUTPUT mode after serialization
-        end_node_parameter_commands = []
-        package_to_end_connections = []
-        output_shape_data: WorkflowShapeNodes = {}
-
-        for package_param in package_node.parameters:
-            # Only ignore parameters that have ONLY INPUT mode (no OUTPUT or PROPERTY)
-            has_output_mode = ParameterMode.OUTPUT in package_param.allowed_modes
-            has_property_mode = ParameterMode.PROPERTY in package_param.allowed_modes
-
-            # Skip parameters that only have INPUT mode
-            if not has_output_mode and not has_property_mode:
-                continue
-
-            # Create prefixed parameter name for end node to avoid collisions
-            end_param_name = f"{request.output_parameter_prefix}{package_param.name}"
-
-            # Extract parameter shape info for workflow shape (outputs to external consumers)
-            param_shape_info = GriptapeNodes.WorkflowManager().extract_parameter_shape_info(
-                package_param, include_control_params=True
-            )
-            if param_shape_info is not None:
-                if end_node_name not in output_shape_data:
-                    output_shape_data[end_node_name] = {}
-                output_shape_data[end_node_name][end_param_name] = param_shape_info
-
-            # Create parameter command for end node
-            add_param_request = AddParameterToNodeRequest(
-                node_name=end_node_name,
-                parameter_name=end_param_name,
-                # Use the package node's output_type as the type for our end node parameter
-                type=package_param.output_type,
-                default_value=None,
-                tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
-                initial_setup=True,
-            )
-            end_node_parameter_commands.append(add_param_request)
-
-            # Create connection from package node to end node
-            package_to_end_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                source_node_uuid=package_node_uuid,
-                source_parameter_name=package_param.name,
-                target_node_uuid=end_node_uuid,
-                target_parameter_name=end_param_name,
-            )
-            package_to_end_connections.append(package_to_end_connection)
-
-        # Build complete SerializedNodeCommands for end node
-        end_node_dependencies = NodeDependencies()
-        end_node_dependencies.libraries.add(end_node_library_details)
-
-        end_node_commands = SerializedNodeCommands(
-            create_node_command=end_create_node_command,
-            element_modification_commands=end_node_parameter_commands,
-            node_dependencies=end_node_dependencies,
-            node_uuid=end_node_uuid,
-        )
-
-        return PackagingEndNodeResult(
-            end_node_commands=end_node_commands,
-            package_to_end_connections=package_to_end_connections,
-            output_shape_data=output_shape_data,
-        )
-
-    def _assemble_serialized_flow(  # noqa: PLR0913
-        self,
-        serialized_package_result: SerializeNodeToCommandsResultSuccess,
-        start_node_result: PackagingStartNodeResult,
-        end_node_result: PackagingEndNodeResult,
-        control_flow_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
-        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
-        library_version: str,
-        request: PackageNodeAsSerializedFlowRequest,
-    ) -> SerializedFlowCommands:
-        """Assemble the complete SerializedFlowCommands from all components."""
-        # Combine all connections: Start->Package + Package->End + Control Flow
-        all_connections = (
-            start_node_result.start_to_package_connections
-            + end_node_result.package_to_end_connections
-            + control_flow_connections
-        )
-
-        # Set up lock commands if needed
-        set_lock_commands_per_node = {}
-        if serialized_package_result.serialized_node_commands.lock_node_command:
-            set_lock_commands_per_node[serialized_package_result.serialized_node_commands.node_uuid] = (
-                serialized_package_result.serialized_node_commands.lock_node_command
-            )
-
-        # Include all three nodes in the flow
-        all_serialized_nodes = [
-            start_node_result.start_node_commands,
-            serialized_package_result.serialized_node_commands,
-            end_node_result.end_node_commands,
-        ]
-
-        # Create a CreateFlowRequest for the packaged flow so that it can
-        # run as a standalone workflow.
-        package_flow_name = (
-            f"Packaged_{serialized_package_result.serialized_node_commands.create_node_command.node_name}"
-        )
-        packaged_flow_metadata = {}  # Keep it simple until we have reason to populate it
-
-        create_packaged_flow_request = CreateFlowRequest(
-            parent_flow_name=None,  # Standalone flow
-            flow_name=package_flow_name,
-            set_as_new_context=False,  # Let deserializer decide
-            metadata=packaged_flow_metadata,
-        )
-
-        # Aggregate dependencies from the packaged nodes
-        packaged_dependencies = self._aggregate_flow_dependencies(all_serialized_nodes, [])
-
-        # Add the start/end specific library dependency
-        start_end_library_dependency = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
-            library_version=library_version,
-        )
-        packaged_dependencies.libraries.add(start_end_library_dependency)
-
-        # Aggregate node types used
-        packaged_node_types_used = self._aggregate_node_types_used(
-            serialized_node_commands=all_serialized_nodes, sub_flows_commands=[]
-        )
-
-        # Build the complete SerializedFlowCommands
-        return SerializedFlowCommands(
-            flow_initialization_command=create_packaged_flow_request,
-            serialized_node_commands=all_serialized_nodes,
-            serialized_connections=all_connections,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-            set_parameter_value_commands={
-                serialized_package_result.serialized_node_commands.node_uuid: serialized_package_result.set_parameter_value_commands,
-                start_node_result.start_node_commands.node_uuid: start_node_result.start_node_parameter_value_commands,
-            },
-            set_lock_commands_per_node=set_lock_commands_per_node,
-            sub_flows_commands=[],
-            node_dependencies=packaged_dependencies,
-            node_types_used=packaged_node_types_used,
-        )
-
-    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911
+    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912
         self, request: PackageNodesAsSerializedFlowRequest
     ) -> ResultPayload:
         """Handle request to package multiple nodes as a serialized flow.
@@ -1630,6 +1111,12 @@ class FlowManager:
         Creates a self-contained flow with Start → [Selected Nodes] → End structure,
         where artificial start/end nodes interface with external connections only.
         """
+        # Step 0: Apply defaults for None values
+        if request.start_node_type is None:
+            request.start_node_type = "StartFlow"
+        if request.end_node_type is None:
+            request.end_node_type = "EndFlow"
+
         # Step 1: Reject empty node list
         if not request.node_names:
             return PackageNodesAsSerializedFlowResultFailure(
@@ -1669,6 +1156,7 @@ class FlowManager:
             node_name_to_uuid=node_name_to_uuid,
             set_parameter_value_commands=packaged_nodes_set_parameter_value_commands,
             internal_connections=packaged_nodes_internal_connections,
+            proxy_node=request.proxy_node,
         )
         if isinstance(serialized_package_nodes, PackageNodesAsSerializedFlowResultFailure):
             return serialized_package_nodes
@@ -1682,7 +1170,9 @@ class FlowManager:
         self._inject_output_mode_for_property_parameters(nodes_to_package, serialized_package_nodes)
 
         # Step 7: Analyze external connections (connections from/to nodes outside our selection)
-        node_connections_dict = self._analyze_multi_node_external_connections(package_nodes=nodes_to_package)
+        node_connections_dict = self._analyze_multi_node_external_connections(
+            package_nodes=nodes_to_package, proxy_node=request.proxy_node
+        )
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
@@ -1793,7 +1283,8 @@ class FlowManager:
         # Early validation - ensure both start and end node types exist in the specified library
         try:
             start_end_library = LibraryRegistry.get_library_for_node_type(
-                node_type=request.start_node_type, specific_library_name=request.start_end_specific_library_name
+                node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                specific_library_name=request.start_end_specific_library_name,
             )
         except KeyError as err:
             details = f"Attempted to package nodes with start node type '{request.start_node_type}' from library '{request.start_end_specific_library_name}'. Failed because start node type was not found in library. Error: {err}."
@@ -1801,7 +1292,8 @@ class FlowManager:
 
         try:
             LibraryRegistry.get_library_for_node_type(
-                node_type=request.end_node_type, specific_library_name=request.start_end_specific_library_name
+                node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                specific_library_name=request.start_end_specific_library_name,
             )
         except KeyError as err:
             details = f"Attempted to package nodes with end node type '{request.end_node_type}' from library '{request.start_end_specific_library_name}'. Failed because end node type was not found in library. Error: {err}."
@@ -1842,7 +1334,7 @@ class FlowManager:
 
         return None
 
-    def _serialize_package_nodes_for_local_execution(  # noqa: C901, PLR0913
+    def _serialize_package_nodes_for_local_execution(  # noqa: PLR0913
         self,
         nodes_to_package: list[BaseNode],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -1852,6 +1344,7 @@ class FlowManager:
             SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
         ],
         internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
+        proxy_node: NodeGroupProxyNode | None = None,  # NodeGroupProxyNode if packaging nodes from a proxy
     ) -> list[SerializedNodeCommands] | PackageNodesAsSerializedFlowResultFailure:
         """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops.
 
@@ -1866,16 +1359,25 @@ class FlowManager:
             node_name_to_uuid: OUTPUT - Dictionary mapping node names to UUIDs (populated by this method)
             set_parameter_value_commands: OUTPUT - Dict mapping node UUIDs to parameter value commands (populated by this method)
             internal_connections: OUTPUT - List of connections between package nodes (populated by this method)
+            proxy_node: NodeGroupProxyNode if packaging nodes from a proxy, provides access to original connections
+                       stored before they were redirected to the proxy
 
         Returns:
             List of SerializedNodeCommands on success, or PackageNodesAsSerializedFlowResultFailure on failure
         """
-        # Intercept execution_environment for all nodes before serialization
+        # Intercept execution_environment and job_group for all nodes before serialization
         original_execution_environments = {}
+        original_job_groups = {}
         for node in nodes_to_package:
-            original_value = node.get_parameter_value("execution_environment")
-            original_execution_environments[node.name] = original_value
+            # Save and override execution_environment to prevent recursive packaging loops
+            original_exec_value = node.get_parameter_value("execution_environment")
+            original_execution_environments[node.name] = original_exec_value
             node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
+
+            # Save and clear job_group to prevent group processing in packaged flow
+            original_job_group_value = node.get_parameter_value("job_group")
+            original_job_groups[node.name] = original_job_group_value
+            node.set_parameter_value("job_group", "")
 
         try:
             # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
@@ -1912,8 +1414,134 @@ class FlowManager:
 
             # Build internal connections between package nodes
             package_node_names_set = {n.name for n in nodes_to_package}
+
+            # Get connections using appropriate method based on whether we have a proxy node
+            connections_result = self._get_internal_connections_for_package(
+                nodes_to_package=nodes_to_package,
+                package_node_names_set=package_node_names_set,
+                node_name_to_uuid=node_name_to_uuid,
+                proxy_node=proxy_node,
+            )
+
+            if isinstance(connections_result, PackageNodesAsSerializedFlowResultFailure):
+                return connections_result
+
+            internal_connections.extend(connections_result)
+        finally:
+            # Always restore original execution_environment and job_group values, even on failure
+            for node_name, original_value in original_execution_environments.items():
+                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                restore_node.set_parameter_value("execution_environment", original_value)
+
+            for node_name, original_job_group in original_job_groups.items():
+                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
+                restore_node.set_parameter_value("job_group", original_job_group)
+
+        return serialized_node_commands
+
+    def _get_internal_connections_for_package(  # noqa: C901, PLR0912
+        self,
+        nodes_to_package: list[BaseNode],
+        package_node_names_set: set[str],
+        node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],
+        proxy_node: NodeGroupProxyNode | None,
+    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization] | PackageNodesAsSerializedFlowResultFailure:
+        """Get internal connections between package nodes.
+
+        If a proxy_node is provided, uses the stored internal_connections from the NodeGroup
+        which preserve the original connection structure before redirection to the proxy.
+        Otherwise, queries connections from the connection manager.
+
+        Args:
+            nodes_to_package: List of nodes being packaged
+            package_node_names_set: Set of node names in the package for O(1) lookup
+            node_name_to_uuid: Mapping of node names to their UUIDs in the serialization
+            proxy_node: Optional proxy node containing the original connection structure
+
+        Returns:
+            List of serialized connections, or PackageNodesAsSerializedFlowResultFailure on error
+        """
+        internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization] = []
+
+        if proxy_node is not None and hasattr(proxy_node, "node_group_data"):
+            # Use stored connections from NodeGroup which have the original node references
+            node_group = proxy_node.node_group_data
+
+            # 1. Add internal connections (between nodes inside the group)
+            for conn in node_group.internal_connections:
+                source_node_name = conn.source_node.name
+                target_node_name = conn.target_node.name
+
+                # Only include connections where BOTH nodes are in our package
+                if source_node_name in package_node_names_set and target_node_name in package_node_names_set:
+                    source_uuid = node_name_to_uuid[source_node_name]
+                    target_uuid = node_name_to_uuid[target_node_name]
+                    internal_connections.append(
+                        SerializedFlowCommands.IndirectConnectionSerialization(
+                            source_node_uuid=source_uuid,
+                            source_parameter_name=conn.source_parameter.name,
+                            target_node_uuid=target_uuid,
+                            target_parameter_name=conn.target_parameter.name,
+                        )
+                    )
+
+            # 2. Add external incoming connections (from outside into the group)
+            # These connections have been redirected to point TO the proxy, but we want the original targets
+            for conn in node_group.external_incoming_connections:
+                conn_id = id(conn)
+                original_target = node_group.original_incoming_targets.get(conn_id)
+
+                if original_target and original_target.name in package_node_names_set:
+                    # The source is outside the package, target is inside
+                    # We include these because the source will be external (like StartFlow)
+                    source_node_name = conn.source_node.name
+                    target_node_name = original_target.name
+
+                    # Only include if source is NOT in package (external) and target IS in package
+                    if source_node_name not in package_node_names_set:
+                        source_uuid = node_name_to_uuid.get(source_node_name)
+                        target_uuid = node_name_to_uuid[target_node_name]
+
+                        # Source might not have a UUID if it's external to the package
+                        if source_uuid:
+                            internal_connections.append(
+                                SerializedFlowCommands.IndirectConnectionSerialization(
+                                    source_node_uuid=source_uuid,
+                                    source_parameter_name=conn.source_parameter.name,
+                                    target_node_uuid=target_uuid,
+                                    target_parameter_name=conn.target_parameter.name,
+                                )
+                            )
+
+            # 3. Add external outgoing connections (from the group to outside)
+            # These connections have been redirected to point FROM the proxy, but we want the original sources
+            for conn in node_group.external_outgoing_connections:
+                conn_id = id(conn)
+                original_source = node_group.original_outgoing_sources.get(conn_id)
+
+                if original_source and original_source.name in package_node_names_set:
+                    # The source is inside the package, target is outside
+                    source_node_name = original_source.name
+                    target_node_name = conn.target_node.name
+
+                    # Only include if source IS in package and target is NOT in package (external)
+                    if target_node_name not in package_node_names_set:
+                        source_uuid = node_name_to_uuid[source_node_name]
+                        target_uuid = node_name_to_uuid.get(target_node_name)
+
+                        # Target might not have a UUID if it's external to the package
+                        if target_uuid:
+                            internal_connections.append(
+                                SerializedFlowCommands.IndirectConnectionSerialization(
+                                    source_node_uuid=source_uuid,
+                                    source_parameter_name=conn.source_parameter.name,
+                                    target_node_uuid=target_uuid,
+                                    target_parameter_name=conn.target_parameter.name,
+                                )
+                            )
+        else:
+            # No proxy node - query connections from connection manager
             for node in nodes_to_package:
-                # Get connections FROM this node TO other nodes in the package
                 list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
                 list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
                     list_connections_request
@@ -1937,13 +1565,8 @@ class FlowManager:
                                 target_parameter_name=outgoing_conn.target_parameter_name,
                             )
                         )
-        finally:
-            # Always restore original execution_environment values, even on failure
-            for node_name, original_value in original_execution_environments.items():
-                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-                restore_node.set_parameter_value("execution_environment", original_value)
 
-        return serialized_node_commands
+        return internal_connections
 
     def _inject_output_mode_for_property_parameters(
         self, nodes_to_package: list[BaseNode], serialized_package_nodes: list[SerializedNodeCommands]
@@ -1992,7 +1615,7 @@ class FlowManager:
                 serialized_node.element_modification_commands.extend(package_alter_parameter_commands)
 
     def _analyze_multi_node_external_connections(
-        self, package_nodes: list[BaseNode]
+        self, package_nodes: list[BaseNode], proxy_node: NodeGroupProxyNode | None = None
     ) -> dict[str, ConnectionAnalysis] | PackageNodesAsSerializedFlowResultFailure:
         """Analyze external connections for each package node using filtered single-node analysis.
 
@@ -2008,6 +1631,7 @@ class FlowManager:
 
         Args:
             package_nodes: List of nodes being packaged together
+            proxy_node: Optional proxy node containing the original connection structure
 
         Returns:
             Dictionary mapping node_name -> ConnectionAnalysis, where each ConnectionAnalysis
@@ -2022,32 +1646,126 @@ class FlowManager:
                 package_node=package_node,
                 node_name=package_node.name,
                 package_node_names=package_node_names_set,
+                proxy_node=proxy_node,
             )
-            if isinstance(connection_analysis, PackageNodeAsSerializedFlowResultFailure):
+            if isinstance(connection_analysis, PackageNodesAsSerializedFlowResultFailure):
                 return PackageNodesAsSerializedFlowResultFailure(result_details=connection_analysis.result_details)
 
             node_connections[package_node.name] = connection_analysis
 
         return node_connections
 
-    def _analyze_package_node_connections(
-        self, package_node: BaseNode, node_name: str, package_node_names: set[str] | None = None
-    ) -> ConnectionAnalysis | PackageNodeAsSerializedFlowResultFailure:
-        """Analyze package node connections and separate control from data connections."""
-        # Get connection details using the efficient approach
-        list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
-        list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
-            list_connections_request
+    def _get_node_connections_from_proxy(
+        self, node_name: str, proxy_node: NodeGroupProxyNode
+    ) -> tuple[list[IncomingConnection], list[OutgoingConnection]]:
+        """Extract incoming and outgoing connections for a specific node from the proxy node's stored data.
+
+        Returns connections in the same format as ListConnectionsForNodeRequest would return them,
+        using the original node references from before proxy redirection.
+
+        Args:
+            node_name: Name of the node to get connections for
+            proxy_node: The proxy node containing the NodeGroup data with stored connections
+
+        Returns:
+            Tuple of (incoming_connections, outgoing_connections) matching the ListConnectionsForNodeResultSuccess format
+        """
+        node_group = proxy_node.node_group_data
+        incoming_connections: list[IncomingConnection] = []
+        outgoing_connections: list[OutgoingConnection] = []
+
+        # Get incoming connections: check internal_connections and external_incoming_connections
+        # Internal connections where this node is the target
+        incoming_connections.extend(
+            IncomingConnection(
+                source_node_name=conn.source_node.name,
+                source_parameter_name=conn.source_parameter.name,
+                target_parameter_name=conn.target_parameter.name,
+            )
+            for conn in node_group.internal_connections
+            if conn.target_node.name == node_name
         )
 
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            details = f"Attempted to analyze connections for package node '{node_name}'. Failed because connection listing failed."
-            return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+        # External incoming connections where this node is the original target
+        incoming_connections.extend(
+            IncomingConnection(
+                source_node_name=conn.source_node.name,
+                source_parameter_name=conn.source_parameter.name,
+                target_parameter_name=conn.target_parameter.name,
+            )
+            for conn in node_group.external_incoming_connections
+            if (original_target := node_group.original_incoming_targets.get(id(conn)))
+            and original_target.name == node_name
+        )
+
+        # Get outgoing connections: check internal_connections and external_outgoing_connections
+        # Internal connections where this node is the source
+        outgoing_connections.extend(
+            OutgoingConnection(
+                source_parameter_name=conn.source_parameter.name,
+                target_node_name=conn.target_node.name,
+                target_parameter_name=conn.target_parameter.name,
+            )
+            for conn in node_group.internal_connections
+            if conn.source_node.name == node_name
+        )
+
+        # External outgoing connections where this node is the original source
+        outgoing_connections.extend(
+            OutgoingConnection(
+                source_parameter_name=conn.source_parameter.name,
+                target_node_name=conn.target_node.name,
+                target_parameter_name=conn.target_parameter.name,
+            )
+            for conn in node_group.external_outgoing_connections
+            if (original_source := node_group.original_outgoing_sources.get(id(conn)))
+            and original_source.name == node_name
+        )
+
+        return incoming_connections, outgoing_connections
+
+    def _analyze_package_node_connections(
+        self,
+        package_node: BaseNode,
+        node_name: str,
+        package_node_names: set[str] | None = None,
+        proxy_node: NodeGroupProxyNode | None = None,
+    ) -> ConnectionAnalysis | PackageNodesAsSerializedFlowResultFailure:
+        """Analyze package node connections and separate control from data connections.
+
+        If a proxy_node is provided, uses the stored connections from the NodeGroup which preserve
+        the original connection structure before proxy redirection.
+
+        Args:
+            package_node: The node being analyzed
+            node_name: Name of the node
+            package_node_names: Set of node names in the package for filtering internal connections
+            proxy_node: Optional proxy node containing original connection structure
+        """
+        # Get incoming and outgoing connections for this node
+        if proxy_node is not None and hasattr(proxy_node, "node_group_data"):
+            # Use stored connections from proxy which have the original node references
+            incoming_connections, outgoing_connections = self._get_node_connections_from_proxy(
+                node_name=node_name, proxy_node=proxy_node
+            )
+        else:
+            # Get connection details using the standard approach
+            list_connections_request = ListConnectionsForNodeRequest(node_name=node_name)
+            list_connections_result = GriptapeNodes.NodeManager().on_list_connections_for_node_request(
+                list_connections_request
+            )
+
+            if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                details = f"Attempted to analyze connections for package node '{node_name}'. Failed because connection listing failed."
+                return PackageNodesAsSerializedFlowResultFailure(result_details=details)
+
+            incoming_connections = list_connections_result.incoming_connections
+            outgoing_connections = list_connections_result.outgoing_connections
 
         # Separate control connections from data connections based on package node's parameter types
         incoming_data_connections = []
         incoming_control_connections = []
-        for incoming_conn in list_connections_result.incoming_connections:
+        for incoming_conn in incoming_connections:
             # Filter out internal connections if package_node_names is provided
             if package_node_names is not None and incoming_conn.source_node_name in package_node_names:
                 continue
@@ -2061,7 +1779,7 @@ class FlowManager:
 
         outgoing_data_connections = []
         outgoing_control_connections = []
-        for outgoing_conn in list_connections_result.outgoing_connections:
+        for outgoing_conn in outgoing_connections:
             # Filter out internal connections if package_node_names is provided
             if package_node_names is not None and outgoing_conn.target_node_name in package_node_names:
                 continue
@@ -2095,7 +1813,7 @@ class FlowManager:
 
         # Build end node CreateNodeRequest
         end_create_node_command = CreateNodeRequest(
-            node_type=request.end_node_type,
+            node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.start_end_specific_library_name,
             node_name=end_node_name,
             metadata={},
@@ -2348,7 +2066,7 @@ class FlowManager:
 
         # Build start node CreateNodeRequest
         start_create_node_command = CreateNodeRequest(
-            node_type=request.start_node_type,
+            node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
             specific_library_name=request.start_end_specific_library_name,
             node_name=start_node_name,
             metadata={},
@@ -2559,7 +2277,7 @@ class FlowManager:
                 package_node_uuid=entry_node_uuid,
                 package_node=entry_node,
             )
-            if isinstance(control_connection_result, PackageNodeAsSerializedFlowResultFailure):
+            if isinstance(control_connection_result, PackageNodesAsSerializedFlowResultFailure):
                 return PackageNodesAsSerializedFlowResultFailure(
                     result_details=control_connection_result.result_details
                 )
@@ -2574,7 +2292,7 @@ class FlowManager:
         start_node_uuid: SerializedNodeCommands.NodeUUID,
         package_node_uuid: SerializedNodeCommands.NodeUUID,
         package_node: BaseNode,
-    ) -> SerializedFlowCommands.IndirectConnectionSerialization | PackageNodeAsSerializedFlowResultFailure:
+    ) -> SerializedFlowCommands.IndirectConnectionSerialization | PackageNodesAsSerializedFlowResultFailure:
         """Create control flow connection from start node to package node.
 
         Connects the start node's first control output to the specified or first available package node control input.
@@ -2598,7 +2316,7 @@ class FlowManager:
 
             if package_control_input_name is None:
                 details = f"Attempted to package node '{package_node.name}'. Failed because no control input parameters found on the node, so cannot create control flow connection."
-                return PackageNodeAsSerializedFlowResultFailure(result_details=details)
+                return PackageNodesAsSerializedFlowResultFailure(result_details=details)
 
         # StartNode always has a control output parameter with name "exec_out"
         source_control_parameter_name = "exec_out"
@@ -3326,6 +3044,8 @@ class FlowManager:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
+                # Cleanup proxy nodes before canceling flow
+                self._global_control_flow_machine.cleanup_proxy_nodes()
                 await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
@@ -3354,6 +3074,10 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
 
+        # Cleanup proxy nodes and restore connections
+        if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.cleanup_proxy_nodes()
+
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
@@ -3371,8 +3095,12 @@ class FlowManager:
     def reset_global_execution_state(self) -> None:
         """Reset all global execution state - useful when clearing all workflows."""
         self._global_flow_queue.queue.clear()
+
+        # Cleanup proxy nodes and restore connections before resetting machine
         if self._global_control_flow_machine is not None:
+            self._global_control_flow_machine.cleanup_proxy_nodes()
             self._global_control_flow_machine.reset_machine()
+
         # Reset control flow machine
         self._global_single_node_resolution = False
 
@@ -3482,6 +3210,8 @@ class FlowManager:
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
+                    if self._global_control_flow_machine is not None:
+                        self._global_control_flow_machine.cleanup_proxy_nodes()
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
             if resolution_machine.is_complete():

@@ -6,7 +6,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, Par
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger("diffusers_nodes_library")
+logger = logging.getLogger("griptape_nodes")
 
 
 class HuggingFaceModelParameter(ABC):

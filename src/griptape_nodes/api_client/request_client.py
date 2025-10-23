@@ -114,7 +114,12 @@ class RequestClient:
             self._subscribed_response_topics.add(response_topic)
 
         # Send the request as an EventRequest
-        event_payload = {"event_type": "EventRequest", "request_type": request_type, "request": payload}
+        event_payload = {
+            "event_type": "EventRequest",
+            "request_type": request_type,
+            "request": payload,
+            "response_topic": response_topic,
+        }
 
         logger.debug("Sending request %s: %s", request_id, request_type)
 

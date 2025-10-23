@@ -8,9 +8,6 @@ with warnings.catch_warnings():
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
-    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
-)
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
@@ -21,6 +18,9 @@ from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -43,7 +43,7 @@ class AnylineDetector(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_image",
-                output_type="ImageArtifact",
+                output_type="ImageUrlArtifact",
                 tooltip="The output image",
                 allowed_modes={ParameterMode.OUTPUT},
             )

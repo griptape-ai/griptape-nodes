@@ -327,7 +327,8 @@ class Library:
         """Create a new node instance of the specified type."""
         node_class = self._node_types.get(node_type)
         if not node_class:
-            raise KeyError(self._library_data.name, node_type)
+            msg = f"Node type '{node_type}' not found in library '{self._library_data.name}'"
+            raise KeyError(msg)
         # Inject the metadata ABOUT the node from the Library
         # into the node's metadata blob.
         if metadata is None:

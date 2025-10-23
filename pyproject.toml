@@ -1,6 +1,6 @@
 [project]
 name = "griptape-nodes"
-version = "0.58.1"
+version = "0.60.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -27,6 +27,7 @@ dependencies = [
   "huggingface-hub[xf-xet]>=0.28.0",
   "rich>=14.1.0",
   "semver>=3.0.4",
+  "aiofiles>=25.1.0",
 ]
 
 [project.optional-dependencies]

@@ -2,9 +2,9 @@ name: Unit Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   merge_group:
     types: [checks_requested]
 
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-ubuntu:
+  unit-test-ubuntu:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -22,8 +22,8 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v4
-      - name: Init environment 
-        uses: ./.github/actions/init-environment 
+      - name: Init environment
+        uses: ./.github/actions/init-environment
       - name: Run unit tests with coverage
         run: make test/unit/coverage
       - name: Upload coverage to Codecov
@@ -33,7 +33,7 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           token: ${{ secrets.CODECOV_TOKEN }}
-  test-windows:
+  unit-test-windows:
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -45,7 +45,7 @@ jobs:
     steps:
       - name: Checkout actions
         uses: actions/checkout@v4
-      - name: Init environment 
+      - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run unit tests
         # TODO: make test/unit fails with the following error:

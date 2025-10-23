@@ -475,6 +475,16 @@
       }
     },
     {
+      "class_name": "ExecutePython",
+      "file_path": "griptape_nodes_library/engine/execute_python.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Execute Python code with input variables and capture output",
+        "display_name": "Execute Python",
+        "icon": "Code"
+      }
+    },
+    {
       "class_name": "CreateIntList",
       "file_path": "griptape_nodes_library/lists/create_int_list.py",
       "metadata": {
@@ -641,6 +651,17 @@
       }
     },
     {
+      "class_name": "SaveAudio",
+      "file_path": "griptape_nodes_library/audio/save_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Saves audio files from your workflow",
+        "display_name": "Save Audio",
+        "icon": "file-down",
+        "group": "Input/Output"
+      }
+    },
+    {
       "class_name": "Microphone",
       "file_path": "griptape_nodes_library/audio/microphone.py",
       "metadata": {
@@ -669,6 +690,43 @@
         "category": "audio",
         "description": "Generate music using Eleven Labs Music Generation API",
         "display_name": "Eleven Music Generation",
+        "icon": "music",
+        "group": "create",
+        "deprecation": {
+          "deprecation_message": "Please use the Eleven Labs Music Generation node instead.",
+          "removal_version": "0.64.0"
+        }
+      }
+    },
+    {
+      "class_name": "ElevenLabsTextToSpeechGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_text_to_speech.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate speech from text using Eleven Labs text-to-speech models",
+        "display_name": "Eleven Labs Text to Speech Generation",
+        "icon": "mic",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "ElevenLabsSoundEffectGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_sound_effect.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate sound effects from text prompts using Eleven Labs",
+        "display_name": "Eleven Labs Sound Effect Generation",
+        "icon": "volume-2",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "ElevenLabsMusicGeneration",
+      "file_path": "griptape_nodes_library/audio/eleven_labs_music_generation.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate music from text prompts using Eleven Labs",
+        "display_name": "Eleven Labs Music Generation",
         "icon": "music",
         "group": "create"
       }
@@ -1391,6 +1449,17 @@
       }
     },
     {
+      "class_name": "ImageDetails",
+      "file_path": "griptape_nodes_library/image/image_details.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract detailed information from an image including dimensions, aspect ratio, color space, and format",
+        "display_name": "Image Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "CropImage",
       "file_path": "griptape_nodes_library/image/crop_image.py",
       "metadata": {
@@ -1518,6 +1587,39 @@
         "display_name": "Adjust Image Levels",
         "icon": "bar-chart-3",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "GrayscaleImage",
+      "file_path": "griptape_nodes_library/image/grayscale_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert image to grayscale",
+        "display_name": "Grayscale Image",
+        "icon": "image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "FlipImage",
+      "file_path": "griptape_nodes_library/image/flip_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Flip image horizontally, vertically, or both directions",
+        "display_name": "Flip Image",
+        "icon": "flip-horizontal",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "GaussianBlurImage",
+      "file_path": "griptape_nodes_library/image/gaussian_blur_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply a Gaussian blur to an image",
+        "display_name": "Gaussian Blur Image",
+        "icon": "sparkles",
+        "group": "effects"
       }
     },
     {
@@ -2071,6 +2173,16 @@
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle",
         "group": "describe"
+      }
+    },
+    {
+      "class_name": "ListFiles",
+      "file_path": "griptape_nodes_library/engine/list_files.py",
+      "metadata": {
+        "category": "engine",
+        "description": "List files in a directory with optional pattern matching and recursive search",
+        "display_name": "List Files",
+        "icon": "FolderOpen"
       }
     }
   ],

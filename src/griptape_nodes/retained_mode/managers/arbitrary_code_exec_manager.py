@@ -40,7 +40,25 @@ class ArbitraryCodeExecManager:
         try:
             string_buffer = io.StringIO()
             with redirect_stdout(string_buffer):
-                python_output = exec(request.python_string)  # noqa: S102
+                # Use a shared namespace for both globals and locals in exec() to make some behavior possible and more intuitive:
+                #
+                # 1. RECURSION: Without this namespace, recursive functions defined inside exec() fail with
+                #    "NameError: name 'function_name' is not defined" when they try to call themselves.
+                #    Why? When exec() runs with default parameters, functions defined in the exec'd code
+                #    exist in this method's local scope. But inside the exec'd functions, Python looks in the program's
+                #    global scope (outside this method) and the function's own local scope - neither of which
+                #    contains the recursive function definition. By passing the same dict as both globals and locals,
+                #    any function defined in exec'd code becomes visible in what exec'd code sees as
+                #    "global" scope, allowing recursive calls to find the function definition.
+                #
+                # 2. ISOLATION: An isolated namespace prevents exec'd code from accessing or modifying
+                #    variables in the outer program scope, protecting read/write access to sensitive engine data.
+                # For the PR that implements this behavior alongside an Execute Python and List Files node, see https://github.com/griptape-ai/griptape-nodes/pull/2087
+
+                namespace = {"__builtins__": __builtins__}
+                python_output = exec(  # noqa: S102
+                    request.python_string, namespace, namespace
+                )
 
             captured_output = strip_ansi_codes(string_buffer.getvalue())
             result = RunArbitraryPythonStringResultSuccess(

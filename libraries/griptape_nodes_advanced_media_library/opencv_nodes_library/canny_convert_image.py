@@ -72,7 +72,7 @@ class CannyConvertImage(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_image",
-                output_type="ImageArtifact",
+                output_type="ImageUrlArtifact",
                 tooltip="The output image",
                 allowed_modes={ParameterMode.OUTPUT},
             )

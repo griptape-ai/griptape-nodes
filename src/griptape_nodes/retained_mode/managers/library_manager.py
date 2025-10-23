@@ -169,8 +169,7 @@ class LibraryManager:
         self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
         # LibraryDirectory owns the FSMs and manages library lifecycle
         self._library_directory = LibraryDirectory()
-        # Lock for synchronizing sys.path modifications during parallel library installation
-        self._sys_path_lock = asyncio.Lock()
+        self._libraries_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -206,7 +205,7 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(GetAllInfoForLibraryRequest, self.get_all_info_for_library_request)
         event_manager.assign_manager_to_request_type(
-            GetAllInfoForAllLibrariesRequest, self.get_all_info_for_all_libraries_request
+            GetAllInfoForAllLibrariesRequest, self.on_get_all_info_for_all_libraries_request
         )
         event_manager.assign_manager_to_request_type(
             LoadMetadataForAllLibrariesRequest, self.load_metadata_for_all_libraries_request
@@ -533,13 +532,13 @@ class LibraryManager:
         sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
 
         if not sandbox_library_dir.exists():
-            details = "Sandbox directory does not exist."
+            details = "Sandbox directory does not exist. If you wish to create a Sandbox directory to develop custom nodes: in the Griptape Nodes editor, go to Settings -> Libraries and navigate to the Sandbox Settings."
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.MISSING,
                 problems=[details],
-                result_details=details,
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
         sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_library_dir, extension=".py")
@@ -726,8 +725,7 @@ class LibraryManager:
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
         # Add the directory to the Python path to allow for relative imports
-        async with self._sys_path_lock:
-            sys.path.insert(0, str(base_dir))
+        sys.path.insert(0, str(base_dir))
 
         # Load the advanced library module if specified
         advanced_library_instance = None
@@ -1060,8 +1058,7 @@ class LibraryManager:
                 )
             )
         )
-        async with self._sys_path_lock:
-            sys.path.insert(0, site_packages)
+        sys.path.insert(0, site_packages)
 
         return library_venv_python_path
 
@@ -1173,6 +1170,13 @@ class LibraryManager:
             library_name_to_library_info=library_name_to_all_info, result_details=details
         )
         return result
+
+    async def on_get_all_info_for_all_libraries_request(
+        self, request: GetAllInfoForAllLibrariesRequest
+    ) -> ResultPayload:
+        """Async handler for GetAllInfoForAllLibrariesRequest that waits for library loading to complete."""
+        await self._libraries_loading_complete.wait()
+        return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
     def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
         # Does this library exist?
@@ -1503,57 +1507,54 @@ class LibraryManager:
 
         return node_class
 
-    async def _register_single_library(self, library_result: LoadLibraryMetadataFromFileResultSuccess) -> None:
-        """Register a single library (sandbox or config-based) and handle errors.
-
-        Args:
-            library_result: The metadata result for the library to register
-        """
-        try:
-            if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
-                await self._attempt_generate_sandbox_library_from_schema(
-                    library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
-                )
-            else:
-                register_request = RegisterLibraryFromFileRequest(
-                    file_path=library_result.file_path, load_as_default_library=False
-                )
-                register_result = await self.register_library_from_file_request(register_request)
-                if isinstance(register_result, RegisterLibraryFromFileResultFailure):
-                    logger.warning("Failed to register library from %s", library_result.file_path)
-        except Exception as e:
-            logger.warning("Failed to register library from %s with exception: %s", library_result.file_path, e)
-
     async def load_all_libraries_from_config(self) -> None:
-        # Load metadata for all libraries to determine which ones can be safely loaded
-        metadata_request = LoadMetadataForAllLibrariesRequest()
-        metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
+        self._libraries_loading_complete.clear()
 
-        # Check if metadata loading succeeded
-        if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
-            logger.error("Failed to load metadata for all libraries, skipping library registration")
-            return
+        try:
+            # Load metadata for all libraries to determine which ones can be safely loaded
+            metadata_request = LoadMetadataForAllLibrariesRequest()
+            metadata_result = self.load_metadata_for_all_libraries_request(metadata_request)
 
-        # Record all failed libraries in our tracking immediately
-        for failed_library in metadata_result.failed_libraries:
-            self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
-                library_path=failed_library.library_path,
-                library_name=failed_library.library_name,
-                status=failed_library.status,
-                problems=failed_library.problems,
-            )
+            # Check if metadata loading succeeded
+            if not isinstance(metadata_result, LoadMetadataForAllLibrariesResultSuccess):
+                logger.error("Failed to load metadata for all libraries, skipping library registration")
+                return
 
-        # Use task group for parallel library loading
-        async with asyncio.TaskGroup() as tg:
+            # Record all failed libraries in our tracking immediately
+            for failed_library in metadata_result.failed_libraries:
+                self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                    library_path=failed_library.library_path,
+                    library_name=failed_library.library_name,
+                    status=failed_library.status,
+                    problems=failed_library.problems,
+                )
+
+            # Use metadata results to selectively load libraries
             for library_result in metadata_result.successful_libraries:
-                tg.create_task(self._register_single_library(library_result))
+                if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
+                    # Handle sandbox library - use the schema we already have
+                    await self._attempt_generate_sandbox_library_from_schema(
+                        library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                    )
+                else:
+                    # Handle config-based library - register it directly using the file path
+                    register_request = RegisterLibraryFromFileRequest(
+                        file_path=library_result.file_path, load_as_default_library=False
+                    )
+                    register_result = await self.register_library_from_file_request(register_request)
+                    if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                        # Registration failed - the failure info is already recorded in _library_file_path_to_info
+                        # by register_library_from_file_request, so we just log it here for visibility
+                        logger.warning("Failed to register library from %s", library_result.file_path)
 
-        # Print 'em all pretty
-        self.print_library_load_status()
+            # Print 'em all pretty
+            self.print_library_load_status()
 
-        # Remove any missing libraries AFTER we've printed them for the user.
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+            # Remove any missing libraries AFTER we've printed them for the user.
+            user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+            self._remove_missing_libraries_from_config(config_category=user_libraries_section)
+        finally:
+            self._libraries_loading_complete.set()
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # App just got init'd. See if there are library JSONs to load!
@@ -1604,6 +1605,13 @@ class LibraryManager:
         session_id = GriptapeNodes.get_session_id()
         session_info = f" | Session: {session_id[:8]}..." if session_id else " | No Session"
 
+        # Get user and organization
+        user = GriptapeNodes.UserManager().user
+        user_info = f" | User: {user.email if user else 'Not available'}"
+
+        user_organization = GriptapeNodes.UserManager().user_organization
+        org_info = f" | Org: {user_organization.name if user_organization else 'Not available'}"
+
         nodes_app_url = os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://nodes.griptape.ai")
         message = Panel(
             Align.center(
@@ -1612,7 +1620,7 @@ class LibraryManager:
                 vertical="middle",
             ),
             title="Griptape Nodes Engine Started",
-            subtitle=f"[green]{engine_version}{session_info}[/green]",
+            subtitle=f"[green]Version: {engine_version}{session_info}{user_info}{org_info}[/green]",
             border_style="green",
             padding=(1, 4),
         )
@@ -2016,7 +2024,7 @@ class LibraryManager:
     async def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-        clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+        clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():
             details = "Failed to clear the existing object state when preparing to reload all libraries."
             logger.error(details)

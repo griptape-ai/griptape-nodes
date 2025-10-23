@@ -3,9 +3,6 @@ from abc import abstractmethod
 
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_file_parameter import (
-    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
-)
 from diffusers_nodes_library.pipelines.flux.flux_pipeline_parameters import (
     FluxPipelineParameters,  # type: ignore[reportMissingImports]
 )
@@ -14,6 +11,9 @@ from diffusers_nodes_library.pipelines.flux.lora.flux_lora_parameters import (  
 )
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file_parameter import (
+    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
+)
 
 logger = logging.getLogger("diffusers_nodes_library")
 

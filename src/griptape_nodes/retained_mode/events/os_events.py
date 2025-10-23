@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import StrEnum
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -7,6 +8,43 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class ExistingFilePolicy(StrEnum):
+    """Policy for handling existing files during write operations."""
+
+    OVERWRITE = "overwrite"  # Replace existing file content
+    FAIL = "fail"  # Fail if file exists
+    CREATE_NEW = "create_new"  # Create new file with modified name (e.g., file_1.txt)
+
+
+class FileIOFailureReason(StrEnum):
+    """Classification of file I/O failure reasons.
+
+    Used by read and write operations to provide structured error information.
+    """
+
+    # Policy violations
+    POLICY_NO_OVERWRITE = "policy_no_overwrite"  # File exists and policy prohibits overwrite
+    POLICY_NO_CREATE_PARENT_DIRS = "policy_no_create_parent_dirs"  # Parent dir missing and policy prohibits creation
+
+    # Permission/access errors
+    PERMISSION_DENIED = "permission_denied"  # No read/write permission
+    FILE_NOT_FOUND = "file_not_found"  # File doesn't exist (read operations)
+
+    # Resource errors
+    DISK_FULL = "disk_full"  # Insufficient disk space
+
+    # Path errors
+    INVALID_PATH = "invalid_path"  # Malformed or invalid path
+    IS_DIRECTORY = "is_directory"  # Path is a directory, not a file
+
+    # Content errors
+    ENCODING_ERROR = "encoding_error"  # Text encoding/decoding failed
+
+    # Generic errors
+    IO_ERROR = "io_error"  # Generic I/O error
+    UNKNOWN = "unknown"  # Unexpected error
 
 
 @dataclass
@@ -50,7 +88,14 @@ class OpenAssociatedFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @dataclass
 @PayloadRegistry.register
 class OpenAssociatedFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File or directory opening failed. Common causes: path not found, no associated application, permission denied."""
+    """File or directory opening failed.
+
+    Attributes:
+        failure_reason: Classification of why the open failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -88,7 +133,14 @@ class ListDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class ListDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Directory listing failed. Common causes: access denied, path not found."""
+    """Directory listing failed.
+
+    Attributes:
+        failure_reason: Classification of why the listing failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -105,6 +157,7 @@ class ReadFileRequest(RequestPayload):
         encoding: Text encoding to use if file is detected as text (default: 'utf-8')
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide access.
                         If None, workspace constraints don't apply (e.g., cloud environments).
+                        TODO: Remove workspace_only parameter - see https://github.com/griptape-ai/griptape-nodes/issues/2753
 
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
@@ -112,7 +165,7 @@ class ReadFileRequest(RequestPayload):
     file_path: str | None = None
     file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
-    workspace_only: bool | None = True
+    workspace_only: bool | None = True  # TODO: Remove - see https://github.com/griptape-ai/griptape-nodes/issues/2753
 
 
 @dataclass
@@ -139,7 +192,14 @@ class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class ReadFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File reading failed. Common causes: file not found, permission denied, encoding error."""
+    """File reading failed.
+
+    Attributes:
+        failure_reason: Classification of why the read failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -193,7 +253,14 @@ class CreateFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class CreateFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File/directory creation failed."""
+    """File/directory creation failed.
+
+    Attributes:
+        failure_reason: Classification of why the creation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
 
 
 @dataclass
@@ -229,4 +296,181 @@ class RenameFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """File/directory rename failed."""
+    """File/directory rename failed.
+
+    Attributes:
+        failure_reason: Classification of why the rename failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileRequest(RequestPayload):
+    """Write content to a file.
+
+    Automatically detects text vs binary mode based on content type.
+
+    Use when: Saving generated content, writing output files,
+    creating configuration files, writing binary data.
+
+    Args:
+        file_path: Path to the file to write
+        content: Content to write (str for text files, bytes for binary files)
+        encoding: Text encoding for str content (default: 'utf-8', ignored for bytes)
+        append: If True, append to existing file; if False, use existing_file_policy (default: False)
+        existing_file_policy: How to handle existing files when append=False:
+            - "overwrite": Replace file content (default)
+            - "fail": Return failure if file exists
+            - "create_new": Create new file with modified name (NOT YET IMPLEMENTED)
+        create_parents: If True, create parent directories if missing (default: True)
+
+    Results: WriteFileResultSuccess | WriteFileResultFailure
+
+    Note: existing_file_policy is ignored when append=True (append always allows existing files)
+    """
+
+    file_path: str
+    content: str | bytes
+    encoding: str = "utf-8"  # Ignored for bytes
+    append: bool = False
+    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    create_parents: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File written successfully.
+
+    Attributes:
+        final_file_path: The actual path where file was written
+                        (may differ from requested path if create_new policy used)
+        bytes_written: Number of bytes written to the file
+    """
+
+    final_file_path: str
+    bytes_written: int
+
+
+@dataclass
+@PayloadRegistry.register
+class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File write failed.
+
+    Attributes:
+        failure_reason: Classification of why the write failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeRequest(RequestPayload):
+    """Copy an entire directory tree from source to destination.
+
+    Use when: Copying directories recursively, backing up directory structures,
+    duplicating folder hierarchies with all contents.
+
+    Args:
+        source_path: Path to the source directory to copy
+        destination_path: Path where the directory tree should be copied
+        symlinks: If True, copy symbolic links as links (default: False)
+        ignore_dangling_symlinks: If True, ignore dangling symlinks (default: False)
+        dirs_exist_ok: If True, allow destination to exist (default: False)
+        ignore_patterns: List of glob patterns to ignore (e.g., ["__pycache__", "*.pyc", ".git"])
+
+    Results: CopyTreeResultSuccess | CopyTreeResultFailure
+    """
+
+    source_path: str
+    destination_path: str
+    symlinks: bool = False
+    ignore_dangling_symlinks: bool = False
+    dirs_exist_ok: bool = False
+    ignore_patterns: list[str] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Directory tree copied successfully.
+
+    Attributes:
+        source_path: Source path that was copied
+        destination_path: Destination path where tree was copied
+        files_copied: Number of files copied
+        total_bytes_copied: Total bytes copied
+    """
+
+    source_path: str
+    destination_path: str
+    files_copied: int
+    total_bytes_copied: int
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyTreeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Directory tree copy failed.
+
+    Attributes:
+        failure_reason: Classification of why the copy failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileRequest(RequestPayload):
+    """Copy a single file from source to destination.
+
+    Use when: Copying individual files, duplicating files,
+    backing up single files.
+
+    Args:
+        source_path: Path to the source file to copy
+        destination_path: Path where the file should be copied
+        overwrite: If True, overwrite destination if it exists (default: False)
+
+    Results: CopyFileResultSuccess | CopyFileResultFailure
+    """
+
+    source_path: str
+    destination_path: str
+    overwrite: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File copied successfully.
+
+    Attributes:
+        source_path: Source path that was copied
+        destination_path: Destination path where file was copied
+        bytes_copied: Number of bytes copied
+    """
+
+    source_path: str
+    destination_path: str
+    bytes_copied: int
+
+
+@dataclass
+@PayloadRegistry.register
+class CopyFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File copy failed.
+
+    Attributes:
+        failure_reason: Classification of why the copy failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
@@ -754,6 +756,51 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         return event_data
 
 
+class DeprecationMessage(ParameterMessage):
+    """A specialized ParameterMessage for deprecation warnings with default warning styling."""
+
+    # Keep the same element_type as ParameterMessage so UI recognizes it
+    element_type: str = "ParameterMessage"
+
+    def __init__(
+        self,
+        value: str,
+        button_text: str,
+        migrate_function: Callable[[Any, Any], Any],
+        **kwargs,
+    ):
+        """Initialize a deprecation message with default warning styling.
+
+        Args:
+            value: The deprecation message text
+            button_text: Text for the migration button
+            migrate_function: Function to call when migration button is clicked
+            **kwargs: Additional arguments passed to ParameterMessage
+        """
+        # Set defaults for deprecation messages
+        kwargs.setdefault("variant", "warning")
+        kwargs.setdefault("full_width", True)
+
+        # Add the button trait
+        from griptape_nodes.traits.button import Button
+
+        kwargs.setdefault("traits", {})
+        kwargs["traits"][Button(label=button_text, icon="plus", variant="secondary", on_click=migrate_function)] = None
+
+        super().__init__(value=value, **kwargs)
+
+    def to_dict(self) -> dict:
+        """Override to_dict to use element_type instead of class name.
+
+        The base to_dict() method uses self.__class__.__name__ which would return
+        "DeprecationMessage", but the UI expects element_type to be "ParameterMessage"
+        to recognize it as a valid ParameterMessage element.
+        """
+        data = super().to_dict()
+        data["element_type"] = self.element_type  # Use "ParameterMessage" not "DeprecationMessage"
+        return data
+
+
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
@@ -877,6 +924,9 @@ class ParameterBase(BaseNodeElement, ABC):
 
 
 class Parameter(BaseNodeElement, UIOptionsMixin):
+    # Maximum number of input types to show in tooltip before truncating
+    _MAX_TOOLTIP_INPUT_TYPES = 3
+
     # This is the list of types that the Parameter can accept, either externally or when internally treated as a property.
     # Today, we can accept multiple types for input, but only a single output type.
     tooltip: str | list[dict]  # Default tooltip, can be string or list of dicts
@@ -910,11 +960,12 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     next: Parameter | None = None
     prev: Parameter | None = None
     parent_container_name: str | None = None
+    parent_element_name: str | None = None
 
-    def __init__(  # noqa: PLR0913,PLR0912
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         name: str,
-        tooltip: str | list[dict],
+        tooltip: str | list[dict] | None = None,
         type: str | None = None,  # noqa: A002
         input_types: list[str] | None = None,
         output_type: str | None = None,
@@ -928,12 +979,19 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
+        hide: bool = False,
+        hide_label: bool = False,
+        hide_property: bool = False,
+        allow_input: bool = True,
+        allow_property: bool = True,
+        allow_output: bool = True,
         settable: bool = True,
         serializable: bool = True,
         user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
+        parent_element_name: str | None = None,
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -941,6 +999,11 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             element_type = self.__class__.__name__
         super().__init__(element_id=element_id, element_type=element_type)
         self.name = name
+
+        # Generate default tooltip if none provided
+        if not tooltip:
+            tooltip = self._generate_default_tooltip(name, type, input_types, output_type)
+
         self.tooltip = tooltip
         self.default_value = default_value
         self.tooltip_as_input = tooltip_as_input
@@ -949,10 +1012,36 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
+
+        # Process allowed_modes - use convenience parameters if allowed_modes not explicitly set
         if allowed_modes is None:
-            self._allowed_modes = {ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+            self._allowed_modes = set()
+            if allow_input:
+                self._allowed_modes.add(ParameterMode.INPUT)
+            if allow_property:
+                self._allowed_modes.add(ParameterMode.PROPERTY)
+            if allow_output:
+                self._allowed_modes.add(ParameterMode.OUTPUT)
         else:
             self._allowed_modes = allowed_modes
+
+            # Warn if both allowed_modes and convenience parameters are set
+            convenience_params_used = []
+            if not allow_input:
+                convenience_params_used.append("allow_input=False")
+            if not allow_property:
+                convenience_params_used.append("allow_property=False")
+            if not allow_output:
+                convenience_params_used.append("allow_output=False")
+
+            if convenience_params_used:
+                warnings.warn(
+                    f"Parameter '{name}': Both 'allowed_modes' and convenience parameters "
+                    f"({', '.join(convenience_params_used)}) are set. Using 'allowed_modes' "
+                    f"and ignoring convenience parameters.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if converters is None:
             self._converters = []
@@ -963,10 +1052,20 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._validators = []
         else:
             self._validators = validators
+
+        # Process common UI options from constructor parameters
         if ui_options is None:
             self._ui_options = {}
         else:
-            self._ui_options = ui_options
+            self._ui_options = ui_options.copy()
+
+        # Add common UI options if they have truthy values
+        if hide:
+            self._ui_options["hide"] = hide
+        if hide_label:
+            self._ui_options["hide_label"] = hide_label
+        if hide_property:
+            self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
                 if not isinstance(trait, Trait):
@@ -980,6 +1079,62 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self.input_types = input_types
         self.output_type = output_type
         self.parent_container_name = parent_container_name
+        self.parent_element_name = parent_element_name
+
+    def _generate_default_tooltip(
+        self,
+        name: str,
+        type: str | None,  # noqa: A002
+        input_types: list[str] | None,
+        output_type: str | None,
+    ) -> str:
+        """Generate a default tooltip describing the parameter type and usage.
+
+        Args:
+            name: The parameter name
+            type: The parameter type
+            input_types: List of accepted input types
+            output_type: The output type
+
+        Returns:
+            A descriptive tooltip string
+        """
+        # Determine the primary type to describe
+        primary_type = type
+        if not primary_type and input_types:
+            primary_type = input_types[0]
+        if not primary_type and output_type:
+            primary_type = output_type
+        if not primary_type:
+            primary_type = "any"
+
+        # Create a human-readable description
+        type_descriptions = {
+            "str": "text/string",
+            "bool": "boolean (true/false)",
+            "int": "integer number",
+            "float": "decimal number",
+            "any": "any type of data",
+            "list": "list/array",
+            "dict": "dictionary/object",
+            "parametercontroltype": "control flow",
+        }
+
+        type_desc = type_descriptions.get(primary_type.lower(), primary_type)
+
+        # Build the tooltip
+        tooltip_parts = [f"Enter {type_desc} for {name}"]
+
+        # Add input type info if different from primary type
+        if input_types and len(input_types) > 1:
+            input_desc = ", ".join(
+                type_descriptions.get(t.lower(), t) for t in input_types[: self._MAX_TOOLTIP_INPUT_TYPES]
+            )
+            if len(input_types) > self._MAX_TOOLTIP_INPUT_TYPES:
+                input_desc += f" or {len(input_types) - self._MAX_TOOLTIP_INPUT_TYPES} other types"
+            tooltip_parts.append(f"Accepts: {input_desc}")
+
+        return ". ".join(tooltip_parts) + "."
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children."""
@@ -1009,6 +1164,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         our_dict["mode_allowed_property"] = allows_property
         our_dict["mode_allowed_output"] = allows_output
         our_dict["parent_container_name"] = self.parent_container_name
+        our_dict["parent_element_name"] = self.parent_element_name
+        our_dict["parent_group_name"] = self.parent_group_name
 
         return our_dict
 
@@ -1109,6 +1266,132 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
+
+    @property
+    def hide(self) -> bool:
+        """Get whether the entire parameter is hidden in the UI.
+
+        Returns:
+            True if the parameter should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide", False)
+
+    @hide.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide(self, value: bool) -> None:
+        """Set whether to hide the entire parameter in the UI.
+
+        Args:
+            value: True to hide the parameter, False to show it
+        """
+        self.update_ui_options_key("hide", value)
+
+    @property
+    def hide_label(self) -> bool:
+        """Get whether the parameter label is hidden in the UI.
+
+        Returns:
+            True if the label should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide_label", False)
+
+    @hide_label.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_label(self, value: bool) -> None:
+        """Set whether to hide the parameter label in the UI.
+
+        Args:
+            value: True to hide the label, False to show it
+        """
+        self.update_ui_options_key("hide_label", value)
+
+    @property
+    def hide_property(self) -> bool:
+        """Get whether the parameter is hidden in property mode.
+
+        Returns:
+            True if the parameter should be hidden in property mode, False otherwise
+        """
+        return self.ui_options.get("hide_property", False)
+
+    @hide_property.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide_property(self, value: bool) -> None:
+        """Set whether to hide the parameter in property mode.
+
+        Args:
+            value: True to hide in property mode, False to show it
+        """
+        self.update_ui_options_key("hide_property", value)
+
+    @property
+    def allow_input(self) -> bool:
+        """Get whether the parameter allows INPUT mode.
+
+        Returns:
+            True if INPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.INPUT in self.allowed_modes
+
+    @allow_input.setter
+    def allow_input(self, value: bool) -> None:
+        """Set whether to allow INPUT mode.
+
+        Args:
+            value: True to allow INPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.INPUT)
+        else:
+            current_modes.discard(ParameterMode.INPUT)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_property(self) -> bool:
+        """Get whether the parameter allows PROPERTY mode.
+
+        Returns:
+            True if PROPERTY mode is allowed, False otherwise
+        """
+        return ParameterMode.PROPERTY in self.allowed_modes
+
+    @allow_property.setter
+    def allow_property(self, value: bool) -> None:
+        """Set whether to allow PROPERTY mode.
+
+        Args:
+            value: True to allow PROPERTY mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.PROPERTY)
+        else:
+            current_modes.discard(ParameterMode.PROPERTY)
+        self.allowed_modes = current_modes
+
+    @property
+    def allow_output(self) -> bool:
+        """Get whether the parameter allows OUTPUT mode.
+
+        Returns:
+            True if OUTPUT mode is allowed, False otherwise
+        """
+        return ParameterMode.OUTPUT in self.allowed_modes
+
+    @allow_output.setter
+    def allow_output(self, value: bool) -> None:
+        """Set whether to allow OUTPUT mode.
+
+        Args:
+            value: True to allow OUTPUT mode, False to disallow it
+        """
+        current_modes = self.allowed_modes.copy()
+        if value:
+            current_modes.add(ParameterMode.OUTPUT)
+        else:
+            current_modes.discard(ParameterMode.OUTPUT)
+        self.allowed_modes = current_modes
 
     @property
     def input_types(self) -> list[str]:

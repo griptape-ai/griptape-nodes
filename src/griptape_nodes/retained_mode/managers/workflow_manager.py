@@ -12,6 +12,7 @@ from inspect import getmodule, isclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
+import aiofiles
 import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
@@ -261,6 +262,7 @@ class WorkflowManager:
         self._workflow_file_path_to_info = {}
         self._squelch_workflow_altered_count = 0
         self._referenced_workflow_stack = []
+        self._workflows_loading_complete = asyncio.Event()
 
         event_manager.assign_manager_to_request_type(
             RunWorkflowFromScratchRequest, self.on_run_workflow_from_scratch_request
@@ -351,39 +353,44 @@ class WorkflowManager:
     def on_libraries_initialization_complete(self) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
-        default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
-        config_mgr = GriptapeNodes.ConfigManager()
+        self._workflows_loading_complete.clear()
 
-        workflows_to_register = []
+        try:
+            default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
+            config_mgr = GriptapeNodes.ConfigManager()
 
-        # Add from config
-        config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
-        workflows_to_register.extend(config_workflows)
+            workflows_to_register = []
 
-        # Add from workspace (avoiding duplicates)
-        workspace_path = config_mgr.workspace_path
-        workflows_to_register.extend([workspace_path])
+            # Add from config
+            config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
+            workflows_to_register.extend(config_workflows)
 
-        # Register all discovered workflows at once if any were found
-        self._process_workflows_for_registration(workflows_to_register)
+            # Add from workspace (avoiding duplicates)
+            workspace_path = config_mgr.workspace_path
+            workflows_to_register.extend([workspace_path])
 
-        # Print it all out nicely.
-        self.print_workflow_load_status()
+            # Register all discovered workflows at once if any were found
+            self._process_workflows_for_registration(workflows_to_register)
 
-        # Now remove any workflows that were missing files.
-        paths_to_remove = set()
-        for workflow_path, workflow_info in self._workflow_file_path_to_info.items():
-            if workflow_info.status == WorkflowManager.WorkflowStatus.MISSING:
-                # Remove this file path from the config.
-                paths_to_remove.add(workflow_path.lower())
+            # Print it all out nicely.
+            self.print_workflow_load_status()
 
-        if paths_to_remove:
-            workflows_to_register = config_mgr.get_config_value(default_workflow_section)
-            if workflows_to_register:
-                workflows_to_register = [
-                    workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
-                ]
-                config_mgr.set_config_value(default_workflow_section, workflows_to_register)
+            # Now remove any workflows that were missing files.
+            paths_to_remove = set()
+            for workflow_path, workflow_info in self._workflow_file_path_to_info.items():
+                if workflow_info.status == WorkflowManager.WorkflowStatus.MISSING:
+                    # Remove this file path from the config.
+                    paths_to_remove.add(workflow_path.lower())
+
+            if paths_to_remove:
+                workflows_to_register = config_mgr.get_config_value(default_workflow_section)
+                if workflows_to_register:
+                    workflows_to_register = [
+                        workflow for workflow in workflows_to_register if workflow.lower() not in paths_to_remove
+                    ]
+                    config_mgr.set_config_value(default_workflow_section, workflows_to_register)
+        finally:
+            self._workflows_loading_complete.set()
 
     def get_workflow_metadata(self, workflow_file_path: Path, block_name: str) -> list[re.Match[str]]:
         """Get the workflow metadata for a given workflow file path.
@@ -503,7 +510,7 @@ class WorkflowManager:
     def should_squelch_workflow_altered(self) -> bool:
         return self._squelch_workflow_altered_count > 0
 
-    def _ensure_workflow_context_established(self) -> None:
+    async def _ensure_workflow_context_established(self) -> None:
         """Ensure there's a current workflow and flow context after workflow execution."""
         context_manager = GriptapeNodes.ContextManager()
 
@@ -521,7 +528,7 @@ class WorkflowManager:
             )
 
             top_level_flow_request = GetTopLevelFlowRequest()
-            top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
+            top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)
 
             if (
                 isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess)
@@ -539,7 +546,7 @@ class WorkflowManager:
                 error_message = "Workflow execution completed but no current flow context could be established"
                 raise RuntimeError(error_message)
 
-    def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
+    async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
         relative_file_path_obj = Path(relative_file_path)
         if relative_file_path_obj.is_absolute():
             complete_file_path = relative_file_path_obj
@@ -548,14 +555,14 @@ class WorkflowManager:
         try:
             # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
-            with Path(complete_file_path).open(encoding="utf-8") as file:
-                workflow_content = file.read()
+            async with aiofiles.open(Path(complete_file_path), encoding="utf-8") as file:
+                workflow_content = await file.read()
             exec(workflow_content)  # noqa: S102
 
             # After workflow execution, ensure there's always a current context by pushing
             # the top-level flow if the context is empty. This fixes regressions where
             # with Workflow Schema version 0.6.0+ workflows expect context to be established.
-            self._ensure_workflow_context_established()
+            await self._ensure_workflow_context_established()
 
         except Exception as e:
             return WorkflowManager.WorkflowExecutionResult(
@@ -567,7 +574,7 @@ class WorkflowManager:
             execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
         )
 
-    def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
+    async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
         with WorkflowManager.WorkflowSquelchContext(self):
             # Check if file path exists
@@ -579,33 +586,37 @@ class WorkflowManager:
 
             # Start with a clean slate.
             clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-            clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+            clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
             if not clear_all_result.succeeded():
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
             # Run the file, goddamn it
-            execution_result = self.run_workflow(relative_file_path=relative_file_path)
+            execution_result = await self.run_workflow(relative_file_path=relative_file_path)
             if execution_result.execution_successful:
                 return RunWorkflowFromScratchResultSuccess(result_details=execution_result.execution_details)
 
             logger.error(execution_result.execution_details)
             return RunWorkflowFromScratchResultFailure(result_details=execution_result.execution_details)
 
-    def on_run_workflow_with_current_state_request(self, request: RunWorkflowWithCurrentStateRequest) -> ResultPayload:
+    async def on_run_workflow_with_current_state_request(
+        self, request: RunWorkflowWithCurrentStateRequest
+    ) -> ResultPayload:
         relative_file_path = request.file_path
         complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             return RunWorkflowWithCurrentStateResultFailure(result_details=details)
-        execution_result = self.run_workflow(relative_file_path=relative_file_path)
+        execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
         if execution_result.execution_successful:
             return RunWorkflowWithCurrentStateResultSuccess(result_details=execution_result.execution_details)
         logger.error(execution_result.execution_details)
         return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
 
-    def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+    async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
+        await self._workflows_loading_complete.wait()
+
         # get workflow from registry
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -626,7 +637,7 @@ class WorkflowManager:
             if request.run_with_clean_slate:
                 # Start with a clean slate.
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-                clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+                clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
                 if not clear_all_result.succeeded():
                     details = f"Failed to clear the existing object state when preparing to run workflow '{request.workflow_name}'."
                     return RunWorkflowFromRegistryResultFailure(result_details=details)
@@ -634,7 +645,7 @@ class WorkflowManager:
             # Let's run under the assumption that this Workflow will become our Current Context; if we fail, it will revert.
             GriptapeNodes.ContextManager().push_workflow(request.workflow_name)
             # run file
-            execution_result = self.run_workflow(relative_file_path=relative_file_path)
+            execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
             if not execution_result.execution_successful:
                 result_messages = []
@@ -644,7 +655,7 @@ class WorkflowManager:
 
                 # Attempt to clear everything out, as we modified the engine state getting here.
                 clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
-                clear_all_result = GriptapeNodes.handle_request(clear_all_request)
+                clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
 
                 # The clear-all above here wipes the ContextManager, so no need to do a pop_workflow().
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
@@ -713,7 +724,9 @@ class WorkflowManager:
             ),
         )
 
-    def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
+    async def on_list_all_workflows_request(self, _request: ListAllWorkflowsRequest) -> ResultPayload:
+        await self._workflows_loading_complete.wait()
+
         try:
             workflows = WorkflowRegistry.list_workflows()
         except Exception:
@@ -746,14 +759,16 @@ class WorkflowManager:
             result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
         )
 
-    def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
-        save_workflow_request = GriptapeNodes.handle_request(SaveWorkflowRequest(file_name=request.requested_name))
+    async def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
+        save_workflow_request = await GriptapeNodes.ahandle_request(
+            SaveWorkflowRequest(file_name=request.requested_name)
+        )
 
         if isinstance(save_workflow_request, SaveWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             return RenameWorkflowResultFailure(result_details=details)
 
-        delete_workflow_result = GriptapeNodes.handle_request(DeleteWorkflowRequest(name=request.workflow_name))
+        delete_workflow_result = await GriptapeNodes.ahandle_request(DeleteWorkflowRequest(name=request.workflow_name))
         if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
             return RenameWorkflowResultFailure(result_details=details)
@@ -1156,7 +1171,7 @@ class WorkflowManager:
         success: bool
         error_details: str
 
-    def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
+    async def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
         Args:
@@ -1184,15 +1199,15 @@ class WorkflowManager:
 
         # Write the file content
         try:
-            with file_path.open("w", encoding="utf-8") as file:
-                file.write(content)
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
+                await file.write(content)
         except OSError as e:
             details = f"Attempted to save workflow '{file_name}'. Failed when writing file content: {e}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
+    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
         # Determine save target (file path, name, metadata)
         context_manager = GriptapeNodes.ContextManager()
         current_workflow_name = (
@@ -1224,7 +1239,7 @@ class WorkflowManager:
 
         # Serialize the current workflow state
         top_level_flow_request = GetTopLevelFlowRequest()
-        top_level_flow_result = GriptapeNodes.handle_request(top_level_flow_request)
+        top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)
         if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
             return SaveWorkflowResultFailure(result_details=details)
@@ -1233,7 +1248,7 @@ class WorkflowManager:
         serialized_flow_request = SerializeFlowToCommandsRequest(
             flow_name=top_level_flow_name, include_create_flow_command=True
         )
-        serialized_flow_result = GriptapeNodes.handle_request(serialized_flow_request)
+        serialized_flow_result = await GriptapeNodes.ahandle_request(serialized_flow_request)
         if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
             return SaveWorkflowResultFailure(result_details=details)
@@ -1265,7 +1280,7 @@ class WorkflowManager:
             file_path=str(file_path),
             pickle_control_flow_result=pickle_control_flow_result,
         )
-        save_file_result = self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
+        save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
         if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
             details = f"Attempted to save workflow '{relative_file_path}'. Failed during file generation: {save_file_result.result_details}"
@@ -1384,7 +1399,7 @@ class WorkflowManager:
             branched_from=branched_from,
         )
 
-    def on_save_workflow_file_from_serialized_flow_request(
+    async def on_save_workflow_file_from_serialized_flow_request(
         self, request: SaveWorkflowFileFromSerializedFlowRequest
     ) -> ResultPayload:
         """Save a workflow file from serialized flow commands without registry overhead."""
@@ -1426,7 +1441,6 @@ class WorkflowManager:
             final_code_output = self._generate_workflow_file_content(
                 serialized_flow_commands=request.serialized_flow_commands,
                 workflow_metadata=workflow_metadata,
-                execution_flow_name=execution_flow_name,
                 pickle_control_flow_result=request.pickle_control_flow_result,
             )
         except Exception as err:
@@ -1434,7 +1448,7 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = self._write_workflow_file(file_path, final_code_output, request.file_name)
+        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
@@ -1488,7 +1502,6 @@ class WorkflowManager:
         self,
         serialized_flow_commands: SerializedFlowCommands,
         workflow_metadata: WorkflowMetadata,
-        execution_flow_name: str,
         *,
         pickle_control_flow_result: bool = False,
     ) -> str:
@@ -1618,7 +1631,6 @@ class WorkflowManager:
 
         # Generate workflow execution code
         workflow_execution_code = self._generate_workflow_execution(
-            flow_name=execution_flow_name,
             import_recorder=import_recorder,
             workflow_metadata=workflow_metadata,
             pickle_control_flow_result=pickle_control_flow_result,
@@ -1689,7 +1701,6 @@ class WorkflowManager:
 
     def _generate_workflow_execution(
         self,
-        flow_name: str,
         import_recorder: ImportRecorder,
         workflow_metadata: WorkflowMetadata,
         *,
@@ -1698,7 +1709,7 @@ class WorkflowManager:
         """Generates execute_workflow(...) and the __main__ guard."""
         # Use workflow shape from metadata if available, otherwise skip execution block
         if workflow_metadata.workflow_shape is None:
-            logger.info("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
+            logger.debug("Workflow shape does not have required Start or End Nodes. Skipping local execution block.")
             return None
 
         # Convert WorkflowShape to dict format expected by the rest of the method
@@ -1805,7 +1816,6 @@ class WorkflowManager:
                             ),
                             args=[],
                             keywords=[
-                                ast.keyword(arg="workflow_name", value=ast.Constant(flow_name)),
                                 ast.keyword(arg="flow_input", value=ast.Name(id="input", ctx=ast.Load())),
                                 ast.keyword(
                                     arg="pickle_control_flow_result",
@@ -3270,6 +3280,7 @@ class WorkflowManager:
             "settable",
             "is_user_defined",
             "parent_container_name",
+            "parent_element_name",
         ]
         minimal_dict = {key: param_dict[key] for key in fields_to_include if key in param_dict}
         minimal_dict["settable"] = bool(getattr(parameter, "settable", True))
@@ -3537,7 +3548,7 @@ class WorkflowManager:
 
         return final_result
 
-    def on_import_workflow_as_referenced_sub_flow_request(
+    async def on_import_workflow_as_referenced_sub_flow_request(
         self, request: ImportWorkflowAsReferencedSubFlowRequest
     ) -> ResultPayload:
         """Import a registered workflow as a new referenced sub flow in the current context."""
@@ -3556,7 +3567,7 @@ class WorkflowManager:
             flow_name = GriptapeNodes.ContextManager().get_current_flow().name
 
         # Execute the import
-        return self._execute_workflow_import(request, workflow, flow_name)
+        return await self._execute_workflow_import(request, workflow, flow_name)
 
     def _validate_import_prerequisites(self, request: ImportWorkflowAsReferencedSubFlowRequest) -> ResultPayload | None:
         """Validate all prerequisites for import. Returns error result or None if valid."""
@@ -3600,7 +3611,7 @@ class WorkflowManager:
         """Get workflow by name from the registry."""
         return WorkflowRegistry.get_workflow_by_name(workflow_name)
 
-    def _execute_workflow_import(
+    async def _execute_workflow_import(
         self, request: ImportWorkflowAsReferencedSubFlowRequest, workflow: Workflow, flow_name: str
     ) -> ResultPayload:
         """Execute the actual workflow import."""
@@ -3611,7 +3622,7 @@ class WorkflowManager:
         # Execute the workflow within the target flow context and referenced context
         with GriptapeNodes.ContextManager().flow(flow_name):  # noqa: SIM117
             with self.ReferencedWorkflowContext(self, request.workflow_name):
-                workflow_result = self.run_workflow(workflow.file_path)
+                workflow_result = await self.run_workflow(workflow.file_path)
 
         if not workflow_result.execution_successful:
             details = f"Attempted to import workflow '{request.workflow_name}' as referenced sub flow. Failed because workflow execution failed: {workflow_result.execution_details}"

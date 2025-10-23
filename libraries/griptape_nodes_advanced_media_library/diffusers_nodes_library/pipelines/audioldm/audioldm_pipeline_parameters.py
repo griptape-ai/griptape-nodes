@@ -1,14 +1,15 @@
 import logging
 from typing import Any
 
+import torch  # type: ignore[reportMissingImports]
 from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 
-from diffusers_nodes_library.common.parameters.huggingface_repo_parameter import (
-    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
-)
-from diffusers_nodes_library.common.parameters.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import (
+    HuggingFaceRepoParameter,  # type: ignore[reportMissingImports]
+)
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -120,7 +121,7 @@ class AudioldmPipelineParameters:
             "audio_length_in_s": self.get_audio_length_in_s(),
             "num_inference_steps": self.get_num_inference_steps(),
             "guidance_scale": self.get_guidance_scale(),
-            "generator": self._seed_parameter.get_generator(),
+            "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
         }
 
         negative_prompt = self.get_negative_prompt()

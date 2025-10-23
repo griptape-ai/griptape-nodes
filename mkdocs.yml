@@ -103,6 +103,7 @@ nav:
                   - WebSocket: how_to/mcp/connection_types/websocket.md
               - Example MCP Servers:
                   - Overview: how_to/mcp/servers/index.md
+                  - Blender: how_to/mcp/servers/blender.md
                   - Exa: how_to/mcp/servers/exa.md
                   - Fetch: how_to/mcp/servers/fetch.md
                   - Filesystem: how_to/mcp/servers/filesystem.md
@@ -149,6 +150,7 @@ nav:
         - Display Image: nodes/image/display_image.md
         - Display Channel: nodes/image/display_channel.md
         - Invert Image: nodes/image/invert_image.md
+        - Flip Image: nodes/image/flip_image.md
         - Display Mask: nodes/image/display_mask.md
         - Paint Mask: nodes/image/paint_mask.md
         - Invert Mask: nodes/image/invert_mask.md
