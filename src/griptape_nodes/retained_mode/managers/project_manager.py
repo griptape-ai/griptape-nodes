@@ -18,12 +18,13 @@ from griptape_nodes.common.macro_parser import (
     ParsedMacro,
 )
 from griptape_nodes.common.project_templates import (
-    DEFAULT_PROJECT_YAML_PATH,
+    DEFAULT_PROJECT_TEMPLATE,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
     load_project_template_from_yaml,
 )
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete  # noqa: TC001
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetAllSituationsForProjectRequest,
@@ -60,13 +61,15 @@ from griptape_nodes.retained_mode.events.project_events import (
 )
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
+
+# Synthetic path key for the system default project template
+SYSTEM_DEFAULTS_KEY = Path("<system-defaults>")
 
 
 @dataclass(frozen=True)
@@ -163,12 +166,13 @@ class ProjectManager:
             )
 
             # Register app initialization listener
-            from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-
-            event_manager.add_listener_to_app_event(
-                AppInitializationComplete,
-                self.on_app_initialization_complete,
-            )
+            # NOTE: This is intentionally commented out to keep ProjectManager inert for code review.
+            # Uncomment the following lines to enable ProjectManager during app initialization.
+            # ruff: noqa: ERA001
+            # event_manager.add_listener_to_app_event(
+            #     AppInitializationComplete,
+            #     self.on_app_initialization_complete,
+            # )
 
     # Event handler methods (public)
 
@@ -185,7 +189,7 @@ class ProjectManager:
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        logger.info("Loading project template: %s", request.project_path)
+        logger.debug("Loading project template: %s", request.project_path)
 
         read_request = ReadFileRequest(
             file_path=str(request.project_path),
@@ -244,7 +248,7 @@ class ProjectManager:
                 result_details=f"Template not usable (status: {validation.status})",
             )
 
-        logger.info("Template loaded successfully (status: %s)", validation.status)
+        logger.debug("Template loaded successfully (status: %s)", validation.status)
 
         self.registered_template_status[request.project_path] = validation
         self.successful_templates[request.project_path] = template
@@ -432,7 +436,7 @@ class ProjectManager:
 
         TODO: Implement saving logic when template system merges
         """
-        logger.info("Saving project template: %s", request.project_path)
+        logger.debug("Saving project template: %s", request.project_path)
 
         return SaveProjectTemplateResultFailure(
             project_path=request.project_path,
@@ -561,18 +565,18 @@ class ProjectManager:
 
         Called by EventManager after all libraries are loaded.
         """
-        logger.info("ProjectManager: Loading system default project template")
+        logger.debug("ProjectManager: Loading system default project template")
 
-        try:
-            self._load_system_defaults()
+        self._load_system_defaults()
 
-            # Set as current project
-            set_request = SetCurrentProjectRequest(project_path=DEFAULT_PROJECT_YAML_PATH)
-            self.on_set_current_project_request(set_request)
+        # Set as current project (using synthetic key for system defaults)
+        set_request = SetCurrentProjectRequest(project_path=SYSTEM_DEFAULTS_KEY)
+        result = self.on_set_current_project_request(set_request)
 
-            logger.info("Successfully loaded default project template")
-        except Exception as e:
-            logger.error("Failed to load default project template: %s", e)
+        if result.failed():
+            logger.error("Failed to set default project as current: %s", result.result_details)
+        else:
+            logger.debug("Successfully loaded default project template")
 
     def on_get_all_situations_for_project_request(self, request: GetAllSituationsForProjectRequest) -> ResultPayload:
         """Get all situation names and schemas from a project template."""
@@ -599,48 +603,15 @@ class ProjectManager:
     def _load_system_defaults(self) -> None:
         """Load bundled system default template.
 
-        System defaults MUST be valid (fail-fast if they're not).
-        Uses ReadFileRequest for proper cross-platform path handling.
+        System defaults are now defined in Python as DEFAULT_PROJECT_TEMPLATE.
+        This is always valid by construction.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        logger.debug("Loading system default template")
 
-        logger.info("Loading system default template from: %s", DEFAULT_PROJECT_YAML_PATH)
-
-        # Use ReadFileRequest for proper path normalization (Windows long paths, etc.)
-        read_request = ReadFileRequest(
-            file_path=str(DEFAULT_PROJECT_YAML_PATH),
-            encoding="utf-8",
-            workspace_only=False,  # System default is not in workspace
-        )
-        read_result = GriptapeNodes.handle_request(read_request)
-
-        if read_result.failed():
-            msg = f"Failed to read system default template: {read_result.result_details}"
-            raise FileNotFoundError(msg)
-
-        if not isinstance(read_result, ReadFileResultSuccess):
-            msg = "Unexpected result type from ReadFileRequest"
-            raise TypeError(msg)
-
-        yaml_text = read_result.content
-        if not isinstance(yaml_text, str):
-            msg = "System default template must be text, got binary content"
-            raise TypeError(msg)
-
+        # Create validation info to track that defaults were loaded
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        template = load_project_template_from_yaml(yaml_text, validation)
 
-        if template is None:
-            error_messages = [f"{p.field_path}: {p.message}" for p in validation.problems]
-            msg = f"Failed to load system defaults: {'; '.join(error_messages)}"
-            raise RuntimeError(msg)
+        logger.debug("System defaults loaded successfully")
 
-        if not validation.is_usable():
-            error_messages = [f"{p.field_path}: {p.message}" for p in validation.problems]
-            msg = f"System defaults are not usable (status: {validation.status}): {'; '.join(error_messages)}"
-            raise RuntimeError(msg)
-
-        logger.info("System defaults loaded successfully (status: %s)", validation.status)
-
-        self.registered_template_status[DEFAULT_PROJECT_YAML_PATH] = validation
-        self.successful_templates[DEFAULT_PROJECT_YAML_PATH] = template
+        self.registered_template_status[SYSTEM_DEFAULTS_KEY] = validation
+        self.successful_templates[SYSTEM_DEFAULTS_KEY] = DEFAULT_PROJECT_TEMPLATE

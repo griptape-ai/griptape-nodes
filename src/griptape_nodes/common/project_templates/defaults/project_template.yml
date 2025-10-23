@@ -42,7 +42,7 @@ situations:
   save_file:
     situation_template_schema_version: "0.1.0"
     description: "Generic file save operation"
-    schema: "{file_name_base}{_index?:03}.{file_extension}"
+    schema: "{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"  # Increment {_index}: file_001.jpg, file_002.jpg
       create_dirs: true
@@ -52,7 +52,7 @@ situations:
   copy_external_file:
     situation_template_schema_version: "0.1.0"
     description: "User copies external file to project"
-    schema: "{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index?:03}.{file_extension}"
+    schema: "{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -72,7 +72,7 @@ situations:
   save_node_output:
     situation_template_schema_version: "0.1.0"
     description: "Node generates and saves output"
-    schema: "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
+    schema: "{outputs}/{node_name?:_}{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
