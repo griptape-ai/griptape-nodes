@@ -158,6 +158,17 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 ValidateMacroSyntaxRequest, self.on_validate_macro_syntax_request
             )
+            event_manager.assign_manager_to_request_type(
+                GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
+            )
+
+            # Register app initialization listener
+            from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
 
     # Event handler methods (public)
 
