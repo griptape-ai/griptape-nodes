@@ -165,6 +165,16 @@
       }
     },
     {
+      "class_name": "MorphologyImage",
+      "file_path": "opencv_nodes_library/morphology_image.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "Apply OpenCV morphological operations (erode, dilate, open, close) to grayscale images",
+        "display_name": "Morphology",
+        "icon": "circle-dot"
+      }
+    },
+    {
       "class_name": "AnylineDetector",
       "file_path": "controlnet_aux_nodes_library/anyline_detector.py",
       "metadata": {
