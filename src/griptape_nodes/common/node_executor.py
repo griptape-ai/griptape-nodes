@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ast
 import logging
 import pickle
@@ -14,6 +15,7 @@ from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
     BaseNode,
+    EndLoopNode,
     EndNode,
     NodeGroup,
     NodeGroupProxyNode,
@@ -73,6 +75,11 @@ class NodeExecutor:
             library_name: The library that the execute method should come from.
         """
         execution_type = node.get_parameter_value(node.execution_environment.name)
+
+        # If this is a loop node, we need to handle it totally differently.
+        if isinstance(node, EndLoopNode):
+            await self.handle_loop_execution(node, execution_type)
+            return
 
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
@@ -354,6 +361,263 @@ class NodeExecutor:
             logger.error(msg)
             raise ValueError(msg)
         return my_subprocess_result
+
+    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:
+        """Handle execution of a loop by packaging nodes from start to end and running them.
+
+        Args:
+            node: The EndLoopNode marking the end of the loop
+            execution_type: The execution environment type
+        """
+        from griptape_nodes.machines.dag_builder import DagBuilder
+
+        # Validate start node exists
+        if node.start_node is None:
+            msg = f"EndLoopNode '{node.name}' has no start_node reference"
+            raise ValueError(msg)
+
+        start_node = node.start_node
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+
+        # Step 1: Collect all nodes in the forward control path from start to end
+        nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, node, connections)
+
+        # Step 2: Collect data dependencies for each node in the control flow
+        all_nodes: set[str] = set(nodes_in_control_flow)
+        visited_deps: set[str] = set()
+
+        node_manager = GriptapeNodes.NodeManager()
+        for node_name in nodes_in_control_flow:
+            node_obj = node_manager.get_node_by_name(node_name)
+            deps = DagBuilder.collect_data_dependencies_for_node(
+                node_obj, connections, nodes_in_control_flow, visited_deps
+            )
+            all_nodes.update(deps)
+
+        # Step 3: Package into PackageNodesAsSerializedFlowRequest
+        # Determine library based on execution_type (similar to _publish_local_workflow)
+        library_name = "Griptape Nodes Library"
+        start_node_type = "StartFlow"
+        end_node_type = "EndFlow"
+
+        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+            try:
+                library = LibraryRegistry.get_library(name=execution_type)
+                start_nodes = library.get_nodes_by_base_type(StartNode)
+                end_nodes = library.get_nodes_by_base_type(EndNode)
+                if len(start_nodes) > 0 and len(end_nodes) > 0:
+                    start_node_type = start_nodes[0]
+                    end_node_type = end_nodes[0]
+                    library_name = library.get_library_data().name
+            except KeyError:
+                logger.warning("Could not find library '%s' for loop execution, using default library", execution_type)
+
+        # Get the entry control parameter from the start node
+        entry_control_param = start_node._entry_control_parameter
+        entry_control_parameter_name = entry_control_param.name if entry_control_param else None
+
+        # Create the packaging request
+        request = PackageNodesAsSerializedFlowRequest(
+            node_names=list(all_nodes),
+            start_node_type=start_node_type,
+            end_node_type=end_node_type,
+            start_end_specific_library_name=library_name,
+            entry_control_node_name=start_node.name,
+            entry_control_parameter_name=entry_control_parameter_name,
+            output_parameter_prefix=f"{node.name.replace(' ', '_')}_loop_",
+            proxy_node=None,
+        )
+
+        package_result = GriptapeNodes.handle_request(request)
+        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            msg = f"Failed to package loop nodes for '{node.name}'. Error: {package_result.result_details}"
+            raise TypeError(msg)
+
+        logger.info(
+            "Successfully packaged %d nodes for loop execution from '%s' to '%s'",
+            len(all_nodes),
+            start_node.name,
+            node.name,
+        )
+
+        # Step 4: Get iteration items from start node
+        if not hasattr(start_node, "_get_iteration_items"):
+            msg = f"Start node '{start_node.name}' does not support iteration (missing _get_iteration_items method)"
+            raise TypeError(msg)
+
+        # Initialize iteration data to populate items list
+        if hasattr(start_node, "_initialize_iteration_data"):
+            start_node._initialize_iteration_data()
+
+        iteration_items = start_node._get_iteration_items()
+        if not iteration_items:
+            logger.info("No iteration items for loop from '%s' to '%s', skipping execution", start_node.name, node.name)
+            return
+
+        total_iterations = len(iteration_items)
+        logger.info("Starting parallel execution of %d iterations for loop '%s'", total_iterations, start_node.name)
+
+        # Step 5: Deserialize N flow instances from the serialized flow
+        # Each deserialization will create a new flow automatically since the
+        # CreateFlowRequest in the serialized commands has parent_flow_name=None
+        from griptape_nodes.retained_mode.events.flow_events import (
+            DeserializeFlowFromCommandsRequest,
+            DeserializeFlowFromCommandsResultSuccess,
+        )
+
+        deserialized_flows: list[tuple[str, int, Any]] = []  # (flow_name, iteration_index, item_value)
+
+        for iteration_index, item_value in enumerate(iteration_items):
+            # Deserialize creates a new flow with auto-generated name
+            deserialize_request = DeserializeFlowFromCommandsRequest(
+                serialized_flow_commands=package_result.serialized_flow_commands
+            )
+            deserialize_result = GriptapeNodes.handle_request(deserialize_request)
+            if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
+                msg = f"Failed to deserialize flow for iteration {iteration_index}. Error: {deserialize_result.result_details}"
+                raise TypeError(msg)
+
+            deserialized_flows.append((deserialize_result.flow_name, iteration_index, item_value))
+
+        logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
+
+        # Step 6: Set input values on start nodes for each iteration
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            SetParameterValueRequest,
+            SetParameterValueResultSuccess,
+        )
+
+        for flow_name, iteration_index, item_value in deserialized_flows:
+            # Get the flow
+            iteration_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+
+            # Find the start node in this flow (it should have the same name as original start_node)
+            iteration_start_node = None
+            for flow_node in iteration_flow.nodes.values():
+                if isinstance(flow_node, type(start_node)):
+                    iteration_start_node = flow_node
+                    break
+
+            if iteration_start_node is None:
+                msg = f"Failed to find start node in iteration flow {flow_name}"
+                raise RuntimeError(msg)
+
+            # Set the current_item value on the start node
+            # For ForEach nodes, this sets the item; for ForLoop nodes, this sets the index
+            if hasattr(iteration_start_node, "current_item"):
+                set_value_request = SetParameterValueRequest(
+                    node_name=iteration_start_node.name,
+                    parameter_name="current_item",
+                    value=item_value,
+                )
+                set_value_result = await GriptapeNodes.ahandle_request(set_value_request)
+                if not isinstance(set_value_result, SetParameterValueResultSuccess):
+                    logger.warning(
+                        "Failed to set current_item for iteration %d: %s",
+                        iteration_index,
+                        set_value_result.result_details,
+                    )
+
+            # Set iteration index if available
+            if hasattr(iteration_start_node, "index"):
+                set_index_request = SetParameterValueRequest(
+                    node_name=iteration_start_node.name,
+                    parameter_name="index",
+                    value=iteration_index,
+                )
+                set_index_result = await GriptapeNodes.ahandle_request(set_index_request)
+                if not isinstance(set_index_result, SetParameterValueResultSuccess):
+                    logger.warning(
+                        "Failed to set index for iteration %d: %s", iteration_index, set_index_result.result_details
+                    )
+
+        logger.info("Successfully set input values for %d iterations", total_iterations)
+
+        # Step 7: Run all flows concurrently
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartFlowRequest,
+            StartFlowResultSuccess,
+        )
+
+        async def run_single_iteration(flow_name: str, iteration_index: int) -> tuple[int, bool]:
+            """Run a single iteration flow and return success status."""
+            logger.debug(
+                "Starting iteration %d/%d for loop '%s' (flow: %s)",
+                iteration_index + 1,
+                total_iterations,
+                start_node.name,
+                flow_name,
+            )
+
+            start_flow_request = StartFlowRequest(flow_name=flow_name)
+            start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
+
+            success = isinstance(start_flow_result, StartFlowResultSuccess)
+            if success:
+                logger.debug(
+                    "Completed iteration %d/%d for loop '%s'",
+                    iteration_index + 1,
+                    total_iterations,
+                    start_node.name,
+                )
+            else:
+                logger.error(
+                    "Failed iteration %d/%d for loop '%s': %s",
+                    iteration_index + 1,
+                    total_iterations,
+                    start_node.name,
+                    start_flow_result.result_details
+                    if hasattr(start_flow_result, "result_details")
+                    else "Unknown error",
+                )
+
+            return iteration_index, success
+
+        try:
+            # Run all iterations concurrently
+            iteration_tasks = [
+                run_single_iteration(flow_name, iteration_index) for flow_name, iteration_index, _ in deserialized_flows
+            ]
+            iteration_results = await asyncio.gather(*iteration_tasks, return_exceptions=True)
+
+            # Step 8: Collect and aggregate results
+            successful_iterations = []
+            failed_iterations = []
+
+            for result in iteration_results:
+                if isinstance(result, Exception):
+                    logger.error("Iteration failed with exception: %s", result)
+                    failed_iterations.append(result)
+                else:
+                    iteration_index, success = result
+                    if success:
+                        successful_iterations.append(iteration_index)
+                    else:
+                        failed_iterations.append(iteration_index)
+
+            if failed_iterations:
+                msg = f"Loop execution failed: {len(failed_iterations)} of {total_iterations} iterations failed"
+                raise RuntimeError(msg)
+
+            logger.info(
+                "Successfully completed parallel execution of %d iterations for loop '%s'",
+                total_iterations,
+                start_node.name,
+            )
+
+            # TODO: Aggregate results from all iterations and set them on appropriate nodes
+
+        finally:
+            # Step 9: Cleanup - delete all iteration flows
+            from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+
+            for flow_name, iteration_index, _ in deserialized_flows:
+                try:
+                    delete_request = DeleteFlowRequest(flow_name=flow_name)
+                    await GriptapeNodes.ahandle_request(delete_request)
+                except Exception as e:
+                    logger.warning("Failed to cleanup flow for iteration %d: %s", iteration_index, e)
 
     def _extract_parameter_output_values(
         self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]

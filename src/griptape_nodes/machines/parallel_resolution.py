@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeGroupProxyNode,
     NodeResolutionState,
+    StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
@@ -636,7 +637,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0915
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Check if execution is paused
         if context.paused:
             return None
@@ -679,6 +680,22 @@ class ExecuteDagState(State):
                 msg = f"Canceling flow run. Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
                 logger.error(msg)
                 return ErrorState
+
+            # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
+            if isinstance(node_reference.node_reference, StartLoopNode):
+                # Call handle_done_state to clear it from everything
+                end_loop_node = node_reference.node_reference.end_node
+                if end_loop_node is None:
+                    msg = (
+                        f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
+                    )
+                    logger.error(msg)
+                    return ErrorState
+                # We're going to skip straight to the end node here instead.
+
+                if context.dag_builder is not None:
+                    node_reference = context.dag_builder.add_node(end_loop_node)
+                    node_reference.node_state = NodeState.QUEUED
 
             def on_task_done(task: asyncio.Task) -> None:
                 if task in context.task_to_node:
@@ -728,22 +745,7 @@ class ExecuteDagState(State):
                         exc,
                     )
 
-                    dag_node = context.task_to_node.get(task)
-                    node_name = dag_node.node_reference.name if dag_node else "Unknown"
-                    node_type = dag_node.node_reference.__class__.__name__ if dag_node else "Unknown"
-
-                    logger.exception(
-                        "Task execution failed for node '%s' (type: %s) in flow '%s'. Exception: %s",
-                        node_name,
-                        node_type,
-                        context.flow_name,
-                        exc,
-                    )
-
                     context.task_to_node.pop(task)
-                    context.error_message = f"Task execution failed for node '{node_name}': {exc}"
-                    context.workflow_state = WorkflowState.ERRORED
-                    return ErrorState
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"
                     context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
