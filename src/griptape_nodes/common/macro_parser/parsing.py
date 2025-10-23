@@ -131,6 +131,7 @@ def parse_variable(variable_content: str) -> ParsedVariable:
 
     # Check for format specifiers (:)
     format_specs: list[FormatSpec] = []
+    is_required = True
     if ":" in variable_content:
         parts = variable_content.split(":")
         variable_part = parts[0]
@@ -140,16 +141,35 @@ def parse_variable(variable_content: str) -> ParsedVariable:
         for format_part in format_parts:
             format_spec = parse_format_spec(format_part)
             format_specs.append(format_spec)
+
+        # Check if last format spec ends with unquoted ?
+        if format_parts:
+            last_format_part = format_parts[-1]
+
+            # Check if it's quoted (quoted formats preserve ? as literal)
+            is_quoted = last_format_part.startswith("'") and last_format_part.endswith("'")
+
+            if not is_quoted and last_format_part.endswith("?"):
+                # Strip the ? and re-parse the format
+                stripped_format = last_format_part[:-1]
+                if stripped_format:
+                    # Re-parse without the ?
+                    format_specs[-1] = parse_format_spec(stripped_format)
+                else:
+                    # Format was just "?", remove it entirely
+                    format_specs.pop()
+
+                # Mark variable as optional
+                is_required = False
     else:
         variable_part = variable_content
 
-    # Check for optional marker (?)
+    # Check for optional marker (?) after variable name
     if variable_part.endswith("?"):
         name = variable_part[:-1]
         is_required = False
     else:
         name = variable_part
-        is_required = True
 
     info = VariableInfo(name=name, is_required=is_required)
     return ParsedVariable(info=info, format_specs=format_specs, default_value=default_value)

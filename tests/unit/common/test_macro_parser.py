@@ -221,6 +221,86 @@ class TestMacroParserParseVariable:
         assert isinstance(variable.format_specs[0], SeparatorFormat)
         assert variable.format_specs[0].separator == "lower"
 
+    def test_parse_variable_optional_after_numeric_format(self) -> None:
+        """Test parsing variable with ? after numeric format (lenient positioning)."""
+        variable = parse_variable("index:03?")
+
+        assert variable.info.name == "index"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], NumericPaddingFormat)
+        assert variable.format_specs[0].width == 3
+
+    def test_parse_variable_optional_after_separator(self) -> None:
+        """Test parsing variable with ? after separator format (lenient positioning)."""
+        variable = parse_variable("name:_?")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "_"
+
+    def test_parse_variable_optional_after_transformation(self) -> None:
+        """Test parsing variable with ? after transformation format (lenient positioning)."""
+        variable = parse_variable("name:lower?")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], LowerCaseFormat)
+
+    def test_parse_variable_optional_after_multiple_formats(self) -> None:
+        """Test parsing variable with ? after chain of formats (lenient positioning)."""
+        variable = parse_variable("name:03:_?")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 2
+        assert isinstance(variable.format_specs[0], NumericPaddingFormat)
+        assert isinstance(variable.format_specs[1], SeparatorFormat)
+
+    def test_parse_variable_double_optional_markers(self) -> None:
+        """Test parsing variable with ? after name AND format (redundant but valid)."""
+        variable = parse_variable("name?:03?")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is False
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], NumericPaddingFormat)
+
+    def test_parse_variable_optional_not_at_end(self) -> None:
+        """Test parsing variable with ? in middle of format chain (treated as literal)."""
+        variable = parse_variable("name:foo?:bar")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is True  # Not at end, so not optional
+        assert len(variable.format_specs) == 2
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "foo?"  # ? is part of separator
+        assert isinstance(variable.format_specs[1], SeparatorFormat)
+        assert variable.format_specs[1].separator == "bar"
+
+    def test_parse_variable_quoted_question_mark_literal(self) -> None:
+        """Test parsing variable with quoted ? (literal, not optional marker)."""
+        variable = parse_variable("name:'?'")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is True  # Quoted ? is literal
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "?"
+
+    def test_parse_variable_quoted_format_with_question_mark(self) -> None:
+        """Test parsing variable with quoted format containing ? (literal)."""
+        variable = parse_variable("name:'foo?'")
+
+        assert variable.info.name == "name"
+        assert variable.info.is_required is True  # Quoted, so required
+        assert len(variable.format_specs) == 1
+        assert isinstance(variable.format_specs[0], SeparatorFormat)
+        assert variable.format_specs[0].separator == "foo?"
+
 
 class TestMacroParserParse:
     """Test cases for ParsedMacro() method."""
