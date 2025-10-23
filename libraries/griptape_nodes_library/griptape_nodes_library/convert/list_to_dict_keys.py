@@ -80,15 +80,15 @@ class ListToDictKeys(SuccessFailureNode):
 
         # Optional input parameter for pre-defined values
         # This allows developers to programmatically provide values for keys
-        self.values = Parameter(
-            name="values",
+        self.optional_values = Parameter(
+            name="optional_values",
             input_types=["list"],
             type="list",
             allowed_modes={ParameterMode.INPUT},
             default_value=None,
             tooltip="Optional list of values to pre-populate the dictionary (matched by position/order)",
         )
-        self.add_parameter(self.values)
+        self.add_parameter(self.optional_values)
 
         # Parameter to control duplicate handling
         # When True: duplicates are numbered (ADJECTIVE, ADJECTIVE_2, ADJECTIVE_3)
@@ -204,7 +204,7 @@ class ListToDictKeys(SuccessFailureNode):
         logger.debug(f"{self.name}: Processing key list: {key_list}")
 
         # Get optional values list for programmatic pre-population
-        values_list = self.get_parameter_value("values")
+        values_list = self.get_parameter_value("optional_values")
         provided_values = {}
         if values_list and isinstance(values_list, list):
             logger.debug(f"{self.name}: Using provided values for {len(values_list)} keys: {values_list}")
@@ -508,7 +508,7 @@ class ListToDictKeys(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update key-value pairs when a value is assigned to the keys or values parameter."""
         logger.debug(f"{self.name}: after_value_set called for parameter: {parameter.name} with value: {value}")
-        if parameter in (self.keys, self.values):
+        if parameter in (self.keys, self.optional_values):
             logger.debug(f"{self.name}: Triggering _update_key_value_pairs due to {parameter.name} change")
             self._update_key_value_pairs()
         elif parameter == self.key_value_pairs and isinstance(value, dict):
