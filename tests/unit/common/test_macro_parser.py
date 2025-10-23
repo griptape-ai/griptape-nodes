@@ -14,6 +14,9 @@ from griptape_nodes.common.macro_parser import (
     MacroParseFailure,
     MacroParseFailureReason,
     MacroResolutionError,
+    MacroResolutionFailure,
+    MacroResolutionFailureReason,
+    MacroSyntaxError,
     NumericPaddingFormat,
     ParsedMacro,
     ParsedStaticValue,
@@ -574,13 +577,13 @@ class TestMacroFailureTypes:
     def test_macro_match_failure_creation(self) -> None:
         """Test creating MacroMatchFailure with all fields."""
         failure = MacroMatchFailure(
-            failure_reason=MacroMatchFailureReason.NO_MATCH,
+            failure_reason=MacroMatchFailureReason.STATIC_TEXT_MISMATCH,
             expected_pattern="{inputs}/{file_name}",
             known_variables_used={"inputs": "outputs"},
             error_details="Static segment mismatch: expected 'inputs/' but found 'outputs/'",
         )
 
-        assert failure.failure_reason == MacroMatchFailureReason.NO_MATCH
+        assert failure.failure_reason == MacroMatchFailureReason.STATIC_TEXT_MISMATCH
         assert failure.expected_pattern == "{inputs}/{file_name}"
         assert failure.known_variables_used == {"inputs": "outputs"}
         assert "Static segment mismatch" in failure.error_details
@@ -601,33 +604,119 @@ class TestMacroFailureTypes:
     def test_macro_parse_failure_creation(self) -> None:
         """Test creating MacroParseFailure with all fields."""
         failure = MacroParseFailure(
-            failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+            failure_reason=MacroParseFailureReason.UNCLOSED_BRACE,
             error_position=15,
             error_details="Missing closing brace after position 15",
         )
 
-        assert failure.failure_reason == MacroParseFailureReason.SYNTAX_ERROR
+        assert failure.failure_reason == MacroParseFailureReason.UNCLOSED_BRACE
         assert failure.error_position == 15
         assert "Missing closing brace" in failure.error_details
 
     def test_macro_parse_failure_no_position(self) -> None:
         """Test MacroParseFailure when error position is unknown."""
         failure = MacroParseFailure(
-            failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
+            failure_reason=MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
             error_position=None,
             error_details="General syntax error",
         )
 
-        assert failure.failure_reason == MacroParseFailureReason.SYNTAX_ERROR
+        assert failure.failure_reason == MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE
         assert failure.error_position is None
 
     def test_macro_match_failure_reason_values(self) -> None:
         """Test MacroMatchFailureReason enum values."""
-        assert MacroMatchFailureReason.NO_MATCH == "NO_MATCH"
+        assert MacroMatchFailureReason.STATIC_TEXT_MISMATCH == "STATIC_TEXT_MISMATCH"
+        assert MacroMatchFailureReason.DELIMITER_NOT_FOUND == "DELIMITER_NOT_FOUND"
+        assert MacroMatchFailureReason.FORMAT_REVERSAL_FAILED == "FORMAT_REVERSAL_FAILED"
         assert MacroMatchFailureReason.INVALID_MACRO_SYNTAX == "INVALID_MACRO_SYNTAX"
-        assert len(MacroMatchFailureReason) == 2
+        assert len(MacroMatchFailureReason) == 4
 
     def test_macro_parse_failure_reason_values(self) -> None:
         """Test MacroParseFailureReason enum values."""
-        assert MacroParseFailureReason.SYNTAX_ERROR == "SYNTAX_ERROR"
-        assert len(MacroParseFailureReason) == 1
+        assert MacroParseFailureReason.UNMATCHED_CLOSING_BRACE == "UNMATCHED_CLOSING_BRACE"
+        assert MacroParseFailureReason.UNCLOSED_BRACE == "UNCLOSED_BRACE"
+        assert MacroParseFailureReason.NESTED_BRACES == "NESTED_BRACES"
+        assert MacroParseFailureReason.EMPTY_VARIABLE == "EMPTY_VARIABLE"
+        assert MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE == "UNEXPECTED_SEGMENT_TYPE"
+        assert len(MacroParseFailureReason) == 5
+
+    def test_macro_resolution_failure_dataclass(self) -> None:
+        """Test creating MacroResolutionFailure with all fields."""
+        failure = MacroResolutionFailure(
+            failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+            variable_name="workflow_name",
+            missing_variables=["workflow_name", "project_id"],
+            error_details="Required variables not provided",
+        )
+
+        assert failure.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES
+        assert failure.variable_name == "workflow_name"
+        assert failure.missing_variables == ["workflow_name", "project_id"]
+        assert "Required variables" in failure.error_details
+
+    def test_macro_resolution_failure_reason_values(self) -> None:
+        """Test MacroResolutionFailureReason enum values."""
+        assert MacroResolutionFailureReason.NUMERIC_PADDING_ON_NON_NUMERIC == "NUMERIC_PADDING_ON_NON_NUMERIC"
+        assert MacroResolutionFailureReason.INVALID_INTEGER_PARSE == "INVALID_INTEGER_PARSE"
+        assert MacroResolutionFailureReason.DATE_FORMAT_NOT_IMPLEMENTED == "DATE_FORMAT_NOT_IMPLEMENTED"
+        assert MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES == "MISSING_REQUIRED_VARIABLES"
+        assert MacroResolutionFailureReason.ENVIRONMENT_VARIABLE_NOT_FOUND == "ENVIRONMENT_VARIABLE_NOT_FOUND"
+        assert MacroResolutionFailureReason.UNEXPECTED_SEGMENT_TYPE == "UNEXPECTED_SEGMENT_TYPE"
+        assert len(MacroResolutionFailureReason) == 6
+
+
+class TestEnhancedExceptions:
+    """Test enhanced exception types with structured fields."""
+
+    def test_macro_syntax_error_with_structured_fields(self) -> None:
+        """Test MacroSyntaxError carries structured error information."""
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("{inputs}/{file_name")
+
+        err = exc_info.value
+        assert err.failure_reason == MacroParseFailureReason.UNCLOSED_BRACE
+        assert err.error_position is not None
+        assert "Unclosed brace" in str(err)
+
+    def test_macro_syntax_error_unmatched_closing_brace(self) -> None:
+        """Test MacroSyntaxError for unmatched closing brace."""
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("{inputs}/}file_name}")
+
+        err = exc_info.value
+        assert err.failure_reason == MacroParseFailureReason.UNMATCHED_CLOSING_BRACE
+        assert err.error_position is not None
+
+    def test_macro_syntax_error_nested_braces(self) -> None:
+        """Test MacroSyntaxError for nested braces."""
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("{outer_{inner}}")
+
+        err = exc_info.value
+        assert err.failure_reason == MacroParseFailureReason.NESTED_BRACES
+        assert err.error_position is not None
+
+    def test_macro_syntax_error_empty_variable(self) -> None:
+        """Test MacroSyntaxError for empty variable."""
+        with pytest.raises(MacroSyntaxError) as exc_info:
+            ParsedMacro("{inputs}/{}")
+
+        err = exc_info.value
+        assert err.failure_reason == MacroParseFailureReason.EMPTY_VARIABLE
+        assert err.error_position is not None
+
+    def test_macro_resolution_error_missing_variables(self) -> None:
+        """Test MacroResolutionError for missing required variables."""
+        from unittest.mock import Mock
+
+        macro = ParsedMacro("{workflow_name}/{file_name}")
+        secrets_manager = Mock()
+
+        with pytest.raises(MacroResolutionError) as exc_info:
+            macro.resolve({"file_name": "test.txt"}, secrets_manager)
+
+        err = exc_info.value
+        assert err.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES
+        assert err.missing_variables == ["workflow_name"]
+        assert "workflow_name" in str(err)

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroSyntaxError
+from griptape_nodes.common.macro_parser.exceptions import (
+    MacroResolutionError,
+    MacroResolutionFailureReason,
+    MacroSyntaxError,
+)
 from griptape_nodes.common.macro_parser.matching import extract_unknown_variables
 from griptape_nodes.common.macro_parser.parsing import parse_segments
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
@@ -28,7 +32,11 @@ class ParsedMacro:
             segments = parse_segments(template)
         except MacroSyntaxError as err:
             msg = f"Attempted to parse template string '{template}'. Failed due to: {err}"
-            raise MacroSyntaxError(msg) from err
+            raise MacroSyntaxError(
+                msg,
+                failure_reason=err.failure_reason,
+                error_position=err.error_position,
+            ) from err
 
         if not segments:
             segments.append(ParsedStaticValue(text=""))
@@ -52,7 +60,11 @@ class ParsedMacro:
             unresolved = partial.get_unresolved_variables()
             unresolved_names = [var.info.name for var in unresolved]
             msg = f"Cannot fully resolve macro - missing required variables: {', '.join(unresolved_names)}"
-            raise MacroResolutionError(msg)
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                missing_variables=unresolved_names,
+            )
 
         # Convert to string
         return partial.to_string()

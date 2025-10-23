@@ -6,6 +6,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from griptape_nodes.common.macro_parser import (
+    MacroMatchFailure,
+    MacroMatchFailureReason,
+    MacroParseFailure,
+    MacroParseFailureReason,
+    MacroSyntaxError,
+    ParsedMacro,
+)
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_YAML_PATH,
     ProjectTemplate,
@@ -26,10 +34,12 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetProjectTemplateResultSuccess,
     GetVariablesForMacroRequest,
     GetVariablesForMacroResultFailure,
+    GetVariablesForMacroResultSuccess,
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     MatchPathAgainstMacroRequest,
     MatchPathAgainstMacroResultFailure,
+    MatchPathAgainstMacroResultSuccess,
     PathResolutionFailureReason,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
@@ -37,12 +47,12 @@ from griptape_nodes.retained_mode.events.project_events import (
     SetCurrentProjectResultSuccess,
     ValidateMacroSyntaxRequest,
     ValidateMacroSyntaxResultFailure,
+    ValidateMacroSyntaxResultSuccess,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.common.macro_parser import ParsedMacro
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -276,21 +286,53 @@ class ProjectManager:
         2. Call ParsedMacro.extract_variables() with path and known variables
         3. If match succeeds, return extracted variables
         4. If match fails, return MacroMatchFailure with details
-
-        TODO: Implement macro matching logic
         """
-        from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroMatchFailureReason
-
         logger.debug("Matching path against macro: %s", request.macro_schema)
 
-        return MatchPathAgainstMacroResultFailure(
-            match_failure=MacroMatchFailure(
-                failure_reason=MacroMatchFailureReason.NO_MATCH,
-                expected_pattern=request.macro_schema,
-                known_variables_used=request.known_variables,
-                error_details="Macro matching not yet implemented (stub)",
-            ),
-            result_details="Macro matching not yet implemented",
+        if self.secrets_manager is None:
+            return MatchPathAgainstMacroResultFailure(
+                match_failure=MacroMatchFailure(
+                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
+                    expected_pattern=request.macro_schema,
+                    known_variables_used=request.known_variables,
+                    error_details="SecretsManager not available",
+                ),
+                result_details="SecretsManager not available for macro matching",
+            )
+
+        try:
+            parsed_macro = ParsedMacro(request.macro_schema)
+        except MacroSyntaxError as err:
+            return MatchPathAgainstMacroResultFailure(
+                match_failure=MacroMatchFailure(
+                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
+                    expected_pattern=request.macro_schema,
+                    known_variables_used=request.known_variables,
+                    error_details=str(err),
+                ),
+                result_details=f"Invalid macro syntax: {err}",
+            )
+
+        extracted = parsed_macro.extract_variables(
+            request.file_path,
+            request.known_variables,
+            self.secrets_manager,
+        )
+
+        if extracted is None:
+            return MatchPathAgainstMacroResultFailure(
+                match_failure=MacroMatchFailure(
+                    failure_reason=MacroMatchFailureReason.STATIC_TEXT_MISMATCH,
+                    expected_pattern=request.macro_schema,
+                    known_variables_used=request.known_variables,
+                    error_details=f"Path '{request.file_path}' does not match macro pattern",
+                ),
+                result_details="Path does not match macro pattern",
+            )
+
+        return MatchPathAgainstMacroResultSuccess(
+            extracted_variables=extracted,
+            result_details="Successfully matched path against macro",
         )
 
     def on_get_variables_for_macro_request(self, request: GetVariablesForMacroRequest) -> ResultPayload:
@@ -300,20 +342,26 @@ class ProjectManager:
         1. Parse macro schema into ParsedMacro
         2. Call ParsedMacro.get_variables() to extract variable metadata
         3. Return list of VariableInfo
-
-        TODO: Implement variable extraction logic
         """
-        from griptape_nodes.common.macro_parser import MacroParseFailure, MacroParseFailureReason
-
         logger.debug("Getting variables for macro: %s", request.macro_schema)
 
-        return GetVariablesForMacroResultFailure(
-            parse_failure=MacroParseFailure(
-                failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
-                error_position=None,
-                error_details="Variable extraction not yet implemented (stub)",
-            ),
-            result_details="Variable extraction not yet implemented",
+        try:
+            parsed_macro = ParsedMacro(request.macro_schema)
+        except MacroSyntaxError as err:
+            return GetVariablesForMacroResultFailure(
+                parse_failure=MacroParseFailure(
+                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
+                    error_position=err.error_position,
+                    error_details=str(err),
+                ),
+                result_details=f"Failed to parse macro: {err}",
+            )
+
+        variables = parsed_macro.get_variables()
+
+        return GetVariablesForMacroResultSuccess(
+            variables=variables,
+            result_details=f"Found {len(variables)} variables in macro",
         )
 
     def on_validate_macro_syntax_request(self, request: ValidateMacroSyntaxRequest) -> ResultPayload:
@@ -323,21 +371,28 @@ class ProjectManager:
         1. Try to parse macro schema with ParsedMacro()
         2. If successful, return variables found and any warnings
         3. If syntax error, return MacroParseFailure with details
-
-        TODO: Implement syntax validation logic
         """
-        from griptape_nodes.common.macro_parser import MacroParseFailure, MacroParseFailureReason
-
         logger.debug("Validating macro syntax: %s", request.macro_schema)
 
-        return ValidateMacroSyntaxResultFailure(
-            parse_failure=MacroParseFailure(
-                failure_reason=MacroParseFailureReason.SYNTAX_ERROR,
-                error_position=None,
-                error_details="Syntax validation not yet implemented (stub)",
-            ),
-            partial_variables=[],
-            result_details="Syntax validation not yet implemented",
+        try:
+            parsed_macro = ParsedMacro(request.macro_schema)
+        except MacroSyntaxError as err:
+            return ValidateMacroSyntaxResultFailure(
+                parse_failure=MacroParseFailure(
+                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
+                    error_position=err.error_position,
+                    error_details=str(err),
+                ),
+                partial_variables=[],
+                result_details=f"Syntax validation failed: {err}",
+            )
+
+        variables = parsed_macro.get_variables()
+
+        return ValidateMacroSyntaxResultSuccess(
+            variables=variables,
+            warnings=[],
+            result_details=f"Macro syntax is valid with {len(variables)} variables",
         )
 
     # Private helper methods

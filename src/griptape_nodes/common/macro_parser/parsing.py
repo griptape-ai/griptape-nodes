@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from griptape_nodes.common.macro_parser.exceptions import MacroSyntaxError
+from griptape_nodes.common.macro_parser.exceptions import MacroParseFailureReason, MacroSyntaxError
 from griptape_nodes.common.macro_parser.formats import (
     FORMAT_REGISTRY,
     DateFormat,
@@ -47,7 +47,11 @@ def parse_segments(template: str) -> list[ParsedSegment]:
                 if "}" in static_text:
                     closing_pos = current_pos + static_text.index("}")
                     msg = f"Unmatched closing brace at position {closing_pos}"
-                    raise MacroSyntaxError(msg)
+                    raise MacroSyntaxError(
+                        msg,
+                        failure_reason=MacroParseFailureReason.UNMATCHED_CLOSING_BRACE,
+                        error_position=closing_pos,
+                    )
                 segments.append(ParsedStaticValue(text=static_text))
             break
 
@@ -58,26 +62,42 @@ def parse_segments(template: str) -> list[ParsedSegment]:
             if "}" in static_text:
                 closing_pos = current_pos + static_text.index("}")
                 msg = f"Unmatched closing brace at position {closing_pos}"
-                raise MacroSyntaxError(msg)
+                raise MacroSyntaxError(
+                    msg,
+                    failure_reason=MacroParseFailureReason.UNMATCHED_CLOSING_BRACE,
+                    error_position=closing_pos,
+                )
             segments.append(ParsedStaticValue(text=static_text))
 
         # Find matching closing brace
         brace_end = template.find("}", brace_start)
         if brace_end == -1:
             msg = f"Unclosed brace at position {brace_start}"
-            raise MacroSyntaxError(msg)
+            raise MacroSyntaxError(
+                msg,
+                failure_reason=MacroParseFailureReason.UNCLOSED_BRACE,
+                error_position=brace_start,
+            )
 
         # Check for nested braces (opening brace before closing brace)
         next_open = template.find("{", brace_start + 1)
         if next_open != -1 and next_open < brace_end:
             msg = f"Nested braces are not allowed at position {next_open}"
-            raise MacroSyntaxError(msg)
+            raise MacroSyntaxError(
+                msg,
+                failure_reason=MacroParseFailureReason.NESTED_BRACES,
+                error_position=next_open,
+            )
 
         # Extract and parse the variable content
         variable_content = template[brace_start + 1 : brace_end]
         if not variable_content:
             msg = f"Empty variable at position {brace_start}"
-            raise MacroSyntaxError(msg)
+            raise MacroSyntaxError(
+                msg,
+                failure_reason=MacroParseFailureReason.EMPTY_VARIABLE,
+                error_position=brace_start,
+            )
 
         variable = parse_variable(variable_content)
         segments.append(variable)

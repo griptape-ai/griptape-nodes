@@ -7,6 +7,8 @@ from griptape_nodes.common.macro_parser.exceptions import (
     MacroParseFailure,
     MacroParseFailureReason,
     MacroResolutionError,
+    MacroResolutionFailure,
+    MacroResolutionFailureReason,
     MacroSyntaxError,
 )
 from griptape_nodes.common.macro_parser.formats import (
@@ -27,6 +29,8 @@ __all__ = [
     "MacroParseFailure",
     "MacroParseFailureReason",
     "MacroResolutionError",
+    "MacroResolutionFailure",
+    "MacroResolutionFailureReason",
     "MacroSyntaxError",
     "NumericPaddingFormat",
     "ParsedMacro",

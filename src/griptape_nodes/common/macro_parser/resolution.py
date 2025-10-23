@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError
+from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.segments import ParsedSegment, ParsedStaticValue, ParsedVariable
 
 if TYPE_CHECKING:
@@ -31,8 +31,14 @@ class PartiallyResolvedMacro:
     def to_string(self) -> str:
         """Convert to string (only valid if fully resolved)."""
         if not self.is_fully_resolved():
+            unresolved = self.get_unresolved_variables()
+            unresolved_names = [var.info.name for var in unresolved]
             msg = "Cannot convert partially resolved macro to string - unresolved variables remain"
-            raise MacroResolutionError(msg)
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                missing_variables=unresolved_names,
+            )
         # All segments are ParsedStaticValue at this point
         return "".join(seg.text for seg in self.segments if isinstance(seg, ParsedStaticValue))
 
@@ -92,7 +98,10 @@ def partial_resolve(
                 continue
             case _:
                 msg = f"Unexpected segment type: {type(segment).__name__}"
-                raise MacroResolutionError(msg)
+                raise MacroResolutionError(
+                    msg,
+                    failure_reason=MacroResolutionFailureReason.UNEXPECTED_SEGMENT_TYPE,
+                )
 
     return PartiallyResolvedMacro(
         original_template=template,
@@ -122,7 +131,12 @@ def resolve_variable(
     if variable_name not in variables:
         if variable.info.is_required:
             msg = f"Required variable '{variable_name}' not found in variables dict"
-            raise MacroResolutionError(msg)
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=variable_name,
+                missing_variables=[variable_name],
+            )
         # Optional variable not provided, return None to signal it should be skipped
         return None
 
@@ -162,7 +176,11 @@ def resolve_env_var(value: str | int, secrets_manager: SecretsManager) -> str | 
 
     if env_value is None:
         msg = f"Environment variable '{env_var_name}' not found"
-        raise MacroResolutionError(msg)
+        raise MacroResolutionError(
+            msg,
+            failure_reason=MacroResolutionFailureReason.ENVIRONMENT_VARIABLE_NOT_FOUND,
+            variable_name=env_var_name,
+        )
 
     # Return resolved env var value
     return env_value
