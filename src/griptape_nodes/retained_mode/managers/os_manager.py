@@ -178,7 +178,7 @@ class OSManager:
         logger.debug(msg)
         return True, relative
 
-    def _normalize_path_for_platform(self, path: Path) -> str:
+    def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
@@ -334,12 +334,12 @@ class OSManager:
             if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
-                os.startfile(self._normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
+                os.startfile(self.normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
-                    ["/usr/bin/open", self._normalize_path_for_platform(path)],
+                    ["/usr/bin/open", self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -359,7 +359,7 @@ class OSManager:
                     )
 
                 subprocess.run(  # noqa: S603
-                    [xdg_path, self._normalize_path_for_platform(path)],
+                    [xdg_path, self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -390,7 +390,7 @@ class OSManager:
             return None
 
         try:
-            mime_type, _ = mimetypes.guess_type(self._normalize_path_for_platform(file_path), strict=True)
+            mime_type, _ = mimetypes.guess_type(self.normalize_path_for_platform(file_path), strict=True)
             if mime_type is None:
                 mime_type = "text/plain"
             return mime_type  # noqa: TRY300
@@ -553,7 +553,7 @@ class OSManager:
         file_size = file_path.stat().st_size
 
         # Determine MIME type and compression encoding
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
         mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
         if mime_type is None:
             mime_type = "text/plain"
@@ -663,7 +663,7 @@ class OSManager:
             return WriteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Get normalized path for file operations (handles Windows long paths)
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
 
         # Check if path is a directory (must check before attempting to write)
         try:
@@ -693,7 +693,7 @@ class OSManager:
                 return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
         # Check and create parent directory if needed
-        parent_normalized = self._normalize_path_for_platform(file_path.parent)
+        parent_normalized = self.normalize_path_for_platform(file_path.parent)
         try:
             if not os.path.exists(parent_normalized):  # noqa: PTH110
                 if not request.create_parents:
