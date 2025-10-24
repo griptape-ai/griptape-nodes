@@ -8,16 +8,18 @@ for tools, rulesets, prompts, and streams output back to the user interface.
 
 from typing import Any
 
-from griptape.artifacts import BaseArtifact
+from griptape.artifacts import BaseArtifact, ModelArtifact
 from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 from jinja2 import Template
+from pydantic import create_model
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -188,6 +190,18 @@ class Agent(ControlNode):
             )
         )
 
+        # Parameter for output schema
+        self.add_parameter(
+            Parameter(
+                name="output_schema",
+                input_types=["json"],
+                type="json",
+                tooltip="Optional JSON schema for structured output validation.",
+                default_value=None,
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
+
         # Parameter for the agent's final text output.
         self.add_parameter(
             Parameter(
@@ -215,6 +229,55 @@ class Agent(ControlNode):
 
         self.add_node_element(logs_group)
 
+    # --- Helper Methods ---
+
+    def _update_output_type_and_validate_connections(self, new_output_type: str) -> None:
+        """Update the output parameter type and remove incompatible connections.
+
+        Args:
+            new_output_type: The new output type to set (e.g., "json" or "str")
+        """
+        output_param = self.get_parameter_by_name("output")
+        if output_param is None:
+            return
+
+        # Update output parameter type
+        output_param.output_type = new_output_type
+        output_param.type = new_output_type
+
+        # Get outgoing connections from the output parameter
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing_for_node = connections.outgoing_index.get(self.name, {})
+        connection_ids = outgoing_for_node.get("output", [])
+
+        # Validate type compatibility and remove incompatible connections
+        for connection_id in connection_ids:
+            connection = connections.connections[connection_id]
+            target_param = connection.target_parameter
+            target_node = connection.target_node
+
+            # Check if target parameter accepts the new output type
+            is_compatible = any(
+                ParameterType.are_types_compatible(new_output_type, input_type)
+                for input_type in target_param.input_types
+            )
+
+            if not is_compatible:
+                logger.info(
+                    f"Removing incompatible connection: Agent '{self.name}' output ({new_output_type}) to "
+                    f"'{target_node.name}.{target_param.name}' (accepts: {target_param.input_types})"
+                )
+
+                # Remove the incompatible connection
+                GriptapeNodes.handle_request(
+                    DeleteConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name="output",
+                        target_node_name=target_node.name,
+                        target_parameter_name=target_param.name,
+                    )
+                )
+
     # --- UI Interaction Hooks ---
 
     def after_incoming_connection(
@@ -222,7 +285,7 @@ class Agent(ControlNode):
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
-            params_to_toggle = ["model", "tools", "rulesets"]
+            params_to_toggle = ["model", "tools", "rulesets", "schema"]
             self.hide_parameter_by_name(params_to_toggle)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
@@ -245,6 +308,10 @@ class Agent(ControlNode):
         if target_parameter.name == "additional_context":
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
+        if target_parameter.name == "output_schema":
+            # When schema is connected, change output type to dict and validate connections
+            self._update_output_type_and_validate_connections("dict")
+
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
     def after_incoming_connection_removed(
@@ -255,8 +322,13 @@ class Agent(ControlNode):
     ) -> None:
         # If the agent connection is removed, show agent creation parameters.
         if target_parameter.name == "agent":
-            params_to_toggle = ["model", "tools", "rulesets"]
+            params_to_toggle = ["model", "tools", "rulesets", "schema"]
             self.show_parameter_by_name(params_to_toggle)
+
+        if target_parameter.name == "output_schema":
+            self.set_parameter_value("output_schema", None)
+            # When schema is disconnected, change output type back to str and validate connections
+            self._update_output_type_and_validate_connections("str")
 
         if target_parameter.name == "model":
             # Reset the parameter type
@@ -384,6 +456,28 @@ class Agent(ControlNode):
                 f"\n[Rulesets]: {', '.join([ruleset.name for ruleset in rulesets])}\n",
             )
 
+        # Get the output schema
+        output_schema = self.get_parameter_value("output_schema")
+        if output_schema is not None:
+            try:
+                type_mapping = {"string": str, "integer": int, "boolean": bool, "number": float, "object": dict}
+                class_name = output_schema.get("title", "OutputSchema")
+                output_schema = create_model(
+                    class_name,
+                    **{
+                        k: (type_mapping.get(v.get("type", "string"), Any))
+                        for k, v in output_schema.get("properties", {}).items()
+                    },
+                )
+            except Exception as e:
+                msg = f"[ERROR]: Unable to create output schema model: {e}"
+                self.append_value_to_parameter("logs", msg + "\n")
+                logger.error(msg)
+                output_schema = None
+
+        if include_details and output_schema:
+            self.append_value_to_parameter("logs", "[Schema]: Structured output schema provided\n")
+
         # Get the prompt
         prompt = self.get_parameter_value("prompt")
 
@@ -406,9 +500,13 @@ class Agent(ControlNode):
             agent = GtAgent().from_dict(agent)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
-                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver, output_schema=output_schema))
+            else:
+                # Update the output_schema if provided
+                if output_schema is not None:
+                    agent.tasks[0].output_schema = output_schema
         elif isinstance(model_input, BasePromptDriver):
-            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets)
+            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets, output_schema=output_schema)
         elif isinstance(model_input, str):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
@@ -421,7 +519,7 @@ class Agent(ControlNode):
                 api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
                 **args,
             )
-            agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets)
+            agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets, output_schema=output_schema)
 
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
@@ -465,6 +563,7 @@ class Agent(ControlNode):
             msg = "Agent must have a PromptTask"
             raise TypeError(msg)
         prompt_driver = task.prompt_driver
+        prompt_driver.stream = self.get_parameter_value("output_schema") is None
         if prompt_driver.stream:
             for event in agent.run_stream(
                 *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
@@ -496,6 +595,10 @@ class Agent(ControlNode):
                         self.append_value_to_parameter("logs", f"\n[Using tool {event.name}: ({event.path})]\n")
         else:
             agent.run(*args)
-            self.append_value_to_parameter("output", value=str(agent.output))
+            agent_output = agent.output
+            if isinstance(agent_output, ModelArtifact):
+                self.set_parameter_value("output", agent_output.value.model_dump())
+            else:
+                self.set_parameter_value("output", str(agent_output))
             try_throw_error(agent.output)
         return agent
