@@ -37,7 +37,8 @@
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
         "json-repair>=0.46.1",
-        "static-ffmpeg>=2.8"
+        "static-ffmpeg>=2.8",
+        "Pylette"
       ]
     }
   },
@@ -1522,6 +1523,17 @@
         "display_name": "Extend Canvas",
         "icon": "frame",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractKeyColors",
+      "file_path": "griptape_nodes_library/image/extract_key_colors.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract key colors from an image",
+        "display_name": "Extract Key Colors",
+        "icon": "palette",
+        "group": "tasks"
       }
     },
     {
