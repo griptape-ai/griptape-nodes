@@ -28,7 +28,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         self.add_parameter(
             ParameterList(
                 name="video_inputs",
-                input_types=["VideoArtifact", "VideoUrlArtifact", "list[VideoArtifact]", "list[VideoUrlArtifact]"],
+                input_types=["VideoArtifact", "VideoUrlArtifact", "list[VideoArtifact]", "list[VideoUrlArtifact]", "list"],
                 default_value=[],
                 tooltip="Connect individual videos or a list of videos to concatenate (supports both VideoArtifact and VideoUrlArtifact)",
                 allowed_modes={ParameterMode.INPUT},
