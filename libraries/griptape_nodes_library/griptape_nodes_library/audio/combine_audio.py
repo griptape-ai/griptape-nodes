@@ -7,13 +7,12 @@ from typing import Any
 import httpx
 
 from griptape_nodes.exe_types.core_types import (
-    Parameter,
     ParameterGroup,
-    ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
@@ -66,19 +65,19 @@ class CombineAudio(SuccessFailureNode):
 
         # Output settings
         with ParameterGroup(name="Output_Settings", collapsed=True) as output_settings_group:
-            self.output_format = Parameter(
+            self.output_format = ParameterString(
                 name="output_format",
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY},
+                allow_input=False,
+                allow_output=False,
                 default_value="mp3",
                 tooltip="Output audio format",
                 traits={Options(choices=["mp3", "wav", "flac", "aac", "ogg"])},
             )
 
-            self.quality = Parameter(
+            self.quality = ParameterString(
                 name="quality",
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY},
+                allow_input=False,
+                allow_output=False,
                 default_value="high",
                 tooltip="Audio quality setting",
                 traits={Options(choices=["low", "medium", "high", "lossless"])},
@@ -86,13 +85,13 @@ class CombineAudio(SuccessFailureNode):
         self.add_node_element(output_settings_group)
 
         # Output parameter for the mixed audio
-        self.mixed_audio = Parameter(
+        self.mixed_audio = ParameterAudio(
             name="mixed_audio",
-            type="AudioUrlArtifact",
-            allowed_modes={ParameterMode.OUTPUT},
+            allow_input=False,
+            allow_property=False,
             default_value=None,
             tooltip="The mixed audio output",
-            ui_options={"pulse_on_run": True},
+            pulse_on_run=True,
         )
         self.add_parameter(self.mixed_audio)
 
