@@ -106,8 +106,6 @@ def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
     if sys.platform != "win32":
         return
 
-    long_path = path
-    if "\\\\?\\" not in long_path:
-        long_path = "\\\\?\\" + long_path
+    long_path = GriptapeNodes.OSManager().normalize_path_for_platform(path)
     Path.chmod(long_path, stat.S_IWRITE)
     func(long_path)
