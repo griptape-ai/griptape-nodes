@@ -515,6 +515,9 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 requirements_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
+                requirements_file.write(
+                    "griptape_cloud_client @ git+https://github.com/griptape-ai/griptape-cloud-python-client.git@main"
+                )
 
             archive_base_name = config_manager.workspace_path / workflow_name
             shutil.make_archive(str(archive_base_name), "zip", tmp_dir)
