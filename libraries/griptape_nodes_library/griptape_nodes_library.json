@@ -630,6 +630,17 @@
       }
     },
     {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Get the details of an audio file",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "LoadAudio",
       "file_path": "griptape_nodes_library/audio/load_audio.py",
       "metadata": {
@@ -719,6 +730,28 @@
         "display_name": "Eleven Labs Music Generation",
         "icon": "music",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "CombineAudio",
+      "file_path": "griptape_nodes_library/audio/combine_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Combine multiple audio tracks into a single audio file using ffmpeg",
+        "display_name": "Combine Audio",
+        "icon": "layers",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Extract detailed information from an audio file including duration, format, bitrate, and sample rate",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
       }
     },
     {
@@ -979,6 +1012,16 @@
         "category": "convert",
         "description": "Extract lists of keys and values from a dictionary",
         "display_name": "Dict to List",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "TextToList",
+      "file_path": "griptape_nodes_library/convert/text_to_list.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Convert a text string into a list. ex: 'one two three' => ['one', 'two', 'three']",
+        "display_name": "Text to List",
         "group": "edit"
       }
     },
