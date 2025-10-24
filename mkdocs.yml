@@ -149,6 +149,7 @@ nav:
         - Describe Image: nodes/image/describe_image.md
         - Display Image: nodes/image/display_image.md
         - Display Channel: nodes/image/display_channel.md
+        - Extract Key Colors: nodes/image/extract_key_colors.md
         - Invert Image: nodes/image/invert_image.md
         - Flip Image: nodes/image/flip_image.md
         - Display Mask: nodes/image/display_mask.md
