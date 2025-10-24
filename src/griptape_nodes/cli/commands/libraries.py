@@ -3,7 +3,6 @@
 import asyncio
 import shutil
 import stat
-import sys
 import tarfile
 import tempfile
 from pathlib import Path
@@ -103,10 +102,10 @@ def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
 
     https://stackoverflow.com/a/50924863
     """
-    if sys.platform != "win32":
+    if not GriptapeNodes.OSManager().is_windows():
         return
 
-    long_path = GriptapeNodes.OSManager().normalize_path_for_platform(path)
+    long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(path))
 
     try:
         Path.chmod(long_path, stat.S_IWRITE)
