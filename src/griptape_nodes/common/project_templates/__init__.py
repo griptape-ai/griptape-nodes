@@ -1,7 +1,6 @@
 """Project template system for managing project.yml files and situations."""
 
-from pathlib import Path
-
+from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
 from griptape_nodes.common.project_templates.loader import (
     ProjectOverlayData,
@@ -27,12 +26,8 @@ from griptape_nodes.common.project_templates.validation import (
     ProjectValidationStatus,
 )
 
-# Path to bundled system default project template
-# ProjectManager is responsible for loading this file
-DEFAULT_PROJECT_YAML_PATH = Path(__file__).parent / "defaults" / "project_template.yml"
-
 __all__ = [
-    "DEFAULT_PROJECT_YAML_PATH",
+    "DEFAULT_PROJECT_TEMPLATE",
     "DirectoryDefinition",
     "ProjectOverlayData",
     "ProjectOverride",

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 
@@ -26,210 +27,44 @@ class SituationFilePolicy(StrEnum):
     PROMPT = "prompt"  # Special UI handling
 
 
-@dataclass
-class SituationPolicy:
+class SituationPolicy(BaseModel):
     """Policy for file operations in a situation."""
 
-    on_collision: SituationFilePolicy
-    create_dirs: bool
-
-    @staticmethod
-    def from_dict(
-        data: dict[str, Any],
-        field_path: str,
-        validation_info: ProjectValidationInfo,
-        line_info: YAMLLineInfo,
-    ) -> SituationPolicy:
-        """Construct from YAML dict, validating and populating validation_info."""
-        # Extract on_collision
-        on_collision_value = data.get("on_collision")
-        if on_collision_value is None:
-            validation_info.add_error(
-                field_path=f"{field_path}.on_collision",
-                message="Missing required field 'on_collision'",
-                line_number=line_info.get_line(field_path),
-            )
-            on_collision_value = "fail"  # Default fallback
-
-        # Validate on_collision is valid enum value
-        try:
-            on_collision = SituationFilePolicy(on_collision_value)
-        except ValueError:
-            valid_values = ", ".join(p.value for p in SituationFilePolicy)
-            validation_info.add_error(
-                field_path=f"{field_path}.on_collision",
-                message=f"Invalid value '{on_collision_value}', expected one of: {valid_values}",
-                line_number=line_info.get_line(f"{field_path}.on_collision"),
-            )
-            on_collision = SituationFilePolicy.FAIL  # Default fallback
-
-        # Extract create_dirs
-        create_dirs_value = data.get("create_dirs")
-        if create_dirs_value is None:
-            validation_info.add_error(
-                field_path=f"{field_path}.create_dirs",
-                message="Missing required field 'create_dirs'",
-                line_number=line_info.get_line(field_path),
-            )
-            create_dirs = True  # Default fallback
-        elif not isinstance(create_dirs_value, bool):
-            validation_info.add_error(
-                field_path=f"{field_path}.create_dirs",
-                message=f"Field 'create_dirs' must be boolean, got {type(create_dirs_value).__name__}",
-                line_number=line_info.get_line(f"{field_path}.create_dirs"),
-            )
-            create_dirs = True  # Default fallback
-        else:
-            create_dirs = create_dirs_value
-
-        return SituationPolicy(on_collision=on_collision, create_dirs=create_dirs)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary suitable for YAML export."""
-        return {
-            "on_collision": self.on_collision.value,
-            "create_dirs": self.create_dirs,
-        }
+    on_collision: SituationFilePolicy = Field(description="Policy for handling file collisions")
+    create_dirs: bool = Field(description="Whether to create directories automatically")
 
 
-@dataclass
-class SituationTemplate:
+class SituationTemplate(BaseModel):
     """Template defining how files are saved in a specific situation."""
 
     LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
 
-    name: str
-    situation_template_schema_version: str
-    schema: str  # Macro template for file path
-    policy: SituationPolicy
-    fallback: str | None  # Name of fallback situation
-    description: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
 
-    @staticmethod
-    def from_dict(
-        data: dict[str, Any],
-        field_path: str,
-        validation_info: ProjectValidationInfo,
-        line_info: YAMLLineInfo,
-    ) -> SituationTemplate:
-        """Construct from YAML dict, validating and populating validation_info.
+    name: str = Field(description="Name of the situation")
+    situation_template_schema_version: str = Field(description="Schema version for this situation template")
+    macro: str = Field(
+        description="Macro template for file path", serialization_alias="schema", validation_alias="schema"
+    )
+    policy: SituationPolicy = Field(description="Policy for file operations")
+    fallback: str | None = Field(default=None, description="Name of fallback situation")
+    description: str | None = Field(default=None, description="Description of the situation")
 
-        Validates:
-        - Schema version compatibility
-        - Schema syntax (balanced braces, valid format specs)
-        - Policy values are valid enums
-        - Required fields present
+    @field_validator("macro")
+    @classmethod
+    def validate_macro_syntax(cls, v: str) -> str:
+        """Validate macro syntax using macro parser."""
+        try:
+            ParsedMacro(v)
+        except MacroSyntaxError as e:
+            msg = f"Invalid macro syntax: {e}"
+            raise ValueError(msg) from e
+        return v
 
-        Returns SituationTemplate even if validation fails (fault-tolerant).
-        All problems added to validation_info.
-        """
-        # Extract name (should be provided by caller from dict key)
-        name = data.get("name", "unknown")
-
-        # Extract and validate schema version
-        schema_version = data.get("situation_template_schema_version")
-        if schema_version is None:
-            validation_info.add_error(
-                field_path=f"{field_path}.situation_template_schema_version",
-                message="Missing required field 'situation_template_schema_version'",
-                line_number=line_info.get_line(field_path),
-            )
-            schema_version = SituationTemplate.LATEST_SCHEMA_VERSION  # Fallback
-        elif schema_version != SituationTemplate.LATEST_SCHEMA_VERSION:
-            validation_info.add_warning(
-                field_path=f"{field_path}.situation_template_schema_version",
-                message=f"Schema version '{schema_version}' differs from latest '{SituationTemplate.LATEST_SCHEMA_VERSION}'",
-                line_number=line_info.get_line(f"{field_path}.situation_template_schema_version"),
-            )
-
-        # Extract schema
-        schema = data.get("schema")
-        if schema is None:
-            validation_info.add_error(
-                field_path=f"{field_path}.schema",
-                message="Missing required field 'schema'",
-                line_number=line_info.get_line(field_path),
-            )
-            schema = "{file_name}"  # Fallback
-        elif not isinstance(schema, str):
-            validation_info.add_error(
-                field_path=f"{field_path}.schema",
-                message=f"Field 'schema' must be string, got {type(schema).__name__}",
-                line_number=line_info.get_line(f"{field_path}.schema"),
-            )
-            schema = "{file_name}"  # Fallback
-        else:
-            # Validate schema syntax using macro parser
-            try:
-                ParsedMacro(schema)
-            except MacroSyntaxError as e:
-                validation_info.add_error(
-                    field_path=f"{field_path}.schema",
-                    message=f"Invalid schema syntax: {e}",
-                    line_number=line_info.get_line(f"{field_path}.schema"),
-                )
-
-        # Extract policy
-        policy_data = data.get("policy")
-        if policy_data is None:
-            validation_info.add_error(
-                field_path=f"{field_path}.policy",
-                message="Missing required field 'policy'",
-                line_number=line_info.get_line(field_path),
-            )
-            policy = SituationPolicy(on_collision=SituationFilePolicy.FAIL, create_dirs=True)
-        elif not isinstance(policy_data, dict):
-            validation_info.add_error(
-                field_path=f"{field_path}.policy",
-                message=f"Field 'policy' must be dict, got {type(policy_data).__name__}",
-                line_number=line_info.get_line(f"{field_path}.policy"),
-            )
-            policy = SituationPolicy(on_collision=SituationFilePolicy.FAIL, create_dirs=True)
-        else:
-            policy = SituationPolicy.from_dict(policy_data, f"{field_path}.policy", validation_info, line_info)
-
-        # Extract fallback (optional)
-        fallback = data.get("fallback")
-        if fallback is not None and not isinstance(fallback, str):
-            validation_info.add_error(
-                field_path=f"{field_path}.fallback",
-                message=f"Field 'fallback' must be string or null, got {type(fallback).__name__}",
-                line_number=line_info.get_line(f"{field_path}.fallback"),
-            )
-            fallback = None
-
-        # Extract description (optional)
-        description = data.get("description")
-        if description is not None and not isinstance(description, str):
-            validation_info.add_error(
-                field_path=f"{field_path}.description",
-                message=f"Field 'description' must be string, got {type(description).__name__}",
-                line_number=line_info.get_line(f"{field_path}.description"),
-            )
-            description = None
-
-        return SituationTemplate(
-            name=name,
-            situation_template_schema_version=schema_version,
-            schema=schema,
-            policy=policy,
-            fallback=fallback,
-            description=description,
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary suitable for YAML export."""
-        result: dict[str, Any] = {
-            "situation_template_schema_version": self.situation_template_schema_version,
-            "schema": self.schema,
-            "policy": self.policy.to_dict(),
-            "fallback": self.fallback,
-        }
-
-        if self.description is not None:
-            result["description"] = self.description
-
-        return result
+    @property
+    def schema(self) -> str:
+        """Alias for macro to maintain YAML compatibility (schema field in YAML)."""
+        return self.macro
 
     @staticmethod
     def merge(
@@ -260,10 +95,10 @@ class SituationTemplate:
             line_info: Line tracking from overlay YAML
 
         Returns:
-            New merged SituationTemplate (constructed via from_dict)
+            New merged SituationTemplate
         """
         # Start with base fields as dict
-        merged_data = base.to_dict()
+        merged_data = base.model_dump()
 
         # Apply overlay fields if present
         if "schema" in overlay_data:
@@ -296,12 +131,25 @@ class SituationTemplate:
             else:
                 merged_data["policy"] = policy
 
-        # Build merged situation using from_dict for full validation
+        # Build merged situation using model_validate
         # Note: name field is not in overlay_data, use base.name
         merged_data_with_name = {"name": base.name, **merged_data}
-        return SituationTemplate.from_dict(
-            data=merged_data_with_name,
-            field_path=field_path,
-            validation_info=validation_info,
-            line_info=line_info,
-        )
+
+        try:
+            return SituationTemplate.model_validate(merged_data_with_name)
+        except ValidationError as e:
+            # Convert Pydantic validation errors to our validation_info format
+            for error in e.errors():
+                error_field_path = ".".join(str(loc) for loc in error["loc"])
+                full_field_path = f"{field_path}.{error_field_path}"
+                message = error["msg"]
+                line_number = line_info.get_line(full_field_path)
+
+                validation_info.add_error(
+                    field_path=full_field_path,
+                    message=message,
+                    line_number=line_number,
+                )
+
+            # Return base on validation error (fault-tolerant)
+            return base
