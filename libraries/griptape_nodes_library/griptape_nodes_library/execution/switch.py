@@ -49,6 +49,9 @@ class Switch(ControlNode):
         )
         self.add_parameter(self.cases)
 
+        # Hide the cases list initially (will be shown when value_to_test is connected)
+        self.cases.hide = True
+
     def _clear_all_case_connections_and_parameters(self) -> None:
         """Remove all connections from case parameters, then clear the list."""
         # Iterate through all case child parameters
@@ -96,6 +99,9 @@ class Switch(ControlNode):
         # Clear locked type and persist
         self.metadata["cases_locked_type"] = None
 
+        # Hide the cases list after clearing
+        self.cases.hide = True
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,
@@ -117,6 +123,9 @@ class Switch(ControlNode):
             # Update cases to accept the new type
             self.cases.input_types = [source_type]
             self.cases.type = source_type
+
+            # Show the cases list now that value_to_test is connected
+            self.cases.hide = False
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 

@@ -991,34 +991,6 @@ class NodeManager:
 
         final_param_name = self.generate_unique_parameter_name(node, requested_parameter_name)
 
-        # Let's see if the Parameter is properly formed.
-        # If a Parameter is intended for Control, it needs to have that be the exclusive type.
-        # The 'type', 'types', and 'output_type' are a little weird to handle (see Parameter definition for details)
-        has_control_type = False
-        has_non_control_types = False
-        if request.type is not None:
-            if request.type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
-                has_control_type = True
-            else:
-                has_non_control_types = True
-        if request.input_types is not None:
-            for test_type in request.input_types:
-                if test_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
-                    has_control_type = True
-                else:
-                    has_non_control_types = True
-        if request.output_type is not None:
-            if request.output_type.lower() == ParameterTypeBuiltin.CONTROL_TYPE.value.lower():
-                has_control_type = True
-            else:
-                has_non_control_types = True
-
-        if has_control_type and has_non_control_types:
-            details = f"Attempted to add Parameter '{request.parameter_name}' to Node '{node_name}'. Failed because it had 'ParameterControlType' AND at least one other non-control type. If a Parameter is intended for control, it must only accept that type."
-
-            result = AddParameterToNodeResultFailure(result_details=details)
-            return result
-
         allowed_modes = set()
         if request.mode_allowed_input:
             allowed_modes.add(ParameterMode.INPUT)
