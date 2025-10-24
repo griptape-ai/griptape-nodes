@@ -630,6 +630,17 @@
       }
     },
     {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Get the details of an audio file",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "LoadAudio",
       "file_path": "griptape_nodes_library/audio/load_audio.py",
       "metadata": {
@@ -729,17 +740,6 @@
         "description": "Combine multiple audio tracks into a single audio file using ffmpeg",
         "display_name": "Combine Audio",
         "icon": "layers",
-        "group": "create"
-      }
-    },
-    {
-      "class_name": "Simple4Track",
-      "file_path": "griptape_nodes_library/audio/simple_4_track.py",
-      "metadata": {
-        "category": "audio",
-        "description": "Professional 4-track audio mixer with volume and pan controls",
-        "display_name": "Simple 4-Track",
-        "icon": "sliders",
         "group": "create"
       }
     },
