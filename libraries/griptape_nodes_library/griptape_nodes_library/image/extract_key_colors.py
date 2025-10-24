@@ -6,7 +6,7 @@ import uuid
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
-from pylette import extract_colors
+from pylette import extract_colors  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
@@ -147,7 +147,7 @@ class ExtractKeyColors(DataNode):
                 image_url_artifact = self._dict_to_image_url_artifact(image_artifact)
                 return image_url_artifact.to_bytes()
             # Handle artifact objects directly
-            if isinstance(image_artifact, ImageArtifact | ImageUrlArtifact):
+            if isinstance(image_artifact, (ImageArtifact, ImageUrlArtifact)):
                 return image_artifact.to_bytes()
             # Try to convert to bytes if it's a different artifact type
             return image_artifact.to_bytes()
