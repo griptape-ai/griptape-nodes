@@ -1816,6 +1816,9 @@ class LibraryManager:
             if not node_file_path.is_absolute():
                 node_file_path = base_dir / node_file_path
 
+            # Normalize path for platform (handles Windows long paths)
+            node_file_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(str(node_file_path)))
+
             try:
                 # Dynamically load the module containing the node class
                 node_class = self._load_class_from_file(node_file_path, node_definition.class_name, library_data.name)
