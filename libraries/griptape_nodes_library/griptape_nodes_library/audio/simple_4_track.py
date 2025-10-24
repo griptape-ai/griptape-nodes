@@ -12,6 +12,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
@@ -22,7 +24,6 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes_library.utils.file_utils import generate_filename
 
@@ -62,11 +63,19 @@ class Simple4Track(SuccessFailureNode):
         super().__init__(name, metadata)
         logger.debug(f"{self.name}: Initializing 4-track mixer")
 
-        # Create 4 tracks using DRY method
-        self._add_track(1, 1.0, collapsed=False)
-        self._add_track(2, 0.5, collapsed=False)
-        self._add_track(3, 0.3, collapsed=True)
-        self._add_track(4, 0.3, collapsed=True)
+        with ParameterGroup(name="Audio_Tracks") as audio_tracks_group:
+            ParameterAudio(name="track1_audio")
+            ParameterAudio(name="track2_audio")
+            ParameterAudio(name="track3_audio")
+            ParameterAudio(name="track4_audio")
+        self.add_node_element(audio_tracks_group)
+
+        with ParameterGroup(name="Volume_Controls") as volume_controls_group:
+            ParameterFloat(name="track1_volume", default_value=1.0, slider=True)
+            ParameterFloat(name="track2_volume", default_value=0.5, slider=True)
+            ParameterFloat(name="track3_volume", default_value=0.3, slider=True)
+            ParameterFloat(name="track4_volume", default_value=0.3, slider=True)
+        self.add_node_element(volume_controls_group)
 
         # Output settings
         self.output_format = Parameter(
@@ -106,49 +115,6 @@ class Simple4Track(SuccessFailureNode):
             result_details_placeholder="Details on the audio mixing will be presented here.",
             parameter_group_initially_collapsed=False,
         )
-
-    def _add_track(self, track_num: int, default_volume: float, *, collapsed: bool) -> None:
-        """Add a track with audio input, volume, and pan controls.
-
-        Args:
-            track_num: Track number (1-4)
-            default_volume: Default volume level (0.0-1.0)
-            collapsed: Whether the track group starts collapsed
-        """
-        track_name = f"track{track_num}"
-
-        with ParameterGroup(
-            name=f"Track_{track_num}",
-            ui_options={"collapsed": collapsed},
-        ) as track_group:
-            # Audio input parameter
-            audio_param = Parameter(
-                name=f"{track_name}_audio",
-                input_types=["AudioUrlArtifact"],
-                type="AudioUrlArtifact",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value=None,
-                tooltip=f"Track {track_num} audio input",
-            )
-            self.add_parameter(audio_param)
-            setattr(self, f"{track_name}_audio", audio_param)
-
-            # Volume parameter
-            volume_param = Parameter(
-                name=f"{track_name}_volume",
-                type="float",
-                allowed_modes={ParameterMode.PROPERTY},
-                default_value=default_volume,
-                tooltip=f"Track {track_num} volume (0.0 = silent, 1.0 = full volume)",
-                ui_options={"step": 0.01},
-            )
-            self.add_parameter(volume_param)
-            volume_param.add_trait(Slider(min_val=0.0, max_val=1.0))
-            setattr(self, f"{track_name}_volume", volume_param)
-
-            # Note: Pan controls removed for simplicity
-
-        self.add_node_element(track_group)
 
     def process(self) -> None:
         """Process the node by mixing the 4 audio tracks.
