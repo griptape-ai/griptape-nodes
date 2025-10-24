@@ -50,6 +50,20 @@ class UploadAsset(BaseGriptapeCloudNode, ControlNode):
 
         self.add_parameter(
             Parameter(
+                name="content_type",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="application/octet-stream",
+                ui_options={
+                    "display_name": "Content Type",
+                },
+                tooltip="The content type of the asset to upload",
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
                 name="asset_name",
                 input_types=["str"],
                 type="str",
@@ -60,8 +74,8 @@ class UploadAsset(BaseGriptapeCloudNode, ControlNode):
             )
         )
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        exceptions = super().validate_before_workflow_run() or []
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions = super().validate_before_node_run() or []
 
         try:
             if not self.get_parameter_value("bucket"):
@@ -91,6 +105,7 @@ class UploadAsset(BaseGriptapeCloudNode, ControlNode):
         bucket = cast("BucketDetail", self.get_parameter_value("bucket"))
         asset_name = self.get_parameter_value("asset_name")
         file_path = self.get_parameter_value("file_path")
+        content_type = self.get_parameter_value("content_type")
 
         if bucket and asset_name and file_path:
             try:
@@ -102,6 +117,7 @@ class UploadAsset(BaseGriptapeCloudNode, ControlNode):
 
                 with Path(file_path).open("rb") as file:
                     headers = upload_url_response.headers.to_dict() or {}
+                    headers["Content-Type"] = content_type
                     upload_response = requests.put(upload_url_response.url, data=file, headers=headers, timeout=300)
                     upload_response.raise_for_status()
 
