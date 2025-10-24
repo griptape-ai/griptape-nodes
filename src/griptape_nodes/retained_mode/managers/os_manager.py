@@ -210,7 +210,7 @@ class OSManager:
         logger.debug(msg)
         return True, relative
 
-    def _normalize_path_for_platform(self, path: Path) -> str:
+    def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
@@ -366,12 +366,12 @@ class OSManager:
             if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
-                os.startfile(self._normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
+                os.startfile(self.normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
-                    ["/usr/bin/open", self._normalize_path_for_platform(path)],
+                    ["/usr/bin/open", self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -391,7 +391,7 @@ class OSManager:
                     )
 
                 subprocess.run(  # noqa: S603
-                    [xdg_path, self._normalize_path_for_platform(path)],
+                    [xdg_path, self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -422,7 +422,7 @@ class OSManager:
             return None
 
         try:
-            mime_type, _ = mimetypes.guess_type(self._normalize_path_for_platform(file_path), strict=True)
+            mime_type, _ = mimetypes.guess_type(self.normalize_path_for_platform(file_path), strict=True)
             if mime_type is None:
                 mime_type = "text/plain"
             return mime_type  # noqa: TRY300
@@ -585,7 +585,7 @@ class OSManager:
         file_size = file_path.stat().st_size
 
         # Determine MIME type and compression encoding
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
         mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
         if mime_type is None:
             mime_type = "text/plain"
@@ -695,7 +695,7 @@ class OSManager:
             return WriteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Get normalized path for file operations (handles Windows long paths)
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
 
         # Check if path is a directory (must check before attempting to write)
         try:
@@ -725,7 +725,7 @@ class OSManager:
                 return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
         # Check and create parent directory if needed
-        parent_normalized = self._normalize_path_for_platform(file_path.parent)
+        parent_normalized = self.normalize_path_for_platform(file_path.parent)
         try:
             if not os.path.exists(parent_normalized):  # noqa: PTH110
                 if not request.create_parents:
@@ -804,8 +804,8 @@ class OSManager:
             PermissionError: If permission denied
         """
         # Normalize both paths for platform (handles Windows long paths)
-        src_normalized = self._normalize_path_for_platform(src_path)
-        dest_normalized = self._normalize_path_for_platform(dest_path)
+        src_normalized = self.normalize_path_for_platform(src_path)
+        dest_normalized = self.normalize_path_for_platform(dest_path)
 
         # Copy file preserving metadata
         shutil.copy2(src_normalized, dest_normalized)
@@ -1196,7 +1196,7 @@ class OSManager:
         # Resolve source path
         try:
             source_path = self._resolve_file_path(request.source_path, workspace_only=False)
-            source_normalized = self._normalize_path_for_platform(source_path)
+            source_normalized = self.normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -1217,7 +1217,7 @@ class OSManager:
         # Resolve destination path
         try:
             destination_path = self._resolve_file_path(request.destination_path, workspace_only=False)
-            dest_normalized = self._normalize_path_for_platform(destination_path)
+            dest_normalized = self.normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)
@@ -1283,7 +1283,7 @@ class OSManager:
         # Resolve and normalize source path
         try:
             source_path = self._resolve_file_path(source_str, workspace_only=False)
-            source_normalized = self._normalize_path_for_platform(source_path)
+            source_normalized = self.normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -1304,7 +1304,7 @@ class OSManager:
         # Resolve and normalize destination path
         try:
             destination_path = self._resolve_file_path(dest_str, workspace_only=False)
-            dest_normalized = self._normalize_path_for_platform(destination_path)
+            dest_normalized = self.normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)

@@ -533,7 +533,7 @@ class TestWindowsLongPathHandling:
         """Test that short paths are not modified."""
         os_manager = griptape_nodes.OSManager()
         short_path = temp_dir / "short.txt"
-        result = os_manager._normalize_path_for_platform(short_path)
+        result = os_manager.normalize_path_for_platform(short_path)
 
         # Should return string without \\?\ prefix
         assert not result.startswith("\\\\?\\")
@@ -542,7 +542,7 @@ class TestWindowsLongPathHandling:
     def test_normalize_path_long_path_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
         r"""Test that long paths on Windows get \\?\ prefix."""
         os_manager = griptape_nodes.OSManager()
-        result = os_manager._normalize_path_for_platform(long_path)
+        result = os_manager.normalize_path_for_platform(long_path)
 
         # On Windows, long paths should get the prefix
         if len(str(long_path.resolve())) > WINDOWS_MAX_PATH:
@@ -552,7 +552,7 @@ class TestWindowsLongPathHandling:
     def test_normalize_path_long_path_non_windows(self, griptape_nodes: GriptapeNodes, long_path: Path) -> None:
         """Test that long paths on non-Windows don't get prefix."""
         os_manager = griptape_nodes.OSManager()
-        result = os_manager._normalize_path_for_platform(long_path)
+        result = os_manager.normalize_path_for_platform(long_path)
 
         # On non-Windows, no prefix should be added
         assert not result.startswith("\\\\?\\")
