@@ -6,7 +6,7 @@ import uuid
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
-from pylette import extract_colors  # type: ignore[import-untyped]
+from Pylette import extract_colors
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
