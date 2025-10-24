@@ -104,4 +104,3 @@ The node uses a sophisticated color extraction process:
 - **Built-in Frequency Data**: Each color knows its prominence in the image
 
 This provides a professional-grade solution for color extraction using modern, actively-maintained libraries, making it ideal for both creative and technical workflows.
-
