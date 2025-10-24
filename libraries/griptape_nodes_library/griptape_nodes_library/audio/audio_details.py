@@ -29,7 +29,13 @@ class AudioDetails(DataNode):
 
         # Add input parameter for the audio
         self.add_parameter(
-            ParameterAudio(name="audio", default_value=value, tooltip="The audio file to analyze", allow_output=False)
+            ParameterAudio(
+                name="audio",
+                default_value=value,
+                tooltip="The audio file to analyze",
+                allow_output=False,
+                hide_property=True,
+            )
         )
 
         # Basic Info group (default open)
