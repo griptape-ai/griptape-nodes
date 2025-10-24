@@ -2049,6 +2049,17 @@
       }
     },
     {
+      "class_name": "Switch",
+      "file_path": "griptape_nodes_library/execution/switch.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Route execution based on matching case values, with a default 'No Match' path",
+        "display_name": "Switch",
+        "icon": "split",
+        "group": "flow control"
+      }
+    },
+    {
       "class_name": "OutputSelector",
       "file_path": "griptape_nodes_library/execution/select_output.py",
       "metadata": {
