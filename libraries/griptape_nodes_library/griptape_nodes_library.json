@@ -744,6 +744,17 @@
       }
     },
     {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Extract detailed information from an audio file including duration, format, bitrate, and sample rate",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "LoadVideo",
       "file_path": "griptape_nodes_library/video/load_video.py",
       "metadata": {

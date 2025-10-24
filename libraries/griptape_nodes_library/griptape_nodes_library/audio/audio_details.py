@@ -183,7 +183,7 @@ class AudioDetails(DataNode):
 
         return None
 
-    def _analyze_audio_with_ffprobe(self, audio_url: str) -> dict[str, Any] | None:
+    def _analyze_audio_with_ffprobe(self, audio_url: str) -> dict[str, Any] | None:  # noqa: PLR0911
         """Analyze audio file using ffprobe to extract detailed information."""
         # FAILURE CASES FIRST
         try:
@@ -214,7 +214,7 @@ class AudioDetails(DataNode):
             logger.error(f"{self.name}: Unexpected error during audio analysis: {e}")
             return None
 
-        # SUCCESS PATH AT END - Extract audio information
+        # FAILURE CASES FIRST - Parse data
         try:
             # Get format information
             format_info = data.get("format", {})
@@ -234,32 +234,32 @@ class AudioDetails(DataNode):
                 logger.warning(f"{self.name}: No audio stream found in file")
                 return None
 
-            # Extract audio properties
-            sample_rate = int(audio_stream.get("sample_rate", 0))
-            channels = int(audio_stream.get("channels", 0))
-            codec = audio_stream.get("codec_name", "UNKNOWN")
-            format_name = format_info.get("format_name", "UNKNOWN")
-
-            return {
-                "duration": duration,
-                "format": format_name,
-                "file_size": file_size,
-                "sample_rate": sample_rate,
-                "channels": channels,
-                "bitrate": bitrate,
-                "codec": codec,
-            }
-
         except (ValueError, TypeError) as e:
             logger.error(f"{self.name}: Failed to parse audio properties: {e}")
             return None
+
+        # SUCCESS PATH AT END - Extract audio properties
+        sample_rate = int(audio_stream.get("sample_rate", 0))
+        channels = int(audio_stream.get("channels", 0))
+        codec = audio_stream.get("codec_name", "UNKNOWN")
+        format_name = format_info.get("format_name", "UNKNOWN")
+
+        return {
+            "duration": duration,
+            "format": format_name,
+            "file_size": file_size,
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "bitrate": bitrate,
+            "codec": codec,
+        }
 
     def _get_ffprobe_path(self) -> str:
         """Get the path to ffprobe executable."""
         # FAILURE CASES FIRST
         try:
             # Try to find ffprobe in PATH
-            result = subprocess.run(["which", "ffprobe"], capture_output=True, text=True, check=True)
+            result = subprocess.run(["which", "ffprobe"], capture_output=True, text=True, check=True)  # noqa: S607
             return result.stdout.strip()
         except subprocess.CalledProcessError:
             pass
