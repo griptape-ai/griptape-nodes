@@ -281,9 +281,10 @@ class AudioDetails(DataNode):
         for path in common_paths:
             try:
                 subprocess.run([path, "-version"], capture_output=True, text=True, check=True, timeout=5)  # noqa: S603
-                return path
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
                 continue
+            else:
+                return path
 
         # SUCCESS PATH AT END
         error_msg = f"{self.name}: ffprobe not found. Please install FFmpeg with ffprobe."
