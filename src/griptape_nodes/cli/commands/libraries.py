@@ -2,6 +2,8 @@
 
 import asyncio
 import shutil
+import stat
+import sys
 import tarfile
 import tempfile
 from pathlib import Path
@@ -80,7 +82,7 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
                 if dest_library_dir.exists():
-                    shutil.rmtree(dest_library_dir)
+                    shutil.rmtree(dest_library_dir, onexc=_remove_readonly)
                 shutil.copytree(library_dir, dest_library_dir)
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
@@ -94,3 +96,18 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             console.print(f"[red]Error initializing libraries: {e}[/red]")
 
     console.print("[bold green]Libraries synced.[/bold green]")
+
+
+def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
+    """Handles read-only files and long paths on Windows during shutil.rmtree.
+
+    https://stackoverflow.com/a/50924863
+    """
+    if sys.platform != "win32":
+        return
+
+    long_path = path
+    if "\\\\?\\" not in long_path:
+        long_path = "\\\\?\\" + long_path
+    Path.chmod(long_path, stat.S_IWRITE)
+    func(long_path)
