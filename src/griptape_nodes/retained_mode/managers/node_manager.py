@@ -3456,13 +3456,11 @@ class NodeManager:
 
         # FAILURE CHECK: Gather node information
         all_info_request = GetAllNodeInfoRequest(node_name=node_name)
-        all_info_result = GriptapeNodes.handle_request(all_info_request)
+        all_info_result = self.on_get_all_node_info_request(all_info_request)
         if not isinstance(all_info_result, GetAllNodeInfoResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to get node information."
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
-        # Use deepcopy to avoid mutating the source node's metadata
-        metadata_copy = copy.deepcopy(all_info_result.metadata)
         locked_state = all_info_result.locked
         connections = all_info_result.connections
 
@@ -3478,20 +3476,29 @@ class NodeManager:
             node_type=node_type,
             specific_library_name=library_name,
             node_name=temp_node_name,
-            metadata=metadata_copy,
             override_parent_flow_name=parent_flow_name,
             create_error_proxy_on_failure=False,
         )
-        create_result = GriptapeNodes.handle_request(create_node_request)
+        create_result = self.on_create_node_request(create_node_request)
         if not isinstance(create_result, CreateNodeResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to create new node of type '{node_type}'."
             return ResetNodeToDefaultsResultFailure(result_details=details)
         new_node_name = create_result.node_name
 
+        # TODO: (griptape-nodes) Don't rely on manually copying metadata fields. https://github.com/griptape-ai/griptape-nodes/issues/XXXX
+        # Copy only position and size from original node's metadata to preserve layout.
+        # We don't copy the full metadata because it contains instance-specific data that shouldn't be transferred.
+        original_metadata = all_info_result.metadata
+        new_node = self.get_node_by_name(new_node_name)
+        if "position" in original_metadata:
+            new_node.metadata["position"] = copy.deepcopy(original_metadata["position"])
+        if "size" in original_metadata:
+            new_node.metadata["size"] = copy.deepcopy(original_metadata["size"])
+
         # FAILURE CHECK: Copy locked state if needed
         if locked_state:
             lock_request = SetLockNodeStateRequest(node_name=new_node_name, lock=True)
-            lock_result = GriptapeNodes.handle_request(lock_request)
+            lock_result = self.on_toggle_lock_node_request(lock_request)
             if not isinstance(lock_result, SetLockNodeStateResultSuccess):
                 details = f"Attempted to reset Node '{node_name}'. Failed to set lock state on new node."
                 return ResetNodeToDefaultsResultFailure(result_details=details)
@@ -3507,7 +3514,7 @@ class NodeManager:
                 target_node_name=new_node_name,
                 target_parameter_name=incoming_connection.target_parameter_name,
             )
-            connection_result = GriptapeNodes.handle_request(connection_request)
+            connection_result = GriptapeNodes.FlowManager().on_create_connection_request(connection_request)
             if not isinstance(connection_result, CreateConnectionResultSuccess):
                 failed_incoming.append(incoming_connection)
 
@@ -3518,13 +3525,13 @@ class NodeManager:
                 target_node_name=outgoing_connection.target_node_name,
                 target_parameter_name=outgoing_connection.target_parameter_name,
             )
-            connection_result = GriptapeNodes.handle_request(connection_request)
+            connection_result = GriptapeNodes.FlowManager().on_create_connection_request(connection_request)
             if not isinstance(connection_result, CreateConnectionResultSuccess):
                 failed_outgoing.append(outgoing_connection)
 
         # FAILURE CHECK: Delete source node
         delete_request = DeleteNodeRequest(node_name=node_name)
-        delete_result = GriptapeNodes.handle_request(delete_request)
+        delete_result = self.on_delete_node_request(delete_request)
         if not isinstance(delete_result, DeleteNodeResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to delete original node."
             return ResetNodeToDefaultsResultFailure(result_details=details)
@@ -3533,7 +3540,7 @@ class NodeManager:
         rename_request = RenameObjectRequest(
             object_name=new_node_name, requested_name=node_name, allow_next_closest_name_available=False
         )
-        rename_result = GriptapeNodes.handle_request(rename_request)
+        rename_result = GriptapeNodes.ObjectManager().on_rename_object_request(rename_request)
         if not isinstance(rename_result, RenameObjectResultSuccess):
             details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name."
             return ResetNodeToDefaultsResultFailure(result_details=details)
