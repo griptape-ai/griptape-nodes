@@ -3485,7 +3485,7 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
         new_node_name = create_result.node_name
 
-        # TODO: (griptape-nodes) Don't rely on manually copying metadata fields. https://github.com/griptape-ai/griptape-nodes/issues/XXXX
+        # TODO: (griptape-nodes) Don't rely on manually copying metadata fields. https://github.com/griptape-ai/griptape-nodes/issues/2862
         # Copy only position and size from original node's metadata to preserve layout.
         # We don't copy the full metadata because it contains instance-specific data that shouldn't be transferred.
         original_metadata = all_info_result.metadata
