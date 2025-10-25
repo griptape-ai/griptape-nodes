@@ -2199,6 +2199,7 @@
     }
   ],
   "workflows": [
+    "workflows/templates/fill_in_the_story.py",
     "workflows/templates/prompt_an_image.py",
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",
