@@ -10,7 +10,11 @@ from griptape_nodes.exe_types.node_types import NodeResolutionState
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.exe_types.node_types import NodeDependencies
-    from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+    from griptape_nodes.retained_mode.events.connection_events import (
+        IncomingConnection,
+        ListConnectionsForNodeResultSuccess,
+        OutgoingConnection,
+    )
     from griptape_nodes.retained_mode.events.parameter_events import (
         GetParameterDetailsResultSuccess,
         GetParameterValueResultSuccess,
@@ -818,4 +822,48 @@ class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     """Flow for node retrieval failed.
 
     Common causes: node not found, node not assigned to any flow.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsRequest(RequestPayload):
+    """Reset a node to its default state while preserving connections where possible.
+
+    Use when: Need to reset a node's configuration back to defaults, clear customizations,
+    fix broken node state, or restore a node to its initial state. Creates a fresh instance
+    of the same node type and reconnects it to the workflow.
+
+    Args:
+        node_name: Name of the node to reset (None for current context node)
+
+    Results: ResetNodeToDefaultsResultSuccess (with reconnection status) | ResetNodeToDefaultsResultFailure (reset failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node reset to defaults successfully.
+
+    Args:
+        node_name: Name of the reset node
+        failed_incoming_connections: List of incoming connections that failed to reconnect
+        failed_outgoing_connections: List of outgoing connections that failed to reconnect
+    """
+
+    node_name: str
+    failed_incoming_connections: list[IncomingConnection]
+    failed_outgoing_connections: list[OutgoingConnection]
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultFailure(ResultPayloadFailure):
+    """Node reset to defaults failed.
+
+    Common causes: node not found, no current context, failed to create new node,
+    failed to delete old node, failed to rename new node.
     """

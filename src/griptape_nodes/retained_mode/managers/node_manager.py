@@ -93,6 +93,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    ResetNodeToDefaultsRequest,
+    ResetNodeToDefaultsResultFailure,
+    ResetNodeToDefaultsResultSuccess,
     SendNodeMessageRequest,
     SendNodeMessageResultFailure,
     SendNodeMessageResultSuccess,
@@ -110,6 +113,10 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataRequest,
     SetNodeMetadataResultFailure,
     SetNodeMetadataResultSuccess,
+)
+from griptape_nodes.retained_mode.events.object_events import (
+    RenameObjectRequest,
+    RenameObjectResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -233,6 +240,7 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
         event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
         event_manager.assign_manager_to_request_type(SendNodeMessageRequest, self.on_send_node_message_request)
+        event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -3414,3 +3422,127 @@ class NodeManager:
                 )
 
         return None
+
+    def on_reset_node_to_defaults_request(self, request: ResetNodeToDefaultsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        """Reset a node to its default state while preserving connections where possible."""
+        node_name = request.node_name
+        node = None
+
+        # FAILURE CHECK: Validate node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to reset a Node from the Current Context. Failed because the Current Context is empty."
+                )
+                return ResetNodeToDefaultsResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        # FAILURE CHECK: Get source node
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to reset Node '{node_name}', but no such Node was found."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Get node type and library
+        node_type = node.__class__.__name__
+        if "library" not in node.metadata:
+            details = (
+                f"Attempted to reset Node '{node_name}'. Failed because node has no library information in metadata."
+            )
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+        library_name = node.metadata["library"]
+
+        # FAILURE CHECK: Gather node information
+        all_info_request = GetAllNodeInfoRequest(node_name=node_name)
+        all_info_result = GriptapeNodes.handle_request(all_info_request)
+        if not isinstance(all_info_result, GetAllNodeInfoResultSuccess):
+            details = f"Attempted to reset Node '{node_name}'. Failed to get node information."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+
+        # Use deepcopy to avoid mutating the source node's metadata
+        metadata_copy = copy.deepcopy(all_info_result.metadata)
+        locked_state = all_info_result.locked
+        connections = all_info_result.connections
+
+        # FAILURE CHECK: Get parent flow name
+        if node_name not in self._name_to_parent_flow_name:
+            details = f"Attempted to reset Node '{node_name}'. Failed to find parent flow name."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+        parent_flow_name = self._name_to_parent_flow_name[node_name]
+
+        # FAILURE CHECK: Create new node with temporary name
+        temp_node_name = f"{node_name}_temp"
+        create_node_request = CreateNodeRequest(
+            node_type=node_type,
+            specific_library_name=library_name,
+            node_name=temp_node_name,
+            metadata=metadata_copy,
+            override_parent_flow_name=parent_flow_name,
+            create_error_proxy_on_failure=False,
+        )
+        create_result = GriptapeNodes.handle_request(create_node_request)
+        if not isinstance(create_result, CreateNodeResultSuccess):
+            details = f"Attempted to reset Node '{node_name}'. Failed to create new node of type '{node_type}'."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+        new_node_name = create_result.node_name
+
+        # FAILURE CHECK: Copy locked state if needed
+        if locked_state:
+            lock_request = SetLockNodeStateRequest(node_name=new_node_name, lock=True)
+            lock_result = GriptapeNodes.handle_request(lock_request)
+            if not isinstance(lock_result, SetLockNodeStateResultSuccess):
+                details = f"Attempted to reset Node '{node_name}'. Failed to set lock state on new node."
+                return ResetNodeToDefaultsResultFailure(result_details=details)
+
+        # NON-FATAL: Attempt to reconnect connections
+        failed_incoming: list[IncomingConnection] = []
+        failed_outgoing: list[OutgoingConnection] = []
+
+        for incoming_connection in connections.incoming_connections:
+            connection_request = CreateConnectionRequest(
+                source_node_name=incoming_connection.source_node_name,
+                source_parameter_name=incoming_connection.source_parameter_name,
+                target_node_name=new_node_name,
+                target_parameter_name=incoming_connection.target_parameter_name,
+            )
+            connection_result = GriptapeNodes.handle_request(connection_request)
+            if not isinstance(connection_result, CreateConnectionResultSuccess):
+                failed_incoming.append(incoming_connection)
+
+        for outgoing_connection in connections.outgoing_connections:
+            connection_request = CreateConnectionRequest(
+                source_node_name=new_node_name,
+                source_parameter_name=outgoing_connection.source_parameter_name,
+                target_node_name=outgoing_connection.target_node_name,
+                target_parameter_name=outgoing_connection.target_parameter_name,
+            )
+            connection_result = GriptapeNodes.handle_request(connection_request)
+            if not isinstance(connection_result, CreateConnectionResultSuccess):
+                failed_outgoing.append(outgoing_connection)
+
+        # FAILURE CHECK: Delete source node
+        delete_request = DeleteNodeRequest(node_name=node_name)
+        delete_result = GriptapeNodes.handle_request(delete_request)
+        if not isinstance(delete_result, DeleteNodeResultSuccess):
+            details = f"Attempted to reset Node '{node_name}'. Failed to delete original node."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Rename new node to original name
+        rename_request = RenameObjectRequest(
+            object_name=new_node_name, requested_name=node_name, allow_next_closest_name_available=False
+        )
+        rename_result = GriptapeNodes.handle_request(rename_request)
+        if not isinstance(rename_result, RenameObjectResultSuccess):
+            details = f"Attempted to reset Node '{node_name}'. Failed to rename new node to original name."
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+
+        # SUCCESS PATH
+        details = f"Successfully reset node '{node_name}' to defaults. {len(failed_incoming)} incoming and {len(failed_outgoing)} outgoing connections failed to reconnect."
+        return ResetNodeToDefaultsResultSuccess(
+            node_name=node_name,
+            failed_incoming_connections=failed_incoming,
+            failed_outgoing_connections=failed_outgoing,
+            result_details=details,
+        )
