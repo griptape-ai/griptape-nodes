@@ -3,6 +3,7 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterList,
+    ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
 )
@@ -25,6 +26,15 @@ class Switch(ControlNode):
 
         # Initialize destination for control flow routing
         self.destination_control_flow = None
+
+        # Add explanatory message
+        self.add_node_element(
+            ParameterMessage(
+                name="switch_info",
+                variant="info",
+                value="Connect a value to test, then add cases. If the value to test matches one of the cases, it will route control to the case's connected node. If no cases match, 'No Match' will be taken.",
+            )
+        )
 
         # value_to_test parameter
         self.value_to_test = Parameter(
@@ -55,14 +65,14 @@ class Switch(ControlNode):
     def _clear_all_case_connections_and_parameters(self) -> None:
         """Remove all connections from case parameters, then clear the list."""
         # Iterate through all case child parameters
-        for case_param in self.cases.get_child_parameters():
+        for index, case_param in enumerate(self.cases.get_child_parameters()):
             # Get connections for this parameter
             result = GriptapeNodes().handle_request(
                 GetConnectionsForParameterRequest(parameter_name=case_param.name, node_name=self.name)
             )
 
             if not result.succeeded():
-                msg = f"Failed to get connections for case parameter '{case_param.name}'"
+                msg = f"Node '{self.name}': Failed to get connections for case {index + 1}"
                 raise RuntimeError(msg)
 
             # Remove incoming connections
@@ -76,7 +86,7 @@ class Switch(ControlNode):
                     )
                 )
                 if not delete_result.succeeded():
-                    msg = f"Failed to delete incoming connection from '{incoming_conn.source_node_name}.{incoming_conn.source_parameter_name}' to '{self.name}.{case_param.name}'"
+                    msg = f"Node '{self.name}': Failed to delete incoming connection from '{incoming_conn.source_node_name}.{incoming_conn.source_parameter_name}' to case {index + 1}"
                     raise RuntimeError(msg)
 
             # Remove outgoing connections
@@ -90,7 +100,7 @@ class Switch(ControlNode):
                     )
                 )
                 if not delete_result.succeeded():
-                    msg = f"Failed to delete outgoing connection from '{self.name}.{case_param.name}' to '{outgoing_conn.target_node_name}.{outgoing_conn.target_parameter_name}'"
+                    msg = f"Node '{self.name}': Failed to delete outgoing connection from case {index + 1} to '{outgoing_conn.target_node_name}.{outgoing_conn.target_parameter_name}'"
                     raise RuntimeError(msg)
 
         # Now clear the parameter list
@@ -156,20 +166,28 @@ class Switch(ControlNode):
         )
 
         if not result.succeeded():
-            exceptions.append(Exception("Failed to check connections for value_to_test"))
+            exceptions.append(Exception(f"Node '{self.name}': Failed to check connections for value_to_test"))
         elif not result.has_incoming_connections():
-            exceptions.append(Exception("value_to_test must have an incoming connection"))
+            exceptions.append(Exception(f"Node '{self.name}': value_to_test must have an incoming connection"))
 
-        # Check 2: All cases have outgoing control connections
-        for case_param in self.cases.get_child_parameters():
+        # Check 2: All cases have outgoing control connections - collect missing cases
+        missing_case_indices = []
+        for index, case_param in enumerate(self.cases.get_child_parameters()):
             result = GriptapeNodes().handle_request(
                 GetConnectionsForParameterRequest(parameter_name=case_param.name, node_name=self.name)
             )
 
             if not result.succeeded():
-                exceptions.append(Exception(f"Failed to check connections for case '{case_param.name}'"))
+                exceptions.append(Exception(f"Node '{self.name}': Failed to check connections for case {index + 1}"))
             elif not result.has_outgoing_connections():
-                exceptions.append(Exception(f"Case parameter '{case_param.name}' must have an outgoing connection"))
+                missing_case_indices.append(index + 1)
+
+        # If any cases are missing connections, create a single collated error message
+        if missing_case_indices:
+            case_list = ", ".join(f"case {i}" for i in missing_case_indices)
+            exceptions.append(
+                Exception(f"Cannot execute node '{self.name}'. Missing outgoing connections for {case_list}.")
+            )
 
         # Call parent validation
         parent_exceptions = super().validate_before_workflow_run()
@@ -200,7 +218,7 @@ class Switch(ControlNode):
         # If duplicates found, report all of them
         if duplicates:
             duplicate_list = ", ".join(str(d) for d in duplicates)
-            msg = f"Duplicate case values found: {duplicate_list}"
+            msg = f"Node '{self.name}': All case values must be unique. Duplicate values found: {duplicate_list}"
             raise ValueError(msg)
 
         # Find matching case
