@@ -17,13 +17,15 @@ def get_ffmpeg_path() -> str:
     Raises:
         RuntimeError: If ffmpeg is not found or static-ffmpeg is not properly installed
     """
+    # FAILURE CASES FIRST
     try:
         ffmpeg_path, _ = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
-    except Exception as e:
+    except (FileNotFoundError, OSError, ImportError) as e:
         error_msg = f"FFmpeg not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
         raise RuntimeError(error_msg) from e
-    else:
-        return ffmpeg_path
+
+    # SUCCESS PATH AT END
+    return ffmpeg_path
 
 
 def get_ffprobe_path() -> str:
@@ -40,13 +42,15 @@ def get_ffprobe_path() -> str:
     Raises:
         RuntimeError: If ffprobe is not found or static-ffmpeg is not properly installed
     """
+    # FAILURE CASES FIRST
     try:
         _, ffprobe_path = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
-    except Exception as e:
+    except (FileNotFoundError, OSError, ImportError) as e:
         error_msg = f"FFprobe not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
         raise RuntimeError(error_msg) from e
-    else:
-        return ffprobe_path
+
+    # SUCCESS PATH AT END
+    return ffprobe_path
 
 
 def get_ffmpeg_paths() -> tuple[str, str]:
@@ -61,10 +65,12 @@ def get_ffmpeg_paths() -> tuple[str, str]:
     Raises:
         RuntimeError: If either executable is not found or static-ffmpeg is not properly installed
     """
+    # FAILURE CASES FIRST
     try:
         ffmpeg_path, ffprobe_path = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
-    except Exception as e:
+    except (FileNotFoundError, OSError, ImportError) as e:
         error_msg = f"FFmpeg/FFprobe not found. Please ensure static-ffmpeg is properly installed. Error: {e!s}"
         raise RuntimeError(error_msg) from e
-    else:
-        return ffmpeg_path, ffprobe_path
+
+    # SUCCESS PATH AT END
+    return ffmpeg_path, ffprobe_path
