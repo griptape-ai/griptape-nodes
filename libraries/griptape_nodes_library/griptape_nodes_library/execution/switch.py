@@ -62,6 +62,20 @@ class Switch(ControlNode):
         # Hide the cases list initially (will be shown when value_to_test is connected)
         self.cases.hide = True
 
+    def _get_case_display_name(self, case_param: Parameter, fallback_index: int) -> str:
+        """Get user-friendly display name for a case parameter.
+
+        Args:
+            case_param: The case parameter
+            fallback_index: The 1-based index to use if no display_name exists
+
+        Returns:
+            Display name if available, otherwise "case {index}"
+        """
+        if case_param.ui_options and "display_name" in case_param.ui_options:
+            return case_param.ui_options["display_name"]
+        return f"case {fallback_index}"
+
     def _clear_all_case_connections_and_parameters(self) -> None:
         """Remove all connections from case parameters, then clear the list."""
         # Iterate through all case child parameters
@@ -72,7 +86,8 @@ class Switch(ControlNode):
             )
 
             if not result.succeeded():
-                msg = f"Node '{self.name}': Failed to get connections for case {index + 1}"
+                case_name = self._get_case_display_name(case_param, index + 1)
+                msg = f"Node '{self.name}': Failed to get connections for {case_name}"
                 raise RuntimeError(msg)
 
             # Remove incoming connections
@@ -86,7 +101,8 @@ class Switch(ControlNode):
                     )
                 )
                 if not delete_result.succeeded():
-                    msg = f"Node '{self.name}': Failed to delete incoming connection from '{incoming_conn.source_node_name}.{incoming_conn.source_parameter_name}' to case {index + 1}"
+                    case_name = self._get_case_display_name(case_param, index + 1)
+                    msg = f"Node '{self.name}': Failed to delete incoming connection from '{incoming_conn.source_node_name}.{incoming_conn.source_parameter_name}' to {case_name}"
                     raise RuntimeError(msg)
 
             # Remove outgoing connections
@@ -100,7 +116,8 @@ class Switch(ControlNode):
                     )
                 )
                 if not delete_result.succeeded():
-                    msg = f"Node '{self.name}': Failed to delete outgoing connection from case {index + 1} to '{outgoing_conn.target_node_name}.{outgoing_conn.target_parameter_name}'"
+                    case_name = self._get_case_display_name(case_param, index + 1)
+                    msg = f"Node '{self.name}': Failed to delete outgoing connection from {case_name} to '{outgoing_conn.target_node_name}.{outgoing_conn.target_parameter_name}'"
                     raise RuntimeError(msg)
 
         # Now clear the parameter list
@@ -171,20 +188,22 @@ class Switch(ControlNode):
             exceptions.append(Exception(f"Node '{self.name}': value_to_test must have an incoming connection"))
 
         # Check 2: All cases have outgoing control connections - collect missing cases
-        missing_case_indices = []
+        missing_case_names = []
         for index, case_param in enumerate(self.cases.get_child_parameters()):
             result = GriptapeNodes().handle_request(
                 GetConnectionsForParameterRequest(parameter_name=case_param.name, node_name=self.name)
             )
 
             if not result.succeeded():
-                exceptions.append(Exception(f"Node '{self.name}': Failed to check connections for case {index + 1}"))
+                case_name = self._get_case_display_name(case_param, index + 1)
+                exceptions.append(Exception(f"Node '{self.name}': Failed to check connections for {case_name}"))
             elif not result.has_outgoing_connections():
-                missing_case_indices.append(index + 1)
+                case_name = self._get_case_display_name(case_param, index + 1)
+                missing_case_names.append(case_name)
 
         # If any cases are missing connections, create a single collated error message
-        if missing_case_indices:
-            case_list = ", ".join(f"case {i}" for i in missing_case_indices)
+        if missing_case_names:
+            case_list = ", ".join(missing_case_names)
             exceptions.append(
                 Exception(f"Cannot execute node '{self.name}'. Missing outgoing connections for {case_list}.")
             )
