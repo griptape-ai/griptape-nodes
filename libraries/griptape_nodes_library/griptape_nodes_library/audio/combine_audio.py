@@ -16,6 +16,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
+from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 from griptape_nodes_library.utils.file_utils import generate_filename
 
 
@@ -270,7 +271,8 @@ class CombineAudio(SuccessFailureNode):
 
     def _build_ffmpeg_command(self, temp_files: list[Path], track_settings: list[dict], output_path: Path) -> list[str]:
         """Build the ffmpeg command for mixing audio tracks."""
-        cmd = ["ffmpeg", "-y"]  # -y to overwrite output file
+        ffmpeg_path = self._get_ffmpeg_path()
+        cmd = [ffmpeg_path, "-y"]  # -y to overwrite output file
 
         # Add all input files
         for temp_file in temp_files:
@@ -408,3 +410,11 @@ class CombineAudio(SuccessFailureNode):
     def _set_failure_output_values(self) -> None:
         """Set output parameter values to defaults on failure."""
         self.parameter_output_values["mixed_audio"] = None
+
+    def _get_ffmpeg_path(self) -> str:
+        """Get the path to ffmpeg executable using the common utility."""
+        try:
+            return get_ffmpeg_path()
+        except Exception as e:
+            error_msg = f"{self.name}: {e}"
+            raise RuntimeError(error_msg) from e
