@@ -2,7 +2,7 @@
 # dependencies = []
 # 
 # [tool.griptape-nodes]
-# name = "fill_in_the_story_4"
+# name = "fill_in_the_story"
 # schema_version = "0.11.0"
 # engine_version_created_with = "0.60.2"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.50.0"]]
@@ -42,7 +42,7 @@ if isinstance(response, GetAllInfoForAllLibrariesResultSuccess) and len(response
 context_manager = GriptapeNodes.ContextManager()
 
 if not context_manager.has_current_workflow():
-    context_manager.push_workflow(workflow_name='fill_in_the_story_4')
+    context_manager.push_workflow(workflow_name='fill_in_the_story')
 
 """
 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.
