@@ -10,20 +10,20 @@ description: "System default configuration"
 
 # Directory Definitions
 #
-# Define logical directories used in situation schemas.
+# Define logical directories used in situation macros.
 # Paths can be:
 #   - Relative: "inputs", "outputs/renders"
 #   - Absolute: "/tmp/cache", "C:/Projects/assets"
-#   - With macros: Path schemas will be resolved by ProjectManager
+#   - With macros: Path macros will be resolved by ProjectManager
 directories:
   inputs:
-    path_schema: "inputs"
+    path_macro: "inputs"
   outputs:
-    path_schema: "outputs"
+    path_macro: "outputs"
   temp:
-    path_schema: "temp"
+    path_macro: "temp"
   previews:
-    path_schema: "previews"
+    path_macro: "previews"
 
 # Environment Variables (Optional)
 #
@@ -35,14 +35,14 @@ environment: {}
 # Situation Configurations
 #
 # Each situation defines how files are saved in a specific scenario.
-# The schema uses macro syntax: {variable_name} or {variable_name?} for optional
+# The macro uses macro syntax: {variable_name} or {variable_name?} for optional
 situations:
 
   # Base situation - others fall back to this
   save_file:
     situation_template_schema_version: "0.1.0"
     description: "Generic file save operation"
-    schema: "{file_name_base}{_index:03?}.{file_extension}"
+    macro: "{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"  # Increment {_index}: file_001.jpg, file_002.jpg
       create_dirs: true
@@ -52,7 +52,7 @@ situations:
   copy_external_file:
     situation_template_schema_version: "0.1.0"
     description: "User copies external file to project"
-    schema: "{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index:03?}.{file_extension}"
+    macro: "{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -62,7 +62,7 @@ situations:
   download_url:
     situation_template_schema_version: "0.1.0"
     description: "Download file from URL"
-    schema: "{inputs}/{sanitized_url}"
+    macro: "{inputs}/{sanitized_url}"
     policy:
       on_collision: "overwrite"  # Same URL = same content, safe to replace
       create_dirs: true
@@ -72,7 +72,7 @@ situations:
   save_node_output:
     situation_template_schema_version: "0.1.0"
     description: "Node generates and saves output"
-    schema: "{outputs}/{node_name?:_}{file_name_base}{_index:03?}.{file_extension}"
+    macro: "{outputs}/{node_name?:_}{file_name_base}{_index:03?}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -82,7 +82,7 @@ situations:
   save_preview:
     situation_template_schema_version: "0.1.0"
     description: "Generate preview/thumbnail"
-    schema: "{previews}/{original_file_path}"
+    macro: "{previews}/{original_file_path}"
     policy:
       on_collision: "overwrite"  # Preview should match source, safe to replace
       create_dirs: true

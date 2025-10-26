@@ -21,7 +21,7 @@ class SituationFilePolicy(StrEnum):
     triggers user interaction before determining final policy.
     """
 
-    CREATE_NEW = "create_new"  # Increment {_index} in schema
+    CREATE_NEW = "create_new"  # Increment {_index} in macro
     OVERWRITE = "overwrite"  # Maps to ExistingFilePolicy.OVERWRITE
     FAIL = "fail"  # Maps to ExistingFilePolicy.FAIL
     PROMPT = "prompt"  # Special UI handling
@@ -43,9 +43,7 @@ class SituationTemplate(BaseModel):
 
     name: str = Field(description="Name of the situation")
     situation_template_schema_version: str = Field(description="Schema version for this situation template")
-    macro: str = Field(
-        description="Macro template for file path", serialization_alias="schema", validation_alias="schema"
-    )
+    macro: str = Field(description="Macro template for file path")
     policy: SituationPolicy = Field(description="Policy for file operations")
     fallback: str | None = Field(default=None, description="Name of fallback situation")
     description: str | None = Field(default=None, description="Description of the situation")
@@ -61,10 +59,6 @@ class SituationTemplate(BaseModel):
             raise ValueError(msg) from e
         return v
 
-    @property
-    def schema(self) -> str:
-        """Alias for macro to maintain YAML compatibility (schema field in YAML)."""
-        return self.macro
 
     @staticmethod
     def merge(
@@ -77,7 +71,7 @@ class SituationTemplate(BaseModel):
         """Merge overlay fields onto base situation.
 
         Field-level merge behavior:
-        - schema: Use overlay if present, else base
+        - macro: Use overlay if present, else base
         - description: Use overlay if present, else base
         - fallback: Use overlay if present, else base
         - policy: Use overlay if present (must be complete), else base
@@ -101,8 +95,8 @@ class SituationTemplate(BaseModel):
         merged_data = base.model_dump()
 
         # Apply overlay fields if present
-        if "schema" in overlay_data:
-            merged_data["schema"] = overlay_data["schema"]
+        if "macro" in overlay_data:
+            merged_data["macro"] = overlay_data["macro"]
 
         if "description" in overlay_data:
             merged_data["description"] = overlay_data["description"]

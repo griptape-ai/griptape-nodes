@@ -24,7 +24,7 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationStatus,
     load_project_template_from_yaml,
 )
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete  # noqa: TC001
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetAllSituationsForProjectRequest,
@@ -166,13 +166,10 @@ class ProjectManager:
             )
 
             # Register app initialization listener
-            # NOTE: This is intentionally commented out to keep ProjectManager inert for code review.
-            # Uncomment the following lines to enable ProjectManager during app initialization.
-            # ruff: noqa: ERA001
-            # event_manager.add_listener_to_app_event(
-            #     AppInitializationComplete,
-            #     self.on_app_initialization_complete,
-            # )
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
 
     # Event handler methods (public)
 

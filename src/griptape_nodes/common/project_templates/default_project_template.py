@@ -16,19 +16,19 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
     directories={
         "inputs": DirectoryDefinition(
             name="inputs",
-            path_schema="inputs",
+            path_macro="inputs",
         ),
         "outputs": DirectoryDefinition(
             name="outputs",
-            path_schema="outputs",
+            path_macro="outputs",
         ),
         "temp": DirectoryDefinition(
             name="temp",
-            path_schema="temp",
+            path_macro="temp",
         ),
         "previews": DirectoryDefinition(
             name="previews",
-            path_schema="previews",
+            path_macro="previews",
         ),
     },
     environment={},
