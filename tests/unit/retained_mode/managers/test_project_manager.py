@@ -155,16 +155,17 @@ class TestProjectManagerBuiltinVariables:
 
         project_path = Path("/test/project.yml")
         pm.successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
+        pm.current_project_path = project_path
 
         return pm
 
     def test_builtin_project_dir_resolves_correctly(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {project_dir} builtin resolves to project_path.parent."""
-        project_path = Path("/test/project.yml")
+        from griptape_nodes.common.macro_parser import ParsedMacro
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{project_dir}/output.txt", variables={}
-        )
+        parsed_macro = ParsedMacro("{project_dir}/output.txt")
+
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
@@ -176,15 +177,15 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workspace_dir} builtin resolves from ConfigManager."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "/workspace"
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
 
-        project_path = Path("/test/project.yml")
+        parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{workspace_dir}/output.txt", variables={}
-        )
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
@@ -197,16 +198,16 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workflow_name} builtin resolves from ContextManager."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
         mock_context_manager.get_current_workflow_name.return_value = "my_workflow"
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
 
-        project_path = Path("/test/project.yml")
+        parsed_macro = ParsedMacro("{workflow_name}_output.txt")
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{workflow_name}_output.txt", variables={}
-        )
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
@@ -220,60 +221,67 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workflow_name} raises RuntimeError when no current workflow."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = False
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
 
-        project_path = Path("/test/project.yml")
+        parsed_macro = ParsedMacro("{workflow_name}_output.txt")
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{workflow_name}_output.txt", variables={}
-        )
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        assert result.error_details is not None
-        assert "No current workflow" in result.error_details
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "No current workflow" in str(result.result_details)
 
     def test_builtin_project_name_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {project_name} raises NotImplementedError."""
-        project_path = Path("/test/project.yml")
+        from griptape_nodes.common.macro_parser import ParsedMacro
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{project_name}/output.txt", variables={}
-        )
+        parsed_macro = ParsedMacro("{project_name}/output.txt")
+
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        assert result.error_details is not None
-        assert "project_name not yet implemented" in result.error_details
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "project_name not yet implemented" in str(result.result_details)
 
     def test_builtin_workflow_dir_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {workflow_dir} raises NotImplementedError."""
-        project_path = Path("/test/project.yml")
+        from griptape_nodes.common.macro_parser import ParsedMacro
 
-        request = GetPathForMacroRequest(
-            project_path=project_path, macro_schema="{workflow_dir}/output.txt", variables={}
-        )
+        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
+
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        assert result.error_details is not None
-        assert "workflow_dir not yet implemented" in result.error_details
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "workflow_dir not yet implemented" in str(result.result_details)
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""
-        project_path = Path("/test/project.yml")
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetPathForMacroRequest(
-            project_path=project_path,
-            macro_schema="{project_dir}/output.txt",
+            parsed_macro=parsed_macro,
             variables={"project_dir": "/test"},
         )
 
@@ -284,11 +292,12 @@ class TestProjectManagerBuiltinVariables:
 
     def test_builtin_override_different_value_rejected(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing different value for builtin variable is rejected."""
-        project_path = Path("/test/project.yml")
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetPathForMacroRequest(
-            project_path=project_path,
-            macro_schema="{project_dir}/output.txt",
+            parsed_macro=parsed_macro,
             variables={"project_dir": "/different"},
         )
 
@@ -300,7 +309,7 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
-        assert "Cannot override builtin variables" in str(result.result_details)
+        assert "cannot override builtin variables" in str(result.result_details)
 
 
 class TestProjectManagerGetStateForMacro:
