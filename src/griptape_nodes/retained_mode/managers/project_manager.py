@@ -59,6 +59,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     ValidateMacroSyntaxResultFailure,
     ValidateMacroSyntaxResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -70,6 +71,24 @@ logger = logging.getLogger("griptape_nodes")
 
 # Synthetic path key for the system default project template
 SYSTEM_DEFAULTS_KEY = Path("<system-defaults>")
+
+# Builtin variable name constants
+BUILTIN_PROJECT_DIR = "project_dir"
+BUILTIN_PROJECT_NAME = "project_name"
+BUILTIN_WORKSPACE_DIR = "workspace_dir"
+BUILTIN_WORKFLOW_NAME = "workflow_name"
+BUILTIN_WORKFLOW_DIR = "workflow_dir"
+
+# Builtin variables available in all macros (read-only)
+BUILTIN_VARIABLES = frozenset(
+    [
+        BUILTIN_PROJECT_DIR,
+        BUILTIN_PROJECT_NAME,
+        BUILTIN_WORKFLOW_NAME,
+        BUILTIN_WORKFLOW_DIR,
+        BUILTIN_WORKSPACE_DIR,
+    ]
+)
 
 
 @dataclass(frozen=True)
@@ -171,8 +190,6 @@ class ProjectManager:
                 self.on_app_initialization_complete,
             )
 
-    # Event handler methods (public)
-
     def on_load_project_template_request(self, request: LoadProjectTemplateRequest) -> ResultPayload:
         """Load user's project.yml and merge with system defaults.
 
@@ -184,8 +201,6 @@ class ProjectManager:
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         logger.debug("Loading project template: %s", request.project_path)
 
         read_request = ReadFileRequest(
@@ -250,6 +265,9 @@ class ProjectManager:
         self.registered_template_status[request.project_path] = validation
         self.successful_templates[request.project_path] = template
 
+        # Populate macro caches for performance
+        self._populate_macro_caches_for_template(request.project_path, template)
+
         return LoadProjectTemplateResultSuccess(
             project_path=request.project_path,
             template=template,
@@ -305,7 +323,7 @@ class ProjectManager:
             result_details=f"Retrieved macro for situation: {request.situation_name}",
         )
 
-    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Resolve ANY macro schema with variables to final Path.
 
         Flow:
@@ -343,6 +361,7 @@ class ProjectManager:
         directory_names = set(template.directories.keys())
         user_provided_names = set(request.variables.keys())
 
+        # Check for directory/user variable name conflicts
         conflicting = directory_names & user_provided_names
         if conflicting:
             return GetPathForMacroResultFailure(
@@ -352,6 +371,7 @@ class ProjectManager:
             )
 
         resolution_bag: dict[str, str | int] = {}
+        disallowed_overrides: set[str] = set()
 
         for var_info in variable_infos:
             var_name = var_info.name
@@ -361,6 +381,23 @@ class ProjectManager:
                 resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
+            elif var_name in BUILTIN_VARIABLES:
+                builtin_value = self._get_builtin_variable_value(var_name, request.project_path)
+                # Confirm no monkey business with trying to override builtin values
+                existing = resolution_bag.get(var_name)
+                if existing is not None:
+                    if str(existing) != builtin_value:
+                        disallowed_overrides.add(var_name)
+                else:
+                    resolution_bag[var_name] = builtin_value
+
+        # Check if user tried to override builtins with different values
+        if disallowed_overrides:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                conflicting_variables=disallowed_overrides,
+                result_details=f"Cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
+            )
 
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
@@ -595,6 +632,108 @@ class ProjectManager:
             situations=situations, result_details=f"Found {len(situations)} situations"
         )
 
+    # Helper methods (private)
+
+    def _get_parsed_situation_macro(self, project_path: Path, situation_name: str, macro_str: str) -> ParsedMacro:
+        """Get or create cached ParsedMacro for a situation.
+
+        Args:
+            project_path: Path to the project template
+            situation_name: Name of the situation
+            macro_str: The macro string to parse
+
+        Returns:
+            Cached or newly parsed ParsedMacro instance
+        """
+        cache_key = SituationMacroKey(project_path=project_path, situation_name=situation_name)
+
+        if cache_key not in self.parsed_situation_schemas:
+            self.parsed_situation_schemas[cache_key] = ParsedMacro(macro_str)
+
+        return self.parsed_situation_schemas[cache_key]
+
+    def _get_parsed_directory_macro(self, project_path: Path, directory_name: str, macro_str: str) -> ParsedMacro:
+        """Get or create cached ParsedMacro for a directory.
+
+        Args:
+            project_path: Path to the project template
+            directory_name: Name of the directory
+            macro_str: The macro string to parse
+
+        Returns:
+            Cached or newly parsed ParsedMacro instance
+        """
+        cache_key = DirectoryMacroKey(project_path=project_path, directory_name=directory_name)
+
+        if cache_key not in self.parsed_directory_schemas:
+            self.parsed_directory_schemas[cache_key] = ParsedMacro(macro_str)
+
+        return self.parsed_directory_schemas[cache_key]
+
+    def _populate_macro_caches_for_template(self, project_path: Path, template: ProjectTemplate) -> None:
+        """Pre-populate macro caches for all situations and directories in a template.
+
+        Args:
+            project_path: Path to the project template
+            template: The loaded project template
+
+        Raises:
+            MacroSyntaxError: If any situation or directory macro has invalid syntax
+        """
+        # Cache all situation macros - fail fast on invalid syntax
+        for situation_name, situation in template.situations.items():
+            cache_key = SituationMacroKey(project_path=project_path, situation_name=situation_name)
+            if cache_key not in self.parsed_situation_schemas:
+                self.parsed_situation_schemas[cache_key] = ParsedMacro(situation.macro)
+
+        # Cache all directory macros - fail fast on invalid syntax
+        for directory_name, directory_def in template.directories.items():
+            cache_key = DirectoryMacroKey(project_path=project_path, directory_name=directory_name)
+            if cache_key not in self.parsed_directory_schemas:
+                self.parsed_directory_schemas[cache_key] = ParsedMacro(directory_def.path_macro)
+
+    def _get_builtin_variable_value(self, var_name: str, project_path: Path) -> str:
+        """Get the value of a single builtin variable.
+
+        Args:
+            var_name: Name of the builtin variable
+            project_path: Path to the current project template
+
+        Returns:
+            String value of the builtin variable
+
+        Raises:
+            ValueError: If var_name is not a recognized builtin variable
+            NotImplementedError: If builtin variable is not yet implemented
+        """
+        match var_name:
+            case "project_dir":
+                return str(project_path.parent)
+
+            case "project_name":
+                msg = f"{BUILTIN_PROJECT_NAME} not yet implemented"
+                raise NotImplementedError(msg)
+
+            case "workspace_dir":
+                config_manager = GriptapeNodes.ConfigManager()
+                workspace_dir = config_manager.get_config_value("workspace.directory")
+                return str(workspace_dir)
+
+            case "workflow_name":
+                context_manager = GriptapeNodes.ContextManager()
+                if not context_manager.has_current_workflow():
+                    msg = "No current workflow"
+                    raise RuntimeError(msg)
+                return context_manager.get_current_workflow_name()
+
+            case "workflow_dir":
+                msg = f"{BUILTIN_WORKFLOW_DIR} not yet implemented"
+                raise NotImplementedError(msg)
+
+            case _:
+                msg = f"Unknown builtin variable: {var_name}"
+                raise ValueError(msg)
+
     # Private helper methods
 
     def _load_system_defaults(self) -> None:
@@ -612,3 +751,6 @@ class ProjectManager:
 
         self.registered_template_status[SYSTEM_DEFAULTS_KEY] = validation
         self.successful_templates[SYSTEM_DEFAULTS_KEY] = DEFAULT_PROJECT_TEMPLATE
+
+        # Populate macro caches for performance
+        self._populate_macro_caches_for_template(SYSTEM_DEFAULTS_KEY, DEFAULT_PROJECT_TEMPLATE)
