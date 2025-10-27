@@ -152,16 +152,17 @@ class GetPathForMacroRequest(RequestPayload):
 
     Use when: Resolving paths, saving files. Works with any macro string, not tied to situations.
 
+    Uses the current project for context. Caller must parse the macro string
+    into a ParsedMacro before creating this request.
+
     Args:
-        project_path: Path to the project.yml (used for directory resolution)
-        macro_schema: The macro template string to resolve (e.g., "{inputs}/{file_name}.{file_ext}")
+        parsed_macro: The parsed macro to resolve
         variables: Variable values for macro substitution (e.g., {"file_name": "output", "file_ext": "png"})
 
     Results: GetPathForMacroResultSuccess | GetPathForMacroResultFailure
     """
 
-    project_path: Path
-    macro_schema: str
+    parsed_macro: ParsedMacro
     variables: MacroVariables
 
 
@@ -186,13 +187,11 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
         failure_reason: Specific reason for failure
         missing_variables: List of required variable names that were not provided (for MISSING_REQUIRED_VARIABLES)
         conflicting_variables: List of variables that conflict with directory names (for DIRECTORY_OVERRIDE_ATTEMPTED)
-        error_details: Additional error details from ParsedMacro (for MACRO_RESOLUTION_ERROR)
     """
 
     failure_reason: PathResolutionFailureReason
     missing_variables: set[str] | None = None
     conflicting_variables: set[str] | None = None
-    error_details: str | None = None
 
 
 @dataclass
@@ -224,7 +223,7 @@ class GetCurrentProjectRequest(RequestPayload):
 
     Use when: Need to know which project user is working with.
 
-    Results: GetCurrentProjectResultSuccess
+    Results: GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure
     """
 
 
@@ -234,10 +233,16 @@ class GetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     """Current project retrieved.
 
     Args:
-        project_path: The currently selected project path ("No Project" if None)
+        project_path: The currently selected project path
     """
 
-    project_path: Path | None
+    project_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCurrentProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """No current project is set."""
 
 
 @dataclass

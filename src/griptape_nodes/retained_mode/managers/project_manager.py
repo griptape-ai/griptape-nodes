@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetAllSituationsForProjectResultFailure,
     GetAllSituationsForProjectResultSuccess,
     GetCurrentProjectRequest,
+    GetCurrentProjectResultFailure,
     GetCurrentProjectResultSuccess,
     GetMacroForSituationRequest,
     GetMacroForSituationResultFailure,
@@ -325,11 +326,13 @@ class ProjectManager:
             result_details=f"Retrieved macro for situation: {request.situation_name}",
         )
 
-    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912
+        self, request: GetPathForMacroRequest
+    ) -> GetPathForMacroResultSuccess | GetPathForMacroResultFailure:
         """Resolve ANY macro schema with variables to final Path.
 
         Flow:
-        1. Parse macro schema with ParsedMacro
+        1. Get current project
         2. Get variables from ParsedMacro.get_variables()
         3. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
@@ -340,26 +343,25 @@ class ProjectManager:
         5. Resolve macro with complete variable bag
         6. Return resolved Path
         """
-        logger.debug("Resolving macro: %s in project: %s", request.macro_schema, request.project_path)
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as e:
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details=str(e),
-                result_details=f"Invalid macro syntax: {e}",
+                result_details="Attempted to resolve macro path. Failed because no current project is set",
             )
 
-        template = self.successful_templates.get(request.project_path)
+        project_path = current_project_result.project_path
+
+        template = self.successful_templates.get(project_path)
         if template is None:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details="Project template not loaded",
-                result_details=f"Project template not loaded: {request.project_path}",
+                result_details=f"Attempted to resolve macro path. Failed because project template is not loaded for '{project_path}'",
             )
 
-        variable_infos = parsed_macro.get_variables()
+        variable_infos = request.parsed_macro.get_variables()
         directory_names = set(template.directories.keys())
         user_provided_names = set(request.variables.keys())
 
@@ -369,7 +371,7 @@ class ProjectManager:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
                 conflicting_variables=conflicting,
-                result_details=f"Variables conflict with directory names: {', '.join(sorted(conflicting))}",
+                result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
         resolution_bag: dict[str, str | int] = {}
@@ -386,12 +388,11 @@ class ProjectManager:
 
             if var_name in BUILTIN_VARIABLES:
                 try:
-                    builtin_value = self._get_builtin_variable_value(var_name, request.project_path)
+                    builtin_value = self._get_builtin_variable_value(var_name, project_path)
                 except (RuntimeError, NotImplementedError) as e:
                     return GetPathForMacroResultFailure(
                         failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                        error_details=str(e),
-                        result_details=str(e),
+                        result_details=f"Attempted to resolve macro path. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
                     )
                 # Confirm no monkey business with trying to override builtin values
                 existing = resolution_bag.get(var_name)
@@ -406,7 +407,7 @@ class ProjectManager:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
                 conflicting_variables=disallowed_overrides,
-                result_details=f"Cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
+                result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
             )
 
         required_vars = {v.name for v in variable_infos if v.is_required}
@@ -417,18 +418,17 @@ class ProjectManager:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
                 missing_variables=missing,
-                result_details=f"Missing required variables: {', '.join(sorted(missing))}",
+                result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
             )
 
         if self.secrets_manager is None:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details="SecretsManager not available",
-                result_details="SecretsManager not available",
+                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
             )
 
         try:
-            resolved_string = parsed_macro.resolve(resolution_bag, self.secrets_manager)
+            resolved_string = request.parsed_macro.resolve(resolution_bag, self.secrets_manager)
         except MacroResolutionError as e:
             if e.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES:
                 path_failure_reason = PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES
@@ -438,15 +438,14 @@ class ProjectManager:
             return GetPathForMacroResultFailure(
                 failure_reason=path_failure_reason,
                 missing_variables=e.missing_variables,
-                error_details=str(e),
-                result_details=f"Macro resolution failed: {e}",
+                result_details=f"Attempted to resolve macro path. Failed because macro resolution error: {e}",
             )
 
         resolved_path = Path(resolved_string)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
-            result_details=f"Resolved to: {resolved_path}",
+            result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
     def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> ResultPayload:
@@ -462,11 +461,18 @@ class ProjectManager:
             result_details="Current project set successfully",
         )
 
-    def on_get_current_project_request(self, _request: GetCurrentProjectRequest) -> ResultPayload:
+    def on_get_current_project_request(
+        self, _request: GetCurrentProjectRequest
+    ) -> GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure:
         """Get currently selected project path."""
+        if self.current_project_path is None:
+            return GetCurrentProjectResultFailure(
+                result_details="Attempted to get current project. Failed because no project is currently set"
+            )
+
         return GetCurrentProjectResultSuccess(
             project_path=self.current_project_path,
-            result_details="Current project retrieved successfully",
+            result_details=f"Successfully retrieved current project. Path: {self.current_project_path}",
         )
 
     def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> ResultPayload:
