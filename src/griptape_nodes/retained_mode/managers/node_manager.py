@@ -128,6 +128,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
+    CanResetParameterToDefaultsRequest,
+    CanResetParameterToDefaultsResultFailure,
+    CanResetParameterToDefaultsResultSuccess,
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
@@ -153,6 +156,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RenameParameterRequest,
     RenameParameterResultFailure,
     RenameParameterResultSuccess,
+    ResetParameterToDefaultsRequest,
+    ResetParameterToDefaultsResultFailure,
+    ResetParameterToDefaultsResultSuccess,
     SetParameterValueRequest,
     SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
@@ -230,6 +236,12 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetParameterValueRequest, self.on_set_parameter_value_request)
         event_manager.assign_manager_to_request_type(RenameParameterRequest, self.on_rename_parameter_request)
         event_manager.assign_manager_to_request_type(MigrateParameterRequest, self.on_migrate_parameter_request)
+        event_manager.assign_manager_to_request_type(
+            CanResetParameterToDefaultsRequest, self.on_can_reset_parameter_to_defaults_request
+        )
+        event_manager.assign_manager_to_request_type(
+            ResetParameterToDefaultsRequest, self.on_reset_parameter_to_defaults_request
+        )
         event_manager.assign_manager_to_request_type(ResolveNodeRequest, self.on_resolve_from_node_request)
         event_manager.assign_manager_to_request_type(GetAllNodeInfoRequest, self.on_get_all_node_info_request)
         event_manager.assign_manager_to_request_type(
@@ -3441,6 +3453,110 @@ class NodeManager:
 
         return None
 
+    def on_can_reset_parameter_to_defaults_request(self, request: CanResetParameterToDefaultsRequest) -> ResultPayload:
+        """Check if a parameter can be reset to its default state."""
+        node_name = request.node_name
+        node = None
+
+        # FAILURE CHECK: Validate node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to check reset eligibility for a Parameter from the Current Context. "
+                    "Failed because the Current Context is empty."
+                )
+                return CanResetParameterToDefaultsResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        # FAILURE CHECK: Get node
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = (
+                f"Attempted to check reset eligibility for Parameter '{request.parameter_name}' "
+                f"on Node '{node_name}', but no such Node was found."
+            )
+            return CanResetParameterToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Get parameter
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            details = (
+                f"Attempted to check reset eligibility for Parameter '{request.parameter_name}' "
+                f"on Node '{node_name}', but no such Parameter was found."
+            )
+            return CanResetParameterToDefaultsResultFailure(result_details=details)
+
+        # Check if parameter can be reset
+        can_reset_result = self._check_can_reset_parameter(node, parameter)
+        if not can_reset_result.can_reset:
+            details = (
+                f"Parameter '{request.parameter_name}' on Node '{node_name}' cannot be reset: "
+                f"{can_reset_result.editor_tooltip_reason}"
+            )
+            return CanResetParameterToDefaultsResultSuccess(
+                can_reset=False,
+                editor_tooltip_reason=can_reset_result.editor_tooltip_reason,
+                result_details=details,
+            )
+
+        # SUCCESS PATH: Parameter can be reset
+        details = f"Parameter '{request.parameter_name}' on Node '{node_name}' can be reset to defaults."
+        return CanResetParameterToDefaultsResultSuccess(
+            can_reset=True, editor_tooltip_reason=None, result_details=details
+        )
+
+    def on_reset_parameter_to_defaults_request(self, request: ResetParameterToDefaultsRequest) -> ResultPayload:
+        """Reset a parameter to its default state."""
+        node_name = request.node_name
+        node = None
+
+        # FAILURE CHECK: Validate node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to reset a Parameter from the Current Context. "
+                    "Failed because the Current Context is empty."
+                )
+                return ResetParameterToDefaultsResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        # FAILURE CHECK: Get node
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = (
+                f"Attempted to reset Parameter '{request.parameter_name}' on Node '{node_name}', "
+                f"but no such Node was found."
+            )
+            return ResetParameterToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Get parameter
+        parameter = node.get_parameter_by_name(request.parameter_name)
+        if parameter is None:
+            details = (
+                f"Attempted to reset Parameter '{request.parameter_name}' on Node '{node_name}', "
+                f"but no such Parameter was found."
+            )
+            return ResetParameterToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Check if parameter can be reset
+        can_reset_result = self._check_can_reset_parameter(node, parameter)
+        if not can_reset_result.can_reset:
+            details = (
+                f"Attempted to reset Parameter '{request.parameter_name}' on Node '{node_name}'. "
+                f"Failed because: {can_reset_result.editor_tooltip_reason}"
+            )
+            return ResetParameterToDefaultsResultFailure(result_details=details)
+
+        # Actual reset logic will be implemented after interface approval
+
+        # SUCCESS PATH
+        details = f"Successfully reset Parameter '{request.parameter_name}' on Node '{node_name}' to defaults."
+        return ResetParameterToDefaultsResultSuccess(result_details=details)
+
     def _check_can_reset_node(self, node: BaseNode) -> CanResetResult:
         """Check if a node can be reset to defaults.
 
@@ -3454,6 +3570,24 @@ class NodeManager:
             return CanResetResult(
                 can_reset=False,
                 editor_tooltip_reason="Node is locked. Unlock the node in order to reset it.",
+            )
+
+        return CanResetResult(can_reset=True, editor_tooltip_reason=None)
+
+    def _check_can_reset_parameter(self, node: BaseNode, parameter: Parameter) -> CanResetResult:  # noqa: ARG002
+        """Check if a parameter can be reset to defaults.
+
+        Args:
+            node: The node containing the parameter
+            parameter: The parameter to check
+
+        Returns:
+            CanResetResult with can_reset flag and optional tooltip reason
+        """
+        if node.lock:
+            return CanResetResult(
+                can_reset=False,
+                editor_tooltip_reason="Node is locked. Unlock the node in order to reset parameters.",
             )
 
         return CanResetResult(can_reset=True, editor_tooltip_reason=None)
