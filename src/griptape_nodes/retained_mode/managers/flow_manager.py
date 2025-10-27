@@ -2455,7 +2455,6 @@ class FlowManager:
 
         return StartFlowResultSuccess(result_details=details)
 
-
     async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911
         # which flow
         flow_name = request.flow_name
