@@ -233,13 +233,9 @@ class MCPManager:
     ) -> UpdateMCPServerResultSuccess | UpdateMCPServerResultFailure:
         """Handle update MCP server request."""
         servers = self._get_mcp_servers()
-        server_index = None
 
         # Find the server to update
-        for i, server in enumerate(servers):
-            if server.name == request.name:
-                server_index = i
-                break
+        server_index = next((i for i, server in enumerate(servers) if server.name == request.name), None)
 
         if server_index is None:
             return UpdateMCPServerResultFailure(
