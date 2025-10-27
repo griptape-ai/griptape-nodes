@@ -459,7 +459,7 @@ class Agent(ControlNode):
             )
 
         # Get the output schema
-        output_schema = self.get_parameter_value("output_schema", dict)
+        output_schema: dict = self.get_parameter_value("output_schema")
         if output_schema is not None:
             try:
                 output_schema = create_pydantic_model_from_schema(output_schema)
