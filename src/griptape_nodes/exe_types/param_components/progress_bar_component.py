@@ -1,5 +1,8 @@
+import logging
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+
+logger = logging.getLogger(__name__)
 
 
 class ProgressBarComponent:
@@ -29,6 +32,10 @@ class ProgressBarComponent:
     def increment(self, steps: int = 1) -> None:
         """Increment the progress by the specified number of steps."""
         self._current_step += steps
+        if self._current_step > self._total_steps:
+            logger.warning(
+                f"Current step {self._current_step} exceeds total steps {self._total_steps}. Progress will not exceed 100%."
+            )
         self._update_progress()
 
     def reset(self) -> None:
