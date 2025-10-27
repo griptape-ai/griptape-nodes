@@ -5,7 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroParseFailure, VariableInfo
+from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroParseFailure, ParsedMacro, VariableInfo
 from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -389,6 +389,60 @@ class ValidateMacroSyntaxResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
     parse_failure: MacroParseFailure
     partial_variables: set[VariableInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStateForMacroRequest(RequestPayload):
+    """Analyze a macro and return comprehensive state information.
+
+    Use when: Building UI forms, real-time validation, checking if resolution
+    would succeed before actually resolving.
+
+    Uses the current project for context. Caller must parse the macro string
+    into a ParsedMacro before creating this request.
+
+    Args:
+        parsed_macro: The parsed macro to analyze
+        variables: Currently provided variable values
+
+    Results: GetStateForMacroResultSuccess | GetStateForMacroResultFailure
+    """
+
+    parsed_macro: ParsedMacro
+    variables: MacroVariables
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStateForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Macro state analysis completed successfully.
+
+    Args:
+        all_variables: All variables found in the macro
+        satisfied_variables: Variables that have values (from user, directories, or builtins)
+        missing_required_variables: Required variables that are missing values
+        conflicting_variables: Variables that conflict (e.g., user overriding builtin with different value)
+        can_resolve: Whether the macro can be fully resolved (no missing required vars, no conflicts)
+    """
+
+    all_variables: set[VariableInfo]
+    satisfied_variables: set[str]
+    missing_required_variables: set[str]
+    conflicting_variables: set[str]
+    can_resolve: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStateForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Macro state analysis failed.
+
+    Failure occurs when:
+    - No current project is set
+    - Current project template is not loaded
+    - A builtin variable cannot be resolved (RuntimeError or NotImplementedError)
+    """
 
 
 @dataclass

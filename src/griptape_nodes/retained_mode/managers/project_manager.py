@@ -41,6 +41,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetProjectTemplateRequest,
     GetProjectTemplateResultFailure,
     GetProjectTemplateResultSuccess,
+    GetStateForMacroRequest,
+    GetStateForMacroResultFailure,
+    GetStateForMacroResultSuccess,
     GetVariablesForMacroRequest,
     GetVariablesForMacroResultFailure,
     GetVariablesForMacroResultSuccess,
@@ -180,6 +183,7 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 ValidateMacroSyntaxRequest, self.on_validate_macro_syntax_request
             )
+            event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
             event_manager.assign_manager_to_request_type(
                 GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
             )
@@ -190,7 +194,9 @@ class ProjectManager:
                 self.on_app_initialization_complete,
             )
 
-    def on_load_project_template_request(self, request: LoadProjectTemplateRequest) -> ResultPayload:
+    def on_load_project_template_request(
+        self, request: LoadProjectTemplateRequest
+    ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
         """Load user's project.yml and merge with system defaults.
 
         Flow:
@@ -201,8 +207,6 @@ class ProjectManager:
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
-        logger.debug("Loading project template: %s", request.project_path)
-
         read_request = ReadFileRequest(
             file_path=str(request.project_path),
             encoding="utf-8",
@@ -217,7 +221,7 @@ class ProjectManager:
             return LoadProjectTemplateResultFailure(
                 project_path=request.project_path,
                 validation=validation,
-                result_details=f"File not found: {request.project_path}",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file not found",
             )
 
         if not isinstance(read_result, ReadFileResultSuccess):
@@ -227,7 +231,7 @@ class ProjectManager:
             return LoadProjectTemplateResultFailure(
                 project_path=request.project_path,
                 validation=validation,
-                result_details="Unexpected result type from ReadFileRequest",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file read returned unexpected result type",
             )
 
         yaml_text = read_result.content
@@ -238,7 +242,7 @@ class ProjectManager:
             return LoadProjectTemplateResultFailure(
                 project_path=request.project_path,
                 validation=validation,
-                result_details="Template must be text, got binary content",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template must be text, got binary content",
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -249,7 +253,7 @@ class ProjectManager:
             return LoadProjectTemplateResultFailure(
                 project_path=request.project_path,
                 validation=validation,
-                result_details="Failed to parse YAML template",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
             )
 
         if not validation.is_usable():
@@ -257,10 +261,8 @@ class ProjectManager:
             return LoadProjectTemplateResultFailure(
                 project_path=request.project_path,
                 validation=validation,
-                result_details=f"Template not usable (status: {validation.status})",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template is not usable (status: {validation.status})",
             )
-
-        logger.debug("Template loaded successfully (status: %s)", validation.status)
 
         self.registered_template_status[request.project_path] = validation
         self.successful_templates[request.project_path] = template
@@ -600,6 +602,91 @@ class ProjectManager:
             variables=variables,
             warnings=set(),
             result_details=f"Macro syntax is valid with {len(variables)} variables",
+        )
+
+    def on_get_state_for_macro_request(  # noqa: C901
+        self, request: GetStateForMacroRequest
+    ) -> GetStateForMacroResultSuccess | GetStateForMacroResultFailure:
+        """Analyze a macro and return comprehensive state information.
+
+        Flow:
+        1. Get current project via GetCurrentProjectRequest
+        2. Get template from current project
+        3. For each variable, determine if it's:
+           - A directory (from template)
+           - User-provided (from request)
+           - A builtin
+        4. Check for conflicts:
+           - User providing directory name
+           - User overriding builtin with different value
+        5. Calculate what's satisfied vs missing
+        6. Determine if resolution would succeed
+        """
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
+
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return GetStateForMacroResultFailure(
+                result_details="Attempted to analyze macro state. Failed because no current project is set",
+            )
+
+        project_path = current_project_result.project_path
+        if project_path is None:
+            return GetStateForMacroResultFailure(
+                result_details="Attempted to analyze macro state. Failed because no current project is set",
+            )
+
+        template = self.successful_templates.get(project_path)
+        if template is None:
+            return GetStateForMacroResultFailure(
+                result_details="Attempted to analyze macro state. Failed because current project template is not loaded",
+            )
+
+        all_variables = request.parsed_macro.get_variables()
+        directory_names = set(template.directories.keys())
+        user_provided_names = set(request.variables.keys())
+
+        satisfied_variables: set[str] = set()
+        missing_required_variables: set[str] = set()
+        conflicting_variables: set[str] = set()
+
+        for var_info in all_variables:
+            var_name = var_info.name
+
+            if var_name in directory_names:
+                satisfied_variables.add(var_name)
+                if var_name in user_provided_names:
+                    conflicting_variables.add(var_name)
+
+            if var_name in user_provided_names:
+                satisfied_variables.add(var_name)
+
+            if var_name in BUILTIN_VARIABLES:
+                try:
+                    builtin_value = self._get_builtin_variable_value(var_name, project_path)
+                except (RuntimeError, NotImplementedError) as e:
+                    return GetStateForMacroResultFailure(
+                        result_details=f"Attempted to analyze macro state. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
+                    )
+
+                satisfied_variables.add(var_name)
+                if var_name in user_provided_names:
+                    user_value = str(request.variables[var_name])
+                    if user_value != builtin_value:
+                        conflicting_variables.add(var_name)
+
+            if var_info.is_required and var_name not in satisfied_variables:
+                missing_required_variables.add(var_name)
+
+        can_resolve = len(missing_required_variables) == 0 and len(conflicting_variables) == 0
+
+        return GetStateForMacroResultSuccess(
+            all_variables=all_variables,
+            satisfied_variables=satisfied_variables,
+            missing_required_variables=missing_required_variables,
+            conflicting_variables=conflicting_variables,
+            can_resolve=can_resolve,
+            result_details=f"Analyzed macro with {len(all_variables)} variables: {len(satisfied_variables)} satisfied, {len(missing_required_variables)} missing, {len(conflicting_variables)} conflicting",
         )
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:

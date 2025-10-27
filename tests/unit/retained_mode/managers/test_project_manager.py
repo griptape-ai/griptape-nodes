@@ -10,6 +10,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
+    GetStateForMacroRequest,
+    GetStateForMacroResultFailure,
+    GetStateForMacroResultSuccess,
     GetVariablesForMacroRequest,
     MatchPathAgainstMacroRequest,
     MatchPathAgainstMacroResultFailure,
@@ -298,3 +301,160 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result.result_details, ResultDetails)
         assert "Cannot override builtin variables" in str(result.result_details)
+
+
+class TestProjectManagerGetStateForMacro:
+    """Test ProjectManager GetStateForMacro request handler."""
+
+    @pytest.fixture
+    def project_manager_with_current_project(self) -> ProjectManager:
+        """Create a ProjectManager with current project set."""
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        project_path = Path("/test/project.yml")
+        pm.successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
+        pm.current_project_path = project_path
+
+        return pm
+
+    def test_get_state_for_macro_no_current_project(self) -> None:
+        """Test GetStateForMacro fails when no current project is set."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        parsed_macro = ParsedMacro("{file_name}.txt")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = pm.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultFailure)
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "no current project is set" in str(result.result_details)
+
+    def test_get_state_for_macro_all_variables_satisfied(
+        self, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro when all variables are satisfied."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{file_name}.{ext}")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"file_name": "output", "ext": "txt"})
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultSuccess)
+        var_names = {v.name for v in result.all_variables}
+        assert var_names == {"file_name", "ext"}
+        assert result.satisfied_variables == {"file_name", "ext"}
+        assert result.missing_required_variables == set()
+        assert result.conflicting_variables == set()
+        assert result.can_resolve is True
+
+    def test_get_state_for_macro_missing_required_variables(
+        self, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro when required variables are missing."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{file_name}.{ext}")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"file_name": "output"})
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultSuccess)
+        assert result.satisfied_variables == {"file_name"}
+        assert result.missing_required_variables == {"ext"}
+        assert result.can_resolve is False
+
+    def test_get_state_for_macro_conflicting_variables_directory(
+        self, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro when user provides directory name."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{inputs}/{file_name}.txt")
+
+        request = GetStateForMacroRequest(
+            parsed_macro=parsed_macro, variables={"inputs": "custom_inputs", "file_name": "output"}
+        )
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultSuccess)
+        assert "inputs" in result.conflicting_variables
+        assert result.can_resolve is False
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_get_state_for_macro_builtin_variable_satisfied(
+        self, mock_griptape_nodes: Mock, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro with satisfied builtin variable."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = "/workspace"
+        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
+
+        parsed_macro = ParsedMacro("{workspace_dir}/output.txt")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultSuccess)
+        assert result.satisfied_variables == {"workspace_dir"}
+        assert result.can_resolve is True
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_get_state_for_macro_builtin_variable_fails(
+        self, mock_griptape_nodes: Mock, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro fails when builtin variable cannot be resolved."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        parsed_macro = ParsedMacro("{workflow_name}_output.txt")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultFailure)
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "workflow_name" in str(result.result_details)
+        assert "cannot be resolved" in str(result.result_details)
+
+    def test_get_state_for_macro_conflicting_builtin_override(
+        self, project_manager_with_current_project: ProjectManager
+    ) -> None:
+        """Test GetStateForMacro when user tries to override builtin with different value."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        parsed_macro = ParsedMacro("{project_dir}/output.txt")
+
+        request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"project_dir": "/different"})
+
+        result = project_manager_with_current_project.on_get_state_for_macro_request(request)
+
+        assert isinstance(result, GetStateForMacroResultSuccess)
+        assert "project_dir" in result.conflicting_variables
+        assert result.can_resolve is False
