@@ -294,7 +294,6 @@ class RandomText(DataNode):
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
-        return super().preprocess()
 
     def after_value_set(
         self,
