@@ -15,6 +15,7 @@ from dotenv import set_key
 from dotenv.main import DotEnv
 from griptape_cloud_client.api.assets.create_asset import sync as create_asset
 from griptape_cloud_client.api.assets.create_asset_url import sync as create_asset_url
+from griptape_cloud_client.api.integrations.create_integration import sync as create_integration
 from griptape_cloud_client.api.structures.create_structure import sync as create_structure
 from griptape_cloud_client.api.structures.update_structure import sync as update_structure
 from griptape_cloud_client.client import AuthenticatedClient
@@ -23,12 +24,17 @@ from griptape_cloud_client.models.create_asset_request_content import CreateAsse
 from griptape_cloud_client.models.create_asset_response_content import CreateAssetResponseContent
 from griptape_cloud_client.models.create_asset_url_request_content import CreateAssetUrlRequestContent
 from griptape_cloud_client.models.create_asset_url_response_content import CreateAssetUrlResponseContent
+from griptape_cloud_client.models.create_integration_request_content import CreateIntegrationRequestContent
+from griptape_cloud_client.models.create_integration_response_content import CreateIntegrationResponseContent
 from griptape_cloud_client.models.create_structure_request_content import CreateStructureRequestContent
 from griptape_cloud_client.models.create_structure_response_content import CreateStructureResponseContent
 from griptape_cloud_client.models.data_lake_structure_code import DataLakeStructureCode
+from griptape_cloud_client.models.integration_config_input_union_type_2 import IntegrationConfigInputUnionType2
+from griptape_cloud_client.models.integration_type import IntegrationType
 from griptape_cloud_client.models.structure_code_type_1 import StructureCodeType1
 from griptape_cloud_client.models.update_structure_request_content import UpdateStructureRequestContent
 from griptape_cloud_client.models.update_structure_response_content import UpdateStructureResponseContent
+from griptape_cloud_client.models.webhook_input import WebhookInput
 from httpx import Client
 
 from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
@@ -96,16 +102,16 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         self._gt_cloud_bucket_id: str | None = None
         self.pickle_control_flow_result = pickle_control_flow_result
         self._progress: float = 0.0
+        self._webhook_mode: bool = False
 
     def publish_workflow(self) -> ResultPayload:
         try:
             self._emit_progress_event(additional_progress=10.0, message="Validating workflow before publish...")
             validation_exceptions = self._validate_before_publish()
             if validation_exceptions:
-                result_details: list[ResultDetail] = [
-                    ResultDetail(message=str(e), level=logging.ERROR) for e in validation_exceptions
-                ]
-                return PublishWorkflowResultFailure(result_details=ResultDetails(*result_details))
+                return PublishWorkflowResultFailure(
+                    result_details=self._get_result_details_for_exceptions(validation_exceptions)
+                )
 
             # Get the workflow shape
             self._emit_progress_event(additional_progress=10.0, message="Extracting workflow details...")
@@ -114,17 +120,28 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
 
             self._create_run_input = self._gather_griptape_cloud_start_flow_input(workflow_shape)
 
+            # Validate webhook mode
+            webhook_exceptions = self._validate_webhook_mode(workflow_shape)
+            if webhook_exceptions:
+                return PublishWorkflowResultFailure(
+                    result_details=self._get_result_details_for_exceptions(webhook_exceptions)
+                )
+
             # Package the workflow
             self._emit_progress_event(additional_progress=20.0, message="Packaging workflow...")
             package_path = self._package_workflow(self._workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
             # Deploy the workflow to Griptape Cloud
-            self._emit_progress_event(additional_progress=20.0, message="Deploying workflow to Griptape Cloud...")
+            self._emit_progress_event(additional_progress=15.0, message="Deploying workflow to Griptape Cloud...")
             structure = self._deploy_workflow_to_cloud(package_path)
             logger.info(
                 "Workflow '%s' published successfully to Structure: %s", self._workflow_name, structure.structure_id
             )
+
+            if self._webhook_mode:
+                self._emit_progress_event(additional_progress=5.0, message="Creating webhook integration...")
+                self._create_webhook_integration(structure.structure_id)
 
             # Generate an executor workflow that can invoke the published structure
             self._emit_progress_event(additional_progress=20.0, message="Generating executor workflow...")
@@ -168,6 +185,11 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         GriptapeNodes.EventManager().put_event(event)
 
     @classmethod
+    def _get_result_details_for_exceptions(cls, exceptions: list[Exception]) -> ResultDetails:
+        result_details: list[ResultDetail] = [ResultDetail(message=str(e), level=logging.ERROR) for e in exceptions]
+        return ResultDetails(*result_details)
+
+    @classmethod
     def _get_base_url(cls, *, api_url: bool = True) -> str:
         """Retrieves the base URL for the Griptape Cloud service."""
         base_url = os.environ.get("GT_CLOUD_BASE_URL") or "https://cloud.griptape.ai"
@@ -194,6 +216,46 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             logger.error(details)
             raise ValueError(details)
         return secret_value
+
+    def _validate_webhook_parameter(
+        self, node_shape: dict, param_name: str, param_info: dict[str, Any]
+    ) -> list[Exception]:
+        """Validate a single webhook parameter before publishing."""
+        exceptions: list[Exception] = []
+        try:
+            if param_name not in node_shape:
+                details = f"Workflow '{self._workflow_name}' is configured for webhook mode, but 'Start Flow' node does not have a '{param_name}' input."
+                logger.error(details)
+                exceptions.append(ValueError(details))
+            elif param_info.get("type") not in ["dict", "any"]:
+                details = f"Workflow '{self._workflow_name}' is configured for webhook mode, but '{param_name}' input of 'Start Flow' node is not of type 'dict' or 'any'."
+                logger.error(details)
+                exceptions.append(ValueError(details))
+        except Exception as e:
+            exceptions.append(e)
+        return exceptions
+
+    def _validate_webhook_mode(self, workflow_shape: dict[str, Any]) -> list[Exception]:
+        """Validate the webhook mode arguments before publishing."""
+        exceptions: list[Exception] = []
+        try:
+            if cast("bool", self._get_config_value(GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY, "webhook_mode")) is True:
+                self._webhook_mode = True
+                if "Start Flow" not in workflow_shape["input"]:
+                    details = f"Workflow '{self._workflow_name}' is configured for webhook mode, but does not have a 'Start Flow' node."
+                    logger.error(details)
+                    exceptions.append(ValueError(details))
+                for param in ["payload", "query_params", "headers"]:
+                    exceptions.extend(
+                        self._validate_webhook_parameter(
+                            node_shape=workflow_shape["input"]["Start Flow"],
+                            param_name=param,
+                            param_info=workflow_shape["input"]["Start Flow"].get(param, {}),
+                        )
+                    )
+        except Exception as e:
+            exceptions.append(e)
+        return exceptions
 
     def _validate_before_publish(self) -> list[Exception]:
         """Validate the workflow before publishing."""
@@ -314,6 +376,27 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             raise TypeError(msg)
 
         return update_structure_response
+
+    def _create_webhook_integration(self, structure_id: str) -> None:
+        create_integration_response = create_integration(
+            client=self._gtc_client,
+            body=CreateIntegrationRequestContent(
+                config=IntegrationConfigInputUnionType2(
+                    webhook=WebhookInput(
+                        disable_api_key_param=False,
+                    )
+                ),
+                name=f"Webhook Integration for {self._workflow_name}",
+                type_=IntegrationType.WEBHOOK,
+                structure_ids=[structure_id],
+            ),
+        )
+        if not isinstance(create_integration_response, CreateIntegrationResponseContent):
+            msg = f"Unexpected response type when creating integration: {type(create_integration_response)}."
+            if create_integration_response and create_integration_response.errors:
+                msg += f" Errors: {create_integration_response.errors}"
+            logger.error(msg)
+            raise TypeError(msg)
 
     def _copy_libraries_to_path_for_workflow(
         self,
