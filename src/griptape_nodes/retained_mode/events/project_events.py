@@ -190,8 +190,8 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
     """
 
     failure_reason: PathResolutionFailureReason
-    missing_variables: list[str] | None = None
-    conflicting_variables: list[str] | None = None
+    missing_variables: set[str] | None = None
+    conflicting_variables: set[str] | None = None
     error_details: str | None = None
 
 
@@ -345,7 +345,7 @@ class GetVariablesForMacroRequest(RequestPayload):
 class GetVariablesForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Variables found in the macro schema."""
 
-    variables: list[VariableInfo]
+    variables: set[VariableInfo]
 
 
 @dataclass
@@ -378,8 +378,8 @@ class ValidateMacroSyntaxRequest(RequestPayload):
 class ValidateMacroSyntaxResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Syntax is valid."""
 
-    variables: list[VariableInfo]
-    warnings: list[str]
+    variables: set[VariableInfo]
+    warnings: set[str]
 
 
 @dataclass
@@ -388,7 +388,7 @@ class ValidateMacroSyntaxResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """Syntax is invalid."""
 
     parse_failure: MacroParseFailure
-    partial_variables: list[VariableInfo]
+    partial_variables: set[VariableInfo]
 
 
 @dataclass

@@ -301,8 +301,8 @@ class ProjectManager:
             )
 
         return GetMacroForSituationResultSuccess(
-            macro_schema=situation.schema,
-            result_details=f"Retrieved schema for situation: {request.situation_name}",
+            macro_schema=situation.macro,
+            result_details=f"Retrieved macro for situation: {request.situation_name}",
         )
 
     def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911
@@ -347,7 +347,7 @@ class ProjectManager:
         if conflicting:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
-                conflicting_variables=sorted(conflicting),
+                conflicting_variables=conflicting,
                 result_details=f"Variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
@@ -358,7 +358,7 @@ class ProjectManager:
 
             if var_name in directory_names:
                 directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_schema
+                resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
 
@@ -369,7 +369,7 @@ class ProjectManager:
         if missing:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
-                missing_variables=sorted(missing),
+                missing_variables=missing,
                 result_details=f"Missing required variables: {', '.join(sorted(missing))}",
             )
 
@@ -545,7 +545,7 @@ class ProjectManager:
                     error_position=err.error_position,
                     error_details=str(err),
                 ),
-                partial_variables=[],
+                partial_variables=set(),
                 result_details=f"Syntax validation failed: {err}",
             )
 
@@ -553,7 +553,7 @@ class ProjectManager:
 
         return ValidateMacroSyntaxResultSuccess(
             variables=variables,
-            warnings=[],
+            warnings=set(),
             result_details=f"Macro syntax is valid with {len(variables)} variables",
         )
 
@@ -589,7 +589,7 @@ class ProjectManager:
             return GetAllSituationsForProjectResultFailure(result_details="Project template not available or invalid")
 
         template = self.successful_templates[request.project_path]
-        situations = {situation_name: situation.schema for situation_name, situation in template.situations.items()}
+        situations = {situation_name: situation.macro for situation_name, situation in template.situations.items()}
 
         return GetAllSituationsForProjectResultSuccess(
             situations=situations, result_details=f"Found {len(situations)} situations"

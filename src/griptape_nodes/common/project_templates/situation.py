@@ -59,7 +59,6 @@ class SituationTemplate(BaseModel):
             raise ValueError(msg) from e
         return v
 
-
     @staticmethod
     def merge(
         base: SituationTemplate,

@@ -53,8 +53,8 @@ class TestProjectManagerMacroHandlers:
         result = project_manager.on_get_variables_for_macro_request(request)
 
         assert isinstance(result, GetVariablesForMacroResultSuccess)
-        var_names = [v.name for v in result.variables]
-        assert var_names == ["inputs", "file_name", "ext"]
+        var_names = {v.name for v in result.variables}
+        assert var_names == {"inputs", "file_name", "ext"}
 
     def test_validate_macro_syntax_success(self, project_manager: ProjectManager) -> None:
         """Test ValidateMacroSyntax validates valid macro."""
@@ -67,9 +67,9 @@ class TestProjectManagerMacroHandlers:
         result = project_manager.on_validate_macro_syntax_request(request)
 
         assert isinstance(result, ValidateMacroSyntaxResultSuccess)
-        var_names = [v.name for v in result.variables]
-        assert var_names == ["inputs", "file_name", "ext"]
-        assert result.warnings == []
+        var_names = {v.name for v in result.variables}
+        assert var_names == {"inputs", "file_name", "ext"}
+        assert result.warnings == set()
 
     def test_match_path_mismatch(self, project_manager: ProjectManager) -> None:
         """Test that MatchPathAgainstMacro returns failure when path doesn't match."""
