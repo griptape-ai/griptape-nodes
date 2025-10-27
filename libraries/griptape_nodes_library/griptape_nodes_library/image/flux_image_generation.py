@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["FluxImageGeneration"]
 

@@ -7,7 +7,7 @@ from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowR
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
