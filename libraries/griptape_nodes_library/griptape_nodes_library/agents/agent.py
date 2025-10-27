@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
+from griptape_nodes_library.utils.schema_utils import create_pydantic_model_from_schema
 
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -65,6 +66,7 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
     {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4o", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-5", "icon": "logos/openai.svg", "args": {"stream": True}},
@@ -194,8 +196,8 @@ class Agent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_schema",
-                input_types=["json"],
-                type="json",
+                input_types=["dict"],
+                type="dict",
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
@@ -457,18 +459,10 @@ class Agent(ControlNode):
             )
 
         # Get the output schema
-        output_schema = self.get_parameter_value("output_schema")
+        output_schema = self.get_parameter_value("output_schema", dict)
         if output_schema is not None:
             try:
-                type_mapping = {"string": str, "integer": int, "boolean": bool, "number": float, "object": dict}
-                class_name = output_schema.get("title", "OutputSchema")
-                output_schema = create_model(
-                    class_name,
-                    **{
-                        k: (type_mapping.get(v.get("type", "string"), Any))
-                        for k, v in output_schema.get("properties", {}).items()
-                    },
-                )
+                output_schema = create_pydantic_model_from_schema(output_schema)
             except Exception as e:
                 msg = f"[ERROR]: Unable to create output schema model: {e}"
                 self.append_value_to_parameter("logs", msg + "\n")

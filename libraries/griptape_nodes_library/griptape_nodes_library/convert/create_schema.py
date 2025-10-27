@@ -8,6 +8,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes_library.utils.schema_utils import get_type
 
 
 class CreateSchema(DataNode):
@@ -31,7 +32,7 @@ class CreateSchema(DataNode):
                 name="schema_name",
                 type="str",
                 default_value="DynamicSchema",
-                tooltip="Name of the Pydantic model class",
+                tooltip="Name of the resulting JSON schema.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -43,7 +44,7 @@ class CreateSchema(DataNode):
                 input_types=["dict"],
                 default_value=[],
                 tooltip="List of schema field definitions",
-                allowed_modes={ParameterMode.INPUT},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
@@ -52,10 +53,9 @@ class CreateSchema(DataNode):
             Parameter(
                 name="schema",
                 allowed_modes={ParameterMode.OUTPUT},
-                output_type="json",
+                output_type="dict",
                 default_value=None,
-                tooltip="The Pydantic schema model",
-                ui_options={"hide_property": True},
+                tooltip="The JSON schema",
             )
         )
 
@@ -86,7 +86,7 @@ class CreateSchema(DataNode):
     def process(self) -> None:
         """Process the node by creating a Pydantic model from field definitions."""
         # Get the schema name
-        schema_name = self.get_parameter_value("schema_name")
+        schema_name: str = self.get_parameter_value("schema_name")
         if not schema_name:
             schema_name = "DynamicSchema"
 
@@ -110,16 +110,42 @@ class CreateSchema(DataNode):
 
             # Get field properties
             field_name = field_def.get("name", "")
+            if field_name in field_definitions:
+                # throw error if duplicate field names
+                raise ValueError(f"Duplicate field name in schema fields: {field_name}")
+
             if not field_name:
                 continue
 
             field_name_str = str(field_name).strip()
             if not field_name_str:
-                continue
+                raise ValueError("Field name cannot be empty")
 
             # Get type for this field
-            type_str = field_def.get("type", "str")
-            field_type = self._convert_type_string(str(type_str))
+            type_value = field_def.get("type", "str")
+            list_type_value = field_def.get("list_type", "str")
+
+            # Check if type is a nested schema (dict with "properties" key)
+            if isinstance(type_value, dict) and "properties" in type_value:
+                # This is a nested schema - create a Pydantic model for it
+                from griptape_nodes_library.utils.schema_utils import create_pydantic_model_from_schema
+
+                field_type = create_pydantic_model_from_schema(type_value)
+            elif type_value == "list" and list_type_value:
+                # This is a typed list - handle the list item type
+                if isinstance(list_type_value, dict) and "properties" in list_type_value:
+                    # List of nested schemas
+                    from griptape_nodes_library.utils.schema_utils import create_pydantic_model_from_schema
+
+                    item_type = create_pydantic_model_from_schema(list_type_value)
+                    field_type = list[item_type]
+                else:
+                    # List of simple types
+                    item_type = get_type({"type": list_type_value})
+                    field_type = list[item_type]
+            else:
+                # Simple type - use get_type
+                field_type = get_type({"type": type_value})
 
             # Get description for this field
             description = field_def.get("description", "")
