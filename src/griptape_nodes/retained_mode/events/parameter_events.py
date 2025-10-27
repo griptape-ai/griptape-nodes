@@ -673,7 +673,7 @@ class MigrateParameterResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
-class CanResetParameterToDefaultsRequest(RequestPayload):
+class CanResetParameterToDefaultRequest(RequestPayload):
     """Check if a parameter can be reset to its default state.
 
     Use when: Need to validate whether a parameter reset operation is allowed before attempting it,
@@ -684,7 +684,7 @@ class CanResetParameterToDefaultsRequest(RequestPayload):
         parameter_name: Name of the parameter to check
         node_name: Name of the node containing the parameter (None for current context node)
 
-    Results: CanResetParameterToDefaultsResultSuccess (with can_reset flag and reason) | CanResetParameterToDefaultsResultFailure (validation failed)
+    Results: CanResetParameterToDefaultResultSuccess (with can_reset flag and reason) | CanResetParameterToDefaultResultFailure (validation failed)
     """
 
     parameter_name: str
@@ -693,11 +693,11 @@ class CanResetParameterToDefaultsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class CanResetParameterToDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class CanResetParameterToDefaultResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Parameter reset check completed successfully.
 
     Args:
-        can_reset: True if the parameter can be reset to defaults, False otherwise
+        can_reset: True if the parameter can be reset to default, False otherwise
         editor_tooltip_reason: Optional explanation if parameter cannot be reset (e.g., "Node is locked. Unlock the node in order to reset parameters.")
     """
 
@@ -707,7 +707,7 @@ class CanResetParameterToDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class CanResetParameterToDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class CanResetParameterToDefaultResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Parameter reset check failed.
 
     Common causes: parameter not found, node not found, no current context.
@@ -716,17 +716,17 @@ class CanResetParameterToDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
-class ResetParameterToDefaultsRequest(RequestPayload):
+class ResetParameterToDefaultRequest(RequestPayload):
     """Reset a parameter to its default state.
 
-    Use when: Need to reset a parameter's value back to defaults, clear customizations,
+    Use when: Need to reset a parameter's value back to default, clear customizations,
     fix incorrect parameter values, or restore a parameter to its initial state.
 
     Args:
         parameter_name: Name of the parameter to reset
         node_name: Name of the node containing the parameter (None for current context node)
 
-    Results: ResetParameterToDefaultsResultSuccess | ResetParameterToDefaultsResultFailure (reset failed)
+    Results: ResetParameterToDefaultResultSuccess | ResetParameterToDefaultResultFailure (reset failed)
     """
 
     parameter_name: str
@@ -735,14 +735,14 @@ class ResetParameterToDefaultsRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class ResetParameterToDefaultsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Parameter reset to defaults successfully."""
+class ResetParameterToDefaultResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter reset to default successfully."""
 
 
 @dataclass
 @PayloadRegistry.register
-class ResetParameterToDefaultsResultFailure(ResultPayloadFailure):
-    """Parameter reset to defaults failed.
+class ResetParameterToDefaultResultFailure(ResultPayloadFailure):
+    """Parameter reset to default failed.
 
     Common causes: parameter not found, node not found, no current context,
     node is locked, or parameter cannot be reset.
