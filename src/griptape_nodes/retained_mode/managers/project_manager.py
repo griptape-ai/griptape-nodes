@@ -381,8 +381,16 @@ class ProjectManager:
                 resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
-            elif var_name in BUILTIN_VARIABLES:
-                builtin_value = self._get_builtin_variable_value(var_name, request.project_path)
+
+            if var_name in BUILTIN_VARIABLES:
+                try:
+                    builtin_value = self._get_builtin_variable_value(var_name, request.project_path)
+                except (RuntimeError, NotImplementedError) as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        error_details=str(e),
+                        result_details=str(e),
+                    )
                 # Confirm no monkey business with trying to override builtin values
                 existing = resolution_bag.get(var_name)
                 if existing is not None:
