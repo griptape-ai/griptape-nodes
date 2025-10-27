@@ -33,7 +33,6 @@ class ConcatenateVideos(BaseVideoProcessor):
                     "VideoUrlArtifact",
                     "list[VideoArtifact]",
                     "list[VideoUrlArtifact]",
-                    "list",
                 ],
                 default_value=[],
                 tooltip="Connect individual videos or a list of videos to concatenate (supports both VideoArtifact and VideoUrlArtifact)",

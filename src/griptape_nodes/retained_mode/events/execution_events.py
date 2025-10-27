@@ -107,6 +107,7 @@ class StartFlowFromNodeRequest(RequestPayload):
         flow_name: Name of the flow to start (deprecated)
         node_name: Name of the node to start execution from
         debug_mode: Whether to run in debug mode (default: False)
+        pickle_control_flow_result: If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess
 
     Results: StartFlowFromNodeResultSuccess | StartFlowFromNodeResultFailure (with validation exceptions)
     """
