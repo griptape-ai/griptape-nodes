@@ -52,7 +52,7 @@ The **[Maya MCP Server](https://github.com/PatrickPalmer/MayaMCP)** enables AI a
 
 1. **Open Autodesk Maya**
 
-2. **Enable the Command Port** - This is required for the MCP server to communicate with Maya. In Maya's Script Editor, run this Python code:
+1. **Enable the Command Port** - This is required for the MCP server to communicate with Maya. In Maya's Script Editor, run this Python code:
 
     ```python
     import maya.cmds as cmds
@@ -67,12 +67,12 @@ The **[Maya MCP Server](https://github.com/PatrickPalmer/MayaMCP)** enables AI a
             except:
                 # No existing port to close, that's fine
                 pass
-            
+
             # Enable the command port
             cmds.commandPort(name=f"localhost:{port}")
             print(f"Command Port successfully enabled on localhost:{port}")
             return True
-            
+
         except Exception as e:
             print(f"Error setting up command port: {e}")
             return False
@@ -93,55 +93,57 @@ The **[Maya MCP Server](https://github.com/PatrickPalmer/MayaMCP)** enables AI a
     To make this process easier, you can save the command port setup as a Maya script:
 
     1. **Save the following script as `enable_mcp_command_port.py`**:
-       ```python
-       import maya.cmds as cmds
 
-       def enable_mcp_command_port(port=50007):
-           """Setup Maya command port with error handling"""
-           try:
-               # First, try to close any existing command port on this port
-               try:
-                   cmds.commandPort(name=f"localhost:{port}", close=True)
-                   print(f"Closed existing command port on localhost:{port}")
-               except:
-                   # No existing port to close, that's fine
-                   pass
+        ```python
+        import maya.cmds as cmds
 
-               # Enable the command port
-               cmds.commandPort(name=f"localhost:{port}")
-               print(f"Command Port successfully enabled on localhost:{port}")
-               return True
+        def enable_mcp_command_port(port=50007):
+            """Setup Maya command port with error handling"""
+            try:
+                # First, try to close any existing command port on this port
+                try:
+                    cmds.commandPort(name=f"localhost:{port}", close=True)
+                    print(f"Closed existing command port on localhost:{port}")
+                except:
+                    # No existing port to close, that's fine
+                    pass
 
-           except Exception as e:
-               print(f"Error setting up command port: {e}")
-               return False
-       ```
+                # Enable the command port
+                cmds.commandPort(name=f"localhost:{port}")
+                print(f"Command Port successfully enabled on localhost:{port}")
+                return True
 
-    2. **Test the script** in Maya's Script Editor:
-       ```python
-       import enable_mcp_command_port
-       enable_mcp_command_port.enable_mcp_command_port()
-       ```
+            except Exception as e:
+                print(f"Error setting up command port: {e}")
+                return False
+        ```
 
-    3. **Choose one of these options**:
+    1. **Test the script** in Maya's Script Editor:
 
-       **Option A: Create a Shelf Button**
+        ```python
+        import enable_mcp_command_port
+        enable_mcp_command_port.enable_mcp_command_port()
+        ```
 
-       - Drag the test code from step 2 to the shelf to create a button
-       - Click the button whenever you need to enable the command port
+    1. **Choose one of these options**:
 
-       **Option B: Auto-Start with userSetup.py**
-       
-       - Find Maya's userScripts directory:
-         - **Windows**: `%USERPROFILE%\Documents\maya\2025\scripts\`
-         - **macOS**: `~/Library/Preferences/Autodesk/maya/2025/scripts/`
-         - **Linux**: `~/maya/2025/scripts/`
-       - Add this line to your existing `userSetup.py` file (or create one if it doesn't exist):
-         ```python
-         import enable_mcp_command_port
-         enable_mcp_command_port.enable_mcp_command_port()
-         ```
-       - Restart Maya - the command port will be enabled automatically
+        **Option A: Create a Shelf Button**
+
+        - Drag the test code from step 2 to the shelf to create a button
+        - Click the button whenever you need to enable the command port
+
+        **Option B: Auto-Start with userSetup.py**
+
+        - Find Maya's userScripts directory:
+            - **Windows**: `%USERPROFILE%\Documents\maya\2025\scripts\`
+            - **macOS**: `~/Library/Preferences/Autodesk/maya/2025/scripts/`
+            - **Linux**: `~/maya/2025/scripts/`
+        - Add this line to your existing `userSetup.py` file (or create one if it doesn't exist):
+            ```python
+            import enable_mcp_command_port
+            enable_mcp_command_port.enable_mcp_command_port()
+            ```
+        - Restart Maya - the command port will be enabled automatically
 
 !!! tip
 
