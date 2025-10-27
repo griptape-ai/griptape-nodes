@@ -460,16 +460,16 @@ class Agent(ControlNode):
 
         # Get the output schema
         output_schema: dict = self.get_parameter_value("output_schema")
+        pydantic_schema = None
         if output_schema is not None:
             try:
-                output_schema = create_pydantic_model_from_schema(output_schema)
+                pydantic_schema = create_pydantic_model_from_schema(output_schema)
             except Exception as e:
                 msg = f"[ERROR]: Unable to create output schema model: {e}"
                 self.append_value_to_parameter("logs", msg + "\n")
                 logger.error(msg)
-                output_schema = None
 
-        if include_details and output_schema:
+        if include_details and pydantic_schema:
             self.append_value_to_parameter("logs", "[Schema]: Structured output schema provided\n")
 
         # Get the prompt
@@ -494,13 +494,11 @@ class Agent(ControlNode):
             agent = GtAgent().from_dict(agent)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
-                agent.add_task(PromptTask(prompt_driver=default_prompt_driver, output_schema=output_schema))
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver, output_schema=pydantic_schema))
             else:
-                # Update the output_schema if provided
-                if output_schema is not None:
-                    agent.tasks[0].output_schema = output_schema
+                agent.tasks[0].output_schema = pydantic_schema
         elif isinstance(model_input, BasePromptDriver):
-            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets, output_schema=output_schema)
+            agent = GtAgent(prompt_driver=model_input, tools=tools, rulesets=rulesets, output_schema=pydantic_schema)
         elif isinstance(model_input, str):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
@@ -513,7 +511,7 @@ class Agent(ControlNode):
                 api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
                 **args,
             )
-            agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets, output_schema=output_schema)
+            agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets, output_schema=pydantic_schema)
 
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
