@@ -16,6 +16,7 @@ class ProgressBarComponent:
                 allowed_modes={ParameterMode.PROPERTY},
                 tooltip="Progress bar showing completion (0.0 to 1.0)",
                 ui_options={"progress_bar": True},
+                settable=False,
             )
         )
 
