@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import AudioArtifact
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import ParameterGroup
 from griptape_nodes.exe_types.node_types import DataNode
@@ -13,7 +14,6 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
 
 class AudioDetails(DataNode):

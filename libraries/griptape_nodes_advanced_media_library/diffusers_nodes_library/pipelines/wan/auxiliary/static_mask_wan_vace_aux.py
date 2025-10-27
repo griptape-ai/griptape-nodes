@@ -5,8 +5,8 @@ from pathlib import Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image  # type: ignore[reportMissingImports]
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL import Image  # type: ignore[reportMissingImports]
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,

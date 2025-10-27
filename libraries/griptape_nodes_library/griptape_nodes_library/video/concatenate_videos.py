@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult

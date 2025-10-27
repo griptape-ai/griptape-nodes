@@ -1,6 +1,6 @@
 from typing import Any, ClassVar
 
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
