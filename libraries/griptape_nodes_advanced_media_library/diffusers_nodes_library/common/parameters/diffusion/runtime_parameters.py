@@ -127,7 +127,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
                 )
                 self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
             return {}
-        
+
         self._node.progress_bar_component.initialize(num_inference_steps)  # type: ignore[reportAttributeAccessIssue]
 
         output_image_pil = pipe(  # type: ignore[reportCallIssue]

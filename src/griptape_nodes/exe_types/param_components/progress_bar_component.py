@@ -1,9 +1,7 @@
-import logging
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
-logger = logging.getLogger("griptape_nodes")
 
 class ProgressBarComponent:
     def __init__(self, node: BaseNode):
@@ -24,7 +22,6 @@ class ProgressBarComponent:
 
     def initialize(self, total_steps: int) -> None:
         """Initialize the progress bar with a total number of steps."""
-        logger.info(f"Initializing progress bar with total steps: {total_steps}")
         self._total_steps = total_steps
         self._current_step = 0
         self._update_progress()
@@ -46,7 +43,5 @@ class ProgressBarComponent:
             progress_value = 0.0
         else:
             progress_value = min(1.0, self._current_step / self._total_steps)
-
-        logger.info(f"Progress updated: {progress_value*100:.2f}%")
 
         self._node.publish_update_to_parameter("progress", progress_value)
