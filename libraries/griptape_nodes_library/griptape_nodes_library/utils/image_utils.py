@@ -18,7 +18,7 @@ from requests.exceptions import RequestException
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 # Constants for placeholder images
 DEFAULT_PLACEHOLDER_WIDTH = 400

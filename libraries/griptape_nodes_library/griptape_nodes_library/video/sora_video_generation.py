@@ -20,7 +20,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SoraVideoGeneration"]
 
