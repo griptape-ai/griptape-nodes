@@ -104,6 +104,7 @@ nav:
               - Example MCP Servers:
                   - Overview: how_to/mcp/servers/index.md
                   - Blender: how_to/mcp/servers/blender.md
+                  - Maya: how_to/mcp/servers/maya.md
                   - Exa: how_to/mcp/servers/exa.md
                   - Fetch: how_to/mcp/servers/fetch.md
                   - Filesystem: how_to/mcp/servers/filesystem.md
