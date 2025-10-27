@@ -332,8 +332,11 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             if i < num_tiles:
                 self._node.log_params.append_to_logs(f"Finished tile {i} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
                 self._node.log_params.append_to_logs(f"Starting tile {i + 1} of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
 
         self._node.log_params.append_to_logs(f"Starting tile 1 of {num_tiles}...\n")  # type: ignore[reportAttributeAccessIssue]
+        self._node.progress_bar_component.initialize(num_tiles)  # type: ignore[reportAttributeAccessIssue]
+        self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
         output_image_pil = tiling_image_processor.process(
             image=input_image_pil,
             output_scale=OUTPUT_SCALE,
