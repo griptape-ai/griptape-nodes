@@ -827,6 +827,47 @@ class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 
 @dataclass
 @PayloadRegistry.register
+class CanResetNodeToDefaultsRequest(RequestPayload):
+    """Check if a node can be reset to its default state.
+
+    Use when: Need to validate whether a node reset operation is allowed before attempting it,
+    implementing UI state (enabled/disabled reset button), or providing user feedback.
+    Checks for conditions that would prevent reset (locked state, missing metadata, etc.).
+
+    Args:
+        node_name: Name of the node to check (None for current context node)
+
+    Results: CanResetNodeToDefaultsResultSuccess (with can_reset flag and reason) | CanResetNodeToDefaultsResultFailure (validation failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node reset check completed successfully.
+
+    Args:
+        can_reset: True if the node can be reset to defaults, False otherwise
+        editor_tooltip_reason: Optional explanation if node cannot be reset (e.g., "Cannot reset locked node")
+    """
+
+    can_reset: bool
+    editor_tooltip_reason: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node reset check failed.
+
+    Common causes: node not found, no current context, no library metadata.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class ResetNodeToDefaultsRequest(RequestPayload):
     """Reset a node to its default state while preserving connections where possible.
 

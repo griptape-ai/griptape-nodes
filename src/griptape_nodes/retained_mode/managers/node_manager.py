@@ -63,6 +63,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
+    CanResetNodeToDefaultsRequest,
+    CanResetNodeToDefaultsResultFailure,
+    CanResetNodeToDefaultsResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -178,6 +181,18 @@ class SerializedParameterValues(NamedTuple):
     unique_parameter_uuid_to_values: dict[Any, Any] | None
 
 
+class CanResetResult(NamedTuple):
+    """Result of checking if a node can be reset to defaults.
+
+    Attributes:
+        can_reset: True if the node can be reset to defaults, False otherwise
+        editor_tooltip_reason: Optional explanation if node cannot be reset
+    """
+
+    can_reset: bool
+    editor_tooltip_reason: str | None
+
+
 class NodeManager:
     _name_to_parent_flow_name: dict[str, str]
 
@@ -240,6 +255,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(SetLockNodeStateRequest, self.on_toggle_lock_node_request)
         event_manager.assign_manager_to_request_type(GetFlowForNodeRequest, self.on_get_flow_for_node_request)
         event_manager.assign_manager_to_request_type(SendNodeMessageRequest, self.on_send_node_message_request)
+        event_manager.assign_manager_to_request_type(
+            CanResetNodeToDefaultsRequest, self.on_can_reset_node_to_defaults_request
+        )
         event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
@@ -3423,6 +3441,72 @@ class NodeManager:
 
         return None
 
+    def _check_can_reset_node(self, node: BaseNode) -> CanResetResult:
+        """Check if a node can be reset to defaults.
+
+        Args:
+            node: The node to check
+
+        Returns:
+            CanResetResult with can_reset flag and optional tooltip reason
+        """
+        if node.lock:
+            return CanResetResult(
+                can_reset=False,
+                editor_tooltip_reason="Node is locked. Unlock the node in order to reset it.",
+            )
+
+        return CanResetResult(can_reset=True, editor_tooltip_reason=None)
+
+    def on_can_reset_node_to_defaults_request(self, request: CanResetNodeToDefaultsRequest) -> ResultPayload:
+        """Check if a node can be reset to its default state."""
+        node_name = request.node_name
+        node = None
+
+        # FAILURE CHECK: Validate node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to check reset eligibility for a Node from the Current Context. "
+                    "Failed because the Current Context is empty."
+                )
+                return CanResetNodeToDefaultsResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        # FAILURE CHECK: Get source node
+        if node is None:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to check reset eligibility for Node '{node_name}', but no such Node was found."
+            return CanResetNodeToDefaultsResultFailure(result_details=details)
+
+        # FAILURE CHECK: Get node type and library
+        if "library" not in node.metadata:
+            details = (
+                f"Attempted to check reset eligibility for Node '{node_name}'. "
+                f"Failed because node has no library information in metadata."
+            )
+            return CanResetNodeToDefaultsResultFailure(result_details=details)
+
+        # Check if node can be reset
+        can_reset_result = self._check_can_reset_node(node)
+        if not can_reset_result.can_reset:
+            details = f"Node '{node_name}' cannot be reset: {can_reset_result.editor_tooltip_reason}"
+            return CanResetNodeToDefaultsResultSuccess(
+                can_reset=False,
+                editor_tooltip_reason=can_reset_result.editor_tooltip_reason,
+                result_details=details,
+            )
+
+        # SUCCESS PATH: Node can be reset
+        details = f"Node '{node_name}' can be reset to defaults."
+        return CanResetNodeToDefaultsResultSuccess(
+            can_reset=True,
+            editor_tooltip_reason=None,
+            result_details=details,
+        )
+
     def on_reset_node_to_defaults_request(self, request: ResetNodeToDefaultsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Reset a node to its default state while preserving connections where possible."""
         node_name = request.node_name
@@ -3454,6 +3538,12 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
         library_name = node.metadata["library"]
 
+        # FAILURE CHECK: Check if node can be reset
+        can_reset_result = self._check_can_reset_node(node)
+        if not can_reset_result.can_reset:
+            details = f"Attempted to reset Node '{node_name}'. Failed because: {can_reset_result.editor_tooltip_reason}"
+            return ResetNodeToDefaultsResultFailure(result_details=details)
+
         # FAILURE CHECK: Gather node information
         all_info_request = GetAllNodeInfoRequest(node_name=node_name)
         all_info_result = self.on_get_all_node_info_request(all_info_request)
@@ -3461,7 +3551,6 @@ class NodeManager:
             details = f"Attempted to reset Node '{node_name}'. Failed to get node information."
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
-        locked_state = all_info_result.locked
         connections = all_info_result.connections
 
         # FAILURE CHECK: Get parent flow name
@@ -3494,14 +3583,6 @@ class NodeManager:
             new_node.metadata["position"] = copy.deepcopy(original_metadata["position"])
         if "size" in original_metadata:
             new_node.metadata["size"] = copy.deepcopy(original_metadata["size"])
-
-        # FAILURE CHECK: Copy locked state if needed
-        if locked_state:
-            lock_request = SetLockNodeStateRequest(node_name=new_node_name, lock=True)
-            lock_result = self.on_toggle_lock_node_request(lock_request)
-            if not isinstance(lock_result, SetLockNodeStateResultSuccess):
-                details = f"Attempted to reset Node '{node_name}'. Failed to set lock state on new node."
-                return ResetNodeToDefaultsResultFailure(result_details=details)
 
         # NON-FATAL: Attempt to reconnect connections
         failed_incoming: list[IncomingConnection] = []
@@ -3546,10 +3627,22 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
         # SUCCESS PATH
-        details = f"Successfully reset node '{node_name}' to defaults. {len(failed_incoming)} incoming and {len(failed_outgoing)} outgoing connections failed to reconnect."
+        if not failed_incoming and not failed_outgoing:
+            details = f"Successfully reset node '{node_name}' to defaults."
+            log_level = logging.DEBUG
+        else:
+            details = f"Successfully reset node '{node_name}' but one or more connections could not be restored."
+            if failed_incoming:
+                source_node_names = {conn.source_node_name for conn in failed_incoming}
+                details += f" Connections FROM the following nodes were not restored: {source_node_names}."
+            if failed_outgoing:
+                target_node_names = {conn.target_node_name for conn in failed_outgoing}
+                details += f" Connections TO the following nodes were not restored: {target_node_names}."
+            log_level = logging.WARNING
+
         return ResetNodeToDefaultsResultSuccess(
             node_name=node_name,
             failed_incoming_connections=failed_incoming,
             failed_outgoing_connections=failed_outgoing,
-            result_details=details,
+            result_details=ResultDetails(message=details, level=log_level),
         )
