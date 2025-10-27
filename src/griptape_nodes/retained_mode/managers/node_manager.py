@@ -3627,10 +3627,22 @@ class NodeManager:
             return ResetNodeToDefaultsResultFailure(result_details=details)
 
         # SUCCESS PATH
-        details = f"Successfully reset node '{node_name}' to defaults. {len(failed_incoming)} incoming and {len(failed_outgoing)} outgoing connections failed to reconnect."
+        if not failed_incoming and not failed_outgoing:
+            details = f"Successfully reset node '{node_name}' to defaults."
+            log_level = logging.DEBUG
+        else:
+            details = f"Successfully reset node '{node_name}' but one or more connections could not be restored."
+            if failed_incoming:
+                source_node_names = {conn.source_node_name for conn in failed_incoming}
+                details += f" Connections FROM the following nodes were not restored: {source_node_names}."
+            if failed_outgoing:
+                target_node_names = {conn.target_node_name for conn in failed_outgoing}
+                details += f" Connections TO the following nodes were not restored: {target_node_names}."
+            log_level = logging.WARNING
+
         return ResetNodeToDefaultsResultSuccess(
             node_name=node_name,
             failed_incoming_connections=failed_incoming,
             failed_outgoing_connections=failed_outgoing,
-            result_details=details,
+            result_details=ResultDetails(message=details, level=log_level),
         )
