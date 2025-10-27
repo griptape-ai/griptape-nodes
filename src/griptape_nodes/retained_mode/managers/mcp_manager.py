@@ -232,19 +232,27 @@ class MCPManager:
         self, request: UpdateMCPServerRequest
     ) -> UpdateMCPServerResultSuccess | UpdateMCPServerResultFailure:
         """Handle update MCP server request."""
-        servers = self._get_mcp_servers(filter_by={"name": request.name})
-        server_config = servers[0] if servers else None
+        servers = self._get_mcp_servers()
 
-        if server_config is None:
+        # Find the server to update
+        server_index = next((i for i, server in enumerate(servers) if server.name == request.name), None)
+
+        if server_index is None:
             return UpdateMCPServerResultFailure(
                 result_details=f"Failed to update MCP server '{request.name}' - not found"
             )
 
-        # Update only provided fields
-        self._update_server_fields(server_config, request)
+        # Create a backup of the original server and update a copy
+        original_server = servers[server_index]
+        updated_server = original_server.model_copy()
+        self._update_server_fields(updated_server, request)
+
+        # Create a copy of the servers list with the updated server
+        updated_servers = servers.copy()
+        updated_servers[server_index] = updated_server
 
         try:
-            self._save_mcp_servers(servers)
+            self._save_mcp_servers(updated_servers)
         except Exception as e:
             logger.error("Failed to save MCP server '%s': %s", request.name, e)
             return UpdateMCPServerResultFailure(result_details=f"Failed to save MCP server '{request.name}': {e}")
