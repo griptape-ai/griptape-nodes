@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from artifact_utils.video_url_artifact import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 # Constants for magic numbers
 RGB_CHANNELS = 3

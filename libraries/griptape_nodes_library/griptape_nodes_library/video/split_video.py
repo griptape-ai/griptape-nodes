@@ -8,7 +8,7 @@ from typing import Any
 # static_ffmpeg is dynamically installed by the library loader at runtime
 # into the library's own virtual environment, but not available during type checking
 import static_ffmpeg.run  # type: ignore[import-untyped]
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.structures import Agent as GriptapeAgent
 from griptape.tasks import PromptTask

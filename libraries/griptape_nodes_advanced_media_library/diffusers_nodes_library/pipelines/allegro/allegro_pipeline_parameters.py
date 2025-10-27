@@ -6,7 +6,7 @@ from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
