@@ -32,7 +32,6 @@ class LocalWorkflowPublisher(LocalWorkflowExecutor):
         publish_workflow_request = PublishWorkflowRequest(
             workflow_name=workflow_name,
             publisher_name=publisher_name,
-            execute_on_publish=False,
             published_workflow_file_name=published_workflow_file_name,
             pickle_control_flow_result=pickle_control_flow_result,
         )

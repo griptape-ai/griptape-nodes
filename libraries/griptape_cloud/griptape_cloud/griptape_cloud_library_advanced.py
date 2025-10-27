@@ -18,7 +18,6 @@ def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
 
     publisher = GriptapeCloudPublisher(
         workflow_name=request.workflow_name,
-        execute_on_publish=request.execute_on_publish,
         published_workflow_file_name=request.published_workflow_file_name,
         pickle_control_flow_result=request.pickle_control_flow_result,
     )
