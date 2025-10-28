@@ -2,6 +2,8 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import ControlParameterInput, ControlParameterOutput, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
 
@@ -27,10 +29,9 @@ class CompareStrings(BaseNode):
         false_param._ui_options = {"display_name": "False"}
         self.add_parameter(false_param)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="evaluate",
                 tooltip="Evaluate the condition.",
-                input_types=["str"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={
                     Options(choices=["A == B", "A != B", "A < B", "A > B", "A <= B", "A >= B", "A in B", "A not in B"])
@@ -39,37 +40,33 @@ class CompareStrings(BaseNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="case_sensitive",
                 tooltip="Case Sensitive",
-                input_types=["bool"],
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=True,
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="A",
                 tooltip="First String",
-                input_types=["str"],
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="B",
                 tooltip="Second String",
-                input_types=["str"],
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="result",
                 tooltip="result of the condition.",
-                input_types=["bool"],
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=False,
                 ui_options={"hide": True},
