@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
-from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo
+from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -111,16 +111,18 @@ class GetProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 @dataclass
 @PayloadRegistry.register
-class GetMacroForSituationRequest(RequestPayload):
-    """Get the macro schema for a specific situation.
+class GetSituationRequest(RequestPayload):
+    """Get the full situation template for a specific situation.
 
-    Use when: Need to know what variables a situation requires, or get schema for custom resolution.
+    Returns the complete SituationTemplate including macro and policy.
+
+    Use when: Need situation macro and/or policy for file operations.
 
     Args:
         project_path: Path to the project.yml to use
         situation_name: Name of the situation template (e.g., "save_node_output")
 
-    Results: GetMacroForSituationResultSuccess | GetMacroForSituationResultFailure
+    Results: GetSituationResultSuccess | GetSituationResultFailure
     """
 
     project_path: Path
@@ -129,21 +131,21 @@ class GetMacroForSituationRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class GetMacroForSituationResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Situation macro retrieved successfully.
+class GetSituationResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Situation template retrieved successfully.
 
     Args:
-        parsed_macro: The parsed macro template (e.g., "{inputs}/{file_name}.{file_ext}")
-                     Callers can use .template property to get the original string
+        situation: The complete situation template including macro and policy.
+                  Access via situation.macro, situation.policy.create_dirs, etc.
     """
 
-    parsed_macro: ParsedMacro
+    situation: SituationTemplate
 
 
 @dataclass
 @PayloadRegistry.register
-class GetMacroForSituationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Situation macro retrieval failed (situation not found or template not loaded)."""
+class GetSituationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Situation template retrieval failed (situation not found or template not loaded)."""
 
 
 @dataclass

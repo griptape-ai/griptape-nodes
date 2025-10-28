@@ -12,7 +12,6 @@ from griptape_nodes.common.macro_parser import (
     MacroMatchFailureReason,
     MacroResolutionError,
     MacroResolutionFailureReason,
-    MacroSyntaxError,
     ParsedMacro,
 )
 from griptape_nodes.common.project_templates import (
@@ -31,15 +30,15 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectRequest,
     GetCurrentProjectResultFailure,
     GetCurrentProjectResultSuccess,
-    GetMacroForSituationRequest,
-    GetMacroForSituationResultFailure,
-    GetMacroForSituationResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
     GetProjectTemplateRequest,
     GetProjectTemplateResultFailure,
     GetProjectTemplateResultSuccess,
+    GetSituationRequest,
+    GetSituationResultFailure,
+    GetSituationResultSuccess,
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
@@ -157,9 +156,7 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 GetProjectTemplateRequest, self.on_get_project_template_request
             )
-            event_manager.assign_manager_to_request_type(
-                GetMacroForSituationRequest, self.on_get_macro_for_situation_request
-            )
+            event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
             event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
             event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
             event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
@@ -286,39 +283,33 @@ class ProjectManager:
             result_details=f"Successfully retrieved project template for '{request.project_path}'. Status: {validation.status}",
         )
 
-    def on_get_macro_for_situation_request(
-        self, request: GetMacroForSituationRequest
-    ) -> GetMacroForSituationResultSuccess | GetMacroForSituationResultFailure:
-        """Get the parsed macro for a specific situation.
+    def on_get_situation_request(
+        self, request: GetSituationRequest
+    ) -> GetSituationResultSuccess | GetSituationResultFailure:
+        """Get the complete situation template for a specific situation.
+
+        Returns the full SituationTemplate including macro and policy.
 
         Flow:
         1. Get template from successful_templates
         2. Get situation from template
-        3. Parse the situation's macro schema
-        4. Return ParsedMacro
+        3. Return complete SituationTemplate
         """
         template = self.successful_templates.get(request.project_path)
         if template is None:
-            return GetMacroForSituationResultFailure(
-                result_details=f"Attempted to get macro for situation '{request.situation_name}' in project '{request.project_path}'. Failed because project template not loaded",
+            return GetSituationResultFailure(
+                result_details=f"Attempted to get situation '{request.situation_name}' in project '{request.project_path}'. Failed because project template not loaded",
             )
 
         situation = template.situations.get(request.situation_name)
         if situation is None:
-            return GetMacroForSituationResultFailure(
-                result_details=f"Attempted to get macro for situation '{request.situation_name}' in project '{request.project_path}'. Failed because situation not found",
+            return GetSituationResultFailure(
+                result_details=f"Attempted to get situation '{request.situation_name}' in project '{request.project_path}'. Failed because situation not found",
             )
 
-        try:
-            parsed_macro = ParsedMacro(situation.macro)
-        except MacroSyntaxError as err:
-            return GetMacroForSituationResultFailure(
-                result_details=f"Attempted to parse macro for situation '{request.situation_name}'. Failed because invalid macro syntax: {err}",
-            )
-
-        return GetMacroForSituationResultSuccess(
-            parsed_macro=parsed_macro,
-            result_details=f"Successfully retrieved macro for situation '{request.situation_name}'. Template: {situation.macro}",
+        return GetSituationResultSuccess(
+            situation=situation,
+            result_details=f"Successfully retrieved situation '{request.situation_name}'. Macro: {situation.macro}, Policy: create_dirs={situation.policy.create_dirs}, on_collision={situation.policy.on_collision}",
         )
 
     def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912
