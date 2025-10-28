@@ -10,15 +10,15 @@ The Select From List node allows users to choose a single item from a list of st
 
 ### Input Parameters
 
-| Parameter | Type | Description                    | Default |
-| --------- | ---- | ------------------------------ | ------- |
-| `list`    | list | List of items to select from  | `[]`    |
+| Parameter | Type | Description                  | Default |
+| --------- | ---- | ---------------------------- | ------- |
+| `list`    | list | List of items to select from | `[]`    |
 
 ### Output Parameters
 
-| Parameter      | Type   | Description                        |
-| -------------- | ------ | ---------------------------------- |
-| `selected_item` | string | The currently selected item        |
+| Parameter       | Type   | Description                 |
+| --------------- | ------ | --------------------------- |
+| `selected_item` | string | The currently selected item |
 
 ## Features
 
@@ -95,15 +95,16 @@ JSON data    → ["Option 1",    → "Option 2"    → Process choice
 ### Selection Logic
 
 1. **Initial Load**: Selects the first item in the list
-2. **List Update**: 
-   - If current selection exists in new list → keeps current selection
-   - If current selection doesn't exist → selects first item in new list
-3. **Empty List**: Clears selection (empty string)
-4. **Invalid Input**: Clears selection (empty string)
+1. **List Update**:
+    - If current selection exists in new list → keeps current selection
+    - If current selection doesn't exist → selects first item in new list
+1. **Empty List**: Clears selection (empty string)
+1. **Invalid Input**: Clears selection (empty string)
 
 ### String Conversion
 
 All list items are automatically converted to strings for consistent comparison:
+
 - Numbers: `123` → `"123"`
 - Booleans: `True` → `"True"`
 - Objects: `{"key": "value"}` → `"{'key': 'value'}"`

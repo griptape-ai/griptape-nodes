@@ -10,10 +10,10 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 
 ### Input Parameters
 
-| Parameter | Type            | Description                                                                                    | Default |
-| --------- | --------------- | ---------------------------------------------------------------------------------------------- | ------- |
-| `json`    | json, str, dict | The JSON data to extract from                                                                  | `{}`    |
-| `path`    | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[*].assignee') | `""`    |
+| Parameter | Type            | Description                                                                                | Default |
+| --------- | --------------- | ------------------------------------------------------------------------------------------ | ------- |
+| `json`    | json, str, dict | The JSON data to extract from                                                              | `{}`    |
+| `path`    | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee') | `""`    |
 
 ### Output Parameters
 
