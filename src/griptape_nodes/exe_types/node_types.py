@@ -1617,6 +1617,7 @@ class EndNode(BaseNode):
 
 class StartLoopNode(BaseNode):
     end_node: EndLoopNode | None = None
+    exec_out: ControlParameterOutput
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
     @abstractmethod
@@ -1625,6 +1626,14 @@ class StartLoopNode(BaseNode):
 
         This method must be implemented by subclasses to define when
         the loop should terminate.
+        """
+
+    @abstractmethod
+    def _get_total_iterations(self) -> int:
+        """Return the total number of iterations for this loop.
+
+        This method must be implemented by subclasses to define how many
+        iterations the loop will execute.
         """
 
 
