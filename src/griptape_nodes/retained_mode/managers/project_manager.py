@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING
 from griptape_nodes.common.macro_parser import (
     MacroMatchFailure,
     MacroMatchFailureReason,
-    MacroParseFailure,
-    MacroParseFailureReason,
     MacroResolutionError,
     MacroResolutionFailureReason,
     MacroSyntaxError,
@@ -45,9 +43,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
-    GetVariablesForMacroRequest,
-    GetVariablesForMacroResultFailure,
-    GetVariablesForMacroResultSuccess,
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
@@ -59,9 +54,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     SaveProjectTemplateResultFailure,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
-    ValidateMacroSyntaxRequest,
-    ValidateMacroSyntaxResultFailure,
-    ValidateMacroSyntaxResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -178,12 +170,6 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 MatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
             )
-            event_manager.assign_manager_to_request_type(
-                GetVariablesForMacroRequest, self.on_get_variables_for_macro_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ValidateMacroSyntaxRequest, self.on_validate_macro_syntax_request
-            )
             event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
             event_manager.assign_manager_to_request_type(
                 GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
@@ -299,31 +285,39 @@ class ProjectManager:
             result_details="Project template retrieved from cache",
         )
 
-    def on_get_macro_for_situation_request(self, request: GetMacroForSituationRequest) -> ResultPayload:
-        """Get the macro schema for a specific situation.
+    def on_get_macro_for_situation_request(
+        self, request: GetMacroForSituationRequest
+    ) -> GetMacroForSituationResultSuccess | GetMacroForSituationResultFailure:
+        """Get the parsed macro for a specific situation.
 
         Flow:
         1. Get template from successful_templates
         2. Get situation from template
-        3. Return situation's macro schema
+        3. Parse the situation's macro schema
+        4. Return ParsedMacro
         """
-        logger.debug("Getting macro for situation: %s in project: %s", request.situation_name, request.project_path)
-
         template = self.successful_templates.get(request.project_path)
         if template is None:
             return GetMacroForSituationResultFailure(
-                result_details=f"Project template not loaded: {request.project_path}",
+                result_details=f"Attempted to get macro for situation '{request.situation_name}' in project '{request.project_path}'. Failed because project template not loaded",
             )
 
         situation = template.situations.get(request.situation_name)
         if situation is None:
             return GetMacroForSituationResultFailure(
-                result_details=f"Situation not found: {request.situation_name}",
+                result_details=f"Attempted to get macro for situation '{request.situation_name}' in project '{request.project_path}'. Failed because situation not found",
+            )
+
+        try:
+            parsed_macro = ParsedMacro(situation.macro)
+        except MacroSyntaxError as err:
+            return GetMacroForSituationResultFailure(
+                result_details=f"Attempted to parse macro for situation '{request.situation_name}'. Failed because invalid macro syntax: {err}",
             )
 
         return GetMacroForSituationResultSuccess(
-            macro_schema=situation.macro,
-            result_details=f"Retrieved macro for situation: {request.situation_name}",
+            parsed_macro=parsed_macro,
+            result_details=f"Successfully retrieved macro for situation '{request.situation_name}'. Template: {situation.macro}",
         )
 
     def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912
@@ -493,42 +487,29 @@ class ProjectManager:
             result_details="Template saving not yet implemented (stub)",
         )
 
-    def on_match_path_against_macro_request(self, request: MatchPathAgainstMacroRequest) -> ResultPayload:
+    def on_match_path_against_macro_request(
+        self, request: MatchPathAgainstMacroRequest
+    ) -> MatchPathAgainstMacroResultSuccess | MatchPathAgainstMacroResultFailure:
         """Check if a path matches a macro schema and extract variables.
 
         Flow:
-        1. Parse macro schema into ParsedMacro
+        1. Check secrets manager is available
         2. Call ParsedMacro.extract_variables() with path and known variables
         3. If match succeeds, return extracted variables
         4. If match fails, return MacroMatchFailure with details
         """
-        logger.debug("Matching path against macro: %s", request.macro_schema)
-
         if self.secrets_manager is None:
             return MatchPathAgainstMacroResultFailure(
                 match_failure=MacroMatchFailure(
                     failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
-                    expected_pattern=request.macro_schema,
+                    expected_pattern=request.parsed_macro.template,
                     known_variables_used=request.known_variables,
                     error_details="SecretsManager not available",
                 ),
-                result_details="SecretsManager not available for macro matching",
+                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
             )
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return MatchPathAgainstMacroResultFailure(
-                match_failure=MacroMatchFailure(
-                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
-                    expected_pattern=request.macro_schema,
-                    known_variables_used=request.known_variables,
-                    error_details=str(err),
-                ),
-                result_details=f"Invalid macro syntax: {err}",
-            )
-
-        extracted = parsed_macro.extract_variables(
+        extracted = request.parsed_macro.extract_variables(
             request.file_path,
             request.known_variables,
             self.secrets_manager,
@@ -538,76 +519,16 @@ class ProjectManager:
             return MatchPathAgainstMacroResultFailure(
                 match_failure=MacroMatchFailure(
                     failure_reason=MacroMatchFailureReason.STATIC_TEXT_MISMATCH,
-                    expected_pattern=request.macro_schema,
+                    expected_pattern=request.parsed_macro.template,
                     known_variables_used=request.known_variables,
                     error_details=f"Path '{request.file_path}' does not match macro pattern",
                 ),
-                result_details="Path does not match macro pattern",
+                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because path does not match pattern",
             )
 
         return MatchPathAgainstMacroResultSuccess(
             extracted_variables=extracted,
-            result_details="Successfully matched path against macro",
-        )
-
-    def on_get_variables_for_macro_request(self, request: GetVariablesForMacroRequest) -> ResultPayload:
-        """Get list of all variables in a macro schema.
-
-        Flow:
-        1. Parse macro schema into ParsedMacro
-        2. Call ParsedMacro.get_variables() to extract variable metadata
-        3. Return list of VariableInfo
-        """
-        logger.debug("Getting variables for macro: %s", request.macro_schema)
-
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return GetVariablesForMacroResultFailure(
-                parse_failure=MacroParseFailure(
-                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
-                    error_position=err.error_position,
-                    error_details=str(err),
-                ),
-                result_details=f"Failed to parse macro: {err}",
-            )
-
-        variables = parsed_macro.get_variables()
-
-        return GetVariablesForMacroResultSuccess(
-            variables=variables,
-            result_details=f"Found {len(variables)} variables in macro",
-        )
-
-    def on_validate_macro_syntax_request(self, request: ValidateMacroSyntaxRequest) -> ResultPayload:
-        """Validate a macro schema string for syntax errors.
-
-        Flow:
-        1. Try to parse macro schema with ParsedMacro()
-        2. If successful, return variables found and any warnings
-        3. If syntax error, return MacroParseFailure with details
-        """
-        logger.debug("Validating macro syntax: %s", request.macro_schema)
-
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return ValidateMacroSyntaxResultFailure(
-                parse_failure=MacroParseFailure(
-                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
-                    error_position=err.error_position,
-                    error_details=str(err),
-                ),
-                partial_variables=set(),
-                result_details=f"Syntax validation failed: {err}",
-            )
-
-        variables = parsed_macro.get_variables()
-
-        return ValidateMacroSyntaxResultSuccess(
-            variables=variables,
-            warnings=set(),
-            result_details=f"Macro syntax is valid with {len(variables)} variables",
+            result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 
     def on_get_state_for_macro_request(  # noqa: C901

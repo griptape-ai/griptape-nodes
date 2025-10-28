@@ -13,11 +13,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
-    GetVariablesForMacroRequest,
     MatchPathAgainstMacroRequest,
     MatchPathAgainstMacroResultFailure,
     PathResolutionFailureReason,
-    ValidateMacroSyntaxRequest,
 )
 from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
 
@@ -35,11 +33,13 @@ class TestProjectManagerMacroHandlers:
 
     def test_match_path_against_macro_success(self, project_manager: ProjectManager) -> None:
         """Test MatchPathAgainstMacro successfully matches path."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.retained_mode.events.project_events import MatchPathAgainstMacroResultSuccess
 
+        parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
+
         request = MatchPathAgainstMacroRequest(
-            project_path=Path("/test/project.yml"),
-            macro_schema="{inputs}/{file_name}.{ext}",
+            parsed_macro=parsed_macro,
             file_path="inputs/render.png",
             known_variables={"inputs": "inputs"},
         )
@@ -49,41 +49,15 @@ class TestProjectManagerMacroHandlers:
         assert isinstance(result, MatchPathAgainstMacroResultSuccess)
         assert result.extracted_variables == {"inputs": "inputs", "file_name": "render", "ext": "png"}
 
-    def test_get_variables_for_macro_success(self, project_manager: ProjectManager) -> None:
-        """Test GetVariablesForMacro extracts variables."""
-        from griptape_nodes.retained_mode.events.project_events import GetVariablesForMacroResultSuccess
-
-        request = GetVariablesForMacroRequest(
-            macro_schema="{inputs}/{file_name}.{ext}",
-        )
-
-        result = project_manager.on_get_variables_for_macro_request(request)
-
-        assert isinstance(result, GetVariablesForMacroResultSuccess)
-        var_names = {v.name for v in result.variables}
-        assert var_names == {"inputs", "file_name", "ext"}
-
-    def test_validate_macro_syntax_success(self, project_manager: ProjectManager) -> None:
-        """Test ValidateMacroSyntax validates valid macro."""
-        from griptape_nodes.retained_mode.events.project_events import ValidateMacroSyntaxResultSuccess
-
-        request = ValidateMacroSyntaxRequest(
-            macro_schema="{inputs}/{file_name}.{ext}",
-        )
-
-        result = project_manager.on_validate_macro_syntax_request(request)
-
-        assert isinstance(result, ValidateMacroSyntaxResultSuccess)
-        var_names = {v.name for v in result.variables}
-        assert var_names == {"inputs", "file_name", "ext"}
-        assert result.warnings == set()
-
     def test_match_path_mismatch(self, project_manager: ProjectManager) -> None:
         """Test that MatchPathAgainstMacro returns failure when path doesn't match."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
         known_vars: dict[str, str | int] = {"inputs": "outputs", "ext": "png"}
+        parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
+
         request = MatchPathAgainstMacroRequest(
-            project_path=Path("/test/project.yml"),
-            macro_schema="{inputs}/{file_name}.{ext}",
+            parsed_macro=parsed_macro,
             file_path="wrong_folder/render.png",
             known_variables=known_vars,
         )
@@ -96,11 +70,13 @@ class TestProjectManagerMacroHandlers:
 
     def test_match_path_empty_known_variables(self, project_manager: ProjectManager) -> None:
         """Test MatchPathAgainstMacro with empty known_variables."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.retained_mode.events.project_events import MatchPathAgainstMacroResultSuccess
 
+        parsed_macro = ParsedMacro("{file_name}")
+
         request = MatchPathAgainstMacroRequest(
-            project_path=Path("/test/project.yml"),
-            macro_schema="{file_name}",
+            parsed_macro=parsed_macro,
             file_path="test.txt",
             known_variables={},
         )
