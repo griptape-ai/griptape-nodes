@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -12,12 +13,14 @@ from griptape_nodes.traits.options import Options
 class SelectFromList(ControlNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+
         # Add list input parameter
         self.list_input = Parameter(
             name="list",
+            input_types=["list", "json", "dict"],
             type="list",
             allowed_modes={ParameterMode.INPUT},
-            tooltip="List of items to select from",
+            tooltip="List of items to select from, or json/dict to select from keys",
         )
         self.add_parameter(self.list_input)
 
@@ -52,6 +55,26 @@ class SelectFromList(ControlNode):
             self._clear_selection()
             return
 
+        # Handle JSON string input
+        if isinstance(list_values, str):
+            try:
+                parsed = json.loads(list_values)
+                if isinstance(parsed, list):
+                    list_values = parsed
+                elif isinstance(parsed, dict):
+                    # Convert dict to list of keys
+                    list_values = list(parsed.keys())
+                else:
+                    self._clear_selection()
+                    return
+            except (json.JSONDecodeError, TypeError):
+                self._clear_selection()
+                return
+
+        # Handle dict input - convert to list of keys
+        if isinstance(list_values, dict):
+            list_values = list(list_values.keys())
+
         if not isinstance(list_values, list):
             self._clear_selection()
             return
@@ -59,8 +82,16 @@ class SelectFromList(ControlNode):
         # Convert all items to strings for consistent comparison
         string_values = [str(item) for item in list_values]
 
+        # Remove duplicates while preserving order
+        unique_values = []
+        seen = set()
+        for item in string_values:
+            if item not in seen:
+                unique_values.append(item)
+                seen.add(item)
+
         # Update the choices for the dropdown (this handles selection preservation)
-        self._update_choices(string_values)
+        self._update_choices(unique_values)
 
         # Get the final selected value after choices update
         selected_value = self.get_parameter_value(self.selected_item.name)
