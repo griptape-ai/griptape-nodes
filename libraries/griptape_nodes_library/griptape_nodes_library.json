@@ -37,7 +37,8 @@
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
         "json-repair>=0.46.1",
-        "static-ffmpeg>=2.8"
+        "static-ffmpeg>=2.8",
+        "jmespath>=1.0.1"
       ]
     }
   },
@@ -512,6 +513,16 @@
         "category": "lists",
         "description": "Takes a list of items and gets an item at a specified index from the list.",
         "display_name": "Get From List",
+        "group": "describe"
+      }
+    },
+    {
+      "class_name": "SelectFromList",
+      "file_path": "griptape_nodes_library/lists/select_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Lets the user select an  item from a list.",
+        "display_name": "Select From List",
         "group": "describe"
       }
     },
@@ -1009,7 +1020,7 @@
       "file_path": "griptape_nodes_library/json/json_extract_value.py",
       "metadata": {
         "category": "json",
-        "description": "Extract a value from JSON using dot notation path",
+        "description": "Extract values from JSON using JMESPath expressions (e.g., '[*].assignee' for all assignees)",
         "display_name": "JSON Extract Value",
         "icon": "search",
         "group": "describe"

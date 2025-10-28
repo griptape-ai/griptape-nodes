@@ -36,10 +36,11 @@ class JsonFind(DataNode):
             Parameter(
                 name="json",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["json", "str", "dict", "list"],
+                input_types=["json", "str", "dict"],
                 type="json",
-                default_value="[]",
+                default_value=None,
                 tooltip="Input JSON data to search through (should be an array or contain arrays)",
+                ui_options={"placeholder_text": "Enter JSON data here..."},
             )
         )
 
@@ -101,6 +102,7 @@ class JsonFind(DataNode):
                 type="json",
                 tooltip="The found item(s) - single item if return_mode is 'first', array if 'all'",
                 allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"multiline": True, "placeholder_text": "Found item(s) will appear here..."},
             )
         )
 
@@ -204,12 +206,12 @@ class JsonFind(DataNode):
     def _find_items(self, data: Any, criteria: SearchCriteria) -> dict[str, Any]:
         """Find items in the data based on search criteria."""
         if not criteria.search_field or not criteria.search_value:
-            return {"found_item": "{}", "found_count": 0, "found_index": -1}
+            return {"found_item": {}, "found_count": 0, "found_index": -1}
 
         # Ensure data is a list
         data_list = self._ensure_data_is_list(data)
         if data_list is None:
-            return {"found_item": "{}", "found_count": 0, "found_index": -1}
+            return {"found_item": {}, "found_count": 0, "found_index": -1}
 
         # Search through the list
         found_items, first_index = self._search_through_list(data_list, criteria)
@@ -251,15 +253,15 @@ class JsonFind(DataNode):
         if return_mode == "first":
             if found_items:
                 return {
-                    "found_item": json.dumps(found_items[0], ensure_ascii=False),
+                    "found_item": found_items[0],
                     "found_count": len(found_items),
                     "found_index": first_index,
                 }
-            return {"found_item": "{}", "found_count": 0, "found_index": -1}
+            return {"found_item": {}, "found_count": 0, "found_index": -1}
 
         # Handle return_mode == "all"
         return {
-            "found_item": json.dumps(found_items, ensure_ascii=False),
+            "found_item": found_items,
             "found_count": len(found_items),
             "found_index": first_index,
         }
@@ -295,12 +297,17 @@ class JsonFind(DataNode):
         # Perform the search
         search_results = self._find_items(json_data, criteria)
 
-        # Set the outputs
-        self.set_parameter_value("found_item", search_results["found_item"])
-        self.set_parameter_value("found_count", search_results["found_count"])
-        self.set_parameter_value("found_index", search_results["found_index"])
+        # Set parameter_output_values first (for UI updates)
+        self.parameter_output_values["found_item"] = search_results["found_item"]
+        self.parameter_output_values["found_count"] = search_results["found_count"]
+        self.parameter_output_values["found_index"] = search_results["found_index"]
 
-        # Publish updates
+        # Set the parameter values
+        self.set_parameter_value("found_item", search_results["found_item"], emit_change=True)
+        self.set_parameter_value("found_count", search_results["found_count"], emit_change=True)
+        self.set_parameter_value("found_index", search_results["found_index"], emit_change=True)
+
+        # Publish updates to notify downstream nodes
         self.publish_update_to_parameter("found_item", search_results["found_item"])
         self.publish_update_to_parameter("found_count", search_results["found_count"])
         self.publish_update_to_parameter("found_index", search_results["found_index"])
