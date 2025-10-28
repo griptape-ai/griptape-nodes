@@ -73,7 +73,7 @@ from griptape_cloud_client.types import UNSET
 if TYPE_CHECKING:
     from griptape_cloud_client.client import AuthenticatedClient
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 class GriptapeCloudApiMixin:

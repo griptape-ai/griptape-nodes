@@ -1,6 +1,6 @@
 [project]
 name = "griptape-nodes"
-version = "0.60.0"
+version = "0.60.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -28,6 +28,7 @@ dependencies = [
   "rich>=14.1.0",
   "semver>=3.0.4",
   "aiofiles>=25.1.0",
+  "ruamel.yaml>=0.18.15",
 ]
 
 [project.optional-dependencies]

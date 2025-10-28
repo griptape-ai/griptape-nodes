@@ -213,10 +213,12 @@ class StableDiffusionDiffEditPipelineRuntimeParameters(DiffusionPipelineRuntimeP
             if i < num_inference_steps - 1:
                 self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
                 self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
             return {}
 
         self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
-
+        self._node.progress_bar_component.initialize(num_inference_steps)  # type: ignore[reportAttributeAccessIssue]
+        self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
         # Get the final pipeline kwargs including mask and latents
         pipe_kwargs = {
             "prompt": self.get_prompt(),

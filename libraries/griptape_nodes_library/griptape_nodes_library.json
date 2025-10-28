@@ -610,6 +610,16 @@
       }
     },
     {
+      "class_name": "ListToDictKeys",
+      "file_path": "griptape_nodes_library/convert/list_to_dict_keys.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts a list to dictionary keys with empty string values",
+        "display_name": "List To Dict Keys",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "Agent",
       "file_path": "griptape_nodes_library/agents/agent.py",
       "metadata": {
@@ -709,6 +719,28 @@
         "display_name": "Eleven Labs Music Generation",
         "icon": "music",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "CombineAudio",
+      "file_path": "griptape_nodes_library/audio/combine_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Combine multiple audio tracks into a single audio file using ffmpeg",
+        "display_name": "Combine Audio",
+        "icon": "layers",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Extract detailed information from an audio file including duration, format, bitrate, and sample rate",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
       }
     },
     {
@@ -2167,6 +2199,7 @@
     }
   ],
   "workflows": [
+    "workflows/templates/fill_in_the_story.py",
     "workflows/templates/prompt_an_image.py",
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",

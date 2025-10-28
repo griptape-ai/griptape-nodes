@@ -22,6 +22,7 @@ class DisplayFloat(DataNode):
                 default_value=self.value,
                 type="float",
                 tooltip="The number to display",
+                ui_options={"progress_bar": True},
             )
         )
 

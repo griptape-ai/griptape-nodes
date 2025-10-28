@@ -27,7 +27,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 class ParamType(Enum):

@@ -6,7 +6,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError
+from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
 
 
 @dataclass
@@ -89,7 +89,10 @@ class NumericPaddingFormat(FormatSpec):
                     f"Numeric padding format :{self.width:0{self.width}d} "
                     f"cannot be applied to non-numeric value: {value}"
                 )
-                raise MacroResolutionError(msg)
+                raise MacroResolutionError(
+                    msg,
+                    failure_reason=MacroResolutionFailureReason.NUMERIC_PADDING_ON_NON_NUMERIC,
+                )
             value = int(value)
         return f"{value:0{self.width}d}"
 
@@ -99,7 +102,10 @@ class NumericPaddingFormat(FormatSpec):
             return int(value)
         except ValueError as e:
             msg = f"Cannot parse '{value}' as integer"
-            raise MacroResolutionError(msg) from e
+            raise MacroResolutionError(
+                msg,
+                failure_reason=MacroResolutionFailureReason.INVALID_INTEGER_PARSE,
+            ) from e
 
 
 @dataclass
@@ -154,7 +160,10 @@ class DateFormat(FormatSpec):
         """Apply date formatting."""
         # TODO(https://github.com/griptape-ai/griptape-nodes/issues/2717): Implement date formatting
         msg = "DateFormat not yet fully implemented"
-        raise MacroResolutionError(msg)
+        raise MacroResolutionError(
+            msg,
+            failure_reason=MacroResolutionFailureReason.DATE_FORMAT_NOT_IMPLEMENTED,
+        )
 
     def reverse(self, value: str) -> str:
         """Attempt to parse date string."""

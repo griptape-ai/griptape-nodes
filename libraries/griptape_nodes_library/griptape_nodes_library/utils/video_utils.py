@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192

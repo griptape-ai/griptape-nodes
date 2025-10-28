@@ -43,7 +43,12 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
-from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import (
+    ExecutionEvent,
+    ExecutionGriptapeNodeEvent,
+    ResultDetail,
+    ResultDetails,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
@@ -53,6 +58,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
     GetAllSecretValuesResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
+    PublishWorkflowProgressEvent,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
 )
@@ -76,13 +82,11 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         self,
         workflow_name: str,
         *,
-        execute_on_publish: bool = False,
         published_workflow_file_name: str | None = None,
         pickle_control_flow_result: bool = False,
     ) -> None:
         self._workflow_name = workflow_name
         self._published_workflow_file_name = published_workflow_file_name
-        self.execute_on_publish = execute_on_publish
         self._client = Client()
         self._gtc_client = AuthenticatedClient(
             base_url=self._get_base_url(),
@@ -91,9 +95,11 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         )
         self._gt_cloud_bucket_id: str | None = None
         self.pickle_control_flow_result = pickle_control_flow_result
+        self._progress: float = 0.0
 
     def publish_workflow(self) -> ResultPayload:
         try:
+            self._emit_progress_event(additional_progress=10.0, message="Validating workflow before publish...")
             validation_exceptions = self._validate_before_publish()
             if validation_exceptions:
                 result_details: list[ResultDetail] = [
@@ -102,27 +108,34 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 return PublishWorkflowResultFailure(result_details=ResultDetails(*result_details))
 
             # Get the workflow shape
+            self._emit_progress_event(additional_progress=10.0, message="Extracting workflow details...")
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
             self._create_run_input = self._gather_griptape_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
+            self._emit_progress_event(additional_progress=20.0, message="Packaging workflow...")
             package_path = self._package_workflow(self._workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
             # Deploy the workflow to Griptape Cloud
+            self._emit_progress_event(additional_progress=20.0, message="Deploying workflow to Griptape Cloud...")
             structure = self._deploy_workflow_to_cloud(package_path)
             logger.info(
                 "Workflow '%s' published successfully to Structure: %s", self._workflow_name, structure.structure_id
             )
 
             # Generate an executor workflow that can invoke the published structure
+            self._emit_progress_event(additional_progress=20.0, message="Generating executor workflow...")
             executor_workflow_path = self._generate_executor_workflow(structure.structure_id, workflow_shape)
+
+            self._emit_progress_event(additional_progress=20.0, message="Successfully published workflow!")
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
                 result_details=f"Workflow '{self._workflow_name}' published successfully to Griptape Cloud Structure '{structure.structure_id}'.",
+                metadata=self._get_publish_workflow_response_metadata(structure.structure_id),
             )
         except Exception as e:
             details = f"Failed to publish workflow '{self._workflow_name}'. Error: {e}"
@@ -131,11 +144,34 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 result_details=details,
             )
 
+    def _get_publish_workflow_response_metadata(self, structure_id: str) -> dict[str, Any]:
+        structure_url = urljoin(
+            self._get_base_url(api_url=False),
+            f"/structures/{structure_id}",
+        )
+        return {
+            "publish_target_link": structure_url,
+            "publish_target_link_description": "Click to view the published workflow as a Structure in Griptape Cloud.",
+        }
+
+    def _emit_progress_event(self, additional_progress: float, message: str) -> None:
+        self._progress += additional_progress
+        self._progress = min(self._progress, 100.0)
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=PublishWorkflowProgressEvent(
+                    progress=self._progress,
+                    message=message,
+                )
+            )
+        )
+        GriptapeNodes.EventManager().put_event(event)
+
     @classmethod
-    def _get_base_url(cls) -> str:
+    def _get_base_url(cls, *, api_url: bool = True) -> str:
         """Retrieves the base URL for the Griptape Cloud service."""
         base_url = os.environ.get("GT_CLOUD_BASE_URL") or "https://cloud.griptape.ai"
-        if not base_url.endswith("/api"):
+        if api_url and not base_url.endswith("/api"):
             base_url = urljoin(base_url, "/api")
         return base_url
 
@@ -514,6 +550,9 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             with requirements_file_path.open("w", encoding="utf-8") as requirements_file:
                 requirements_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
+                )
+                requirements_file.write(
+                    "griptape_cloud_client @ git+https://github.com/griptape-ai/griptape-cloud-python-client.git@main"
                 )
 
             archive_base_name = config_manager.workspace_path / workflow_name

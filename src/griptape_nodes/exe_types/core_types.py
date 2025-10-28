@@ -804,9 +804,18 @@ class DeprecationMessage(ParameterMessage):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    def __init__(self, name: str, ui_options: dict | None = None, **kwargs):
+    def __init__(self, name: str, ui_options: dict | None = None, *, collapsed: bool = False, **kwargs):
         super().__init__(name=name, **kwargs)
-        self._ui_options = ui_options or {}
+        if ui_options is None:
+            ui_options = {}
+        else:
+            ui_options = ui_options.copy()
+
+        # Add collapsed to ui_options if it's True
+        if collapsed:
+            ui_options["collapsed"] = collapsed
+
+        self._ui_options = ui_options
 
     @property
     def ui_options(self) -> dict:
@@ -816,6 +825,30 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     @BaseNodeElement.emits_update_on_write
     def ui_options(self, value: dict) -> None:
         self._ui_options = value
+
+    @property
+    def collapsed(self) -> bool:
+        """Get whether the parameter group is collapsed.
+
+        Returns:
+            True if the group is collapsed, False otherwise
+        """
+        return self._ui_options.get("collapsed", False)
+
+    @collapsed.setter
+    @BaseNodeElement.emits_update_on_write
+    def collapsed(self, value: bool) -> None:
+        """Set whether the parameter group is collapsed.
+
+        Args:
+            value: Whether to collapse the group
+        """
+        if value:
+            self.update_ui_options_key("collapsed", value)
+        else:
+            ui_options = self._ui_options.copy()
+            ui_options.pop("collapsed", None)
+            self._ui_options = ui_options
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a nested dictionary representation of this node and its children.

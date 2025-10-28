@@ -1,3 +1,4 @@
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape.drivers.audio_transcription.base_audio_transcription_driver import BaseAudioTranscriptionDriver
 from griptape.drivers.audio_transcription.openai import OpenAiAudioTranscriptionDriver
 from griptape.loaders import AudioLoader
@@ -9,7 +10,6 @@ from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
-from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact
 from griptape_nodes_library.utils.error_utils import try_throw_error
 

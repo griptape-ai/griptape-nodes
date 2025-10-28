@@ -1,18 +1,17 @@
 """Tests for project template layering and merge functionality."""
 
 from griptape_nodes.common.project_templates import (
-    DEFAULT_PROJECT_YAML_PATH,
+    DEFAULT_PROJECT_TEMPLATE,
     ProjectOverrideAction,
     ProjectOverrideCategory,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
 
-# Load system defaults once for all tests
-_SYSTEM_DEFAULTS_YAML = DEFAULT_PROJECT_YAML_PATH.read_text(encoding="utf-8")
+# Use system defaults directly (no longer loading from YAML)
+_SYSTEM_DEFAULTS = DEFAULT_PROJECT_TEMPLATE
 
 
 class TestPartialLoading:
@@ -142,8 +141,8 @@ name: "My Custom Project"
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         merge_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -176,8 +175,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -212,8 +211,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -243,8 +242,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -276,8 +275,8 @@ directories:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -306,8 +305,8 @@ directories:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -337,8 +336,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -367,8 +366,8 @@ name: "Custom Project"
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -402,8 +401,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -439,8 +438,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -473,8 +472,8 @@ directories:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -505,8 +504,8 @@ directories:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -539,8 +538,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         # Create a base template with the env var
@@ -582,8 +581,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -633,8 +632,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -682,8 +681,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -712,8 +711,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)

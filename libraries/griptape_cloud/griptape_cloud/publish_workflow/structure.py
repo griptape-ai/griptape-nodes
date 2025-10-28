@@ -13,7 +13,7 @@ PICKLE_DEFAULT = "REPLACE_PICKLE_DEFAULT"
 logging.basicConfig(
     level=logging.INFO,
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 load_dotenv()

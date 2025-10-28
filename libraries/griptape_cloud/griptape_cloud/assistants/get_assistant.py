@@ -6,7 +6,7 @@ from griptape_cloud.base.base_griptape_cloud_node import BaseGriptapeCloudNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 

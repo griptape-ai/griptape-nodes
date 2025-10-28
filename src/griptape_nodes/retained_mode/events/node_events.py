@@ -10,7 +10,11 @@ from griptape_nodes.exe_types.node_types import NodeResolutionState
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.exe_types.node_types import NodeDependencies
-    from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+    from griptape_nodes.retained_mode.events.connection_events import (
+        IncomingConnection,
+        ListConnectionsForNodeResultSuccess,
+        OutgoingConnection,
+    )
     from griptape_nodes.retained_mode.events.parameter_events import (
         GetParameterDetailsResultSuccess,
         GetParameterValueResultSuccess,
@@ -818,4 +822,89 @@ class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     """Flow for node retrieval failed.
 
     Common causes: node not found, node not assigned to any flow.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsRequest(RequestPayload):
+    """Check if a node can be reset to its default state.
+
+    Use when: Need to validate whether a node reset operation is allowed before attempting it,
+    implementing UI state (enabled/disabled reset button), or providing user feedback.
+    Checks for conditions that would prevent reset (locked state, missing metadata, etc.).
+
+    Args:
+        node_name: Name of the node to check (None for current context node)
+
+    Results: CanResetNodeToDefaultsResultSuccess (with can_reset flag and reason) | CanResetNodeToDefaultsResultFailure (validation failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node reset check completed successfully.
+
+    Args:
+        can_reset: True if the node can be reset to defaults, False otherwise
+        editor_tooltip_reason: Optional explanation if node cannot be reset (e.g., "Cannot reset locked node")
+    """
+
+    can_reset: bool
+    editor_tooltip_reason: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node reset check failed.
+
+    Common causes: node not found, no current context, no library metadata.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsRequest(RequestPayload):
+    """Reset a node to its default state while preserving connections where possible.
+
+    Use when: Need to reset a node's configuration back to defaults, clear customizations,
+    fix broken node state, or restore a node to its initial state. Creates a fresh instance
+    of the same node type and reconnects it to the workflow.
+
+    Args:
+        node_name: Name of the node to reset (None for current context node)
+
+    Results: ResetNodeToDefaultsResultSuccess (with reconnection status) | ResetNodeToDefaultsResultFailure (reset failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node reset to defaults successfully.
+
+    Args:
+        node_name: Name of the reset node
+        failed_incoming_connections: List of incoming connections that failed to reconnect
+        failed_outgoing_connections: List of outgoing connections that failed to reconnect
+    """
+
+    node_name: str
+    failed_incoming_connections: list[IncomingConnection]
+    failed_outgoing_connections: list[OutgoingConnection]
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultFailure(ResultPayloadFailure):
+    """Node reset to defaults failed.
+
+    Common causes: node not found, no current context, failed to create new node,
+    failed to delete old node, failed to rename new node.
     """

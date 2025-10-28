@@ -18,7 +18,7 @@ from typing import Any
 from griptape_cloud.publish_workflow.griptape_cloud_published_workflow import GriptapeCloudPublishedWorkflow
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 @dataclass

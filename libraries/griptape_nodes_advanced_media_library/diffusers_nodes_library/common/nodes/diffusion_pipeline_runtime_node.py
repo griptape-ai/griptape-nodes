@@ -13,6 +13,7 @@ from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
+from griptape_nodes.exe_types.param_components.progress_bar_component import ProgressBarComponent
 from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -22,13 +23,16 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, ControlNode):
     STATIC_PARAMS: ClassVar = ["pipeline"]
     START_PARAMS: ClassVar = ["pipeline"]
-    END_PARAMS: ClassVar = ["logs"]
+    END_PARAMS: ClassVar = ["progress", "logs"]
 
     def __init__(self, **kwargs) -> None:
         self._initializing = True
         super().__init__(**kwargs)
         self.pipe_params = DiffusionPipelineParameters(self)
         self.pipe_params.add_input_parameters()
+
+        self.progress_bar_component = ProgressBarComponent(self)
+        self.progress_bar_component.add_property_parameters()
 
         self.log_params = LogParameter(self)
         self.log_params.add_output_parameters()
@@ -105,6 +109,7 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
 
     def preprocess(self) -> None:
         self.pipe_params.runtime_parameters.preprocess()
+        self.progress_bar_component.reset()
         self.log_params.clear_logs()
 
     def _get_pipeline(self) -> DiffusionPipeline:

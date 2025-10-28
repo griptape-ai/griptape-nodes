@@ -4,7 +4,7 @@ import logging
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 def check_cleanup_intermediates_directory() -> None:

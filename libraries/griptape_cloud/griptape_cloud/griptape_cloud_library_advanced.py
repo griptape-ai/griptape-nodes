@@ -7,7 +7,7 @@ from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowR
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
@@ -18,7 +18,6 @@ def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
 
     publisher = GriptapeCloudPublisher(
         workflow_name=request.workflow_name,
-        execute_on_publish=request.execute_on_publish,
         published_workflow_file_name=request.published_workflow_file_name,
         pickle_control_flow_result=request.pickle_control_flow_result,
     )
