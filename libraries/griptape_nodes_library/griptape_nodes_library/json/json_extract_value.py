@@ -9,6 +9,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class JsonExtractValue(DataNode):
@@ -88,7 +90,9 @@ class JsonExtractValue(DataNode):
                 result = "{}"
 
         # Set the output
-        self.set_parameter_value("output", result)
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(parameter_name="output", value=result, node_name=self.name)
+        )
         self.publish_update_to_parameter("output", result)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:

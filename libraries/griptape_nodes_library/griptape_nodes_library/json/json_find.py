@@ -316,6 +316,12 @@ class JsonFind(DataNode):
             )
         )
 
+        # publish updates to make sure the ui_updates. Without this, the SetParameterValueRequest worked for
+        # downstream nodes, but the ui_updates were not triggered.
+        self.publish_update_to_parameter("found_item", search_results["found_item"])
+        self.publish_update_to_parameter("found_count", search_results["found_count"])
+        self.publish_update_to_parameter("found_index", search_results["found_index"])
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["json", "search_field", "search_value", "search_mode", "return_mode", "case_sensitive"]:
             self._perform_search()
