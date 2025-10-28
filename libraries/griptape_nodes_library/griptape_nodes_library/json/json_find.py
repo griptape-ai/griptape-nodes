@@ -11,6 +11,8 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 
@@ -297,20 +299,22 @@ class JsonFind(DataNode):
         # Perform the search
         search_results = self._find_items(json_data, criteria)
 
-        # Set parameter_output_values first (for UI updates)
-        self.parameter_output_values["found_item"] = search_results["found_item"]
-        self.parameter_output_values["found_count"] = search_results["found_count"]
-        self.parameter_output_values["found_index"] = search_results["found_index"]
-
-        # Set the parameter values
-        self.set_parameter_value("found_item", search_results["found_item"], emit_change=True)
-        self.set_parameter_value("found_count", search_results["found_count"], emit_change=True)
-        self.set_parameter_value("found_index", search_results["found_index"], emit_change=True)
-
-        # Publish updates to notify downstream nodes
-        self.publish_update_to_parameter("found_item", search_results["found_item"])
-        self.publish_update_to_parameter("found_count", search_results["found_count"])
-        self.publish_update_to_parameter("found_index", search_results["found_index"])
+        # Trigger the SetParameterValueRequest for each parameter
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="found_item", value=search_results["found_item"], node_name=self.name
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="found_count", value=search_results["found_count"], node_name=self.name
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="found_index", value=search_results["found_index"], node_name=self.name
+            )
+        )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["json", "search_field", "search_value", "search_mode", "return_mode", "case_sensitive"]:
