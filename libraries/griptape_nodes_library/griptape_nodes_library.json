@@ -1049,6 +1049,17 @@
       }
     },
     {
+      "class_name": "JsonFind",
+      "file_path": "griptape_nodes_library/json/json_find.py",
+      "metadata": {
+        "category": "json",
+        "description": "Find items in JSON arrays based on search criteria",
+        "display_name": "JSON Find",
+        "icon": "search",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "ToFloat",
       "file_path": "griptape_nodes_library/convert/to_float.py",
       "metadata": {
