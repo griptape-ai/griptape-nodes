@@ -157,12 +157,12 @@ search_field = "users[2].name"          # Search in name of third user
 # Input JSON: [
 #   {
 #     "relationships": {
-#       "entity": {"data": {"name": "convertable", "type": "Asset"}}
+#       "entity": {"data": {"name": "convertible", "type": "Asset"}}
 #     }
 #   }
 # ]
 # search_field: "relationships.entity.data.name"
-# search_value: "convertable"
+# search_value: "convertible"
 # search_mode: "exact"
 # return_mode: "first"
 # Result: The matching item
