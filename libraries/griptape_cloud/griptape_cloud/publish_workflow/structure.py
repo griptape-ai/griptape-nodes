@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 LIBRARIES = ["REPLACE_LIBRARIES"]
 PICKLE_DEFAULT = "REPLACE_PICKLE_DEFAULT"
 WEBHOOK_MODE_ARGS_COUNT = 4
-START_FLOW_NODE_NAME = "Start Flow"
+START_FLOW_NODE_NAME = "Griptape Cloud Start Flow"
 
 
 logging.basicConfig(
@@ -21,6 +21,7 @@ logger.setLevel(logging.INFO)
 
 load_dotenv()
 os.environ["GTN_CONFIG_STORAGE_BACKEND"] = "gtc"
+os.environ["GTN_ENABLE_WORKSPACE_FILE_WATCHING"] = "false"
 
 
 def _set_libraries(libraries: list[str]) -> None:

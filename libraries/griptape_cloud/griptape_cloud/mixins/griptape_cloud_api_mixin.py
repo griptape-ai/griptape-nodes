@@ -1,7 +1,7 @@
 import logging
 import time
 from collections.abc import Generator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from griptape_cloud_client.api.assets.create_asset import sync as create_asset
 from griptape_cloud_client.api.assets.create_asset_url import sync as create_asset_url
@@ -22,6 +22,7 @@ from griptape_cloud_client.api.structure_runs.get_structure_run import sync as g
 from griptape_cloud_client.api.structures.list_structures import sync as list_structures
 from griptape_cloud_client.models.assert_url_operation import AssertUrlOperation
 from griptape_cloud_client.models.assistant_event_detail import AssistantEventDetail
+from griptape_cloud_client.models.client_error_response_content import ClientErrorResponseContent
 from griptape_cloud_client.models.create_asset_request_content import CreateAssetRequestContent
 from griptape_cloud_client.models.create_asset_response_content import (
     CreateAssetResponseContent,
@@ -64,6 +65,7 @@ from griptape_cloud_client.models.list_structure_deployments_response_content im
 from griptape_cloud_client.models.list_structures_response_content import (
     ListStructuresResponseContent,
 )
+from griptape_cloud_client.models.service_error_response_content import ServiceErrorResponseContent
 from griptape_cloud_client.models.structure_deployment_detail import StructureDeploymentDetail
 from griptape_cloud_client.models.structure_run_status import StructureRunStatus
 from griptape_cloud_client.models.update_bucket_request_content import UpdateBucketRequestContent
@@ -80,6 +82,13 @@ class GriptapeCloudApiMixin:
     """Mixin class providing shared Griptape Cloud API functionality."""
 
     gtc_client: "AuthenticatedClient"
+
+    def format_error_message_for_response(
+        self, message: str, response: ClientErrorResponseContent | ServiceErrorResponseContent | Any
+    ) -> str:
+        if isinstance(response, (ClientErrorResponseContent, ServiceErrorResponseContent)) and response.errors:
+            return f"{message} Errors: {response.errors}"
+        return message
 
     def _get_deployment(self, deployment_id: str) -> GetDeploymentResponseContent:
         try:
