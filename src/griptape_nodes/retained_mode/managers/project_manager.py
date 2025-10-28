@@ -58,7 +58,6 @@ from griptape_nodes.retained_mode.events.project_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -264,11 +263,13 @@ class ProjectManager:
             result_details=f"Template loaded successfully with status: {validation.status}",
         )
 
-    def on_get_project_template_request(self, request: GetProjectTemplateRequest) -> ResultPayload:
+    def on_get_project_template_request(
+        self, request: GetProjectTemplateRequest
+    ) -> GetProjectTemplateResultSuccess | GetProjectTemplateResultFailure:
         """Get cached template for a workspace path."""
         if request.project_path not in self.registered_template_status:
             return GetProjectTemplateResultFailure(
-                result_details=f"Template not loaded yet: {request.project_path}",
+                result_details=f"Attempted to get project template for '{request.project_path}'. Failed because template not loaded yet",
             )
 
         validation = self.registered_template_status[request.project_path]
@@ -276,13 +277,13 @@ class ProjectManager:
 
         if template is None:
             return GetProjectTemplateResultFailure(
-                result_details=f"Template not usable (status: {validation.status})",
+                result_details=f"Attempted to get project template for '{request.project_path}'. Failed because template not usable (status: {validation.status})",
             )
 
         return GetProjectTemplateResultSuccess(
             template=template,
             validation=validation,
-            result_details="Project template retrieved from cache",
+            result_details=f"Successfully retrieved project template for '{request.project_path}'. Status: {validation.status}",
         )
 
     def on_get_macro_for_situation_request(
@@ -442,17 +443,17 @@ class ProjectManager:
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
-    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> ResultPayload:
+    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
         """Set which project.yml user has selected."""
         self.current_project_path = request.project_path
 
         if request.project_path is None:
-            logger.info("Current project set to: No Project")
-        else:
-            logger.info("Current project set to: %s", request.project_path)
+            return SetCurrentProjectResultSuccess(
+                result_details="Successfully set current project. No project selected",
+            )
 
         return SetCurrentProjectResultSuccess(
-            result_details="Current project set successfully",
+            result_details=f"Successfully set current project. Path: {request.project_path}",
         )
 
     def on_get_current_project_request(
@@ -469,7 +470,7 @@ class ProjectManager:
             result_details=f"Successfully retrieved current project. Path: {self.current_project_path}",
         )
 
-    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> ResultPayload:
+    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> SaveProjectTemplateResultFailure:
         """Save user customizations to project.yml.
 
         Flow:
@@ -480,11 +481,9 @@ class ProjectManager:
 
         TODO: Implement saving logic when template system merges
         """
-        logger.debug("Saving project template: %s", request.project_path)
-
         return SaveProjectTemplateResultFailure(
             project_path=request.project_path,
-            result_details="Template saving not yet implemented (stub)",
+            result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template saving not yet implemented",
         )
 
     def on_match_path_against_macro_request(
@@ -634,10 +633,10 @@ class ProjectManager:
         else:
             logger.debug("Successfully loaded default project template")
 
-    def on_get_all_situations_for_project_request(self, request: GetAllSituationsForProjectRequest) -> ResultPayload:
+    def on_get_all_situations_for_project_request(
+        self, request: GetAllSituationsForProjectRequest
+    ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
         """Get all situation names and schemas from a project template."""
-        logger.debug("Getting all situations for project: %s", request.project_path)
-
         template_info = self.registered_template_status.get(request.project_path)
 
         if template_info is None:
@@ -645,13 +644,16 @@ class ProjectManager:
             template_info = self.registered_template_status.get(request.project_path)
 
         if template_info is None or template_info.status != ProjectValidationStatus.GOOD:
-            return GetAllSituationsForProjectResultFailure(result_details="Project template not available or invalid")
+            return GetAllSituationsForProjectResultFailure(
+                result_details=f"Attempted to get all situations for project '{request.project_path}'. Failed because project template not available or invalid"
+            )
 
         template = self.successful_templates[request.project_path]
         situations = {situation_name: situation.macro for situation_name, situation in template.situations.items()}
 
         return GetAllSituationsForProjectResultSuccess(
-            situations=situations, result_details=f"Found {len(situations)} situations"
+            situations=situations,
+            result_details=f"Successfully retrieved all situations for project '{request.project_path}'. Found {len(situations)} situations",
         )
 
     # Helper methods (private)
