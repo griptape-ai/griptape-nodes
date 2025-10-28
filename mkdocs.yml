@@ -187,6 +187,7 @@ nav:
         - Create Int List: nodes/lists/create_int_list.md
         - Create Bool List: nodes/lists/create_bool_list.md
         - Create Text List: nodes/lists/create_text_list.md
+        - Select From List: nodes/lists/select_from_list.md
     - Number:
         - Input Nodes:
           - Float Input: nodes/number/create_float.md
