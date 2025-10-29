@@ -26,6 +26,9 @@ from griptape_nodes.common.project_templates import (
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
+    AttemptMapAbsolutePathToProjectRequest,
+    AttemptMapAbsolutePathToProjectResultFailure,
+    AttemptMapAbsolutePathToProjectResultSuccess,
     GetAllSituationsForProjectRequest,
     GetAllSituationsForProjectResultFailure,
     GetAllSituationsForProjectResultSuccess,
@@ -179,6 +182,9 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
             event_manager.assign_manager_to_request_type(
                 GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
+            )
+            event_manager.assign_manager_to_request_type(
+                AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
             )
 
             # Register app initialization listener
@@ -586,114 +592,6 @@ class ProjectManager:
             result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 
-    def absolute_path_to_macro_path(self, absolute_path: Path) -> str | None:  # noqa: C901
-        """Convert an absolute path to macro form using longest prefix matching.
-
-        Resolves all project directories at runtime (to support env vars and macros),
-        then checks if the absolute path is within any of them.
-        Uses longest prefix matching to find the best match.
-
-        Args:
-            absolute_path: Absolute path to convert (e.g., /Users/james/project/outputs/file.png)
-
-        Returns:
-            Macro-ified path (e.g., {outputs}/file.png) if path is inside a project directory,
-            None if path is outside all project directories
-
-        Raises:
-            RuntimeError: If no current project is set, project template not loaded,
-                         secrets manager is not available, or directory resolution fails
-
-        Examples:
-            /Users/james/project/outputs/renders/file.png → {outputs}/renders/file.png
-            /Users/james/project/outputs/inputs/file.png → {outputs}/inputs/file.png (NOT {outputs}/{inputs}/...)
-            /Users/james/Downloads/file.png → None (outside project)
-        """
-        current_project_request = GetCurrentProjectRequest()
-        current_project_result = self.on_get_current_project_request(current_project_request)
-
-        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
-            msg = "No current project set or project template not loaded"
-            raise RuntimeError(msg)  # noqa: TRY004
-
-        project_info = current_project_result.project_info
-        template = project_info.template
-
-        project_base_dir = project_info.project_base_dir
-
-        if self._secrets_manager is None:
-            msg = "SecretsManager not available - cannot resolve directory macros"
-            raise RuntimeError(msg)
-
-        # Build builtin variables dict for directory resolution
-        builtin_vars: dict[str, str | int] = {}
-        for var_name in BUILTIN_VARIABLES:
-            builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
-
-        # Find all matching directories (where absolute_path is inside the directory)
-        class DirectoryMatch(NamedTuple):
-            directory_name: str
-            resolved_path: Path
-            prefix_length: int
-
-        matches: list[DirectoryMatch] = []
-
-        for directory_name in template.directories:
-            # Get parsed macro from project info cache
-            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
-            if parsed_macro is None:
-                msg = f"Directory '{directory_name}' not found in parsed schemas"
-                raise RuntimeError(msg)
-
-            try:
-                resolved_path_str = parsed_macro.resolve(builtin_vars, self._secrets_manager)
-            except MacroResolutionError as e:
-                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
-                raise RuntimeError(msg) from e
-
-            # Make absolute (resolve relative paths against project base directory)
-            resolved_dir_path = Path(resolved_path_str)
-            if not resolved_dir_path.is_absolute():
-                resolved_dir_path = (project_base_dir / resolved_dir_path).resolve()
-
-            # Check if absolute_path is inside this directory
-            try:
-                # relative_to will raise ValueError if not a subpath
-                _ = absolute_path.relative_to(resolved_dir_path)
-                # Track the match with its prefix length (for longest match)
-                matches.append(
-                    DirectoryMatch(
-                        directory_name=directory_name,
-                        resolved_path=resolved_dir_path,
-                        prefix_length=len(resolved_dir_path.parts),
-                    )
-                )
-            except ValueError:
-                # Not a subpath, skip
-                continue
-
-        if not matches:
-            return None
-
-        # Use longest prefix match (most specific directory)
-        best_match = matches[0]
-        for match in matches:
-            if match.prefix_length > best_match.prefix_length:
-                best_match = match
-
-        # Calculate relative path from the matched directory
-        relative_path = absolute_path.relative_to(best_match.resolved_path)
-
-        # Convert to macro form
-        if str(relative_path) == ".":
-            # File is directly in the directory root
-            # Example: /Users/james/project/outputs → {outputs}
-            return f"{{{best_match.directory_name}}}"
-
-        # File is in a subdirectory
-        # Example: /Users/james/project/outputs/renders/final.png → {outputs}/renders/final.png
-        return f"{{{best_match.directory_name}}}/{relative_path.as_posix()}"
-
     def on_get_state_for_macro_request(  # noqa: C901
         self, request: GetStateForMacroRequest
     ) -> GetStateForMacroResultSuccess | GetStateForMacroResultFailure:
@@ -806,6 +704,62 @@ class ProjectManager:
             result_details=f"Successfully retrieved all situations. Found {len(situations)} situations",
         )
 
+    def on_attempt_map_absolute_path_to_project_request(
+        self, request: AttemptMapAbsolutePathToProjectRequest
+    ) -> AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure:
+        """Find out if an absolute path exists anywhere within a Project directory.
+
+        Returns Success with mapped_path if inside project (macro form returned).
+        Returns Success with None if outside project (valid answer: "not in project").
+        Returns Failure if operation cannot be performed (no project, no secrets manager).
+
+        Args:
+            request: Request containing the absolute path to check
+
+        Returns:
+            Success with mapped_path if path is inside project
+            Success with None if path is outside project
+            Failure if operation cannot be performed
+        """
+        # Check prerequisites - return Failure if missing
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
+
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details="Attempted to map absolute path. Failed because no current project is set"
+            )
+
+        if self._secrets_manager is None:
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details="Attempted to map absolute path. Failed because SecretsManager not available"
+            )
+
+        project_info = current_project_result.project_info
+
+        # Try to map the path
+        try:
+            mapped_path = self._absolute_path_to_macro_path(request.absolute_path, project_info)
+        except (RuntimeError, NotImplementedError) as e:
+            # Variable resolution failed - this is a Failure (can't complete the operation)
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Failed because: {e}"
+            )
+
+        # Path successfully checked
+        if mapped_path is None:
+            # Success: we successfully determined the path is outside project
+            return AttemptMapAbsolutePathToProjectResultSuccess(
+                mapped_path=None,
+                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Path is outside all project directories",
+            )
+
+        # Success: path mapped to macro form
+        return AttemptMapAbsolutePathToProjectResultSuccess(
+            mapped_path=mapped_path,
+            result_details=f"Successfully mapped absolute path to '{mapped_path}'",
+        )
+
     # Helper methods (private)
 
     @staticmethod
@@ -901,6 +855,129 @@ class ProjectManager:
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
                 raise ValueError(msg)
+
+    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
+        self, absolute_path: Path, project_info: ProjectInfo
+    ) -> str | None:
+        """Convert an absolute path to macro form using longest prefix matching.
+
+        Resolves all project directories at runtime (to support env vars and macros),
+        then checks if the absolute path is within any of them.
+        Uses longest prefix matching to find the best match.
+
+        Args:
+            absolute_path: Absolute path to convert (e.g., /Users/james/project/outputs/file.png)
+            project_info: Information about the current project
+
+        Returns:
+            Macro-ified path (e.g., {outputs}/file.png) if inside a project directory,
+            or None if outside all project directories
+
+        Raises:
+            RuntimeError: If directory resolution fails or builtin variable cannot be resolved
+            NotImplementedError: If a required builtin variable is not yet implemented
+
+        Examples:
+            /Users/james/project/outputs/renders/file.png → "{outputs}/renders/file.png"
+            /Users/james/project/outputs/inputs/file.png → "{outputs}/inputs/file.png"
+            /Users/james/Downloads/file.png → None
+        """
+        template = project_info.template
+        project_base_dir = project_info.project_base_dir
+
+        # Secrets manager must be available (checked by caller)
+        if self._secrets_manager is None:
+            msg = "SecretsManager not available"
+            raise RuntimeError(msg)
+        secrets_manager = self._secrets_manager
+
+        # Collect all variables used across ALL directory macros
+        variables_needed: set[str] = set()
+        for parsed_macro in project_info.parsed_directory_schemas.values():
+            variable_infos = parsed_macro.get_variables()
+            variables_needed.update(var_info.name for var_info in variable_infos)
+
+        # Build builtin variables dict - only resolve variables actually needed by the macros
+        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
+        builtin_vars: dict[str, str | int] = {}
+        for var_name in variables_needed:
+            if var_name in BUILTIN_VARIABLES:
+                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
+
+        # Find all matching directories (where absolute_path is inside the directory)
+        class DirectoryMatch(NamedTuple):
+            directory_name: str
+            resolved_path: Path
+            prefix_length: int
+
+        matches: list[DirectoryMatch] = []
+
+        for directory_name in template.directories:
+            # Get parsed macro from project info cache
+            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
+            if parsed_macro is None:
+                msg = f"Directory '{directory_name}' not found in parsed schemas"
+                raise RuntimeError(msg)
+
+            try:
+                resolved_path_str = parsed_macro.resolve(builtin_vars, secrets_manager)
+            except MacroResolutionError as e:
+                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
+                raise RuntimeError(msg) from e
+
+            # Make absolute (resolve relative paths against project base directory)
+            resolved_dir_path = Path(resolved_path_str)
+            if not resolved_dir_path.is_absolute():
+                resolved_dir_path = (project_base_dir / resolved_dir_path).resolve()
+
+            # Check if absolute_path is inside this directory
+            try:
+                # relative_to will raise ValueError if not a subpath
+                _ = absolute_path.relative_to(resolved_dir_path)
+                # Track the match with its prefix length (for longest match)
+                matches.append(
+                    DirectoryMatch(
+                        directory_name=directory_name,
+                        resolved_path=resolved_dir_path,
+                        prefix_length=len(resolved_dir_path.parts),
+                    )
+                )
+            except ValueError:
+                # Not a subpath, skip
+                continue
+
+        # If no defined directories matched, try {project_dir} as fallback
+        if not matches:
+            # Check if path is inside project_base_dir
+            try:
+                relative_path = absolute_path.relative_to(project_base_dir)
+
+                # Convert to {project_dir} macro form
+                if str(relative_path) == ".":
+                    return "{project_dir}"
+                return f"{{project_dir}}/{relative_path.as_posix()}"
+            except ValueError:
+                # Not inside project_base_dir either
+                return None
+
+        # Use longest prefix match (most specific directory)
+        best_match = matches[0]
+        for match in matches:
+            if match.prefix_length > best_match.prefix_length:
+                best_match = match
+
+        # Calculate relative path from the matched directory
+        relative_path = absolute_path.relative_to(best_match.resolved_path)
+
+        # Convert to macro form
+        if str(relative_path) == ".":
+            # File is directly in the directory root
+            # Example: /Users/james/project/outputs → {outputs}
+            return f"{{{best_match.directory_name}}}"
+
+        # File is in a subdirectory
+        # Example: /Users/james/project/outputs/renders/final.png → {outputs}/renders/final.png
+        return f"{{{best_match.directory_name}}}/{relative_path.as_posix()}"
 
     # Private helper methods
 

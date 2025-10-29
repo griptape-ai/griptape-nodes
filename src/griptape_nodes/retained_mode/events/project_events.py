@@ -421,6 +421,86 @@ class GetStateForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 
 @dataclass
 @PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectRequest(RequestPayload):
+    """Find out if an absolute path exists anywhere within a Project directory.
+
+    Use when: User selects or types an absolute path via FilePicker and you need to know:
+      1. Is this path inside any project directory?
+      2. If yes, what's the macro form (e.g., {outputs}/file.png)?
+
+    This enables automatic conversion of absolute paths to portable macro form for workflow portability.
+
+    Uses longest prefix matching to find the most specific directory match.
+    Returns Success with mapped_path if inside project, or Success with None if outside.
+    Returns Failure if operation cannot be performed (no project loaded, secrets unavailable).
+
+    Args:
+        absolute_path: The absolute filesystem path to check
+
+    Results: AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure
+
+    Examples:
+        Path inside project directory:
+            Request: absolute_path = /Users/james/project/outputs/renders/image.png
+            Result: mapped_path = "{outputs}/renders/image.png"
+
+        Path outside project:
+            Request: absolute_path = /Users/james/Downloads/image.png
+            Result: mapped_path = None
+
+        Path at directory root:
+            Request: absolute_path = /Users/james/project/outputs
+            Result: mapped_path = "{outputs}"
+    """
+
+    absolute_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Path check completed successfully.
+
+    Success means the check was performed (not necessarily that a match was found).
+    - mapped_path is NOT None: Path is inside a project directory (macro form returned)
+    - mapped_path is None: Path is outside all project directories (valid answer)
+
+    Args:
+        mapped_path: The macro form if path is inside a project directory (e.g., "{outputs}/file.png"),
+                    or None if path is outside all project directories
+
+    Examples:
+        Path inside project:
+            mapped_path = "{outputs}/renders/image.png"
+            result_details = "Successfully mapped absolute path to '{outputs}/renders/image.png'"
+
+        Path outside project:
+            mapped_path = None
+            result_details = "Attempted to map absolute path '/Users/james/Downloads/image.png'. Path is outside all project directories"
+    """
+
+    mapped_path: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Path mapping attempt failed.
+
+    Returned when the operation cannot be performed (no current project, secrets manager unavailable).
+    This is distinct from "path is outside project" which returns Success with None values.
+
+    Examples:
+        No current project:
+            result_details = "Attempted to map absolute path. Failed because no current project is set"
+
+        Secrets manager unavailable:
+            result_details = "Attempted to map absolute path. Failed because SecretsManager not available"
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class GetAllSituationsForProjectRequest(RequestPayload):
     """Get all situation names and schemas from current project template."""
 

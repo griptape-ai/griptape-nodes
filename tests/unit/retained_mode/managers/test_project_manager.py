@@ -7,6 +7,8 @@ import pytest
 
 from griptape_nodes.common.macro_parser import MacroMatchFailureReason
 from griptape_nodes.retained_mode.events.project_events import (
+    AttemptMapAbsolutePathToProjectRequest,
+    AttemptMapAbsolutePathToProjectResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
@@ -784,3 +786,363 @@ class TestProjectManagerListProjectTemplates:
         assert len(result.failed_to_load) == 1
         assert result.successfully_loaded[0].project_id == success_id
         assert result.failed_to_load[0].project_id == str(failed_path)
+
+
+class TestProjectManagerAttemptMapAbsolutePathToProject:
+    """Test ProjectManager AttemptMapAbsolutePathToProject event handler."""
+
+    @pytest.fixture
+    def project_manager(self) -> ProjectManager:
+        """Create a ProjectManager instance for testing."""
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        return ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+    def test_attempt_map_path_inside_project_directory(self, project_manager: ProjectManager) -> None:
+        """Test mapping an absolute path that's inside a project directory."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Set up project with outputs directory
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        # Mock secrets manager
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes.ConfigManager() and ContextManager()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
+            mock_gn.ContextManager.return_value = mock_context
+
+            # Test path inside outputs directory
+            absolute_path = project_base / "outputs" / "renders" / "file.png"
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+            assert result.mapped_path == "{outputs}/renders/file.png"
+
+    def test_attempt_map_path_outside_project_directories(self, project_manager: ProjectManager) -> None:
+        """Test mapping an absolute path that's outside all project directories."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Set up project
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        # Mock secrets manager
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes.ConfigManager() and ContextManager()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
+            mock_gn.ContextManager.return_value = mock_context
+
+            # Test path outside project
+            absolute_path = Path("/Users/test/Downloads/file.png")
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+            assert result.mapped_path is None
+
+    def test_attempt_map_path_no_current_project(self, project_manager: ProjectManager) -> None:
+        """Test mapping when no current project is set (returns failure)."""
+        from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
+
+        # No project set up
+
+        absolute_path = Path("/Users/test/project/outputs/file.png")
+
+        request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+        result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+        # Should return failure because no current project (cannot perform operation)
+        assert isinstance(result, AttemptMapAbsolutePathToProjectResultFailure)
+        assert "no current project" in str(result.result_details).lower()
+
+    def test_attempt_map_path_longest_prefix_matching(self, project_manager: ProjectManager) -> None:
+        """Test that longest prefix matching works correctly for nested directories."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Set up project
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        # Mock secrets manager
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes.ConfigManager() and ContextManager()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
+            mock_gn.ContextManager.return_value = mock_context
+
+            # Test path inside outputs/inputs subdirectory (should match outputs, not inputs)
+            absolute_path = project_base / "outputs" / "inputs" / "file.png"
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+            assert result.mapped_path == "{outputs}/inputs/file.png"
+
+    def test_attempt_map_path_at_directory_root(self, project_manager: ProjectManager) -> None:
+        """Test mapping a path that's exactly at a directory root (no subdirectories)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Set up project
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+
+        # Mock secrets manager
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes.ConfigManager() and ContextManager()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)  # workspace_dir
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False  # No workflow needed for this test
+            mock_gn.ContextManager.return_value = mock_context
+
+            # Test path exactly at outputs directory
+            absolute_path = project_base / "outputs"
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+            assert result.mapped_path == "{outputs}"
+
+    def test_attempt_map_path_fallback_to_project_dir(self, project_manager: ProjectManager) -> None:
+        """Test that paths not in defined directories fall back to {project_dir}."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Set up project
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes.ConfigManager() and ContextManager()
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False
+            mock_gn.ContextManager.return_value = mock_context
+
+            # Test path inside project_base_dir but not in any defined directory
+            absolute_path = project_base / "random_folder" / "file.txt"
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess)
+            assert result.mapped_path == "{project_dir}/random_folder/file.txt"
+
+    def test_attempt_map_path_with_unresolvable_builtin_variable(self, project_manager: ProjectManager) -> None:
+        """Test that if a directory macro needs an unresolvable builtin, returns failure."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DirectoryDefinition,
+            ProjectTemplate,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        # Create a custom template with a directory that uses workflow_name (will fail without workflow)
+        custom_template = ProjectTemplate(
+            project_template_schema_version="0.1.0",
+            name="test_project",
+            directories={
+                "outputs": DirectoryDefinition(name="outputs", path_macro="{workflow_name}_outputs"),
+            },
+            situations={},
+        )
+
+        project_base = Path("/Users/test/project")
+
+        # Parse directory macros
+        directory_schemas = {}
+        for dir_name, dir_def in custom_template.directories.items():
+            directory_schemas[dir_name] = ParsedMacro(dir_def.path_macro)
+
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=custom_template,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project_manager._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+        project_manager._current_project_id = SYSTEM_DEFAULTS_KEY
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        # Mock GriptapeNodes - workflow_name will fail because no workflow
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False  # No workflow available
+            mock_gn.ContextManager.return_value = mock_context
+
+            absolute_path = project_base / "outputs" / "file.png"
+
+            request = AttemptMapAbsolutePathToProjectRequest(absolute_path=absolute_path)
+            result = project_manager.on_attempt_map_absolute_path_to_project_request(request)
+
+            # Should return failure because workflow_name cannot be resolved (operation cannot complete)
+            assert isinstance(result, AttemptMapAbsolutePathToProjectResultFailure)
+            result_message = str(result.result_details)
+            assert "failed" in result_message.lower()
+            assert "workflow" in result_message.lower() or "no current workflow" in result_message.lower()
