@@ -194,7 +194,7 @@ class OSManager:
         path_str = str(path.resolve())
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
-        if self.is_windows() and len(path_str) > WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
+        if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
             # UNC paths (\\server\share) need \\?\UNC\ prefix
             if path_str.startswith("\\\\"):
                 return f"\\\\?\\UNC\\{path_str[2:]}"
