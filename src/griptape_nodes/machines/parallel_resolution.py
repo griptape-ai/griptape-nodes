@@ -685,6 +685,7 @@ class ExecuteDagState(State):
             if isinstance(node_reference.node_reference, StartLoopNode):
                 # Call handle_done_state to clear it from everything
                 end_loop_node = node_reference.node_reference.end_node
+                node_reference.node_state = NodeState.DONE
                 if end_loop_node is None:
                     msg = (
                         f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"

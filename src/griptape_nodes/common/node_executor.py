@@ -492,9 +492,10 @@ class NodeExecutor:
                 msg = f"Failed to deserialize flow for iteration {iteration_index}. Error: {deserialize_result.result_details}"
                 raise TypeError(msg)
 
-            deserialized_flows.append((deserialize_result, iteration_index))
+            deserialized_flows.append((iteration_index, deserialize_result.node_name_mappings))
 
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
+        return
 
         # Step 6: Set input values on start nodes for each iteration
         from griptape_nodes.retained_mode.events.parameter_events import (
@@ -502,45 +503,46 @@ class NodeExecutor:
             SetParameterValueResultSuccess,
         )
         # Set input values on StartFlow nodes for each deserialized flow
-        for flow_name, iteration_index in deserialized_flows:
-            # Get the flow
-            iteration_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
+        for iteration_index, node_name_mappings in deserialized_flows:
+            parameter_values = parameter_values_to_set_before_run[iteration_index]
 
-            # Find the StartFlow node in this flow
-            start_flow_node = None
-            for flow_node in iteration_flow.nodes.values():
-                if isinstance(flow_node, StartNode):
-                    start_flow_node = flow_node
-                    break
+            # parameter_values format: {startflow_param_name: value}
+            # We need to map these to the actual parameter names in the deserialized flow
+            # using the parameter_name_mappings to find which node/parameter to set
+            for startflow_param_name, value_to_set in parameter_values.items():
+                # Find which original node/parameter this corresponds to
+                original_node_param = package_result.parameter_name_mappings.get(startflow_param_name)
+                if original_node_param is None:
+                    logger.warning(
+                        "Could not find mapping for parameter '%s' in iteration %d",
+                        startflow_param_name,
+                        iteration_index,
+                    )
+                    continue
 
-            if start_flow_node is None:
-                msg = f"Failed to find StartFlow node in iteration flow {flow_name}"
-                raise RuntimeError(msg)
+                # Get the actual node name in the deserialized flow using node_name_mappings
+                original_node_name = original_node_param.node_name
+                deserialized_node_name = node_name_mappings.get(original_node_name)
+                if deserialized_node_name is None:
+                    logger.warning(
+                        "Could not find deserialized node name for '%s' in iteration %d",
+                        original_node_name,
+                        iteration_index,
+                    )
+                    continue
 
-            # Set values for each data output parameter from the original start node
-            for param_name in start_node_data_outputs:
-                value_to_set = None
-                # Determine the value based on parameter name
-                if param_name == "index":
-                    # All loop nodes have index (0, 1, 2, ...)
-                    value_to_set = iteration_index
-                elif param_name == "current_item" and iteration_index < len(current_item_values):
-                    # ForEach nodes have current_item (the actual item from the list)
-                    value_to_set = current_item_values[iteration_index]
-
-                # The packaged flow uses a prefix for parameters, find the correct parameter name
-                prefixed_param_name = f"{node.name.replace(' ', '_')}_loop_{start_node.name.replace(' ', '_')}_{param_name}"
-
+                # Set the value on the deserialized node
                 set_value_request = SetParameterValueRequest(
-                    node_name=start_flow_node.name,
-                    parameter_name=prefixed_param_name,
+                    node_name=deserialized_node_name,
+                    parameter_name=original_node_param.parameter_name,
                     value=value_to_set,
                 )
                 set_value_result = await GriptapeNodes.ahandle_request(set_value_request)
                 if not isinstance(set_value_result, SetParameterValueResultSuccess):
                     logger.warning(
-                        "Failed to set parameter '%s' for iteration %d: %s",
-                        prefixed_param_name,
+                        "Failed to set parameter '%s' on node '%s' for iteration %d: %s",
+                        original_node_param.parameter_name,
+                        deserialized_node_name,
                         iteration_index,
                         set_value_result.result_details,
                     )
@@ -679,7 +681,7 @@ class NodeExecutor:
                 target_node_name = conn.target_node_name
                 target_param_name = conn.target_parameter_name
 
-                # Find the StartFlow parameter that corresponds to this target
+                # Find the target parameter that corresponds to this target
                 for startflow_param_name, original_node_param in parameter_name_mappings.items():
                     if (original_node_param.node_name == target_node_name and
                         original_node_param.parameter_name == target_param_name):
