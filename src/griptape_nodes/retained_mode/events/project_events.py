@@ -49,12 +49,10 @@ class LoadProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     """Project template loaded successfully.
 
     Args:
-        project_path: Path to the loaded project.yml
         template: The merged ProjectTemplate (system defaults + user customizations)
         validation: Validation info with status and any problems encountered
     """
 
-    project_path: Path
     template: ProjectTemplate
     validation: ProjectValidationInfo
 
@@ -65,11 +63,9 @@ class LoadProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """Project template loading failed.
 
     Args:
-        project_path: Path to the project.yml that failed to load
         validation: Validation info with error details
     """
 
-    project_path: Path
     validation: ProjectValidationInfo
 
 
@@ -117,15 +113,14 @@ class GetSituationRequest(RequestPayload):
     Returns the complete SituationTemplate including macro and policy.
 
     Use when: Need situation macro and/or policy for file operations.
+    Uses the current project for context.
 
     Args:
-        project_path: Path to the project.yml to use
         situation_name: Name of the situation template (e.g., "save_node_output")
 
     Results: GetSituationResultSuccess | GetSituationResultFailure
     """
 
-    project_path: Path
     situation_name: str
 
 
@@ -237,9 +232,11 @@ class GetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 
     Args:
         project_path: The currently selected project path
+        template: The loaded ProjectTemplate for this project
     """
 
     project_path: Path
+    template: ProjectTemplate
 
 
 @dataclass
@@ -269,13 +266,7 @@ class SaveProjectTemplateRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SaveProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Project template saved successfully.
-
-    Args:
-        project_path: Path where project.yml was saved
-    """
-
-    project_path: Path
+    """Project template saved successfully."""
 
 
 @dataclass
@@ -288,8 +279,6 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     - Invalid path
     - Disk full
     """
-
-    project_path: Path
 
 
 @dataclass
@@ -389,9 +378,7 @@ class GetStateForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailur
 @dataclass
 @PayloadRegistry.register
 class GetAllSituationsForProjectRequest(RequestPayload):
-    """Get all situation names and schemas from a project template."""
-
-    project_path: Path
+    """Get all situation names and schemas from current project template."""
 
 
 @dataclass

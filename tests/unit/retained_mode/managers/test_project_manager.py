@@ -98,11 +98,11 @@ class TestProjectManagerInitialization:
 
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
-        assert pm.registered_template_status == {}
-        assert pm.successful_templates == {}
-        assert pm.parsed_situation_schemas == {}
-        assert pm.parsed_directory_schemas == {}
-        assert pm.current_project_path is None
+        assert pm._registered_template_status == {}
+        assert pm._successful_templates == {}
+        assert pm._parsed_situation_schemas == {}
+        assert pm._parsed_directory_schemas == {}
+        assert pm._current_project_path is None
 
     def test_project_manager_stores_manager_references(self) -> None:
         """Test ProjectManager stores config and secrets manager references."""
@@ -112,8 +112,8 @@ class TestProjectManagerInitialization:
 
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
-        assert pm.config_manager is mock_config
-        assert pm.secrets_manager is mock_secrets
+        assert pm._config_manager is mock_config
+        assert pm._secrets_manager is mock_secrets
 
 
 class TestProjectManagerBuiltinVariables:
@@ -130,8 +130,8 @@ class TestProjectManagerBuiltinVariables:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         project_path = Path("/test/project.yml")
-        pm.successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
-        pm.current_project_path = project_path
+        pm._successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
+        pm._current_project_path = project_path
 
         return pm
 
@@ -302,8 +302,8 @@ class TestProjectManagerGetStateForMacro:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         project_path = Path("/test/project.yml")
-        pm.successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
-        pm.current_project_path = project_path
+        pm._successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
+        pm._current_project_path = project_path
 
         return pm
 
