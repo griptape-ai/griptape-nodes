@@ -28,12 +28,12 @@ class GriptapeCloudStartFlow(StartNode):
         structure_id = metadata.get("structure_id")
         hide_structure_id = metadata.get("hide_structure_id")
         integration_id = metadata.get("integration_id")
-        hide_integration_id = metadata.get("hide_integration_id")
+        hide_integration_details = metadata.get("hide_integration_details")
 
         if hide_structure_id is None:
             hide_structure_id = structure_id is None
-        if hide_integration_id is None:
-            hide_integration_id = integration_id is None
+        if hide_integration_details is None:
+            hide_integration_details = integration_id is None
 
         # Add structure config group
         self._structure_config_params = GriptapeCloudStructureConfigParameter(
@@ -49,7 +49,7 @@ class GriptapeCloudStartFlow(StartNode):
             self,
             metadata=metadata,
             allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-            hide_integration_id=hide_integration_id,
+            hide_integration_details=hide_integration_details,
         )
         self._webhook_config_params.set_webhook_config_param_visibility(visible=False)
 

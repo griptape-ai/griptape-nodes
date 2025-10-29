@@ -1,6 +1,6 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
 
@@ -11,7 +11,7 @@ class GriptapeCloudWebhookConfigParameter:
         metadata: dict[Any, Any] | None = None,
         allowed_modes: set[ParameterMode] | None = None,
         *,
-        hide_integration_id: bool = False,
+        hide_integration_details: bool = False,
     ) -> None:
         self.node = node
         if metadata is None:
@@ -19,9 +19,10 @@ class GriptapeCloudWebhookConfigParameter:
         self.allowed_modes = allowed_modes
 
         integration_id = metadata.get("integration_id")
+        webhook_url = metadata.get("webhook_url")
 
-        # Add webhook config group
-        with ParameterGroup(name="Webhook Config") as webhook_config_group:
+        # Add webhook config parameters
+        node.add_parameter(
             Parameter(
                 name="enable_webhook_integration",
                 input_types=["bool"],
@@ -31,6 +32,20 @@ class GriptapeCloudWebhookConfigParameter:
                 tooltip="Whether to enable a webhook integration for the Structure.",
                 allowed_modes=allowed_modes,
             )
+        )
+        node.add_parameter(
+            Parameter(
+                name="webhook_url",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=webhook_url,
+                tooltip="The webhook URL for the published workflow",
+                hide=hide_integration_details,
+                allowed_modes=allowed_modes,
+            )
+        )
+        node.add_parameter(
             Parameter(
                 name="integration_id",
                 input_types=["str"],
@@ -38,9 +53,11 @@ class GriptapeCloudWebhookConfigParameter:
                 output_type="str",
                 default_value=integration_id,
                 tooltip="The integration ID of the published workflow",
-                hide=hide_integration_id,
+                hide=hide_integration_details,
                 allowed_modes=allowed_modes,
             )
+        )
+        node.add_node_element(
             ParameterMessage(
                 name="griptape_cloud_webhook_config_parameter_message",
                 title="Griptape Cloud Webhook Configuration Notice",
@@ -48,6 +65,8 @@ class GriptapeCloudWebhookConfigParameter:
                 value=self.get_webhook_config_message(),
                 ui_options={"hide": True},
             )
+        )
+        node.add_parameter(
             Parameter(
                 name="payload",
                 input_types=["json", "str", "dict"],
@@ -59,6 +78,8 @@ class GriptapeCloudWebhookConfigParameter:
                 },
                 allowed_modes=allowed_modes,
             )
+        )
+        node.add_parameter(
             Parameter(
                 name="query_params",
                 input_types=["json", "str", "dict"],
@@ -70,6 +91,8 @@ class GriptapeCloudWebhookConfigParameter:
                 },
                 allowed_modes=allowed_modes,
             )
+        )
+        node.add_parameter(
             Parameter(
                 name="headers",
                 input_types=["json", "str", "dict"],
@@ -81,14 +104,13 @@ class GriptapeCloudWebhookConfigParameter:
                 },
                 allowed_modes=allowed_modes,
             )
-
-        webhook_config_group.ui_options = {"collapsed": True}
-        node.add_node_element(webhook_config_group)
+        )
 
     @classmethod
     def get_param_names(cls) -> list[str]:
         return [
             "enable_webhook_integration",
+            "webhook_url",
             "integration_id",
             "griptape_cloud_webhook_config_parameter_message",
             "payload",
@@ -111,6 +133,7 @@ class GriptapeCloudWebhookConfigParameter:
     def set_webhook_config_param_visibility(self, *, visible: bool) -> None:
         params = self.get_param_names()
         params.remove("enable_webhook_integration")  # Always show this param
+        params.remove("webhook_url")  # Handled separately
         params.remove("integration_id")  # Handled separately
         params.remove("griptape_cloud_webhook_config_parameter_message")  # Handled separately
         for param in params:
