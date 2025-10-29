@@ -278,6 +278,7 @@ class DeserializeFlowFromCommandsRequest(RequestPayload):
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
+    node_name_mappings: dict[str, str] = field(default_factory=dict)  # original_name -> deserialized_name
 
 
 @dataclass

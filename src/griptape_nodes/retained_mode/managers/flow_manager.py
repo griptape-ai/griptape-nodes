@@ -2918,8 +2918,11 @@ class FlowManager:
 
         # Create the nodes.
         # Preserve the node UUIDs because we will need to tie these back together with the Connections later.
+        # Also build a mapping from original node names to deserialized node names.
         node_uuid_to_deserialized_node_result = {}
+        node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
+            original_node_name = serialized_node.create_node_command.node_name
             deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
             if deserialized_node_result.failed():
@@ -2928,6 +2931,7 @@ class FlowManager:
                 )
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
+            node_name_mappings[original_node_name] = deserialized_node_result.node_name
 
         # Now apply the connections.
         # We didn't know the exact name that would be used for the nodes, but we knew the node's creation UUID.
@@ -3000,7 +3004,9 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
-        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name, result_details=details)
+        return DeserializeFlowFromCommandsResultSuccess(
+            flow_name=flow_name, node_name_mappings=node_name_mappings, result_details=details
+        )
 
     def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
         obj_manager = GriptapeNodes.ObjectManager()
