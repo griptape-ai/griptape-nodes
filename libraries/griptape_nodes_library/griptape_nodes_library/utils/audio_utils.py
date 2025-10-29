@@ -7,8 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-
-from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192

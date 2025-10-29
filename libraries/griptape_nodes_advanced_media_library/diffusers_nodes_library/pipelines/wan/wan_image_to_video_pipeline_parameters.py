@@ -8,8 +8,8 @@ import diffusers  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
-from artifact_utils.video_url_artifact import VideoUrlArtifact  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]

@@ -9,7 +9,7 @@ from griptape.tasks import PromptTask
 from griptape.tools import MCPTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
@@ -162,7 +162,7 @@ class MCPTaskNode(SuccessFailureNode):
 
         return self._mcp_tools[mcp_server_name]
 
-    async def aprocess(self) -> None:
+    def process(self) -> AsyncResult:
         # Reset execution state and set failure defaults
         self._clear_execution_status()
         self._set_failure_output_values()
@@ -181,7 +181,7 @@ class MCPTaskNode(SuccessFailureNode):
             return
 
         # Get MCP tool
-        tool = self._get_mcp_tool(mcp_server_name, server_config)
+        tool = yield lambda: self._get_mcp_tool(mcp_server_name, server_config)
         if tool is None:
             error_details = f"Failed to create MCP tool for server '{mcp_server_name}'"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -204,7 +204,7 @@ class MCPTaskNode(SuccessFailureNode):
             return
 
         # Execute with streaming
-        self._execute_with_streaming(agent, prompt, mcp_server_name)
+        yield lambda: self._execute_with_streaming(agent, prompt, mcp_server_name)
 
     def _get_mcp_tool(self, mcp_server_name: str, server_config: dict[str, Any]) -> MCPTool | None:
         """Get or create MCP tool."""

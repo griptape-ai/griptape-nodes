@@ -11,7 +11,7 @@ from griptape_nodes.traits.options import Options
 if TYPE_CHECKING:
     from griptape_cloud_client.models.bucket_detail import BucketDetail
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
@@ -28,7 +28,12 @@ class ConcatenateVideos(BaseVideoProcessor):
         self.add_parameter(
             ParameterList(
                 name="video_inputs",
-                input_types=["VideoArtifact", "VideoUrlArtifact", "list[VideoArtifact]", "list[VideoUrlArtifact]"],
+                input_types=[
+                    "VideoArtifact",
+                    "VideoUrlArtifact",
+                    "list[VideoArtifact]",
+                    "list[VideoUrlArtifact]",
+                ],
                 default_value=[],
                 tooltip="Connect individual videos or a list of videos to concatenate (supports both VideoArtifact and VideoUrlArtifact)",
                 allowed_modes={ParameterMode.INPUT},

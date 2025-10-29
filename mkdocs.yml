@@ -104,6 +104,7 @@ nav:
               - Example MCP Servers:
                   - Overview: how_to/mcp/servers/index.md
                   - Blender: how_to/mcp/servers/blender.md
+                  - Maya: how_to/mcp/servers/maya.md
                   - Exa: how_to/mcp/servers/exa.md
                   - Fetch: how_to/mcp/servers/fetch.md
                   - Filesystem: how_to/mcp/servers/filesystem.md
@@ -139,6 +140,7 @@ nav:
     - JSON:
         - JSON Input: nodes/json/json_input.md
         - JSON Extract Value: nodes/json/json_extract_value.md
+        - JSON Find: nodes/json/json_find.md
         - JSON Replace: nodes/json/json_replace.md
         - Display JSON: nodes/json/display_json.md
     - Convert:
@@ -185,6 +187,7 @@ nav:
         - Create Int List: nodes/lists/create_int_list.md
         - Create Bool List: nodes/lists/create_bool_list.md
         - Create Text List: nodes/lists/create_text_list.md
+        - Select From List: nodes/lists/select_from_list.md
     - Number:
         - Input Nodes:
           - Float Input: nodes/number/create_float.md

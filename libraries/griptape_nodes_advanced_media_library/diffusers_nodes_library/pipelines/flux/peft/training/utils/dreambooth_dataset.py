@@ -11,7 +11,7 @@ from torch.utils.data import Dataset  # type: ignore[reportMissingImports]
 from torchvision import transforms  # type: ignore[reportMissingImports]
 from torchvision.transforms.functional import crop  # type: ignore[reportMissingImports]
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 def collate_fn(examples: list[dict[str, Any]], *, with_prior_preservation: bool = False) -> dict[str, Any]:

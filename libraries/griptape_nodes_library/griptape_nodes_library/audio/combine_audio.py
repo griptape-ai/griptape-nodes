@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
     ParameterGroup,
@@ -15,7 +16,6 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 from griptape_nodes_library.utils.file_utils import generate_filename
 
