@@ -3409,8 +3409,17 @@ class WorkflowManager:
                 raise ValueError(msg)  # noqa: TRY301
 
             # Save the workflow before publishing to ensure the latest changes in memory are included
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-            await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=Path(workflow.file_path).stem))
+            workflow_file_name = request.workflow_name
+            try:
+                workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+                workflow_file_name = Path(workflow.file_path).stem
+            except KeyError:
+                details = (
+                    f"While publishing, workflow '{request.workflow_name}' had not been saved or could not be found in the Workflow Registry. "
+                    "Saving as a new and registered workflow before proceeding on publish attempt."
+                )
+                logger.info(details)
+            await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=workflow_file_name))
 
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
