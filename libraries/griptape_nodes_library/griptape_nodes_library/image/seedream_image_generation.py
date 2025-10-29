@@ -400,7 +400,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self._log_request(payload)
 
         try:
-            response = requests.post(proxy_url, json=payload, headers=headers, timeout=60)
+            response = requests.post(proxy_url, json=payload, headers=headers, timeout=120)
             response.raise_for_status()
             response_json = response.json()
             self._log("Request submitted successfully")
