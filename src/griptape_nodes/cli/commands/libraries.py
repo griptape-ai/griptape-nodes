@@ -105,10 +105,10 @@ def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
     if not GriptapeNodes.OSManager().is_windows():
         return
 
-    long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
+    long_path = GriptapeNodes.OSManager().normalize_path_for_platform(Path(path))
 
     try:
-        Path.chmod(long_path, stat.S_IWRITE)
+        Path.chmod(Path(long_path), stat.S_IWRITE)
         func(long_path)
     except Exception as e:
         console.print(f"[red]Error removing read-only file: {path}[/red]")
