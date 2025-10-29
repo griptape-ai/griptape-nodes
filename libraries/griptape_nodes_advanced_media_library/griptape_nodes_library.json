@@ -63,7 +63,7 @@
         "sam2>=1.1.0",
         "scipy>=1.10.0",
         "matplotlib>=3.10.3",
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.11"
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
       "pip_install_flags": [
         "--preview",
@@ -650,4 +650,3 @@
     }
   ]
 }
-
