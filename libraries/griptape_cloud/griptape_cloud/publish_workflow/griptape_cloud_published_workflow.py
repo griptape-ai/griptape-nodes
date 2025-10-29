@@ -80,7 +80,7 @@ class GriptapeCloudPublishedWorkflow(SuccessFailureNode, BaseGriptapeCloudNode):
             self,
             metadata=metadata,
             allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
-            hide_integration_id=False,
+            hide_integration_details=False,
         )
         self._webhook_config_params.set_webhook_config_param_visibility(visible=False)
 

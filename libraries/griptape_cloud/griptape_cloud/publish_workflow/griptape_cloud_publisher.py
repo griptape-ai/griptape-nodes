@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from urllib.parse import urljoin
@@ -41,6 +42,7 @@ from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
 from griptape_cloud.publish_workflow import GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY
 from griptape_cloud.publish_workflow.griptape_cloud_start_flow import GriptapeCloudStartFlow
 from griptape_cloud.publish_workflow.griptape_cloud_workflow_builder import (
+    GriptapeCloudWebhookIntegration,
     GriptapeCloudWorkflowBuilder,
     GriptapeCloudWorkflowBuilderInput,
 )
@@ -83,6 +85,8 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from griptape_cloud_client.models.integration_config_union_type_2 import IntegrationConfigUnionType2
+
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -145,23 +149,23 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 "Workflow '%s' published successfully to Structure: %s", self._workflow_name, structure.structure_id
             )
 
-            integration_id: str | None = None
+            webhook_integration: GriptapeCloudWebhookIntegration | None = None
             if griptape_cloud_start_flow_node is not None and griptape_cloud_start_flow_node.get_parameter_value(
                 "enable_webhook_integration"
             ):
                 self._emit_progress_event(additional_progress=2.0, message="Creating webhook integration...")
-                integration_id = self._create_webhook_integration(structure, griptape_cloud_start_flow_node)
+                webhook_integration = self._create_webhook_integration(structure, griptape_cloud_start_flow_node)
 
             self._emit_progress_event(additional_progress=2.0, message="Updating workflow metadata...")
             self._update_griptape_cloud_start_flow_metadata(
                 structure=structure,
                 griptape_cloud_start_flow_node=griptape_cloud_start_flow_node,
-                integration_id=integration_id,
+                webhook_integration=webhook_integration,
             )
 
             # Generate an executor workflow that can invoke the published structure
             self._emit_progress_event(additional_progress=20.0, message="Generating executor workflow...")
-            executor_workflow_path = self._generate_executor_workflow(structure, workflow_shape, integration_id)
+            executor_workflow_path = self._generate_executor_workflow(structure, workflow_shape, webhook_integration)
 
             self._emit_progress_event(additional_progress=20.0, message="Successfully published workflow!")
 
@@ -291,7 +295,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         self,
         structure: UpdateStructureResponseContent,
         griptape_cloud_start_flow_node: GriptapeCloudStartFlow | None,
-        integration_id: str | None,
+        webhook_integration: GriptapeCloudWebhookIntegration | None,
     ) -> None:
         if griptape_cloud_start_flow_node is not None:
             get_node_metadata_request = GetNodeMetadataRequest(node_name=griptape_cloud_start_flow_node.name)
@@ -312,7 +316,8 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             node_metadata["structure_description"] = griptape_cloud_start_flow_node.metadata.get(
                 "structure_description", structure.description
             )
-            node_metadata["integration_id"] = integration_id
+            node_metadata["integration_id"] = webhook_integration.integration_id if webhook_integration else None
+            node_metadata["webhook_url"] = webhook_integration.webhook_url if webhook_integration else None
 
             set_node_metadata_request = SetNodeMetadataRequest(
                 node_name=griptape_cloud_start_flow_node.name,
@@ -472,13 +477,18 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
 
     def _create_webhook_integration(
         self, structure: UpdateStructureResponseContent, griptape_cloud_start_flow_node: GriptapeCloudStartFlow | None
-    ) -> str:
+    ) -> GriptapeCloudWebhookIntegration:
         integration_id: str | None = None
+        webhook_url: str | None = None
         if griptape_cloud_start_flow_node is not None:
             integration_id = griptape_cloud_start_flow_node.get_parameter_value("integration_id")
+            webhook_url = griptape_cloud_start_flow_node.get_parameter_value("webhook_url")
 
-        if integration_id is not None and integration_id != "":
-            return integration_id
+        if integration_id is not None and integration_id != "" and webhook_url is not None and webhook_url != "":
+            return GriptapeCloudWebhookIntegration(
+                integration_id=str(integration_id),
+                webhook_url=str(webhook_url),
+            )
 
         create_integration_response = create_integration(
             client=self._gtc_client,
@@ -499,7 +509,12 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             logger.error(msg)
             raise TypeError(msg)
 
-        return create_integration_response.integration_id
+        webhook_config = cast("IntegrationConfigUnionType2", create_integration_response.config).webhook
+
+        return GriptapeCloudWebhookIntegration(
+            integration_id=create_integration_response.integration_id,
+            webhook_url=webhook_config.integration_endpoint,
+        )
 
     def _copy_libraries_to_path_for_workflow(
         self,
@@ -689,6 +704,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                         "libraries_to_register": library_paths,
                     }
                 }
+                config["enable_workspace_file_watching"] = False
                 library_paths_formatted = [f'"{library_path}"' for library_path in library_paths]
 
                 with register_libraries_script_path.open("r", encoding="utf-8") as register_libraries_script_file:
@@ -746,7 +762,10 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             return str(archive_base_name) + ".zip"
 
     def _generate_executor_workflow(
-        self, structure: UpdateStructureResponseContent, workflow_shape: dict[str, Any], integration_id: str | None
+        self,
+        structure: UpdateStructureResponseContent,
+        workflow_shape: dict[str, Any],
+        webhook_integration: GriptapeCloudWebhookIntegration | None,
     ) -> Path:
         """Generate a new workflow file that can execute the published structure.
 
@@ -783,7 +802,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 workflow_name=self._workflow_name,
                 workflow_shape=workflow_shape,
                 structure=structure,
-                integration_id=integration_id,
+                webhook_integration=webhook_integration,
                 executor_workflow_name=self._published_workflow_file_name,
                 libraries=library_paths,
                 pickle_control_flow_result=self.pickle_control_flow_result,

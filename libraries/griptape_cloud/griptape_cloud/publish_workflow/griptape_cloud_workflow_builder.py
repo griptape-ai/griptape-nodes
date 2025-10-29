@@ -25,12 +25,18 @@ logger = logging.getLogger("griptape_nodes")
 
 
 @dataclass
+class GriptapeCloudWebhookIntegration:
+    integration_id: str
+    webhook_url: str
+
+
+@dataclass
 class GriptapeCloudWorkflowBuilderInput:
     workflow_name: str
     workflow_shape: dict[str, Any]
     executor_workflow_name: str
     structure: UpdateStructureResponseContent
-    integration_id: str | None = None
+    webhook_integration: GriptapeCloudWebhookIntegration | None = None
     libraries: list[str] = field(default_factory=list)
     pickle_control_flow_result: bool = False
 
@@ -177,7 +183,8 @@ def main():
                 "structure_id": "{self.workflow_builder_input.structure.structure_id}",
                 "structure_name": "{self.workflow_builder_input.structure.name}",
                 "structure_description": "{self.workflow_builder_input.structure.description}",
-                "integration_id": "{self.workflow_builder_input.integration_id or None}",
+                "integration_id": "{self.workflow_builder_input.webhook_integration.integration_id if self.workflow_builder_input.webhook_integration else None}",
+                "webhook_url": "{self.workflow_builder_input.webhook_integration.webhook_url if self.workflow_builder_input.webhook_integration else None}",
                 "hide_structure_config": {True}
             }},
             initial_setup=True
@@ -194,7 +201,8 @@ def main():
                 "structure_id": "{self.workflow_builder_input.structure.structure_id}",
                 "structure_name": "{self.workflow_builder_input.structure.name}",
                 "structure_description": "{self.workflow_builder_input.structure.description}",
-                "integration_id": "{self.workflow_builder_input.integration_id or None}"
+                "integration_id": "{self.workflow_builder_input.webhook_integration.integration_id if self.workflow_builder_input.webhook_integration else None}",
+                "webhook_url": "{self.workflow_builder_input.webhook_integration.webhook_url if self.workflow_builder_input.webhook_integration else None}",
             }},
             initial_setup=True
         ))
