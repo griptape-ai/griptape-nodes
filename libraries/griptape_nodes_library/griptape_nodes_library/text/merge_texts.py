@@ -5,6 +5,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
 class MergeTexts(DataNode):
@@ -15,47 +16,23 @@ class MergeTexts(DataNode):
     ) -> None:
         super().__init__(name, metadata)
 
-        # Add a list of inputs
-        self.add_parameter(
-            Parameter(
-                name="input_1",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str", "int", "float", "bool"],
-                tooltip="Text inputs to merge together.",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="input_2",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str", "int", "float", "bool"],
-                tooltip="Text inputs to merge together.",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="input_3",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str", "int", "float", "bool"],
-                tooltip="Text inputs to merge together.",
-            )
-        )
-        self.add_parameter(
-            Parameter(
-                name="input_4",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str", "int", "float", "bool"],
-                tooltip="Text inputs to merge together.",
-            )
-        )
+        self.default_num_inputs = 4
 
+        for i in range(self.default_num_inputs):
+            self.add_parameter(
+                ParameterString(
+                    name=f"input_{i + 1}",
+                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    placeholder_text=f"Input {i + 1}",
+                    tooltip="Text inputs to merge together.",
+                )
+            )
         # Add parameter for the separator string
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="merge_string",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str"],
-                type="str",
+                placeholder_text="\\n\\n",
                 default_value="\\n\\n",
                 tooltip="The string to use as separator between inputs.",
             )
@@ -63,33 +40,31 @@ class MergeTexts(DataNode):
 
         # Add output parameter for the merged text
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                output_type="str",
-                default_value="",
+                multiline=True,
+                placeholder_text="The merged text result.",
                 tooltip="The merged text result.",
-                ui_options={"multiline": True},
             )
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in ["input_1", "input_2", "input_3", "input_4", "merge_string"]:
+        if parameter.name.startswith("input_") or parameter.name == "merge_string":
             self._merge_texts()
         return super().after_value_set(parameter, value)
 
     def _merge_texts(self) -> None:
-        # Get the list of input texts
-        input_1 = self.parameter_values.get("input_1", None)
-        input_2 = self.parameter_values.get("input_2", None)
-        input_3 = self.parameter_values.get("input_3", None)
-        input_4 = self.parameter_values.get("input_4", None)
+        # Get all input texts dynamically
+        input_texts = []
+        for i in range(1, self.default_num_inputs + 1):
+            input_value = self.get_parameter_value(f"input_{i}")
+            if input_value is not None and input_value != "":
+                input_texts.append(str(input_value))
 
         # Get the separator string and replace \n with actual newlines
-        separator = self.parameter_values.get("merge_string", "\\n\\n").replace("\\n", "\n")
-
-        # Create a list of input texts, filtering out None and empty strings but keeping falsey values like 0, False, 0.0
-        input_texts = [str(text) for text in [input_1, input_2, input_3, input_4] if text is not None and text != ""]
+        separator = self.get_parameter_value("merge_string") or "\\n\\n"
+        separator = separator.replace("\\n", "\n")
 
         # Join all the inputs with the separator
         merged_text = separator.join(input_texts).strip()
