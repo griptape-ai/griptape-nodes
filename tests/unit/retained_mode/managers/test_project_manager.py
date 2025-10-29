@@ -99,10 +99,8 @@ class TestProjectManagerInitialization:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         assert pm._registered_template_status == {}
-        assert pm._successful_templates == {}
-        assert pm._parsed_situation_schemas == {}
-        assert pm._parsed_directory_schemas == {}
-        assert pm._current_project_path is None
+        assert pm._successfully_loaded_project_templates == {}
+        assert pm._current_project_id is None
 
     def test_project_manager_stores_manager_references(self) -> None:
         """Test ProjectManager stores config and secrets manager references."""
@@ -122,7 +120,9 @@ class TestProjectManagerBuiltinVariables:
     @pytest.fixture
     def project_manager_with_template(self) -> ProjectManager:
         """Create a ProjectManager with system defaults loaded."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -130,8 +130,27 @@ class TestProjectManagerBuiltinVariables:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         project_path = Path("/test/project.yml")
-        pm._successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
-        pm._current_project_path = project_path
+        project_id = str(project_path)
+
+        # Parse macros first
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with fully populated caches
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Set up new consolidated dict
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
 
         return pm
 
@@ -294,7 +313,9 @@ class TestProjectManagerGetStateForMacro:
     @pytest.fixture
     def project_manager_with_current_project(self) -> ProjectManager:
         """Create a ProjectManager with current project set."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
         from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
 
         mock_config = Mock()
         mock_secrets = Mock()
@@ -302,8 +323,27 @@ class TestProjectManagerGetStateForMacro:
         pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
         project_path = Path("/test/project.yml")
-        pm._successful_templates[project_path] = DEFAULT_PROJECT_TEMPLATE
-        pm._current_project_path = project_path
+        project_id = str(project_path)
+
+        # Parse macros first
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with fully populated caches
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Set up new consolidated dict
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
 
         return pm
 
@@ -443,3 +483,304 @@ class TestProjectManagerGetStateForMacro:
         assert isinstance(result, GetStateForMacroResultSuccess)
         assert "project_dir" in result.conflicting_variables
         assert result.can_resolve is False
+
+
+class TestProjectManagerGetCurrentProject:
+    """Test ProjectManager GetCurrentProject request handler."""
+
+    def test_get_current_project_no_project_set(self) -> None:
+        """Test GetCurrentProject fails when no project is set."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetCurrentProjectRequest,
+            GetCurrentProjectResultFailure,
+        )
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        request = GetCurrentProjectRequest()
+        result = pm.on_get_current_project_request(request)
+
+        assert isinstance(result, GetCurrentProjectResultFailure)
+        assert "no project is currently set" in str(result.result_details)
+
+    def test_get_current_project_returns_project_info(self) -> None:
+        """Test GetCurrentProject returns complete ProjectInfo."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetCurrentProjectRequest,
+            GetCurrentProjectResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        project_path = Path("/test/project.yml")
+        project_id = str(project_path)
+
+        # Parse macros first
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_path,
+            project_base_dir=project_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[project_id] = project_info
+        pm._current_project_id = project_id
+
+        request = GetCurrentProjectRequest()
+        result = pm.on_get_current_project_request(request)
+
+        assert isinstance(result, GetCurrentProjectResultSuccess)
+        assert result.project_info == project_info
+        assert result.project_info.project_id == project_id
+        assert result.project_info.template == DEFAULT_PROJECT_TEMPLATE
+        assert result.project_info.project_base_dir == Path("/test")
+        assert result.project_info.validation.status == ProjectValidationStatus.GOOD
+
+    def test_get_current_project_id_not_found_in_templates(self) -> None:
+        """Test GetCurrentProject fails when current project ID is not in loaded templates."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetCurrentProjectRequest,
+            GetCurrentProjectResultFailure,
+        )
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        # Set current project ID but don't add to loaded templates
+        pm._current_project_id = "missing_project"
+
+        request = GetCurrentProjectRequest()
+        result = pm.on_get_current_project_request(request)
+
+        assert isinstance(result, GetCurrentProjectResultFailure)
+        assert "project not found" in str(result.result_details)
+
+
+class TestProjectManagerListProjectTemplates:
+    """Test ProjectManager ListProjectTemplates request handler."""
+
+    def test_list_project_templates_empty(self) -> None:
+        """Test ListProjectTemplates with no projects loaded."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        request = ListProjectTemplatesRequest(include_system_builtins=False)
+        result = pm.on_list_project_templates_request(request)
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        assert result.successfully_loaded == []
+        assert result.failed_to_load == []
+
+    def test_list_project_templates_successfully_loaded(self) -> None:
+        """Test ListProjectTemplates returns successfully loaded projects."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        # Add two successfully loaded projects
+        project1_path = Path("/test/project1.yml")
+        project1_id = str(project1_path)
+        validation1 = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation1)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation1)
+
+        project_info1 = ProjectInfo(
+            project_id=project1_id,
+            project_file_path=project1_path,
+            project_base_dir=project1_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation1,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        project2_path = Path("/test/project2.yml")
+        project2_id = str(project2_path)
+        validation2 = ProjectValidationInfo(status=ProjectValidationStatus.FLAWED)
+        situation_schemas2 = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation2)
+        directory_schemas2 = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation2)
+
+        project_info2 = ProjectInfo(
+            project_id=project2_id,
+            project_file_path=project2_path,
+            project_base_dir=project2_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation2,
+            parsed_situation_schemas=situation_schemas2,
+            parsed_directory_schemas=directory_schemas2,
+        )
+
+        pm._successfully_loaded_project_templates[project1_id] = project_info1
+        pm._successfully_loaded_project_templates[project2_id] = project_info2
+
+        request = ListProjectTemplatesRequest(include_system_builtins=False)
+        result = pm.on_list_project_templates_request(request)
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        assert result.failed_to_load == []
+
+        # Verify both projects are in successfully_loaded
+        project_ids = {info.project_id for info in result.successfully_loaded}
+        assert project_ids == {project1_id, project2_id}
+
+    def test_list_project_templates_with_failures(self) -> None:
+        """Test ListProjectTemplates returns failed projects."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        # Add a failed project to registered_template_status
+        failed_path = Path("/test/failed.yml")
+        failed_validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+        failed_validation.add_error("template", "Invalid YAML")
+
+        pm._registered_template_status[failed_path] = failed_validation
+
+        request = ListProjectTemplatesRequest(include_system_builtins=False)
+        result = pm.on_list_project_templates_request(request)
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        assert result.successfully_loaded == []
+        assert len(result.failed_to_load) == 1
+        assert result.failed_to_load[0].project_id == str(failed_path)
+        assert result.failed_to_load[0].validation.status == ProjectValidationStatus.UNUSABLE
+
+    def test_list_project_templates_filters_system_builtins(self) -> None:
+        """Test ListProjectTemplates filters system builtins when requested."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        # Add system defaults
+        validation_sys = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation_sys)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation_sys)
+
+        system_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=None,
+            project_base_dir=Path("/workspace"),
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation_sys,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = system_info
+
+        # Test with include_system_builtins=False (default)
+        request_no_builtins = ListProjectTemplatesRequest(include_system_builtins=False)
+        result_no_builtins = pm.on_list_project_templates_request(request_no_builtins)
+
+        assert isinstance(result_no_builtins, ListProjectTemplatesResultSuccess)
+        assert result_no_builtins.successfully_loaded == []
+
+        # Test with include_system_builtins=True
+        request_with_builtins = ListProjectTemplatesRequest(include_system_builtins=True)
+        result_with_builtins = pm.on_list_project_templates_request(request_with_builtins)
+
+        assert isinstance(result_with_builtins, ListProjectTemplatesResultSuccess)
+        assert len(result_with_builtins.successfully_loaded) == 1
+        assert result_with_builtins.successfully_loaded[0].project_id == SYSTEM_DEFAULTS_KEY
+
+    def test_list_project_templates_mixed_state(self) -> None:
+        """Test ListProjectTemplates with mix of successful and failed projects."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.events.project_events import (
+            ListProjectTemplatesRequest,
+            ListProjectTemplatesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        pm = ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+        # Add successful project
+        success_path = Path("/test/success.yml")
+        success_id = str(success_path)
+        validation_success = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = pm._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation_success)
+        directory_schemas = pm._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation_success)
+
+        success_info = ProjectInfo(
+            project_id=success_id,
+            project_file_path=success_path,
+            project_base_dir=success_path.parent,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation_success,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        pm._successfully_loaded_project_templates[success_id] = success_info
+        pm._registered_template_status[success_path] = validation_success
+
+        # Add failed project
+        failed_path = Path("/test/failed.yml")
+        failed_validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
+        failed_validation.add_error("template", "Parse error")
+
+        pm._registered_template_status[failed_path] = failed_validation
+
+        request = ListProjectTemplatesRequest(include_system_builtins=False)
+        result = pm.on_list_project_templates_request(request)
+
+        assert isinstance(result, ListProjectTemplatesResultSuccess)
+        assert len(result.successfully_loaded) == 1
+        assert len(result.failed_to_load) == 1
+        assert result.successfully_loaded[0].project_id == success_id
+        assert result.failed_to_load[0].project_id == str(failed_path)

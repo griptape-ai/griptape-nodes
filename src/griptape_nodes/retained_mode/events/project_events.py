@@ -1,12 +1,11 @@
 """Events for project template management."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
-from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -14,6 +13,13 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
+    from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
+    from griptape_nodes.retained_mode.managers.project_manager import ProjectID, ProjectInfo
 
 # Type alias for macro variable dictionaries (used by ParsedMacro)
 MacroVariables = dict[str, str | int]
@@ -49,10 +55,12 @@ class LoadProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     """Project template loaded successfully.
 
     Args:
+        project_id: The identifier for the loaded project
         template: The merged ProjectTemplate (system defaults + user customizations)
         validation: Validation info with status and any problems encountered
     """
 
+    project_id: ProjectID
     template: ProjectTemplate
     validation: ProjectValidationInfo
 
@@ -72,17 +80,17 @@ class LoadProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @dataclass
 @PayloadRegistry.register
 class GetProjectTemplateRequest(RequestPayload):
-    """Get cached project template for a workspace path.
+    """Get cached project template for a project ID.
 
     Use when: Querying current project configuration, checking validation status.
 
     Args:
-        project_path: Path to the project.yml file
+        project_id: Identifier of the project
 
     Results: GetProjectTemplateResultSuccess | GetProjectTemplateResultFailure
     """
 
-    project_path: Path
+    project_id: ProjectID
 
 
 @dataclass
@@ -103,6 +111,44 @@ class GetProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @PayloadRegistry.register
 class GetProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Project template retrieval failed (not loaded yet)."""
+
+
+@dataclass
+class ProjectTemplateInfo:
+    """Information about a loaded or failed project template."""
+
+    project_id: ProjectID
+    validation: ProjectValidationInfo
+
+
+@dataclass
+@PayloadRegistry.register
+class ListProjectTemplatesRequest(RequestPayload):
+    """List all project templates that have been loaded or attempted to load.
+
+    Use when: Displaying available projects, checking which projects are loaded.
+
+    Args:
+        include_system_builtins: Whether to include system builtin templates like SYSTEM_DEFAULTS_KEY
+
+    Results: ListProjectTemplatesResultSuccess
+    """
+
+    include_system_builtins: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class ListProjectTemplatesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """List of all project templates retrieved.
+
+    Args:
+        successfully_loaded: List of templates that loaded successfully
+        failed_to_load: List of templates that failed to load with validation errors
+    """
+
+    successfully_loaded: list[ProjectTemplateInfo]
+    failed_to_load: list[ProjectTemplateInfo]
 
 
 @dataclass
@@ -195,17 +241,17 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 @dataclass
 @PayloadRegistry.register
 class SetCurrentProjectRequest(RequestPayload):
-    """Set which project.yml user has currently selected.
+    """Set which project user has currently selected.
 
     Use when: User switches between projects, opens a new workspace.
 
     Args:
-        project_path: Path to the project.yml to set as current (None to clear)
+        project_id: Identifier of the project to set as current (None to clear)
 
     Results: SetCurrentProjectResultSuccess
     """
 
-    project_path: Path | None
+    project_id: ProjectID | None
 
 
 @dataclass
@@ -231,12 +277,10 @@ class GetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     """Current project retrieved.
 
     Args:
-        project_path: The currently selected project path
-        template: The loaded ProjectTemplate for this project
+        project_info: Complete information about the current project
     """
 
-    project_path: Path
-    template: ProjectTemplate
+    project_info: ProjectInfo
 
 
 @dataclass
