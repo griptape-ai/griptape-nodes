@@ -223,7 +223,7 @@ class OSManager:
         Returns:
             String representation of path, with Windows long path prefix if needed
         """
-        path_str = str(Path.resolve(path))
+        path_str = str(path.resolve())
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
         if self.is_windows() and len(path_str) > WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
