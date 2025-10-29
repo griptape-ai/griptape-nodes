@@ -72,6 +72,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SingleNodeStepRequest,
     SingleNodeStepResultFailure,
     SingleNodeStepResultSuccess,
+    StartFlowFromNodeRequest,
+    StartFlowFromNodeResultFailure,
+    StartFlowFromNodeResultSuccess,
     StartFlowRequest,
     StartFlowResultFailure,
     StartFlowResultSuccess,
@@ -239,6 +242,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
+        event_manager.assign_manager_to_request_type(StartFlowFromNodeRequest, self.on_start_flow_from_node_request)
         event_manager.assign_manager_to_request_type(SingleNodeStepRequest, self.on_single_node_step_request)
         event_manager.assign_manager_to_request_type(SingleExecutionStepRequest, self.on_single_execution_step_request)
         event_manager.assign_manager_to_request_type(
@@ -2450,6 +2454,65 @@ class FlowManager:
         details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowResultSuccess(result_details=details)
+
+    async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911
+        # which flow
+        flow_name = request.flow_name
+        if not flow_name:
+            details = "Must provide flow name to start a flow."
+
+            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+        # get the flow by ID
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Cannot start flow. Error: {err}"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
+        # Check to see if the flow is already running.
+        if self.check_for_existing_running_flow():
+            details = "Cannot start flow. Flow is already running."
+            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+        node_name = request.node_name
+        if node_name is None:
+            details = "Must provide node name to start a flow."
+            return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+        start_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if not start_node:
+            details = f"Provided node with name {node_name} does not exist"
+            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+        result = await self.on_validate_flow_dependencies_request(
+            ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
+        )
+        try:
+            if not result.succeeded():
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
+                return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
+            result = cast("ValidateFlowDependenciesResultSuccess", result)
+
+            if not result.validation_succeeded:
+                details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed."
+                if len(result.exceptions) > 0:
+                    for exception in result.exceptions:
+                        details = f"{details}\n\t{exception}"
+                return StartFlowFromNodeResultFailure(validation_exceptions=result.exceptions, result_details=details)
+        except Exception as e:
+            details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed: {e}"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[e], result_details=details)
+        # By now, it has been validated with no exceptions.
+        try:
+            await self.start_flow(
+                flow,
+                start_node,
+                debug_mode=request.debug_mode,
+                pickle_control_flow_result=request.pickle_control_flow_result,
+            )
+        except Exception as e:
+            details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
+            return StartFlowFromNodeResultFailure(validation_exceptions=[e], result_details=details)
+
+        details = f"Successfully kicked off flow with name {flow_name}"
+
+        return StartFlowFromNodeResultSuccess(result_details=details)
 
     def on_get_flow_state_request(self, event: GetFlowStateRequest) -> ResultPayload:
         flow_name = event.flow_name
