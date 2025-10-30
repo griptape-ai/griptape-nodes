@@ -1701,6 +1701,17 @@
       }
     },
     {
+      "class_name": "LoggerNode",
+      "file_path": "griptape_nodes_library/misc/logger_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Log messages to the console with configurable log levels, timestamps, and formatting",
+        "display_name": "Logger",
+        "icon": "file-text",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {
