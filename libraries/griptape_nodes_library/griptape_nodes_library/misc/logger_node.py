@@ -1,11 +1,13 @@
+import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 
@@ -117,19 +119,9 @@ class LoggerNode(DataNode):
         return super().after_value_set(parameter, value)
 
     def _log_message(self, log_level: str, log_message: str) -> None:
-        """Log the message with the appropriate level."""
-        if log_level == "DEBUG":
-            logger.debug(log_message)
-        elif log_level == "INFO":
-            logger.info(log_message)
-        elif log_level == "WARNING":
-            logger.warning(log_message)
-        elif log_level == "ERROR":
-            logger.error(log_message)
-        elif log_level == "CRITICAL":
-            logger.critical(log_message)
-        else:
-            logger.info(log_message)
+        """Log the message with the appropriate level using ResultDetails."""
+        # Uses "griptape_nodes" logger by default
+        ResultDetails(message=log_message, level=getattr(logging, log_level, logging.INFO))
 
     def process(self) -> None:
         log_level = self.get_parameter_value("log_level")
