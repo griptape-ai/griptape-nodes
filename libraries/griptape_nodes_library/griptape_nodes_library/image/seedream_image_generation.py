@@ -278,11 +278,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 self.show_parameter_by_name("images")
                 self.hide_parameter_by_name("guidance_scale")
                 # Update size choices and preserve current size if valid, otherwise default to 1K for v4
-                if current_size not in new_choices:
+                if current_size in new_choices:
+                    self._update_option_choices("size", new_choices, current_size)
+                else:
                     default_size = "1K" if "1K" in new_choices else new_choices[0]
                     self._update_option_choices("size", new_choices, default_size)
-                else:
-                    self._update_option_choices("size", new_choices, current_size)
 
             elif value == "seedream-3.0-t2i":
                 # Hide image inputs (not supported), show guidance scale
@@ -292,10 +292,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
                 # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
-                if current_size not in new_choices:
-                    self._update_option_choices("size", new_choices, "2048x2048")
-                else:
+                if current_size in new_choices:
                     self._update_option_choices("size", new_choices, current_size)
+                else:
+                    self._update_option_choices("size", new_choices, "2048x2048")
 
             elif value == "seededit-3.0-i2i":
                 # Show single image input (required), hide images list, show guidance scale
@@ -310,10 +310,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
                 # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
-                if current_size not in new_choices:
-                    self._update_option_choices("size", new_choices, "adaptive")
-                else:
+                if current_size in new_choices:
                     self._update_option_choices("size", new_choices, current_size)
+                else:
+                    self._update_option_choices("size", new_choices, "adaptive")
 
         return super().after_value_set(parameter, value)
 
