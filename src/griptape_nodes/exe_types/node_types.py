@@ -1636,6 +1636,27 @@ class StartLoopNode(BaseNode):
         iterations the loop will execute.
         """
 
+    @abstractmethod
+    def _get_iteration_items(self) -> list[Any]:
+        """Get the list of items to iterate over.
+
+        This method must be implemented by subclasses to return the items for iteration.
+        For ForEach nodes, this returns the actual list of items.
+        For ForLoop nodes, this can return an empty list as they iterate by index calculation.
+
+        Returns:
+            List of items to iterate over
+        """
+
+    @abstractmethod
+    def _initialize_iteration_data(self) -> None:
+        """Initialize iteration-specific data and state.
+
+        This method must be implemented by subclasses to set up any necessary
+        state before iteration begins. Called before accessing iteration items
+        or calculating total iterations.
+        """
+
 
 class EndLoopNode(BaseNode):
     start_node: StartLoopNode | None = None

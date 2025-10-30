@@ -682,7 +682,7 @@ class ExecuteDagState(State):
                 return ErrorState
 
             # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
-            if isinstance(node_reference.node_reference, StartLoopNode):
+            if False and isinstance(node_reference.node_reference, StartLoopNode):  # noqa: SIM223
                 # Call handle_done_state to clear it from everything
                 end_loop_node = node_reference.node_reference.end_node
                 node_reference.node_state = NodeState.DONE

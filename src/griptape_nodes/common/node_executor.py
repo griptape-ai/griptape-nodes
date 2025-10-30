@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import logging
 import pickle
 from pathlib import Path
@@ -24,7 +24,10 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
-from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeRequest, ListConnectionsForNodeResultSuccess
+from griptape_nodes.retained_mode.events.connection_events import (
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
@@ -79,9 +82,10 @@ class NodeExecutor:
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
         # If this is a loop node, we need to handle it totally differently.
-        if isinstance(node, EndLoopNode):
-            await self.handle_loop_execution(node, execution_type)
-            return
+        if False:
+            if isinstance(node, EndLoopNode):
+                await self.handle_loop_execution(node, execution_type)
+                return
 
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
@@ -364,7 +368,8 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:
+    # Work in PROGRESS!! DO not CALL!! The noqa stuff will be resolved, but it also must be a complex function.
+    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:  # noqa: C901, PLR0912, PLR0915
         """Handle execution of a loop by packaging nodes from start to end and running them.
 
         Args:
@@ -461,7 +466,7 @@ class NodeExecutor:
 
         # Initialize iteration data to populate state
         if hasattr(start_node, "_initialize_iteration_data"):
-            start_node._initialize_iteration_data()
+            start_node._initialize_iteration_data()  # pyright: ignore[reportAttributeAccessIssue]
 
         total_iterations = start_node._get_total_iterations()
         if total_iterations == 0:
@@ -469,8 +474,9 @@ class NodeExecutor:
             return
         logger.info("Starting parallel execution of %d iterations for loop '%s'", total_iterations, start_node.name)
 
-
-        parameter_values_to_set_before_run = self.get_parameter_values_per_iteration(start_node, package_result.parameter_name_mappings)
+        parameter_values_to_set_before_run = self.get_parameter_values_per_iteration(
+            start_node, package_result.parameter_name_mappings
+        )
 
         # Step 5: Deserialize N flow instances from the serialized flow
         # Each deserialization will create a new flow automatically since the
@@ -495,13 +501,13 @@ class NodeExecutor:
             deserialized_flows.append((iteration_index, deserialize_result.node_name_mappings))
 
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
-        return
 
         # Step 6: Set input values on start nodes for each iteration
         from griptape_nodes.retained_mode.events.parameter_events import (
             SetParameterValueRequest,
             SetParameterValueResultSuccess,
         )
+
         # Set input values on StartFlow nodes for each deserialized flow
         for iteration_index, node_name_mappings in deserialized_flows:
             parameter_values = parameter_values_to_set_before_run[iteration_index]
@@ -557,36 +563,9 @@ class NodeExecutor:
 
         async def run_single_iteration(flow_name: str, iteration_index: int) -> tuple[int, bool]:
             """Run a single iteration flow and return success status."""
-            logger.debug(
-                "Starting iteration %d/%d for loop '%s' (flow: %s)",
-                iteration_index + 1,
-                total_iterations,
-                start_node.name,
-                flow_name,
-            )
-
             start_flow_request = StartFlowRequest(flow_name=flow_name)
             start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
-
             success = isinstance(start_flow_result, StartFlowResultSuccess)
-            if success:
-                logger.debug(
-                    "Completed iteration %d/%d for loop '%s'",
-                    iteration_index + 1,
-                    total_iterations,
-                    start_node.name,
-                )
-            else:
-                logger.error(
-                    "Failed iteration %d/%d for loop '%s': %s",
-                    iteration_index + 1,
-                    total_iterations,
-                    start_node.name,
-                    start_flow_result.result_details
-                    if hasattr(start_flow_result, "result_details")
-                    else "Unknown error",
-                )
-
             return iteration_index, success
 
         try:
@@ -602,9 +581,9 @@ class NodeExecutor:
 
             for result in iteration_results:
                 if isinstance(result, Exception):
-                    logger.error("Iteration failed with exception: %s", result)
                     failed_iterations.append(result)
-                else:
+                    continue
+                if isinstance(result, tuple):
                     iteration_index, success = result
                     if success:
                         successful_iterations.append(iteration_index)
@@ -621,8 +600,7 @@ class NodeExecutor:
                 start_node.name,
             )
 
-            # TODO: Aggregate results from all iterations and set them on appropriate nodes
-
+            # Aggregate results from all iterations and set them on appropriate nodes. Left todo.
         finally:
             # Step 9: Cleanup - delete all iteration flows
             from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
@@ -633,7 +611,6 @@ class NodeExecutor:
                     await GriptapeNodes.ahandle_request(delete_request)
                 except Exception as e:
                     logger.warning("Failed to cleanup flow for iteration %d: %s", iteration_index, e)
-
 
     def get_parameter_values_per_iteration(
         self, start_node: StartLoopNode, parameter_name_mappings: dict
@@ -661,9 +638,8 @@ class NodeExecutor:
         list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
         list_connections_result = GriptapeNodes.handle_request(list_connections_request)
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            raise RuntimeError(
-                f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
-            )
+            msg = f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004 This should be a runtime error because it happens during execution.
         # Build parameter values for each iteration
         outgoing_connections = list_connections_result.outgoing_connections
 
@@ -683,8 +659,10 @@ class NodeExecutor:
 
                 # Find the target parameter that corresponds to this target
                 for startflow_param_name, original_node_param in parameter_name_mappings.items():
-                    if (original_node_param.node_name == target_node_name and
-                        original_node_param.parameter_name == target_param_name):
+                    if (
+                        original_node_param.node_name == target_node_name
+                        and original_node_param.parameter_name == target_param_name
+                    ):
                         # This StartFlow parameter feeds the target - set the appropriate value
                         if source_param_name == "index":
                             iteration_values[startflow_param_name] = iteration_index
@@ -695,8 +673,6 @@ class NodeExecutor:
             parameter_val_mappings[iteration_index] = iteration_values
 
         return parameter_val_mappings
-
-
 
     def _extract_parameter_output_values(
         self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]
