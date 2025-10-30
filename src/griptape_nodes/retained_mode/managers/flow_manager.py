@@ -202,6 +202,7 @@ class PackagingStartNodeResult(NamedTuple):
     start_to_package_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
     input_shape_data: WorkflowShapeNodes
     start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -1206,6 +1207,7 @@ class FlowManager:
 
         end_node_packaging_result = end_node_result.packaging_result
         parameter_name_mappings = end_node_result.parameter_name_mappings
+        parameter_name_mappings.update(start_node_result.parameter_name_mappings)
 
         # Step 10: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
@@ -2068,6 +2070,8 @@ class FlowManager:
         # Generate UUID and name for start node
         start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
         start_node_name = "Start_Package_MultiNode"
+        # Parameter name mappings are essential to know which inputs are necessary on the start node given.
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter] = {}
 
         # Build start node CreateNodeRequest
         start_create_node_command = CreateNodeRequest(
@@ -2108,6 +2112,7 @@ class FlowManager:
                 node_name_to_uuid=node_name_to_uuid,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                parameter_name_mappings=parameter_name_mappings
             )
             if isinstance(result, PackageNodesAsSerializedFlowResultFailure):
                 return result
@@ -2150,6 +2155,7 @@ class FlowManager:
             start_to_package_connections=start_to_package_connections,
             input_shape_data=input_shape_data,
             start_node_parameter_value_commands=start_node_parameter_value_commands,
+            parameter_name_mappings=parameter_name_mappings
         )
 
     def _create_start_node_parameters_and_connections_for_incoming_data(  # noqa: PLR0913
@@ -2163,6 +2169,7 @@ class FlowManager:
         node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
     ) -> StartNodeIncomingDataResult | PackageNodesAsSerializedFlowResultFailure:
         """Create parameters and connections for incoming data connections to a specific target node."""
         start_node_parameter_commands = []
@@ -2179,6 +2186,8 @@ class FlowManager:
                 node_name=target_node_name,
                 parameter_name=target_parameter_name,
             )
+
+            parameter_name_mappings[param_name] = OriginalNodeParameter(node_name=target_node_name, parameter_name=target_parameter_name)
 
             # Get the source node to determine parameter type (from the external connection)
             try:
