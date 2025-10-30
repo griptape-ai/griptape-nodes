@@ -97,6 +97,47 @@ class StartFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class StartFlowFromNodeRequest(RequestPayload):
+    """Start executing a flow from a specific node.
+
+    Use when: Resuming execution from a particular node, debugging specific parts of a flow,
+    re-running portions of a workflow, implementing custom execution control.
+
+    Args:
+        flow_name: Name of the flow to start (deprecated)
+        node_name: Name of the node to start execution from
+        debug_mode: Whether to run in debug mode (default: False)
+        pickle_control_flow_result: If this is true, the final ControlFLowResolvedEvent will be pickled to be picked up from inside a subprocess
+
+    Results: StartFlowFromNodeResultSuccess | StartFlowFromNodeResultFailure (with validation exceptions)
+    """
+
+    flow_name: str | None = None
+    node_name: str | None = None
+    debug_mode: bool = False
+    pickle_control_flow_result: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class StartFlowFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Flow started from node successfully. Execution is now running from the specified node."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartFlowFromNodeResultFailure(ResultPayloadFailure):
+    """Flow start from node failed. Contains validation errors that prevented execution.
+
+    Args:
+        validation_exceptions: List of validation errors that occurred
+    """
+
+    validation_exceptions: list[Exception]
+
+
+@dataclass
+@PayloadRegistry.register
 class CancelFlowRequest(RequestPayload):
     """Cancel a running flow execution.
 

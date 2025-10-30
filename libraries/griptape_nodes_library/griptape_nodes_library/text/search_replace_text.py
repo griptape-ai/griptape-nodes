@@ -3,6 +3,8 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
 class SearchReplaceText(DataNode):
@@ -15,63 +17,60 @@ class SearchReplaceText(DataNode):
 
         # Add input text parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="input_text",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
-                input_types=["str"],
-                ui_options={"multiline": True},
+                multiline=True,
+                placeholder_text="Replace this text: wombat...",
                 tooltip="The multiline text to perform search and replace on.",
             )
         )
 
         # Add search pattern parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="search_pattern",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
-                input_types=["str"],
+                placeholder_text="wombat",
                 tooltip="The text or pattern to search for. Can include newlines when using regex mode.",
             )
         )
 
         # Add replacement text parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="replacement_text",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value="",
-                input_types=["str"],
-                tooltip="The multiline text to replace the search pattern with.",
+                placeholder_text="capybara",
+                tooltip="The text to replace the search pattern with.",
             )
         )
 
         # Create options group
         with ParameterGroup(name="Options", ui_options={"hide": True}) as options_group:
             # Add case sensitive option
-            Parameter(
+            ParameterBool(
                 name="case_sensitive",
                 allowed_modes={ParameterMode.PROPERTY},
-                type="bool",
                 default_value=True,
                 tooltip="Whether the search should be case sensitive.",
             )
 
             # Add regex option
-            Parameter(
+            ParameterBool(
                 name="use_regex",
                 allowed_modes={ParameterMode.PROPERTY},
-                type="bool",
                 default_value=False,
                 tooltip="Whether to treat the search pattern as a regular expression. When enabled, you can use patterns like \\n for newlines.",
             )
 
             # Add replace all option
-            Parameter(
+            ParameterBool(
                 name="replace_all",
                 allowed_modes={ParameterMode.PROPERTY},
-                type="bool",
                 default_value=True,
                 tooltip="Whether to replace all occurrences or just the first one.",
             )
@@ -80,26 +79,26 @@ class SearchReplaceText(DataNode):
 
         # Add output parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
                 allowed_modes={ParameterMode.OUTPUT},
-                output_type="str",
-                ui_options={"multiline": True},
-                default_value="",
-                tooltip="The multiline text after performing search and replace.",
+                allow_input=False,
+                allow_property=False,
+                multiline=True,
+                placeholder_text="The text after performing search and replace.",
             )
         )
 
     def _search_replace(self) -> str:
         """Perform search and replace using regex under the hood."""
         # Get input parameters
-        input_text = self.parameter_values.get("input_text", "")
-        search_pattern = self.parameter_values.get("search_pattern", "")
-        replacement_text = self.parameter_values.get("replacement_text", "")
+        input_text = self.get_parameter_value("input_text")
+        search_pattern = self.get_parameter_value("search_pattern")
+        replacement_text = self.get_parameter_value("replacement_text")
         options = {
-            "case_sensitive": self.parameter_values.get("case_sensitive", True),
-            "use_regex": self.parameter_values.get("use_regex", False),
-            "replace_all": self.parameter_values.get("replace_all", True),
+            "case_sensitive": self.get_parameter_value("case_sensitive"),
+            "use_regex": self.get_parameter_value("use_regex"),
+            "replace_all": self.get_parameter_value("replace_all"),
         }
 
         if not input_text or not search_pattern:

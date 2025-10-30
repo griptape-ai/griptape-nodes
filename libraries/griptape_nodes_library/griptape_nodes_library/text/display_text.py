@@ -1,9 +1,7 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-)
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
 class DisplayText(DataNode):
@@ -17,14 +15,12 @@ class DisplayText(DataNode):
 
         # Add output parameter for the string
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
                 default_value=value,
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 tooltip="The text content to display",
-                ui_options={"multiline": True},
+                multiline=True,
+                placeholder_text="The text content to display",
             )
         )
 

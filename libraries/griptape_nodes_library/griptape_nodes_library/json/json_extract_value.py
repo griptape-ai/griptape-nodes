@@ -1,16 +1,20 @@
 import json
-import re
 from typing import Any
+
+import jmespath
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class JsonExtractValue(DataNode):
-    """Extract a value from JSON using dot notation path."""
+    """Extract values from JSON using JMESPath expressions."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -27,16 +31,14 @@ class JsonExtractValue(DataNode):
             )
         )
 
-        # Add parameter for the path to extract
+        # Add parameter for the JMESPath expression
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="path",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str"],
-                type="str",
                 default_value="",
-                tooltip="Dot notation path to extract (e.g., 'user.name', 'items[0].title')",
-                ui_options={"placeholder_text": "Dot notation path to extract (e.g., 'user.name', 'items[0].title')"},
+                tooltip="JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[*].assignee' for all assignees)",
+                placeholder_text="ex: user.name, items[0].title, [*].assignee",
             )
         )
 
@@ -44,58 +46,13 @@ class JsonExtractValue(DataNode):
             Parameter(
                 name="output",
                 type="json",
-                tooltip="The extracted value",
+                tooltip="The extracted value(s)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
-    def _extract_value(self, data: Any, path: str) -> Any:  # noqa: C901, PLR0911
-        """Extract a value from nested data using dot notation path."""
-        if not path:
-            return data
-
-        # Handle array indexing in path (e.g., "items[0].name")
-        default = "{}"
-        # Split by dots, but preserve array indices
-        path_parts = re.split(r"\.(?![^\[]*\])", path)
-
-        current = data
-
-        for part in path_parts:
-            if not isinstance(current, (dict, list)):
-                msg = f"JsonExtractValue: Cannot extract from path '{path}' - expected dict or list at path segment, but got {type(current).__name__}: {current!r}"
-                raise TypeError(msg)
-
-            # Check if this part has array indexing
-            array_match = re.match(r"^(.+)\[(\d+)\]$", part)
-            if array_match:
-                # Handle array indexing
-                key = array_match.group(1)
-                index = int(array_match.group(2))
-
-                if isinstance(current, dict):
-                    if key not in current:
-                        return default
-                    current = current[key]
-
-                if isinstance(current, list):
-                    if index < 0 or index >= len(current):
-                        return default
-                    current = current[index]
-                else:
-                    return default
-            # Handle regular dictionary key
-            elif isinstance(current, dict):
-                if part not in current:
-                    return default
-                current = current[part]
-            else:
-                return default
-
-        return current
-
     def _perform_extraction(self) -> None:
-        """Perform the JSON extraction and set the output value."""
+        """Perform the JSON extraction using JMESPath."""
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
 
@@ -104,28 +61,38 @@ class JsonExtractValue(DataNode):
             try:
                 json_data = json.loads(json_data)
             except json.JSONDecodeError as e:
-                msg = f"JsonExtractValue: Invalid JSON string provided. Failed to parse JSON: {e}. Input was: {json_data[:200]!r}"
+                msg = f"{self.name}: Invalid JSON string provided. Failed to parse JSON: {e}. Input was: {json_data[:200]!r}"
                 raise ValueError(msg) from e
             except TypeError as e:
-                msg = f"JsonExtractValue: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
+                msg = f"{self.name}: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
                 raise ValueError(msg) from e
 
-        # Extract the value
-        extracted_value = self._extract_value(json_data, path)
+        # Handle empty path
+        if not path:
+            result = json_data
+        else:
+            try:
+                # Use JMESPath to extract the value
+                result = jmespath.search(path, json_data)
+            except Exception as e:
+                msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
+                raise ValueError(msg) from e
 
-        # Ensure the extracted value is valid JSON
-        if extracted_value is None:
+        # Handle None result
+        if result is None:
             result = "{}"
         else:
             try:
                 # Convert the extracted value to valid JSON string
-                result = json.dumps(extracted_value, ensure_ascii=False)
+                result = json.dumps(result, ensure_ascii=False)
             except (TypeError, ValueError):
                 # If the value can't be serialized as JSON, return empty object
                 result = "{}"
 
         # Set the output
-        self.set_parameter_value("output", result)
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(parameter_name="output", value=result, node_name=self.name)
+        )
         self.publish_update_to_parameter("output", result)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:

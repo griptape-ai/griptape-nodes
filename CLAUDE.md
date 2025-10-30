@@ -129,6 +129,22 @@ When developing, follow this iteration loop:
         return f"Error: Cannot write to output location"
     ```
 
+**Include context in error messages** - Always provide meaningful context to help users understand where errors occur:
+
+- Include `{self.name}` in error messages when available (for classes with a name attribute)
+- Include relevant parameter names, object identifiers, or operation context
+- This helps users identify which specific node, component, or operation failed
+- Bad example:
+    ```python
+    logger.warning("Invalid input received")
+    return "Error: Processing failed"
+    ```
+- Good example:
+    ```python
+    logger.warning(f"{self.name} received invalid input: {input_value}")
+    return f"Error: {self.name} failed to process input"
+    ```
+
 ## Architecture Overview
 
 **Core Engine Architecture:**

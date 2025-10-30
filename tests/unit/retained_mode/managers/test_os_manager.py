@@ -545,7 +545,7 @@ class TestWindowsLongPathHandling:
         result = os_manager.normalize_path_for_platform(long_path)
 
         # On Windows, long paths should get the prefix
-        if len(str(long_path.resolve())) > WINDOWS_MAX_PATH:
+        if len(str(long_path.resolve())) >= WINDOWS_MAX_PATH:
             assert result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Non-Windows test")
