@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from email.policy import default
 import logging
 import threading
 import warnings
@@ -129,7 +130,7 @@ class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-
+    parent_node: BaseNode | None
     # Node Context Fields
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
@@ -172,15 +173,6 @@ class BaseNode(ABC):
         self._tracked_parameters = []
         self._cancellation_requested = threading.Event()
         self.set_entry_control_parameter(None)
-        self.execution_environment = Parameter(
-            name="execution_environment",
-            tooltip="Environment that the node should execute in",
-            type=ParameterTypeBuiltin.STR,
-            allowed_modes={ParameterMode.PROPERTY},
-            default_value=LOCAL_EXECUTION,
-            traits={Options(choices=get_library_names_with_publish_handlers())},
-            ui_options={"hide": True},
-        )
         self.add_parameter(self.execution_environment)
         self.node_group = Parameter(
             name="job_group",
@@ -203,6 +195,14 @@ class BaseNode(ABC):
     @state.setter
     def state(self, new_state: NodeResolutionState) -> None:
         self._state = new_state
+
+    @property
+    def parent_node(self) -> BaseNode | None:
+        return self.parent_node
+
+    @parent_node.setter
+    def parent_node(self, parent_node: BaseNode | None) -> None:
+        self.parent_node = parent_node
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -1846,142 +1846,24 @@ class ErrorProxyNode(BaseNode):
         """No-op process method. Error Proxy nodes do nothing during execution."""
         return None
 
-
 @dataclass
-class NodeGroup:
-    """Represents a group of nodes that should be executed together in parallel.
+class NodeGroupStoredConnections:
+    """Stores all of the connections for when we create/remove connections on a node group based on the parameters."""
+    class ExternalConnections(NamedTuple):
+        """Represents the External connections to/from the node group."""
+        incoming_connections: list[Connection] = field(default_factory=list)
+        outgoing_connections: list[Connection] = field(default_factory=list)
+    class OriginalTargets(NamedTuple):
+        """Represents the connections before they were remapped."""
+        incoming_sources: dict[int, BaseNode] = field(default_factory=dict)
+        outgoing_targets: dict[int, BaseNode] = field(default_factory=dict)
 
-    Nodes in a group are identified by having the same non-empty value in their
-    node_group parameter. During DAG resolution, grouped nodes are replaced with
-    a single NodeGroupProxyNode that represents them in the execution graph.
-
-    Attributes:
-        group_id: Unique identifier for this group (value from node_group parameter)
-        nodes: Set of BaseNode instances that belong to this group
-        internal_connections: Connections between nodes within the group
-        external_incoming_connections: Connections from outside nodes into the group
-        external_outgoing_connections: Connections from group nodes to outside nodes
-    """
-
-    group_id: str
-    nodes: dict[str, BaseNode] = field(default_factory=dict)
     internal_connections: list[Connection] = field(default_factory=list)
-    external_incoming_connections: list[Connection] = field(default_factory=list)
-    external_outgoing_connections: list[Connection] = field(default_factory=list)
-    # Store original node references before remapping to proxy (for cleanup)
-    original_incoming_targets: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original target
-    original_outgoing_sources: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original source
-
-    def add_node(self, node: BaseNode) -> None:
-        """Add a node to this group."""
-        self.nodes[node.name] = node
-
-    def validate_no_intermediate_nodes(self, all_connections: dict[int, Connection]) -> None:
-        """Validate that no ungrouped nodes exist between grouped nodes.
-
-        This method checks the dependency graph to ensure that all nodes that lie
-        on paths between grouped nodes are also part of the group. If ungrouped
-        nodes are found between grouped nodes, this indicates a logical error in
-        the group definition.
-
-        Args:
-            all_connections: Dictionary mapping connection IDs to Connection objects
-
-        Raises:
-            ValueError: If ungrouped nodes are found between grouped nodes
-        """
-        from griptape_nodes.exe_types.connections import Connections
-
-        # Build a Connections object for traversal
-        connections = Connections()
-        connections.connections = all_connections
-
-        # Rebuild indices for efficient lookup
-        for conn_id, conn in all_connections.items():
-            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
-                conn.source_parameter.name, []
-            ).append(conn_id)
-            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
-                conn.target_parameter.name, []
-            ).append(conn_id)
-
-        # Check each pair of nodes in the group
-        for node_a in self.nodes.values():
-            for node_b in self.nodes.values():
-                if node_a == node_b:
-                    continue
-
-                # Check if there's a path from node_a to node_b
-                intermediate_nodes = self._find_intermediate_nodes(node_a, node_b, connections)
-
-                # Check if any intermediate nodes are not in the group
-                ungrouped_intermediates = [n for n in intermediate_nodes if n not in self.nodes]
-
-                if ungrouped_intermediates:
-                    ungrouped_names = [n.name for n in ungrouped_intermediates]
-                    msg = (
-                        f"Invalid node group '{self.group_id}': Found ungrouped nodes between grouped nodes. "
-                        f"Ungrouped nodes {ungrouped_names} exist on the path from '{node_a.name}' to '{node_b.name}'. "
-                        f"All nodes on paths between grouped nodes must be part of the same group."
-                    )
-                    raise ValueError(msg)
-
-    def _find_intermediate_nodes(  # noqa: C901
-        self, start_node: BaseNode, end_node: BaseNode, connections: Connections
-    ) -> set[BaseNode]:
-        """Find all nodes on paths between start_node and end_node (excluding endpoints).
-
-        Uses BFS to explore all paths from start_node to end_node and collects
-        all nodes encountered (except start and end nodes themselves).
-
-        Args:
-            start_node: Starting node for path search
-            end_node: Target node for path search
-            connections: Connections object for graph traversal
-
-        Returns:
-            Set of nodes found on paths between start and end (excluding endpoints)
-        """
-        if start_node.name not in connections.outgoing_index:
-            return set()
-
-        visited = set()
-        intermediate = set()
-        queue = [(start_node, [start_node])]
-
-        while queue:
-            current_node, path = queue.pop(0)
-
-            if current_node.name in visited:
-                continue
-            visited.add(current_node.name)
-
-            # Process outgoing connections from current node
-            if current_node.name not in connections.outgoing_index:
-                continue
-
-            for conn_ids in connections.outgoing_index[current_node.name].values():
-                for conn_id in conn_ids:
-                    if conn_id not in connections.connections:
-                        continue
-
-                    conn = connections.connections[conn_id]
-                    next_node = conn.target_node
-
-                    # If we reached the end node, record intermediate nodes
-                    if next_node == end_node:
-                        for node in path[1:]:
-                            intermediate.add(node)
-                        continue
-
-                    # Continue exploring if not already visited
-                    if next_node.name not in visited:
-                        queue.append((next_node, [*path, next_node]))
-
-        return intermediate
+    external_connections: ExternalConnections = field(default_factory=ExternalConnections)
+    original_targets: OriginalTargets = field(default_factory=OriginalTargets)
 
 
-class NodeGroupProxyNode(BaseNode):
+class NodeGroupNode(BaseNode):
     """Proxy node that represents a group of nodes during DAG execution.
 
     This node acts as a single execution unit for a group of nodes that should
@@ -1991,34 +1873,30 @@ class NodeGroupProxyNode(BaseNode):
 
     The proxy node has parameters that mirror the external connections to/from
     the group, allowing it to seamlessly integrate into the DAG structure.
-
-    Attributes:
-        node_group: The NodeGroup instance this proxy represents
     """
+    nodes: dict[str, BaseNode]
+    stored_connections: NodeGroupStoredConnections
+    _proxy_param_to_node_param: dict[str, tuple[BaseNode, str]]
 
     def __init__(
         self,
         name: str,
-        node_group: NodeGroup,
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
-        self.node_group_data = node_group
-
+        self.execution_environment = Parameter(
+            name="execution_environment",
+            tooltip="Environment that the group should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
+            ui_options={"hide": True},
+        )
+        self.nodes = {}
         # Track mapping from proxy parameter name to (original_node, original_param_name)
-        self._proxy_param_to_node_param: dict[str, tuple[BaseNode, str]] = {}
-        execution_type = set()
-        for node in node_group.nodes.values():
-            execution_type.add(node.get_parameter_value(node.execution_environment.name))
-        # TODO: Set this by group in the UI, not set on the node itself. https://github.com/griptape-ai/griptape-vsl-gui/issues/1429
-        if len(execution_type) > 1:
-            # Hoping this check can be removed by UI updates.
-            # For now, we are setting execution type individually on a parameters in all three of the nodes. we want their execution types to all be matching, or we fail.
-            msg = f"Node group '{node_group.group_id}' has nodes with multiple execution types: {execution_type}"
-            raise ValueError(msg)
-        self.set_parameter_value(self.execution_environment.name, execution_type.pop())
-        # Note: Proxy parameters are created AFTER connection remapping in control_flow.py
-        # via explicit call to create_proxy_parameters()
+        self._proxy_param_to_node_param = {}
+        self.stored_connections = NodeGroupStoredConnections()
 
     def create_proxy_parameters(self) -> None:
         """Create parameters on the proxy that match external connections.
@@ -2092,6 +1970,132 @@ class NodeGroupProxyNode(BaseNode):
 
                 # Track mapping from proxy param to original node/param
                 self._proxy_param_to_node_param[proxy_param_name] = (source_node, source_param.name)
+
+    # This should only be called at runtime.
+    def _find_intermediate_nodes(  # noqa: C901
+        self, start_node: BaseNode, end_node: BaseNode, connections: Connections
+    ) -> set[BaseNode]:
+        """Find all nodes on paths between start_node and end_node (excluding endpoints).
+
+        Uses BFS to explore all paths from start_node to end_node and collects
+        all nodes encountered (except start and end nodes themselves).
+
+        Args:
+            start_node: Starting node for path search
+            end_node: Target node for path search
+            connections: Connections object for graph traversal
+
+        Returns:
+            Set of nodes found on paths between start and end (excluding endpoints)
+        """
+        if start_node.name not in connections.outgoing_index:
+            return set()
+
+        visited = set()
+        intermediate = set()
+        queue = [(start_node, [start_node])]
+
+        while queue:
+            current_node, path = queue.pop(0)
+
+            if current_node.name in visited:
+                continue
+            visited.add(current_node.name)
+
+            # Process outgoing connections from current node
+            if current_node.name not in connections.outgoing_index:
+                continue
+
+            for conn_ids in connections.outgoing_index[current_node.name].values():
+                for conn_id in conn_ids:
+                    if conn_id not in connections.connections:
+                        continue
+
+                    conn = connections.connections[conn_id]
+                    next_node = conn.target_node
+
+                    # If we reached the end node, record intermediate nodes
+                    if next_node == end_node:
+                        for node in path[1:]:
+                            intermediate.add(node)
+                        continue
+
+                    # Continue exploring if not already visited
+                    if next_node.name not in visited:
+                        queue.append((next_node, [*path, next_node]))
+
+        return intermediate
+
+    # This should only be called at runtime.
+    def validate_no_intermediate_nodes(self, all_connections: dict[int, Connection]) -> None:
+        """Validate that no ungrouped nodes exist between grouped nodes.
+
+        This method checks the dependency graph to ensure that all nodes that lie
+        on paths between grouped nodes are also part of the group. If ungrouped
+        nodes are found between grouped nodes, this indicates a logical error in
+        the group definition.
+
+        Args:
+            all_connections: Dictionary mapping connection IDs to Connection objects
+
+        Raises:
+            ValueError: If ungrouped nodes are found between grouped nodes
+        """
+        from griptape_nodes.exe_types.connections import Connections
+
+        # Build a Connections object for traversal
+        connections = Connections()
+        connections.connections = all_connections
+
+        # Rebuild indices for efficient lookup
+        for conn_id, conn in all_connections.items():
+            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
+                conn.source_parameter.name, []
+            ).append(conn_id)
+            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
+                conn.target_parameter.name, []
+            ).append(conn_id)
+
+        # Check each pair of nodes in the group
+        for node_a in self.nodes.values():
+            for node_b in self.nodes.values():
+                if node_a == node_b:
+                    continue
+
+                # Check if there's a path from node_a to node_b
+                intermediate_nodes = self._find_intermediate_nodes(node_a, node_b, connections)
+
+                # Check if any intermediate nodes are not in the group
+                ungrouped_intermediates = [n for n in intermediate_nodes if n not in self.nodes]
+
+                if ungrouped_intermediates:
+                    ungrouped_names = [n.name for n in ungrouped_intermediates]
+                    msg = (
+                        f"Invalid node group '{self.group_id}': Found ungrouped nodes between grouped nodes. "
+                        f"Ungrouped nodes {ungrouped_names} exist on the path from '{node_a.name}' to '{node_b.name}'. "
+                        f"All nodes on paths between grouped nodes must be part of the same group."
+                    )
+                    raise ValueError(msg)
+
+    def add_node_to_group(self, node:BaseNode) -> None:
+        if node.parent_node is not None:
+            # We must remove this node from the group that it's currently in
+            existing_parent_node = node.parent_node
+            if isinstance(existing_parent_node, NodeGroupProxyNode):
+                existing_parent_node.remove_node_from_group(node)
+        # Now it should be removed, so we can set parent node to this.
+        node.parent_node = self
+        self.nodes[node.name] = node
+        self._add_node_connections(node)
+
+    def remove_node_from_group(self, node:BaseNode) -> None:
+        if node.name not in self.nodes:
+            msg = f"Node {node.name} is not in node group {self.name}"
+            raise ValueError(msg)
+        # The node exists
+        node.parent_node = None
+        self.nodes.pop(node.name)
+        self._remove_node_connections(node)
 
     async def aprocess(self) -> None:
         """Execute all nodes in the group in parallel.
