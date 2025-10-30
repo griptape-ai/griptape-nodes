@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from urllib.parse import urljoin
@@ -317,7 +316,6 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 "structure_description", structure.description
             )
             node_metadata["integration_id"] = webhook_integration.integration_id if webhook_integration else None
-            node_metadata["webhook_url"] = webhook_integration.webhook_url if webhook_integration else None
 
             set_node_metadata_request = SetNodeMetadataRequest(
                 node_name=griptape_cloud_start_flow_node.name,
@@ -340,6 +338,9 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                     details = f"Failed to set parameter '{param_name}' for Griptape Cloud Start Flow node."
                     logger.error(details)
                     raise TypeError(details)
+                griptape_cloud_start_flow_node.show_parameter_by_name(param_name)
+                if param_name == "integration_id":
+                    griptape_cloud_start_flow_node.show_parameter_by_name("webhook_url")
 
             workflow = WorkflowRegistry.get_workflow_by_name(self._workflow_name)
             save_workflow_request = SaveWorkflowRequest(file_name=Path(workflow.file_path).stem)
@@ -775,7 +776,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         Args:
             structure: The published structure in Griptape Cloud.
             workflow_shape: The input/output shape of the original workflow.
-            integration_id: The integration ID for webhook integration, if any.
+            webhook_integration: The webhook integration for the published structure, if any.
 
         Returns:
             Path to the generated executor workflow file.
