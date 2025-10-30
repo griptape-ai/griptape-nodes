@@ -1,7 +1,22 @@
 from typing import Any
+from urllib.parse import urljoin
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
+from griptape_cloud.base.base_griptape_cloud_node import DEFAULT_GRIPTAPE_CLOUD_URL
+from griptape_nodes.exe_types.core_types import (
+    NodeMessageResult,
+    Parameter,
+    ParameterMessage,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.secrets_events import GetSecretValueRequest, GetSecretValueResultSuccess
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.button import (
+    Button,
+    ButtonDetailsMessagePayload,
+    ModalContentPayload,
+    OnClickMessageResultPayload,
+)
 
 
 class GriptapeCloudWebhookConfigParameter:
@@ -19,7 +34,6 @@ class GriptapeCloudWebhookConfigParameter:
         self.allowed_modes = allowed_modes
 
         integration_id = metadata.get("integration_id")
-        webhook_url = metadata.get("webhook_url")
 
         # Add webhook config parameters
         node.add_parameter(
@@ -39,10 +53,15 @@ class GriptapeCloudWebhookConfigParameter:
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=webhook_url,
+                default_value="",
                 tooltip="The webhook URL for the published workflow",
                 hide=hide_integration_details,
-                allowed_modes=allowed_modes,
+                allowed_modes={ParameterMode.PROPERTY},
+                traits={
+                    Button(
+                        icon="webhook", on_click=self._handle_get_webhook_url, tooltip="Get Webhook URL", state="normal"
+                    ),
+                },
             )
         )
         node.add_parameter(
@@ -55,6 +74,13 @@ class GriptapeCloudWebhookConfigParameter:
                 tooltip="The integration ID of the published workflow",
                 hide=hide_integration_details,
                 allowed_modes=allowed_modes,
+                traits={
+                    Button(
+                        icon="link",
+                        on_click=self._handle_integration_link,
+                        tooltip="View Integration in Griptape Cloud",
+                    ),
+                },
             )
         )
         node.add_node_element(
@@ -143,3 +169,54 @@ class GriptapeCloudWebhookConfigParameter:
             else:
                 self.node.hide_parameter_by_name(param)
                 self.node.hide_message_by_name("griptape_cloud_webhook_config_parameter_message")
+
+    def _handle_integration_link(
+        self,
+        button: Button,  # noqa: ARG002
+        button_details: ButtonDetailsMessagePayload,
+    ) -> NodeMessageResult | None:
+        integration_id = self.node.get_parameter_value("integration_id")
+        if integration_id:
+            integration_url = urljoin(DEFAULT_GRIPTAPE_CLOUD_URL, f"/integrations/{integration_id}")
+            return NodeMessageResult(
+                success=True,
+                details="Webhook URL retrieved successfully.",
+                response=OnClickMessageResultPayload(
+                    button_details=button_details,
+                    href=integration_url,
+                ),
+                altered_workflow_state=False,
+            )
+        return None
+
+    def _handle_get_webhook_url(self, button: Button, button_details: ButtonDetailsMessagePayload) -> NodeMessageResult:  # noqa: ARG002
+        integration_id = self.node.get_parameter_value("integration_id")
+
+        # If webhook URL doesn't exist yet, provide helpful message
+        if not integration_id:
+            clipboard_copyable_content = (
+                "No webhook URL available yet. Please publish the workflow to Griptape Cloud first."
+            )
+        else:
+            get_secret_value_request = GetSecretValueRequest(key="GT_CLOUD_API_KEY")
+            result = GriptapeNodes.handle_request(get_secret_value_request)
+            if not isinstance(result, GetSecretValueResultSuccess):
+                details = "Failed to retrieve API key from secrets manager."
+                raise RuntimeError(details)
+            webhook_url = urljoin(DEFAULT_GRIPTAPE_CLOUD_URL, f"/api/integrations/{integration_id}/handler")
+            webhook_url = f"{webhook_url}?api_key={result.value}"
+            clipboard_copyable_content = webhook_url
+
+        # Return response with button state and modal content
+        return NodeMessageResult(
+            success=True,
+            details="Webhook URL retrieved successfully.",
+            response=OnClickMessageResultPayload(
+                button_details=button_details,
+                modal_content=ModalContentPayload(
+                    clipboard_copyable_content=clipboard_copyable_content,
+                    title="Webhook URL",
+                ),
+            ),
+            altered_workflow_state=False,
+        )
