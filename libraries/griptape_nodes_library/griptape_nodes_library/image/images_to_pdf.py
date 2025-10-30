@@ -134,7 +134,7 @@ class ImagesToPdf(ControlNode):
             pdf_bytes,
             filename,
         )
-        logger.info(f"{self.name}: PDF saved to static files as {static_url}")
+        logger.debug(f"{self.name}: PDF saved to static files as {static_url}")
 
         # Set output
         self.parameter_output_values["output"] = UrlArtifact(static_url)
