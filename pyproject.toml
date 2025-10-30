@@ -29,6 +29,7 @@ dependencies = [
   "semver>=3.0.4",
   "aiofiles>=25.1.0",
   "ruamel.yaml>=0.18.15",
+  "asyncio-thread-runner>=1.0",
 ]
 
 [project.optional-dependencies]
