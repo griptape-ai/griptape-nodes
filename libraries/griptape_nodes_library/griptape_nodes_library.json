@@ -38,7 +38,8 @@
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
-        "jmespath>=1.0.1"
+        "jmespath>=1.0.1",
+        "json-schema-to-pydantic>=0.4.5"
       ]
     }
   },
@@ -1100,26 +1101,6 @@
         "category": "convert",
         "description": "Converts incoming value to JSON data",
         "display_name": "To JSON",
-        "group": "edit"
-      }
-    },
-    {
-      "class_name": "CreateSchema",
-      "file_path": "griptape_nodes_library/convert/create_schema.py",
-      "metadata": {
-        "category": "convert",
-        "description": "Create a JSON schema from field definitions for structured output",
-        "display_name": "Create Schema",
-        "group": "edit"
-      }
-    },
-    {
-      "class_name": "CreateSchemaField",
-      "file_path": "griptape_nodes_library/convert/create_schema_field.py",
-      "metadata": {
-        "category": "convert",
-        "description": "Define a single field for a JSON schema with name, type, and description",
-        "display_name": "Create Schema Field",
         "group": "edit"
       }
     },

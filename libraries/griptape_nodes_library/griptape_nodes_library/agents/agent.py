@@ -15,7 +15,7 @@ from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStru
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 from jinja2 import Template
-from pydantic import create_model
+from json_schema_to_pydantic import create_model
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
@@ -24,7 +24,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from griptape_nodes_library.utils.schema_utils import create_pydantic_model_from_schema
 
 # --- Constants ---
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -196,8 +195,8 @@ class Agent(ControlNode):
         self.add_parameter(
             Parameter(
                 name="output_schema",
-                input_types=["dict"],
-                type="dict",
+                input_types=["json"],
+                type="json",
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
@@ -287,7 +286,7 @@ class Agent(ControlNode):
     ) -> None:
         # If an existing agent is connected, hide parameters related to creating a new one.
         if target_parameter.name == "agent":
-            params_to_toggle = ["model", "tools", "rulesets", "schema"]
+            params_to_toggle = ["model", "tools", "rulesets"]
             self.hide_parameter_by_name(params_to_toggle)
 
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
@@ -311,8 +310,8 @@ class Agent(ControlNode):
             target_parameter.allowed_modes = {ParameterMode.INPUT}
 
         if target_parameter.name == "output_schema":
-            # When schema is connected, change output type to dict and validate connections
-            self._update_output_type_and_validate_connections("dict")
+            # When schema is connected, change output type to json and validate connections
+            self._update_output_type_and_validate_connections("json")
 
         return super().after_incoming_connection(source_node, source_parameter, target_parameter)
 
@@ -459,15 +458,16 @@ class Agent(ControlNode):
             )
 
         # Get the output schema
-        output_schema: dict = self.get_parameter_value("output_schema")
+        output_schema: str = self.get_parameter_value("output_schema")
         pydantic_schema = None
         if output_schema is not None:
             try:
-                pydantic_schema = create_pydantic_model_from_schema(output_schema)
+                pydantic_schema = create_model(output_schema)
             except Exception as e:
                 msg = f"[ERROR]: Unable to create output schema model: {e}"
                 self.append_value_to_parameter("logs", msg + "\n")
                 logger.error(msg)
+                raise e
 
         if include_details and pydantic_schema:
             self.append_value_to_parameter("logs", "[Schema]: Structured output schema provided\n")
@@ -555,7 +555,7 @@ class Agent(ControlNode):
             msg = "Agent must have a PromptTask"
             raise TypeError(msg)
         prompt_driver = task.prompt_driver
-        prompt_driver.stream = self.get_parameter_value("output_schema") is None
+        prompt_driver.stream = True
         if prompt_driver.stream:
             for event in agent.run_stream(
                 *args, event_types=[StartStructureRunEvent, TextChunkEvent, ActionChunkEvent, FinishStructureRunEvent]
@@ -589,7 +589,7 @@ class Agent(ControlNode):
             agent.run(*args)
             agent_output = agent.output
             if isinstance(agent_output, ModelArtifact):
-                self.set_parameter_value("output", agent_output.value.model_dump())
+                self.set_parameter_value("output", agent_output.value.model_dump_json())
             else:
                 self.set_parameter_value("output", str(agent_output))
             try_throw_error(agent.output)

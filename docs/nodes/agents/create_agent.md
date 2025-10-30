@@ -29,6 +29,7 @@ Use this node when you want to:
 - **prompt_model_config**: The an external model configuration for how the Agent communicates with AI models.
 - **tools**: Capabilities you want to give your Agent
 - **rulesets**: Rules that tell your Agent what it can and cannot do
+- **output_schema**: A JSON Schema template that defines the exact format you want the Agent's response to follow (optional)
 
 ### Outputs
 
@@ -47,6 +48,71 @@ Imagine you want to create an Agent that can write haikus based on prompt_contex
 1. Run the workflow
 1. The Agent "output" will contain a haiku about swimming!
 
+## Using Output Schemas
+
+### What is an Output Schema?
+
+Think of an output schema as a form you're asking the AI to fill out. Instead of getting a free-form text response, you can specify exactly what pieces of information you want and how they should be organized.
+
+For example, instead of asking "Tell me about this product" and getting a paragraph of text, you can ask for:
+
+- A product name (text)
+- A price (number)
+- Whether it's in stock (yes/no)
+- A list of features (multiple text items)
+
+The AI will then respond with structured data that matches exactly what you asked for.
+
+### Why Use an Output Schema?
+
+Use output schemas when you need:
+
+- **Consistent formats**: Every response follows the same structure, making it easier to process
+- **Specific data types**: Guarantee you get numbers where you need numbers, lists where you need lists, etc.
+- **Easier automation**: Structured data is much easier to connect to other nodes in your workflow
+- **Validation**: The AI must provide all required fields in the correct format
+
+### How to Create an Output Schema
+
+1. Add **Create Schema Field** nodes for each piece of information you want:
+
+    - Set the field name (e.g., "product_name")
+    - Choose the type (string, integer, float, boolean, list, or dict)
+    - Optionally add a description to guide the AI
+
+1. Add a **Create Schema** node to combine your fields:
+
+    - Connect all your Schema Field nodes to it
+    - Give your schema a meaningful name
+
+1. Connect the schema to your Agent's **output_schema** input
+
+### Output Schema Example
+
+Let's say you want to extract information about a restaurant from a review:
+
+1. Create Schema Fields:
+
+    - Field "restaurant_name" (type: string)
+    - Field "rating" (type: integer)
+    - Field "price_range" (type: string)
+    - Field "cuisine_type" (type: string)
+    - Field "recommended_dishes" (type: list, list_type: string)
+
+1. Connect all fields to a Create Schema node
+
+1. Connect the schema to your Agent's output_schema input
+
+1. Set your Agent's prompt: "Extract restaurant information from this review: [review text]"
+
+1. The Agent will now respond with structured data instead of plain text, containing exactly those fields
+
+### What Changes When Using a Schema?
+
+- **Output type**: The Agent's output changes from plain text to structured data (JSON format)
+- **No streaming**: The Agent must generate the complete structured response before returning it
+- **Validation**: If the AI cannot provide data in the requested format, it will try again or return an error
+
 ## Important Notes
 
 - If you don't provide a prompt, the node will create the agent without running it and the output will contain exactly "Agent Created"
@@ -59,6 +125,7 @@ Imagine you want to create an Agent that can write haikus based on prompt_contex
     - Context from previous prompts influences how the Agent interprets new prompts
     - You can build multi-turn conversations across multiple nodes
     - The Agent can reference information provided in earlier steps of your workflow
+- Don't know how to create a JSON Schema for the output_schema parameter? Use an online tool like [JSON Schema Builder](https://transform.tools/json-to-json-schema) to create one based on your desired output structure. Or just give an Agent an example of the output you want and have it generate the schema for you!
 
 ## Common Issues
 
