@@ -74,18 +74,8 @@ Use output schemas when you need:
 
 ### How to Create an Output Schema
 
-1. Add **Create Schema Field** nodes for each piece of information you want:
-
-    - Set the field name (e.g., "product_name")
-    - Choose the type (string, integer, float, boolean, list, or dict)
-    - Optionally add a description to guide the AI
-
-1. Add a **Create Schema** node to combine your fields:
-
-    - Connect all your Schema Field nodes to it
-    - Give your schema a meaningful name
-
-1. Connect the schema to your Agent's **output_schema** input
+1. Add a **JSON Input** node to your workflow
+1. Add a JSON Schema that defines the output that you want (you can use online tools to help create this)
 
 ### Output Schema Example
 
@@ -107,10 +97,28 @@ Let's say you want to extract information about a restaurant from a review:
 
 1. The Agent will now respond with structured data instead of plain text, containing exactly those fields
 
+1. The generated schema will look like this:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "restaurant_name": { "type": "string" },
+    "rating": { "type": "integer" },
+    "price_range": { "type": "string" },
+    "cuisine_type": { "type": "string" },
+    "recommended_dishes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["restaurant_name", "rating", "price_range", "cuisine_type", "recommended_dishes"]
+}
+```
+
 ### What Changes When Using a Schema?
 
 - **Output type**: The Agent's output changes from plain text to structured data (JSON format)
-- **No streaming**: The Agent must generate the complete structured response before returning it
 - **Validation**: If the AI cannot provide data in the requested format, it will try again or return an error
 
 ## Important Notes
