@@ -109,7 +109,7 @@ class MorphologyImage(ControlNode):
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+    def after_value_set(self, parameter: Parameter, _value: Any) -> None:
         """Process image automatically when parameters change for live preview."""
         # Process when Morphology parameters change and an input image exists
         if (
