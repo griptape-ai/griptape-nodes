@@ -39,7 +39,7 @@
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1",
-        "json-schema-to-pydantic>=0.4.5"
+        "json-schema-to-pydantic>=0.4.6"
       ]
     }
   },
