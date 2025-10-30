@@ -124,6 +124,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeserializeNodeFromCommandsRequest,
+    DeserializeNodeFromCommandsResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
@@ -2925,7 +2926,7 @@ class FlowManager:
             original_node_name = serialized_node.create_node_command.node_name
             deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
-            if deserialized_node_result.failed():
+            if not isinstance(deserialized_node_result, DeserializeNodeFromCommandsResultSuccess):
                 details = (
                     f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                 )
