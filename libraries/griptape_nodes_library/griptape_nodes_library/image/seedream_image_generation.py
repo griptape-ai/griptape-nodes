@@ -170,7 +170,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="2048x2048",
+                default_value="1K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=SIZE_OPTIONS["seedream-4.0"])},
@@ -269,6 +269,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Update size options and parameter visibility based on model selection."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             new_choices = SIZE_OPTIONS[value]
+            current_size = self.get_parameter_value("size")
 
             # Set appropriate parameters for each model
             if value == "seedream-4.0":
@@ -276,9 +277,12 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 self.hide_parameter_by_name("image")
                 self.show_parameter_by_name("images")
                 self.hide_parameter_by_name("guidance_scale")
-                # Update size choices and set default to 2K for v4
-                default_size = "2K" if "2K" in new_choices else new_choices[0]
-                self._update_option_choices("size", new_choices, default_size)
+                # Update size choices and preserve current size if valid, otherwise default to 1K for v4
+                if current_size not in new_choices:
+                    default_size = "1K" if "1K" in new_choices else new_choices[0]
+                    self._update_option_choices("size", new_choices, default_size)
+                else:
+                    self._update_option_choices("size", new_choices, current_size)
 
             elif value == "seedream-3.0-t2i":
                 # Hide image inputs (not supported), show guidance scale
@@ -287,8 +291,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 self.show_parameter_by_name("guidance_scale")
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and set default to 2048x2048 for v3 t2i
-                self._update_option_choices("size", new_choices, "2048x2048")
+                # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
+                if current_size not in new_choices:
+                    self._update_option_choices("size", new_choices, "2048x2048")
+                else:
+                    self._update_option_choices("size", new_choices, current_size)
 
             elif value == "seededit-3.0-i2i":
                 # Show single image input (required), hide images list, show guidance scale
@@ -302,8 +309,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
                     image_param.ui_options["display_name"] = "Input Image"
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and set default to adaptive for seededit
-                self._update_option_choices("size", new_choices, "adaptive")
+                # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
+                if current_size not in new_choices:
+                    self._update_option_choices("size", new_choices, "adaptive")
+                else:
+                    self._update_option_choices("size", new_choices, current_size)
 
         return super().after_value_set(parameter, value)
 
@@ -370,7 +380,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             "model": self.get_parameter_value("model") or "seedream-4.0",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": self.get_parameter_value("image"),
-            "size": self.get_parameter_value("size") or "2048x2048",
+            "size": self.get_parameter_value("size") or "1K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
