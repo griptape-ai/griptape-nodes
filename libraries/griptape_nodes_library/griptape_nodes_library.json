@@ -383,14 +383,6 @@
         "description": "",
         "icon": "Video"
       }
-    },
-    {
-      "image/cosmos": {
-        "color": "border-purple-500",
-        "title": "Image/Cosmos",
-        "description": "Image generation with Cosmos",
-        "icon": "Image"
-      }
     }
   ],
   "nodes": [
