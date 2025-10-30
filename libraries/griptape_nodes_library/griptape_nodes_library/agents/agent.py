@@ -15,7 +15,7 @@ from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStru
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 from jinja2 import Template
-from json_schema_to_pydantic import create_model
+from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
