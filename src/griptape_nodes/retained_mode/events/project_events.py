@@ -216,10 +216,12 @@ class GetPathForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
     """Path resolved successfully from macro.
 
     Args:
-        resolved_path: The final Path after macro substitution
+        resolved_path: The relative project path after macro substitution (e.g., "outputs/file.png")
+        absolute_path: The absolute filesystem path (e.g., "/workspace/outputs/file.png")
     """
 
     resolved_path: Path
+    absolute_path: Path
 
 
 @dataclass

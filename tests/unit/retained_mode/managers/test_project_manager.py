@@ -209,7 +209,7 @@ class TestProjectManagerBuiltinVariables:
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        assert result.resolved_path == Path("/test/my_workflow_output.txt")
+        assert result.resolved_path == Path("my_workflow_output.txt")
         mock_context_manager.has_current_workflow.assert_called_once()
         mock_context_manager.get_current_workflow_name.assert_called_once()
 

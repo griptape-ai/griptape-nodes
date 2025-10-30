@@ -495,12 +495,15 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
-        # Make path absolute by resolving against project base directory
-        if not resolved_path.is_absolute():
-            resolved_path = project_info.project_base_dir / resolved_path
+        # Make absolute path by resolving against project base directory
+        if resolved_path.is_absolute():
+            absolute_path = resolved_path
+        else:
+            absolute_path = project_info.project_base_dir / resolved_path
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
+            absolute_path=absolute_path,
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
