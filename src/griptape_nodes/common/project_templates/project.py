@@ -29,7 +29,7 @@ class ProjectTemplate(BaseModel):
     name: str = Field(description="Name of the project")
     situations: dict[str, SituationTemplate] = Field(description="Situation templates (situation_name -> template)")
     directories: dict[str, DirectoryDefinition] = Field(
-        description="Directory definitions (logical_name -> definition)"
+        description="Directory definitions (logical_name -> definition)",
     )
     environment: dict[str, str] = Field(default_factory=dict, description="Custom environment variables")
     description: str | None = Field(default=None, description="Description of the project")

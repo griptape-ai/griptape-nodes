@@ -474,3 +474,55 @@ class CopyFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileRequest(RequestPayload):
+    """Delete a file or directory.
+
+    Use when: Deleting files/directories through file picker,
+    implementing file deletion functionality, cleaning up temporary files.
+
+    Note: Directories are always deleted with all their contents.
+
+    Args:
+        path: Path to file/directory to delete (mutually exclusive with file_entry)
+        file_entry: FileSystemEntry from directory listing (mutually exclusive with path)
+        workspace_only: If True, constrain to workspace directory
+
+    Results: DeleteFileResultSuccess | DeleteFileResultFailure
+    """
+
+    path: str | None = None
+    file_entry: FileSystemEntry | None = None
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory deleted successfully.
+
+    Attributes:
+        deleted_path: The absolute path that was deleted (primary path)
+        was_directory: Whether the deleted item was a directory
+        deleted_paths: List of all paths that were deleted (for recursive deletes, includes all files/dirs)
+    """
+
+    deleted_path: str
+    was_directory: bool
+    deleted_paths: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory deletion failed.
+
+    Attributes:
+        failure_reason: Classification of why the deletion failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason

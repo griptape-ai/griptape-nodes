@@ -2399,16 +2399,8 @@ class WorkflowManager:
             targets=[ast.Name(id="response", ctx=ast.Store())],
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                            attr="LibraryManager",
-                            ctx=ast.Load(),
-                        ),
-                        args=[],
-                        keywords=[],
-                    ),
-                    attr="get_all_info_for_all_libraries_request",
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="handle_request",
                     ctx=ast.Load(),
                 ),
                 args=[
@@ -3409,8 +3401,17 @@ class WorkflowManager:
                 raise ValueError(msg)  # noqa: TRY301
 
             # Save the workflow before publishing to ensure the latest changes in memory are included
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-            await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=Path(workflow.file_path).stem))
+            workflow_file_name = request.workflow_name
+            try:
+                workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
+                workflow_file_name = Path(workflow.file_path).stem
+            except KeyError:
+                details = (
+                    f"While publishing, workflow '{request.workflow_name}' had not been saved or could not be found in the Workflow Registry. "
+                    "Saving as a new and registered workflow before proceeding on publish attempt."
+                )
+                logger.info(details)
+            await GriptapeNodes.ahandle_request(SaveWorkflowRequest(file_name=workflow_file_name))
 
             result = await asyncio.to_thread(publishing_handler.handler, request)
             if isinstance(result, PublishWorkflowResultSuccess):
@@ -4090,7 +4091,7 @@ class WorkflowManager:
                 ),
             )
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:
+    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:  # noqa: C901
         """Process a list of workflow paths for registration.
 
         Returns:
@@ -4119,7 +4120,11 @@ class WorkflowManager:
                 return
             if path.is_dir():
                 # Process all Python files recursively in the directory
+                # Exclude .venv directories to avoid encoding issues with test files
                 for workflow_file in path.rglob("*.py"):
+                    # Skip files in .venv directories
+                    if ".venv" in workflow_file.parts:
+                        continue
                     process_workflow_file(workflow_file)
             elif path.suffix == ".py":
                 process_workflow_file(path)

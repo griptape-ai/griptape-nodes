@@ -47,7 +47,7 @@ class MacroResolutionError(Exception):
         message: str,
         failure_reason: MacroResolutionFailureReason | None = None,
         variable_name: str | None = None,
-        missing_variables: list[str] | None = None,
+        missing_variables: set[str] | None = None,
     ) -> None:
         """Initialize MacroResolutionError with optional structured fields.
 
@@ -55,7 +55,7 @@ class MacroResolutionError(Exception):
             message: Human-readable error message
             failure_reason: Specific reason for the resolution error
             variable_name: Name of the problematic variable (if applicable)
-            missing_variables: List of missing variable names (for MISSING_REQUIRED_VARIABLES)
+            missing_variables: Set of missing variable names (for MISSING_REQUIRED_VARIABLES)
         """
         super().__init__(message)
         self.failure_reason = failure_reason
@@ -118,5 +118,5 @@ class MacroResolutionFailure:
 
     failure_reason: MacroResolutionFailureReason
     variable_name: str | None
-    missing_variables: list[str] | None
+    missing_variables: set[str] | None
     error_details: str

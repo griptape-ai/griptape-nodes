@@ -11,6 +11,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+    DeleteFileResultSuccess,
     ExistingFilePolicy,
     FileIOFailureReason,
     ListDirectoryRequest,
@@ -545,7 +548,7 @@ class TestWindowsLongPathHandling:
         result = os_manager.normalize_path_for_platform(long_path)
 
         # On Windows, long paths should get the prefix
-        if len(str(long_path.resolve())) > WINDOWS_MAX_PATH:
+        if len(str(long_path.resolve())) >= WINDOWS_MAX_PATH:
             assert result.startswith("\\\\?\\")
 
     @pytest.mark.skipif(platform.system() == "Windows", reason="Non-Windows test")
@@ -572,6 +575,121 @@ class TestWindowsLongPathHandling:
         assert not result.final_file_path.startswith("\\\\?\\")
         # But the file should exist
         assert file_path.exists()
+
+
+class TestDeleteFileRequest:
+    """Test DeleteFileRequest with various scenarios."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Automatically set workspace to temp_dir for all tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    @pytest.mark.asyncio
+    async def test_delete_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test successfully deleting a file."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+        request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
+        assert Path(result.deleted_path).resolve() == file_path.resolve()
+        assert result.was_directory is False
+        assert len(result.deleted_paths) == 1
+        assert Path(result.deleted_paths[0]).resolve() == file_path.resolve()
+        assert not file_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_directory(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test deleting an empty directory."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.was_directory is True
+        assert len(result.deleted_paths) >= 1
+        assert str(dir_path) in result.deleted_paths or str(dir_path.resolve()) in result.deleted_paths
+        assert not dir_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_with_contents(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test deleting a directory with contents."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+        (dir_path / "file2.txt").write_text("content2")
+        subdir = dir_path / "subdir"
+        subdir.mkdir()
+        (subdir / "file3.txt").write_text("content3")
+
+        request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.was_directory is True
+        expected_items = 4  # dir + 2 files + subdir + 1 file
+        assert len(result.deleted_paths) >= expected_items
+        # Verify that all expected paths are in the deleted_paths list
+        assert any(str(dir_path / "file1.txt") in path for path in result.deleted_paths)
+        assert any(str(dir_path / "file2.txt") in path for path in result.deleted_paths)
+        assert any(str(subdir / "file3.txt") in path for path in result.deleted_paths)
+        assert not dir_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_file_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that deleting a nonexistent file fails."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "nonexistent.txt"
+        request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_delete_invalid_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that deleting with neither path nor file_entry fails."""
+        os_manager = griptape_nodes.OSManager()
+        request = DeleteFileRequest(path=None, file_entry=None)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
+
+    @pytest.mark.asyncio
+    async def test_delete_with_permission_error(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that permission errors are properly handled."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+
+        with patch.object(Path, "unlink", side_effect=PermissionError("Access denied")):
+            request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
 
 
 class TestFileIOFailureReasons:

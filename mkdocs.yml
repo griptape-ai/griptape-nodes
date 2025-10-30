@@ -140,6 +140,7 @@ nav:
     - JSON:
         - JSON Input: nodes/json/json_input.md
         - JSON Extract Value: nodes/json/json_extract_value.md
+        - JSON Find: nodes/json/json_find.md
         - JSON Replace: nodes/json/json_replace.md
         - Display JSON: nodes/json/display_json.md
     - Convert:
@@ -186,6 +187,7 @@ nav:
         - Create Int List: nodes/lists/create_int_list.md
         - Create Bool List: nodes/lists/create_bool_list.md
         - Create Text List: nodes/lists/create_text_list.md
+        - Select From List: nodes/lists/select_from_list.md
     - Number:
         - Input Nodes:
           - Float Input: nodes/number/create_float.md

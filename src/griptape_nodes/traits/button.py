@@ -55,12 +55,23 @@ class ButtonDetailsMessagePayload(NodeMessagePayload):
     loading_label: str | None = None
     loading_icon: str | None = None
     loading_icon_class: str | None = None
+    tooltip: str | None = None
+
+
+class ModalContentPayload(NodeMessagePayload):
+    """Payload containing content to be displayed in a modal dialog."""
+
+    clipboard_copyable_content: str | None = None
+    render_url: str | None = None
+    title: str | None = None
 
 
 class OnClickMessageResultPayload(NodeMessagePayload):
     """Payload for button click result messages."""
 
     button_details: ButtonDetailsMessagePayload
+    modal_content: ModalContentPayload | None = None
+    href: str | None = None
 
 
 class SetButtonStatusMessagePayload(NodeMessagePayload):
@@ -92,6 +103,7 @@ class Button(Trait):
     loading_label: str | None = None
     loading_icon: str | None = None
     loading_icon_class: str | None = None
+    tooltip: str | None = None
 
     element_id: str = field(default_factory=lambda: "Button")
     on_click_callback: OnClickCallback | None = field(default=None, init=False)
@@ -111,6 +123,7 @@ class Button(Trait):
         loading_label: str | None = None,
         loading_icon: str | None = None,
         loading_icon_class: str | None = None,
+        tooltip: str | None = None,
         on_click: OnClickCallback | None = None,
         get_button_state: GetButtonStateCallback | None = None,
     ) -> None:
@@ -126,6 +139,7 @@ class Button(Trait):
         self.loading_label = loading_label
         self.loading_icon = loading_icon
         self.loading_icon_class = loading_icon_class
+        self.tooltip = tooltip
         self.on_click_callback = on_click
         self.get_button_state_callback = get_button_state
 
@@ -147,6 +161,7 @@ class Button(Trait):
             loading_label=self.loading_label,
             loading_icon=self.loading_icon,
             loading_icon_class=self.loading_icon_class,
+            tooltip=self.tooltip,
         )
 
     def ui_options_for_trait(self) -> dict:
@@ -173,6 +188,10 @@ class Button(Trait):
             options["loading_icon"] = self.loading_icon
         if self.loading_icon_class:
             options["loading_icon_class"] = self.loading_icon_class
+
+        # Include tooltip if specified
+        if self.tooltip:
+            options["tooltip"] = self.tooltip
 
         return options
 

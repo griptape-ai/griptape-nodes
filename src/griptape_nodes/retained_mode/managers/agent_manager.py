@@ -7,11 +7,11 @@ import uuid
 from typing import TYPE_CHECKING, ClassVar
 
 from attrs import define, field
-from griptape.artifacts import ErrorArtifact, ImageUrlArtifact, JsonArtifact
+from griptape.artifacts import ErrorArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
-from griptape.events import FinishTaskEvent, TextChunkEvent
+from griptape.events import TextChunkEvent
 from griptape.loaders import ImageLoader
 from griptape.memory.structure import ConversationMemory
 from griptape.rules import Rule, Ruleset
@@ -20,6 +20,7 @@ from griptape.tools import BaseImageGenerationTool
 from griptape.tools.mcp.tool import MCPTool
 from griptape.utils.decorators import activity
 from json_repair import repair_json
+from pydantic import create_model
 from schema import Literal, Schema
 
 from griptape_nodes.retained_mode.events.agent_events import (
@@ -35,7 +36,6 @@ from griptape_nodes.retained_mode.events.agent_events import (
     ResetAgentConversationMemoryResultSuccess,
     RunAgentRequest,
     RunAgentResultFailure,
-    RunAgentResultStarted,
     RunAgentResultSuccess,
 )
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -202,15 +202,17 @@ class AgentManager:
             self.image_tool = self._initialize_image_tool()
         if self.mcp_tool is None:
             self.mcp_tool = self._initialize_mcp_tool()
-        await asyncio.to_thread(self._on_handle_run_agent_request, request)
-        return RunAgentResultStarted(result_details="Agent execution started successfully.")
+        try:
+            return await asyncio.to_thread(self._on_handle_run_agent_request, request)
+        except Exception as e:
+            err_msg = f"Error handling run agent request: {e}"
+            return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def _create_agent(self, additional_mcp_servers: list[str] | None = None) -> Agent:
-        output_schema = Schema(
-            {
-                "conversation_output": str,
-                "generated_image_urls": [str],
-            }
+        output_schema = create_model(
+            "AgentOutputSchema",
+            conversation_output=(str, ...),
+            generated_image_urls=(list[str], ...),
         )
 
         tools = []
@@ -252,7 +254,6 @@ class AgentManager:
             event_stream = agent.run_stream([request.input, *artifacts])
             full_result = ""
             last_conversation_output = ""
-            last_event = None
             for event in event_stream:
                 if isinstance(event, TextChunkEvent):
                     full_result += event.token
@@ -274,19 +275,12 @@ class AgentManager:
                                 last_conversation_output = new_conversation_output
                     except json.JSONDecodeError:
                         pass  # Ignore incomplete JSON
-                last_event = event
-            if isinstance(last_event, FinishTaskEvent):
-                if isinstance(last_event.task_output, ErrorArtifact):
-                    return RunAgentResultFailure(
-                        error=last_event.task_output.to_dict(), result_details=last_event.task_output.to_json()
-                    )
-                if isinstance(last_event.task_output, JsonArtifact):
-                    return RunAgentResultSuccess(
-                        last_event.task_output.to_dict(), result_details="Agent execution completed successfully."
-                    )
-            err_msg = f"Unexpected final event: {last_event}"
-            logger.error(err_msg)
-            return RunAgentResultFailure(error=ErrorArtifact(last_event).to_dict(), result_details=err_msg)
+            if isinstance(agent.output, ErrorArtifact):
+                return RunAgentResultFailure(error=agent.output.to_dict(), result_details=agent.output.to_json())
+
+            return RunAgentResultSuccess(
+                agent.output.to_dict(), result_details="Agent execution completed successfully."
+            )
         except Exception as e:
             err_msg = f"Error running agent: {e}"
             logger.exception(err_msg)

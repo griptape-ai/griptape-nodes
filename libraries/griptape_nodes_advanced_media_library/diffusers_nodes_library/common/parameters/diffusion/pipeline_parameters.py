@@ -19,9 +19,6 @@ from diffusers_nodes_library.common.parameters.diffusion.audioldm.runtime_parame
 from diffusers_nodes_library.common.parameters.diffusion.audioldm2.runtime_parameters import (
     Audioldm2PipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.cosmos.runtime_parameters import (
-    Cosmos2TextToImagePipelineRuntimeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.flux.controlnet_runtime_parameters import (
     FluxControlNetPipelineRuntimeParameters,
 )
@@ -127,8 +124,6 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = AudioldmPipelineRuntimeParameters(self._node)
             case "AudioLDM2Pipeline":
                 self._runtime_parameters = Audioldm2PipelineRuntimeParameters(self._node)
-            case "Cosmos2TextToImagePipeline":
-                self._runtime_parameters = Cosmos2TextToImagePipelineRuntimeParameters(self._node)
             case "QwenImagePipeline":
                 self._runtime_parameters = QwenPipelineRuntimeParameters(self._node)
             case "QwenImageImg2ImgPipeline":

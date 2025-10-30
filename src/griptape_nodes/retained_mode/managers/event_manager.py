@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
+from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -97,6 +98,19 @@ class EventManager:
                 self._event_loop = None
                 self._loop_thread_id = None
 
+    def _is_cross_thread_call(self) -> bool:
+        """Check if the current call is from a different thread than the event loop.
+
+        Returns:
+            True if we're on a different thread and need thread-safe operations
+        """
+        current_thread_id = threading.get_ident()
+        return (
+            self._loop_thread_id is not None
+            and current_thread_id != self._loop_thread_id
+            and self._event_loop is not None
+        )
+
     def put_event(self, event: Any) -> None:
         """Put event into async queue from sync context (non-blocking).
 
@@ -108,15 +122,9 @@ class EventManager:
         if self._event_queue is None:
             return
 
-        # Check if we need thread-safe operation
-        current_thread_id = threading.get_ident()
-
-        if (
-            self._loop_thread_id is not None
-            and current_thread_id != self._loop_thread_id
-            and self._event_loop is not None
-        ):
+        if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
+            # _is_cross_thread_call() guarantees _event_loop is not None
             self._event_loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
         else:
             # We're on the same thread as the event loop or no loop thread tracked, use direct method
@@ -125,13 +133,21 @@ class EventManager:
     async def aput_event(self, event: Any) -> None:
         """Put event into async queue from async context.
 
+        Automatically detects if we're in a different thread and uses thread-safe operations.
+
         Args:
             event: The event to publish to the queue
         """
         if self._event_queue is None:
             return
 
-        await self._event_queue.put(event)
+        if self._is_cross_thread_call() and self._event_loop is not None:
+            # We're in a different thread from the event loop, use thread-safe method
+            # _is_cross_thread_call() guarantees _event_loop is not None
+            self._event_loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
+        else:
+            # We're on the same thread as the event loop or no loop thread tracked, use async method
+            await self._event_queue.put(event)
 
     def assign_manager_to_request_type(
         self,
@@ -276,8 +292,8 @@ class EventManager:
         if inspect.iscoroutinefunction(callback):
             try:
                 asyncio.get_running_loop()
-                msg = "Async handler cannot be called with sync handle_request. Use ahandle_request instead."
-                raise ValueError(msg)
+                with ThreadRunner() as runner:
+                    result_payload: ResultPayload = runner.run(callback(request))
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run
                 result_payload: ResultPayload = asyncio.run(callback(request))
@@ -317,10 +333,6 @@ class EventManager:
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
 
-            await asyncio.gather(
-                *[
-                    asyncio.create_task(call_function(listener_callback, app_event))
-                    for listener_callback in listener_set
-                ],
-                return_exceptions=True,
-            )
+            async with asyncio.TaskGroup() as tg:
+                for listener_callback in listener_set:
+                    tg.create_task(call_function(listener_callback, app_event))
