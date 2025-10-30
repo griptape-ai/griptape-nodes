@@ -118,15 +118,15 @@ class LoggerNode(DataNode):
             self.publish_update_to_parameter("output", simulated_log_message)
         return super().after_value_set(parameter, value)
 
-    def _log_message(self, log_level: str, log_message: str) -> None:
-        """Log the message with the appropriate level using ResultDetails."""
-        # Uses "griptape_nodes" logger by default
-        ResultDetails(message=log_message, level=getattr(logging, log_level, logging.INFO))
-
     def process(self) -> None:
         log_level = self.get_parameter_value("log_level")
+
         # Note: An empty message is fine because users might want to just plop in a blank message, log the node, or timestamp.
         log_message = self._generate_log_message()
+
+        # Display the log message in the output parameter
         simulated_log_message = self._add_log_level_to_message(log_level, log_message)
         self.parameter_output_values["output"] = simulated_log_message
-        self._log_message(log_level, log_message)
+
+        # Log the message using ResultsDetails which uses the "griptape_nodes" logger by default
+        ResultDetails(message=log_message, level=getattr(logging, log_level, logging.INFO))
