@@ -188,7 +188,7 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("/workspace/output.txt")
-        mock_config_manager.get_config_value.assert_called_once_with("workspace.directory")
+        mock_config_manager.get_config_value.assert_called_once_with("workspace_directory")
 
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_workflow_name_resolves_correctly(
@@ -209,7 +209,7 @@ class TestProjectManagerBuiltinVariables:
         result = project_manager_with_template.on_get_path_for_macro_request(request)
 
         assert isinstance(result, GetPathForMacroResultSuccess)
-        assert result.resolved_path == Path("my_workflow_output.txt")
+        assert result.resolved_path == Path("/test/my_workflow_output.txt")
         mock_context_manager.has_current_workflow.assert_called_once()
         mock_context_manager.get_current_workflow_name.assert_called_once()
 

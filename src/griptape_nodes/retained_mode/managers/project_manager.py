@@ -495,6 +495,10 @@ class ProjectManager:
 
         resolved_path = Path(resolved_string)
 
+        # Make path absolute by resolving against project base directory
+        if not resolved_path.is_absolute():
+            resolved_path = project_info.project_base_dir / resolved_path
+
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
             result_details=f"Successfully resolved macro path. Result: {resolved_path}",
@@ -838,7 +842,10 @@ class ProjectManager:
 
             case "workspace_dir":
                 config_manager = GriptapeNodes.ConfigManager()
-                workspace_dir = config_manager.get_config_value("workspace.directory")
+                workspace_dir = config_manager.get_config_value("workspace_directory")
+                if workspace_dir is None:
+                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
+                    raise RuntimeError(msg)
                 return str(workspace_dir)
 
             case "workflow_name":
@@ -994,7 +1001,17 @@ class ProjectManager:
 
         # System defaults use workspace directory as the base directory
         config_manager = GriptapeNodes.ConfigManager()
-        workspace_dir = Path(config_manager.get_config_value("workspace.directory"))
+        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        if workspace_dir_value is None:
+            msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
+            raise RuntimeError(msg)
+
+        try:
+            workspace_dir = Path(workspace_dir_value)
+        except (TypeError, ValueError) as e:
+            msg = f"Attempted to load Project Manager's default project schema with workspace_directory='{workspace_dir_value}'. Failed due to {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
         situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
