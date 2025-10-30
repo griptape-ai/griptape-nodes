@@ -61,6 +61,7 @@ class EventManager:
         self._loop_thread_id: int | None = None
         # Keep a reference to the event loop for thread-safe operations
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        self._thread_runner = ThreadRunner()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -273,12 +274,11 @@ class EventManager:
             msg = f"No manager found to handle request of type '{request_type.__name__}'."
             raise TypeError(msg)
 
-        # Support async callbacks for sync method ONLY if there is no running event loop
         if inspect.iscoroutinefunction(callback):
             try:
                 asyncio.get_running_loop()
-                with ThreadRunner() as runner:
-                    result_payload: ResultPayload = runner.run(callback(request))
+                # Event loop already running, we need to run this coroutine in a separate thread
+                result_payload: ResultPayload = self._thread_runner.run(callback(request))
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run
                 result_payload: ResultPayload = asyncio.run(callback(request))
