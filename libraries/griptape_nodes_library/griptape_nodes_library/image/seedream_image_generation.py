@@ -577,7 +577,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         # Always using URL format
         image_url = image_data.get("url")
         if image_url:
-            self._save_image_from_url(image_url)
+            self._save_image_from_url(image_url, generation_id)
         else:
             self._log("No image URL in response")
             self.parameter_output_values["image_url"] = None
@@ -585,12 +585,14 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 was_successful=False, result_details="Generation completed but no image URL was found in the response."
             )
 
-    def _save_image_from_url(self, image_url: str) -> None:
+    def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
         try:
             self._log("Downloading image from URL")
             image_bytes = self._download_bytes_from_url(image_url)
             if image_bytes:
-                filename = f"seedream_image_{int(time.time())}.jpg"
+                filename = (
+                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
+                )
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
