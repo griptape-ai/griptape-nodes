@@ -42,7 +42,6 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   my_situation:
-    situation_template_schema_version: "0.1.0"
     macro: "{outputs}/custom.{file_extension}"
     policy:
       on_collision: "overwrite"
@@ -200,7 +199,6 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   my_new_situation:
-    situation_template_schema_version: "0.1.0"
     macro: "{outputs}/new_{file_name}.{file_extension}"
     policy:
       on_collision: "create_new"
@@ -427,7 +425,6 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   brand_new_situation:
-    situation_template_schema_version: "0.1.0"
     macro: "{outputs}/new.{file_extension}"
     policy:
       on_collision: "create_new"
@@ -613,7 +610,6 @@ situations:
       on_collision: "overwrite"
       create_dirs: true
   new_situation:
-    situation_template_schema_version: "0.1.0"
     macro: "{new}.{file_extension}"
     policy:
       on_collision: "create_new"
@@ -670,7 +666,6 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   bad_situation:
-    situation_template_schema_version: "0.1.0"
     macro: "{unclosed"
     policy:
       on_collision: "create_new"

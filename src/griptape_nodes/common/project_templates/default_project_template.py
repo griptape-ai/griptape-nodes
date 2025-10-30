@@ -35,7 +35,6 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
     situations={
         "save_file": SituationTemplate(
             name="save_file",
-            situation_template_schema_version="0.1.0",
             description="Generic file save operation",
             macro="{file_name_base}{_index?:03}.{file_extension}",
             policy=SituationPolicy(
@@ -46,7 +45,6 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "copy_external_file": SituationTemplate(
             name="copy_external_file",
-            situation_template_schema_version="0.1.0",
             description="User copies external file to project",
             macro="{inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index?:03}.{file_extension}",
             policy=SituationPolicy(
@@ -57,7 +55,6 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "download_url": SituationTemplate(
             name="download_url",
-            situation_template_schema_version="0.1.0",
             description="Download file from URL",
             macro="{inputs}/{sanitized_url}",
             policy=SituationPolicy(
@@ -68,9 +65,8 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "save_node_output": SituationTemplate(
             name="save_node_output",
-            situation_template_schema_version="0.1.0",
             description="Node generates and saves output",
-            macro="{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}",
+            macro="{outputs}/{sub_dirs?/}{node_name?:_}{file_name_base}{_index?:03}.{file_extension}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.CREATE_NEW,
                 create_dirs=True,
@@ -79,7 +75,6 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "save_preview": SituationTemplate(
             name="save_preview",
-            situation_template_schema_version="0.1.0",
             description="Generate preview/thumbnail",
             macro="{previews}/{original_file_path}",
             policy=SituationPolicy(

@@ -42,7 +42,6 @@ class SituationTemplate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str = Field(description="Name of the situation")
-    situation_template_schema_version: str = Field(description="Schema version for this situation template")
     macro: str = Field(description="Macro template for file path")
     policy: SituationPolicy = Field(description="Policy for file operations")
     fallback: str | None = Field(default=None, description="Name of fallback situation")
@@ -74,7 +73,6 @@ class SituationTemplate(BaseModel):
         - description: Use overlay if present, else base
         - fallback: Use overlay if present, else base
         - policy: Use overlay if present (must be complete), else base
-        - situation_template_schema_version: Use overlay if present, else base
 
         Policy validation:
         - If policy provided in overlay, must contain both on_collision and create_dirs
@@ -102,9 +100,6 @@ class SituationTemplate(BaseModel):
 
         if "fallback" in overlay_data:
             merged_data["fallback"] = overlay_data["fallback"]
-
-        if "situation_template_schema_version" in overlay_data:
-            merged_data["situation_template_schema_version"] = overlay_data["situation_template_schema_version"]
 
         # Policy must be complete if provided
         if "policy" in overlay_data:
