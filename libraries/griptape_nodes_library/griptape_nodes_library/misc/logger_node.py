@@ -1,8 +1,7 @@
-from datetime import UTC, datetime
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
@@ -10,10 +9,12 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 
 
-class LoggerNode(ControlNode):
+class LoggerNode(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+        self.hide_parameter_by_name("exec_in")
+        self.hide_parameter_by_name("exec_out")
         self.LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         self.default_log_level = "INFO"
         self.add_parameter(
@@ -36,13 +37,6 @@ class LoggerNode(ControlNode):
         )
         self.add_parameter(
             ParameterBool(
-                name="include_timestamp",
-                default_value=True,
-                tooltip="Whether to include a timestamp in the log messages",
-            )
-        )
-        self.add_parameter(
-            ParameterBool(
                 name="include_node_name",
                 default_value=True,
                 tooltip="Whether to include a node name in the log messages",
@@ -60,19 +54,23 @@ class LoggerNode(ControlNode):
                 markdown=True,
             )
         )
+        self.add_parameter(
+            Parameter(
+                type="any",
+                name="passthrough",
+                default_value=None,
+                tooltip="[Optional] You can use this to force the logger to evaluate by connecting to downstream nodes.",
+            )
+        )
 
     def _generate_log_message(self) -> str:
         """Generate the display message for the output parameter."""
         log_message = self.get_parameter_value("log_message") or ""
-        include_timestamp = self.get_parameter_value("include_timestamp")
         include_node_name = self.get_parameter_value("include_node_name")
-        timestamp = datetime.now(UTC).strftime("%d %b, %I:%M:%S %p")
 
         # Build the display message
         msg = ""
 
-        if include_timestamp:
-            msg += f"[{timestamp}] "
         if include_node_name:
             msg += f"[{self.name}] "
         # Check and see if the message has multiple lines. If so, add a newline before the message so it looks better.
@@ -88,9 +86,9 @@ class LoggerNode(ControlNode):
 
         Examples:
         ```
-        INFO     [31 Oct, 05:02:12 PM] [Node Name] This is a simple log message
-        ERROR    [31 Oct, 05:02:12 PM] [Node Name] This is an error log message
-        WARNING  [31 Oct, 05:02:12 PM] [Node Name]
+        INFO     [Node Name] This is a simple log message
+        ERROR    [Node Name] This is an error log message
+        WARNING  [Node Name]
                  This is a multiline
                  warning log message
         ```
