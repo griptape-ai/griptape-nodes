@@ -59,7 +59,6 @@
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
         "ftfy>=6.3.1",
-        "git+https://github.com/dylanholmes/cosmos-guardrail.git",
         "sam2>=1.1.0",
         "scipy>=1.10.0",
         "matplotlib>=3.10.3",
@@ -609,19 +608,6 @@
         "category": "image/würstchen",
         "description": "Generate images efficiently with Würstchen via 🤗 Diffusers.",
         "display_name": "Würstchen",
-        "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.64.0"
-        }
-      }
-    },
-    {
-      "class_name": "Cosmos2TextToImagePipeline",
-      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_2_text_to_image_pipeline.py",
-      "metadata": {
-        "category": "image/cosmos",
-        "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
-        "display_name": "Cosmos2 Text2Image",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
           "removal_version": "0.64.0"
