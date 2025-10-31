@@ -78,6 +78,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowRequest,
     StartFlowResultFailure,
     StartFlowResultSuccess,
+    StartLocalSubflowRequest,
+    StartLocalSubflowResultFailure,
+    StartLocalSubflowResultSuccess,
     UnresolveFlowRequest,
     UnresolveFlowResultFailure,
     UnresolveFlowResultSuccess,
@@ -272,7 +275,7 @@ class FlowManager:
             PackageNodesAsSerializedFlowRequest, self.on_package_nodes_as_serialized_flow_request
         )
         event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
-
+        event_manager.assign_manager_to_request_type(StartLocalSubflowRequest, self.on_start_local_subflow_request)
         self._name_to_parent_name = {}
         self._flow_to_referenced_workflow_name = {}
         self._connections = Connections()
@@ -2541,6 +2544,39 @@ class FlowManager:
         details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowFromNodeResultSuccess(result_details=details)
+
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        if not flow_name:
+            details = "Must provide flow name to start a flow."
+
+            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+        # get the flow by ID
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Cannot start flow. Error: {err}"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
+        # Check to see if the flow is already running.
+        if not self.check_for_existing_running_flow():
+            msg = "There must be a flow going to start a Subflow"
+            return StartLocalSubflowResultFailure(result_details=msg)
+
+        subflow_machine = ControlFlowMachine(
+            flow.name,
+            pickle_control_flow_result=request.pickle_control_flow_result,
+            use_isolated_dag_builder=True,
+        )
+
+        # Get the start node object from the node name string
+        start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
+
+        try:
+            await subflow_machine.start_flow(start_node)
+        except Exception:
+            subflow_machine.cleanup_proxy_nodes()
+
+        return StartLocalSubflowResultSuccess(result_details=f"Successfully executed local subflow '{flow_name}'")
 
     def on_get_flow_state_request(self, event: GetFlowStateRequest) -> ResultPayload:
         flow_name = event.flow_name
