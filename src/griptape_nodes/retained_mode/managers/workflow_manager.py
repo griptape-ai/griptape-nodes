@@ -2399,16 +2399,8 @@ class WorkflowManager:
             targets=[ast.Name(id="response", ctx=ast.Store())],
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                            attr="LibraryManager",
-                            ctx=ast.Load(),
-                        ),
-                        args=[],
-                        keywords=[],
-                    ),
-                    attr="get_all_info_for_all_libraries_request",
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="handle_request",
                     ctx=ast.Load(),
                 ),
                 args=[
