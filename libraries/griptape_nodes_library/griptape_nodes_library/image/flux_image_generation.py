@@ -481,7 +481,7 @@ class FluxImageGeneration(SuccessFailureNode):
                         # Extract the image URL from result.sample
                         sample_url = result_json.get("result", {}).get("sample")
                         if sample_url:
-                            await self._handle_success(result_json, sample_url)
+                            await self._handle_success(result_json, sample_url, generation_id)
                         else:
                             self._log("No sample URL found in ready result")
                             self._set_safe_defaults()
@@ -525,18 +525,18 @@ class FluxImageGeneration(SuccessFailureNode):
                 result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
             )
 
-    async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
+    async def _handle_success(self, response: dict[str, Any], image_url: str, generation_id: str) -> None:
         """Handle successful generation result."""
         self.parameter_output_values["provider_response"] = response
-        await self._save_image_from_url(image_url)
+        await self._save_image_from_url(image_url, generation_id)
 
-    async def _save_image_from_url(self, image_url: str) -> None:
+    async def _save_image_from_url(self, image_url: str, generation_id: str) -> None:
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
             image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
-                filename = f"flux_image_{int(time.time())}.jpg"
+                filename = f"flux_image_{generation_id}.jpg" if generation_id else f"flux_image_{int(time.time())}.jpg"
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()

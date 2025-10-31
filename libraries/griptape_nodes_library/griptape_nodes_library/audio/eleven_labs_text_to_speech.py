@@ -5,6 +5,7 @@ import json as _json
 import logging
 import os
 import time
+import uuid
 from contextlib import suppress
 from typing import Any
 from urllib.parse import urljoin
@@ -484,7 +485,7 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
     def _save_audio_from_bytes(self, audio_bytes: bytes) -> None:
         try:
             self._log("Processing audio bytes from proxy response")
-            filename = f"eleven_tts_{int(time.time())}.mp3"
+            filename = f"eleven_tts_{str(uuid.uuid4())[:2]}_{int(time.time())}.mp3"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)
