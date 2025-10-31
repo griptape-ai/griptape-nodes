@@ -485,7 +485,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             integration_id = griptape_cloud_start_flow_node.get_parameter_value("integration_id")
             webhook_url = griptape_cloud_start_flow_node.get_parameter_value("webhook_url")
 
-        if integration_id is not None and integration_id != "" and webhook_url is not None and webhook_url != "":
+        if integration_id is not None and integration_id != "":
             return GriptapeCloudWebhookIntegration(
                 integration_id=str(integration_id),
                 webhook_url=str(webhook_url),
