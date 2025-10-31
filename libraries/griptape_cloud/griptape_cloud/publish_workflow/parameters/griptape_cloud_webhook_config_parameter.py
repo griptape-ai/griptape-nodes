@@ -53,7 +53,6 @@ class GriptapeCloudWebhookConfigParameter:
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value="",
                 tooltip="The webhook URL for the published workflow",
                 hide=hide_integration_details,
                 allowed_modes={ParameterMode.PROPERTY},
@@ -62,6 +61,7 @@ class GriptapeCloudWebhookConfigParameter:
                         icon="webhook", on_click=self._handle_get_webhook_url, tooltip="Get Webhook URL", state="normal"
                     ),
                 },
+                ui_options={"placeholder_text": "Click button to retrieve webhook URL after publishing"},
             )
         )
         node.add_parameter(
