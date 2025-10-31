@@ -4,6 +4,7 @@ import json as _json
 import logging
 import os
 import time
+import uuid
 from contextlib import suppress
 from typing import Any
 from urllib.parse import urljoin
@@ -322,7 +323,7 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
             else:
                 ext = "mp3"
 
-            filename = f"eleven_music_{int(time.time())}.{ext}"
+            filename = f"eleven_music_{str(uuid.uuid4())[:2]}_{int(time.time())}.{ext}"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)

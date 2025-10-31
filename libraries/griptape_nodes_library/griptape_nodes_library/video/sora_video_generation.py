@@ -425,7 +425,7 @@ class SoraVideoGeneration(SuccessFailureNode):
                     # Check if we got the binary video data
                     if "application/octet-stream" in content_type:
                         self._log("Received video data")
-                        self._handle_video_completion(get_resp.content)
+                        self._handle_video_completion(get_resp.content, generation_id)
                         return
 
                     # Otherwise, parse JSON status response
@@ -537,7 +537,7 @@ class SoraVideoGeneration(SuccessFailureNode):
             return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
         return f"Generation failed with error: {top_level_error!s}"
 
-    def _handle_video_completion(self, video_bytes: bytes) -> None:
+    def _handle_video_completion(self, video_bytes: bytes, generation_id: str) -> None:
         """Handle completion when video data is received."""
         if not video_bytes:
             self.parameter_output_values["video_url"] = None
@@ -545,7 +545,7 @@ class SoraVideoGeneration(SuccessFailureNode):
             return
 
         try:
-            filename = f"sora_video_{int(time.time())}.mp4"
+            filename = f"sora_video_{generation_id}.mp4" if generation_id else f"sora_video_{int(time.time())}.mp4"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
