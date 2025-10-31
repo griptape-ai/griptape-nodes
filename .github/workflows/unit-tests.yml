@@ -21,7 +21,7 @@ jobs:
         python-version: ["3.12"]
     steps:
       - name: Checkout actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run unit tests with coverage
@@ -44,7 +44,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Init environment
         uses: ./.github/actions/init-environment
       - name: Run unit tests
