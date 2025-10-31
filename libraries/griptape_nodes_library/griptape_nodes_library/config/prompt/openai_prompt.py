@@ -17,7 +17,7 @@ from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 SERVICE = "OpenAI"
 API_KEY_URL = "https://platform.openai.com/api-keys"
 API_KEY_ENV_VAR = "OPENAI_API_KEY"
-MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5", "o1", "o1-mini", "o3-mini"]
+MODEL_CHOICES = ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5", "o1", "o1-mini", "o3-mini", "gpt-4o"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
 
@@ -50,7 +50,13 @@ class OpenAiPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for OpenAi specifics.
-        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        # call openai listmodels to get available models
+        import openai
+
+        available_models = [model.id for model in openai.Client().models.list().data]
+        self._update_option_choices(
+            param="model", choices=available_models, default=available_models[0] if available_models else ""
+        )
 
         # Remove the 'seed' parameter as it's not directly used by OpenAiPromptDriver.
         self.remove_parameter_element_by_name("seed")
