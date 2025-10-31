@@ -18,11 +18,11 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0 # Full history for better diff analysis
       - name: PR Review
-        uses: anthropics/claude-code-action@v1-dev
+        uses: anthropics/claude-code-action@v1.0.16
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |

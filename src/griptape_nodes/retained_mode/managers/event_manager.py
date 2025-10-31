@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
+from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -276,8 +277,8 @@ class EventManager:
         if inspect.iscoroutinefunction(callback):
             try:
                 asyncio.get_running_loop()
-                msg = "Async handler cannot be called with sync handle_request. Use ahandle_request instead."
-                raise ValueError(msg)
+                with ThreadRunner() as runner:
+                    result_payload: ResultPayload = runner.run(callback(request))
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run
                 result_payload: ResultPayload = asyncio.run(callback(request))
@@ -317,10 +318,6 @@ class EventManager:
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
 
-            await asyncio.gather(
-                *[
-                    asyncio.create_task(call_function(listener_callback, app_event))
-                    for listener_callback in listener_set
-                ],
-                return_exceptions=True,
-            )
+            async with asyncio.TaskGroup() as tg:
+                for listener_callback in listener_set:
+                    tg.create_task(call_function(listener_callback, app_event))

@@ -202,7 +202,11 @@ class AgentManager:
             self.image_tool = self._initialize_image_tool()
         if self.mcp_tool is None:
             self.mcp_tool = self._initialize_mcp_tool()
-        return await asyncio.to_thread(self._on_handle_run_agent_request, request)
+        try:
+            return await asyncio.to_thread(self._on_handle_run_agent_request, request)
+        except Exception as e:
+            err_msg = f"Error handling run agent request: {e}"
+            return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def _create_agent(self, additional_mcp_servers: list[str] | None = None) -> Agent:
         output_schema = create_model(

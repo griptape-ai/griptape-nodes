@@ -35,7 +35,7 @@
     ],
     "dependencies": {
       "pip_dependencies": [
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.11",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1"
@@ -382,14 +382,6 @@
         "title": "video/wan/loras",
         "description": "",
         "icon": "Video"
-      }
-    },
-    {
-      "image/cosmos": {
-        "color": "border-purple-500",
-        "title": "Image/Cosmos",
-        "description": "Image generation with Cosmos",
-        "icon": "Image"
       }
     }
   ],
@@ -1657,6 +1649,16 @@
       }
     },
     {
+      "class_name": "ImagesToPdf",
+      "file_path": "griptape_nodes_library/image/images_to_pdf.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert multiple images to a single PDF file",
+        "display_name": "Images to PDF",
+        "icon": "file-text"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
@@ -1697,6 +1699,17 @@
         "description": "Create a color picker node to select a color in various formats",
         "display_name": "ColorPicker",
         "icon": "pipette",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "LoggerNode",
+      "file_path": "griptape_nodes_library/misc/logger_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Log messages to the console with configurable log levels, timestamps, and formatting",
+        "display_name": "Logger",
+        "icon": "file-text",
         "group": "create"
       }
     },

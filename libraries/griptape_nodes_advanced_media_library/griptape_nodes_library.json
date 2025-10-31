@@ -59,11 +59,10 @@
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
         "ftfy>=6.3.1",
-        "git+https://github.com/dylanholmes/cosmos-guardrail.git",
         "sam2>=1.1.0",
         "scipy>=1.10.0",
         "matplotlib>=3.10.3",
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.11"
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
       "pip_install_flags": [
         "--preview",
@@ -162,6 +161,16 @@
         "category": "image/edge",
         "description": "Detect Edges with OpenCV. Pairs well with ControlNet Image Generation in edge mode.",
         "display_name": "Detect Edges with OpenCV"
+      }
+    },
+    {
+      "class_name": "MorphologyImage",
+      "file_path": "opencv_nodes_library/morphology_image.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "Apply OpenCV morphological operations (erode, dilate, open, close) to grayscale images",
+        "display_name": "Morphology",
+        "icon": "circle-dot"
       }
     },
     {
@@ -616,19 +625,6 @@
       }
     },
     {
-      "class_name": "Cosmos2TextToImagePipeline",
-      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_2_text_to_image_pipeline.py",
-      "metadata": {
-        "category": "image/cosmos",
-        "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
-        "display_name": "Cosmos2 Text2Image",
-        "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.64.0"
-        }
-      }
-    },
-    {
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
@@ -650,4 +646,3 @@
     }
   ]
 }
-
