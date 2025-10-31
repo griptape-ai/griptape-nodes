@@ -915,11 +915,11 @@ class ProjectManager:
             /Users/james/project/outputs/inputs/file.png → "{outputs}/inputs/file.png"
             /Users/james/Downloads/file.png → None
         """
-        # Normalize the absolute path for consistent cross-platform comparison
+        # Normalize paths for consistent cross-platform comparison
         absolute_path = absolute_path.resolve()
 
         template = project_info.template
-        project_base_dir = project_info.project_base_dir
+        project_base_dir = project_info.project_base_dir.resolve()
 
         # Secrets manager must be available (checked by caller)
         if self._secrets_manager is None:
