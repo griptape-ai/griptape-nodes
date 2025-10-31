@@ -203,6 +203,7 @@ class PackagingStartNodeResult(NamedTuple):
     input_shape_data: WorkflowShapeNodes
     start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
+    start_node_name: str
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -219,6 +220,7 @@ class MultiNodeEndNodeResult(NamedTuple):
     packaging_result: PackagingEndNodeResult
     parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
     alter_parameter_commands: list[AlterParameterDetailsRequest]
+    end_node_name: str
 
 
 class FlowManager:
@@ -1206,8 +1208,20 @@ class FlowManager:
             return end_node_result
 
         end_node_packaging_result = end_node_result.packaging_result
-        parameter_name_mappings = end_node_result.parameter_name_mappings
-        parameter_name_mappings.update(start_node_result.parameter_name_mappings)
+
+        # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
+        from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
+
+        parameter_name_mappings = [
+            PackagedNodeParameterMapping(
+                node_name=start_node_result.start_node_name,
+                parameter_mappings=start_node_result.parameter_name_mappings,
+            ),
+            PackagedNodeParameterMapping(
+                node_name=end_node_result.end_node_name,
+                parameter_mappings=end_node_result.parameter_name_mappings,
+            ),
+        ]
 
         # Step 10: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
@@ -1890,6 +1904,7 @@ class FlowManager:
             packaging_result=end_node_result,
             parameter_name_mappings=parameter_name_mappings,
             alter_parameter_commands=[],
+            end_node_name=end_node_name,
         )
 
     def _create_end_node_control_connections(  # noqa: PLR0913
@@ -2156,6 +2171,7 @@ class FlowManager:
             input_shape_data=input_shape_data,
             start_node_parameter_value_commands=start_node_parameter_value_commands,
             parameter_name_mappings=parameter_name_mappings,
+            start_node_name=start_node_name,
         )
 
     def _create_start_node_parameters_and_connections_for_incoming_data(  # noqa: PLR0913

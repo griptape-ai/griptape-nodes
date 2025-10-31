@@ -512,48 +512,45 @@ class NodeExecutor:
         for iteration_index, node_name_mappings in deserialized_flows:
             parameter_values = parameter_values_to_set_before_run[iteration_index]
 
-            # parameter_values format: {startflow_param_name: value}
-            # We need to map these to the actual parameter names in the deserialized flow
-            # using the parameter_name_mappings to find which node/parameter to set
-            for startflow_param_name, value_to_set in parameter_values.items():
-                # Find which original node/parameter this corresponds to
-                original_node_param = package_result.parameter_name_mappings.get(startflow_param_name)
-                if original_node_param is None:
-                    logger.warning(
-                        "Could not find mapping for parameter '%s' in iteration %d",
-                        startflow_param_name,
-                        iteration_index,
-                    )
+            # Get Start node mapping (index 0 in the list)
+            start_node_mapping = package_result.parameter_name_mappings[0]
+            start_node_name = start_node_mapping.node_name
+            start_params = start_node_mapping.parameter_mappings
+
+            # Find the deserialized name for the Start node
+            deserialized_start_node_name = node_name_mappings.get(start_node_name)
+            if deserialized_start_node_name is None:
+                logger.warning(
+                    "Could not find deserialized Start node (original: '%s') for iteration %d",
+                    start_node_name,
+                    iteration_index,
+                )
+                continue
+
+            # Set all parameter values on the deserialized Start node
+            for startflow_param_name in start_params:
+                if startflow_param_name not in parameter_values:
                     continue
 
-                # Get the actual node name in the deserialized flow using node_name_mappings
-                original_node_name = original_node_param.node_name
-                deserialized_node_name = node_name_mappings.get(original_node_name)
-                if deserialized_node_name is None:
-                    logger.warning(
-                        "Could not find deserialized node name for '%s' in iteration %d",
-                        original_node_name,
-                        iteration_index,
-                    )
-                    continue
+                value_to_set = parameter_values[startflow_param_name]
 
-                # Set the value on the deserialized node
                 set_value_request = SetParameterValueRequest(
-                    node_name=deserialized_node_name,
-                    parameter_name=original_node_param.parameter_name,
+                    node_name=deserialized_start_node_name,
+                    parameter_name=startflow_param_name,
                     value=value_to_set,
                 )
                 set_value_result = await GriptapeNodes.ahandle_request(set_value_request)
                 if not isinstance(set_value_result, SetParameterValueResultSuccess):
                     logger.warning(
-                        "Failed to set parameter '%s' on node '%s' for iteration %d: %s",
-                        original_node_param.parameter_name,
-                        deserialized_node_name,
+                        "Failed to set parameter '%s' on Start node '%s' for iteration %d: %s",
+                        startflow_param_name,
+                        deserialized_start_node_name,
                         iteration_index,
                         set_value_result.result_details,
                     )
 
         logger.info("Successfully set input values for %d iterations", total_iterations)
+        return
 
         # Step 7: Run all flows concurrently
         from griptape_nodes.retained_mode.events.execution_events import (
@@ -613,7 +610,9 @@ class NodeExecutor:
                     logger.warning("Failed to cleanup flow for iteration %d: %s", iteration_index, e)
 
     def get_parameter_values_per_iteration(
-        self, start_node: StartLoopNode, parameter_name_mappings: dict
+        self,
+        start_node: StartLoopNode,
+        parameter_name_mappings: list,
     ) -> dict[int, dict[str, Any]]:
         """Get parameter values for each iteration of the loop.
 
@@ -622,8 +621,8 @@ class NodeExecutor:
 
         Args:
             start_node: The start loop node (ForEach or ForLoop)
-            parameter_name_mappings: Mapping from sanitized parameter names (on StartFlow) to original node parameters
-                                    from PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
+            parameter_name_mappings: List of PackagedNodeParameterMapping from
+                                    PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
 
         Returns:
             Dict mapping iteration_index -> {startflow_param_name: value}
@@ -643,8 +642,12 @@ class NodeExecutor:
         # Build parameter values for each iteration
         outgoing_connections = list_connections_result.outgoing_connections
 
+        # Get Start node's parameter mappings (index 0 in the list)
+        start_node_mapping = parameter_name_mappings[0]
+        start_node_param_mappings = start_node_mapping.parameter_mappings
+
         # For each outgoing connection from start_node, find the corresponding StartFlow parameter
-        # The parameter_name_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
+        # The start_node_param_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
         # We need to match the target of each connection to find the right startflow parameter
         parameter_val_mappings = {}
         for iteration_index in range(total_iterations):
@@ -658,7 +661,7 @@ class NodeExecutor:
                 target_param_name = conn.target_parameter_name
 
                 # Find the target parameter that corresponds to this target
-                for startflow_param_name, original_node_param in parameter_name_mappings.items():
+                for startflow_param_name, original_node_param in start_node_param_mappings.items():
                     if (
                         original_node_param.node_name == target_node_name
                         and original_node_param.parameter_name == target_param_name
@@ -757,13 +760,16 @@ class NodeExecutor:
             raise RuntimeError(msg)
 
         # Use parameter mappings to apply values back to original nodes
-        parameter_name_mappings = package_result.parameter_name_mappings
+        # Output values come from the End node (index 1 in the list)
+        end_node_mapping = package_result.parameter_name_mappings[1]
+        end_node_param_mappings = end_node_mapping.parameter_mappings
+
         for param_name, param_value in parameter_output_values.items():
-            # Check if this parameter has a mapping back to an original node parameter
-            if param_name not in parameter_name_mappings:
+            # Check if this parameter has a mapping in the End node
+            if param_name not in end_node_param_mappings:
                 continue
 
-            original_node_param = parameter_name_mappings[param_name]
+            original_node_param = end_node_param_mappings[param_name]
             target_node_name = original_node_param.node_name
             target_param_name = original_node_param.parameter_name
 
