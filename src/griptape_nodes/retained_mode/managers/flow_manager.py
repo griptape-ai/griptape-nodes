@@ -78,6 +78,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowRequest,
     StartFlowResultFailure,
     StartFlowResultSuccess,
+    StartLocalSubflowRequest,
+    StartLocalSubflowResultFailure,
+    StartLocalSubflowResultSuccess,
     UnresolveFlowRequest,
     UnresolveFlowResultFailure,
     UnresolveFlowResultSuccess,
@@ -127,6 +130,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeserializeNodeFromCommandsRequest,
+    DeserializeNodeFromCommandsResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
@@ -201,6 +205,8 @@ class PackagingStartNodeResult(NamedTuple):
     start_to_package_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
     input_shape_data: WorkflowShapeNodes
     start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
+    start_node_name: str
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -217,6 +223,7 @@ class MultiNodeEndNodeResult(NamedTuple):
     packaging_result: PackagingEndNodeResult
     parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
     alter_parameter_commands: list[AlterParameterDetailsRequest]
+    end_node_name: str
 
 
 class FlowManager:
@@ -268,7 +275,7 @@ class FlowManager:
             PackageNodesAsSerializedFlowRequest, self.on_package_nodes_as_serialized_flow_request
         )
         event_manager.assign_manager_to_request_type(FlushParameterChangesRequest, self.on_flush_request)
-
+        event_manager.assign_manager_to_request_type(StartLocalSubflowRequest, self.on_start_local_subflow_request)
         self._name_to_parent_name = {}
         self._flow_to_referenced_workflow_name = {}
         self._connections = Connections()
@@ -1204,7 +1211,20 @@ class FlowManager:
             return end_node_result
 
         end_node_packaging_result = end_node_result.packaging_result
-        parameter_name_mappings = end_node_result.parameter_name_mappings
+
+        # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
+        from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
+
+        parameter_name_mappings = [
+            PackagedNodeParameterMapping(
+                node_name=start_node_result.start_node_name,
+                parameter_mappings=start_node_result.parameter_name_mappings,
+            ),
+            PackagedNodeParameterMapping(
+                node_name=end_node_result.end_node_name,
+                parameter_mappings=end_node_result.parameter_name_mappings,
+            ),
+        ]
 
         # Step 10: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
@@ -1887,6 +1907,7 @@ class FlowManager:
             packaging_result=end_node_result,
             parameter_name_mappings=parameter_name_mappings,
             alter_parameter_commands=[],
+            end_node_name=end_node_name,
         )
 
     def _create_end_node_control_connections(  # noqa: PLR0913
@@ -2067,6 +2088,8 @@ class FlowManager:
         # Generate UUID and name for start node
         start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
         start_node_name = "Start_Package_MultiNode"
+        # Parameter name mappings are essential to know which inputs are necessary on the start node given.
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter] = {}
 
         # Build start node CreateNodeRequest
         start_create_node_command = CreateNodeRequest(
@@ -2107,6 +2130,7 @@ class FlowManager:
                 node_name_to_uuid=node_name_to_uuid,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                parameter_name_mappings=parameter_name_mappings,
             )
             if isinstance(result, PackageNodesAsSerializedFlowResultFailure):
                 return result
@@ -2149,6 +2173,8 @@ class FlowManager:
             start_to_package_connections=start_to_package_connections,
             input_shape_data=input_shape_data,
             start_node_parameter_value_commands=start_node_parameter_value_commands,
+            parameter_name_mappings=parameter_name_mappings,
+            start_node_name=start_node_name,
         )
 
     def _create_start_node_parameters_and_connections_for_incoming_data(  # noqa: PLR0913
@@ -2162,6 +2188,7 @@ class FlowManager:
         node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter],
     ) -> StartNodeIncomingDataResult | PackageNodesAsSerializedFlowResultFailure:
         """Create parameters and connections for incoming data connections to a specific target node."""
         start_node_parameter_commands = []
@@ -2177,6 +2204,10 @@ class FlowManager:
                 prefix=output_parameter_prefix,
                 node_name=target_node_name,
                 parameter_name=target_parameter_name,
+            )
+
+            parameter_name_mappings[param_name] = OriginalNodeParameter(
+                node_name=target_node_name, parameter_name=target_parameter_name
             )
 
             # Get the source node to determine parameter type (from the external connection)
@@ -2513,6 +2544,39 @@ class FlowManager:
         details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowFromNodeResultSuccess(result_details=details)
+
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        if not flow_name:
+            details = "Must provide flow name to start a flow."
+
+            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+        # get the flow by ID
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Cannot start flow. Error: {err}"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
+        # Check to see if the flow is already running.
+        if not self.check_for_existing_running_flow():
+            msg = "There must be a flow going to start a Subflow"
+            return StartLocalSubflowResultFailure(result_details=msg)
+
+        subflow_machine = ControlFlowMachine(
+            flow.name,
+            pickle_control_flow_result=request.pickle_control_flow_result,
+            use_isolated_dag_builder=True,
+        )
+
+        # Get the start node object from the node name string
+        start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
+
+        try:
+            await subflow_machine.start_flow(start_node)
+        except Exception:
+            subflow_machine.cleanup_proxy_nodes()
+
+        return StartLocalSubflowResultSuccess(result_details=f"Successfully executed local subflow '{flow_name}'")
 
     def on_get_flow_state_request(self, event: GetFlowStateRequest) -> ResultPayload:
         flow_name = event.flow_name
@@ -2981,16 +3045,20 @@ class FlowManager:
 
         # Create the nodes.
         # Preserve the node UUIDs because we will need to tie these back together with the Connections later.
+        # Also build a mapping from original node names to deserialized node names.
         node_uuid_to_deserialized_node_result = {}
+        node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
+            original_node_name = serialized_node.create_node_command.node_name
             deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
-            if deserialized_node_result.failed():
+            if not isinstance(deserialized_node_result, DeserializeNodeFromCommandsResultSuccess):
                 details = (
                     f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                 )
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
+            node_name_mappings[original_node_name] = deserialized_node_result.node_name
 
         # Now apply the connections.
         # We didn't know the exact name that would be used for the nodes, but we knew the node's creation UUID.
@@ -3063,7 +3131,9 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
-        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name, result_details=details)
+        return DeserializeFlowFromCommandsResultSuccess(
+            flow_name=flow_name, node_name_mappings=node_name_mappings, result_details=details
+        )
 
     def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
         obj_manager = GriptapeNodes.ObjectManager()

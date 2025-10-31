@@ -185,6 +185,104 @@ class DagBuilder:
 
         return control_connection_count
 
+    @staticmethod
+    def collect_nodes_in_forward_control_path(
+        start_node: BaseNode, end_node: BaseNode, connections: Connections
+    ) -> set[str]:
+        """Collect all nodes in the forward control path from start_node to end_node.
+
+        Args:
+            start_node: The node to start traversal from
+            end_node: The node to stop traversal at (inclusive)
+            connections: The connections manager
+
+        Returns:
+            Set of node names in the control path from start to end (inclusive)
+        """
+        nodes_in_path: set[str] = set()
+        to_visit = [start_node]
+        visited = set()
+
+        while to_visit:
+            current_node = to_visit.pop(0)
+
+            if current_node.name in visited:
+                continue
+            visited.add(current_node.name)
+
+            # Add to our collection
+            nodes_in_path.add(current_node.name)
+
+            # Stop if we've reached the end node
+            if current_node == end_node:
+                continue
+
+            # Find all outgoing control connections
+            if current_node.name in connections.outgoing_index:
+                for param_name, connection_ids in connections.outgoing_index[current_node.name].items():
+                    param = current_node.get_parameter_by_name(param_name)
+                    if param and param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                        for connection_id in connection_ids:
+                            if connection_id in connections.connections:
+                                connection = connections.connections[connection_id]
+                                next_node = connection.target_node
+                                if next_node.name not in visited:
+                                    to_visit.append(next_node)
+
+        return nodes_in_path
+
+    @staticmethod
+    def collect_data_dependencies_for_node(
+        node: BaseNode, connections: Connections, nodes_to_exclude: set[str], visited: set[str]
+    ) -> set[str]:
+        """Collect data dependencies for a node recursively.
+
+        Args:
+            node: The node to collect dependencies for
+            connections: The connections manager
+            nodes_to_exclude: Set of nodes to exclude (e.g., nodes already in control flow)
+            visited: Set of already visited dependency nodes (modified in place)
+
+        Returns:
+            Set of dependency node names
+        """
+        if node.name in visited:
+            return set()
+
+        visited.add(node.name)
+        dependencies: set[str] = set()
+
+        # Check for ignore_dependencies attribute (like output_selector)
+        ignore_data_dependencies = hasattr(node, "ignore_dependencies")
+        if ignore_data_dependencies:
+            return dependencies
+
+        # Process each parameter looking for data dependencies
+        for param in node.parameters:
+            # Skip control parameters
+            if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            # Get upstream data connection
+            upstream_connection = connections.get_connected_node(node, param)
+            if upstream_connection:
+                upstream_node, _ = upstream_connection
+
+                # Skip if already resolved
+                if upstream_node.state == NodeResolutionState.RESOLVED:
+                    continue
+
+                # Only add if it's not in the exclusion set
+                if upstream_node.name not in nodes_to_exclude:
+                    dependencies.add(upstream_node.name)
+                    # Recursively collect dependencies of this dependency
+                    sub_deps = DagBuilder.collect_data_dependencies_for_node(
+                        upstream_node, connections, nodes_to_exclude, visited
+                    )
+                    dependencies.update(sub_deps)
+
+        return dependencies
+
     def _is_node_in_forward_path(
         self, start_node: BaseNode, target_node: BaseNode, connections: Connections, visited: set[str] | None = None
     ) -> bool:

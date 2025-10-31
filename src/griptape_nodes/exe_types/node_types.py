@@ -1617,6 +1617,7 @@ class EndNode(BaseNode):
 
 class StartLoopNode(BaseNode):
     end_node: EndLoopNode | None = None
+    exec_out: ControlParameterOutput
     """Creating class for Start Loop Node in order to implement loop functionality in execution."""
 
     @abstractmethod
@@ -1625,6 +1626,35 @@ class StartLoopNode(BaseNode):
 
         This method must be implemented by subclasses to define when
         the loop should terminate.
+        """
+
+    @abstractmethod
+    def _get_total_iterations(self) -> int:
+        """Return the total number of iterations for this loop.
+
+        This method must be implemented by subclasses to define how many
+        iterations the loop will execute.
+        """
+
+    @abstractmethod
+    def _get_iteration_items(self) -> list[Any]:
+        """Get the list of items to iterate over.
+
+        This method must be implemented by subclasses to return the items for iteration.
+        For ForEach nodes, this returns the actual list of items.
+        For ForLoop nodes, this can return an empty list as they iterate by index calculation.
+
+        Returns:
+            List of items to iterate over
+        """
+
+    @abstractmethod
+    def _initialize_iteration_data(self) -> None:
+        """Initialize iteration-specific data and state.
+
+        This method must be implemented by subclasses to set up any necessary
+        state before iteration begins. Called before accessing iteration items
+        or calculating total iterations.
         """
 
 
