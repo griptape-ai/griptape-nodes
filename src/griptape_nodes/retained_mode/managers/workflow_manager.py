@@ -4128,7 +4128,11 @@ class WorkflowManager:
                 return
             if path.is_dir():
                 # Process all Python files recursively in the directory
+                # Exclude .venv directories to avoid encoding issues with test files
                 for workflow_file in path.rglob("*.py"):
+                    # Skip files in .venv directories
+                    if ".venv" in workflow_file.parts:
+                        continue
                     process_workflow_file(workflow_file)
             elif path.suffix == ".py":
                 process_workflow_file(path)
