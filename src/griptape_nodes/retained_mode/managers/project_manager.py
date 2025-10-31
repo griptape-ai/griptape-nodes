@@ -29,6 +29,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
+    AttemptMatchPathAgainstMacroRequest,
+    AttemptMatchPathAgainstMacroResultFailure,
+    AttemptMatchPathAgainstMacroResultSuccess,
     GetAllSituationsForProjectRequest,
     GetAllSituationsForProjectResultFailure,
     GetAllSituationsForProjectResultSuccess,
@@ -52,9 +55,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
-    MatchPathAgainstMacroRequest,
-    MatchPathAgainstMacroResultFailure,
-    MatchPathAgainstMacroResultSuccess,
     PathResolutionFailureReason,
     ProjectTemplateInfo,
     SaveProjectTemplateRequest,
@@ -177,7 +177,7 @@ class ProjectManager:
                 SaveProjectTemplateRequest, self.on_save_project_template_request
             )
             event_manager.assign_manager_to_request_type(
-                MatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+                AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
             )
             event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
             event_manager.assign_manager_to_request_type(
@@ -556,24 +556,18 @@ class ProjectManager:
         )
 
     def on_match_path_against_macro_request(
-        self, request: MatchPathAgainstMacroRequest
-    ) -> MatchPathAgainstMacroResultSuccess | MatchPathAgainstMacroResultFailure:
-        """Check if a path matches a macro schema and extract variables.
+        self, request: AttemptMatchPathAgainstMacroRequest
+    ) -> AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure:
+        """Attempt to match a path against a macro schema and extract variables.
 
         Flow:
-        1. Check secrets manager is available
+        1. Check secrets manager is available (failure = true error)
         2. Call ParsedMacro.extract_variables() with path and known variables
-        3. If match succeeds, return extracted variables
-        4. If match fails, return MacroMatchFailure with details
+        3. If match succeeds, return success with extracted_variables
+        4. If match fails, return success with match_failure (not an error)
         """
         if self._secrets_manager is None:
-            return MatchPathAgainstMacroResultFailure(
-                match_failure=MacroMatchFailure(
-                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
-                    expected_pattern=request.parsed_macro.template,
-                    known_variables_used=request.known_variables,
-                    error_details="SecretsManager not available",
-                ),
+            return AttemptMatchPathAgainstMacroResultFailure(
                 result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
             )
 
@@ -584,18 +578,22 @@ class ProjectManager:
         )
 
         if extracted is None:
-            return MatchPathAgainstMacroResultFailure(
+            # Pattern didn't match - this is a normal outcome, not an error
+            return AttemptMatchPathAgainstMacroResultSuccess(
+                extracted_variables=None,
                 match_failure=MacroMatchFailure(
                     failure_reason=MacroMatchFailureReason.STATIC_TEXT_MISMATCH,
                     expected_pattern=request.parsed_macro.template,
                     known_variables_used=request.known_variables,
                     error_details=f"Path '{request.file_path}' does not match macro pattern",
                 ),
-                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because path does not match pattern",
+                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Pattern did not match",
             )
 
-        return MatchPathAgainstMacroResultSuccess(
+        # Pattern matched successfully
+        return AttemptMatchPathAgainstMacroResultSuccess(
             extracted_variables=extracted,
+            match_failure=None,
             result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 

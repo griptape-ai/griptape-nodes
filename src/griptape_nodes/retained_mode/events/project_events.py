@@ -329,8 +329,8 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 
 @dataclass
 @PayloadRegistry.register
-class MatchPathAgainstMacroRequest(RequestPayload):
-    """Check if a path matches a macro schema and extract variables.
+class AttemptMatchPathAgainstMacroRequest(RequestPayload):
+    """Attempt to match a path against a macro schema and extract variables.
 
     Use when: Validating paths, extracting info from file paths,
     identifying which schema produced a file.
@@ -338,12 +338,15 @@ class MatchPathAgainstMacroRequest(RequestPayload):
     Uses the current project for context. Caller must parse the macro string
     into a ParsedMacro before creating this request.
 
+    Pattern non-matches are returned as success with match_failure populated.
+    Only true system errors (missing SecretsManager, etc.) return failure.
+
     Args:
         parsed_macro: Parsed macro template to match against
         file_path: Path string to test
         known_variables: Variables we already know
 
-    Results: MatchPathAgainstMacroResultSuccess | MatchPathAgainstMacroResultFailure
+    Results: AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure
     """
 
     parsed_macro: ParsedMacro
@@ -353,18 +356,22 @@ class MatchPathAgainstMacroRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class MatchPathAgainstMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Path matched the macro schema."""
+class AttemptMatchPathAgainstMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Attempt completed (match succeeded or pattern didn't match).
 
-    extracted_variables: MacroVariables
+    Check match_failure to determine outcome:
+    - match_failure is None: Pattern matched, extracted_variables contains results
+    - match_failure is not None: Pattern didn't match (normal case, not an error)
+    """
+
+    extracted_variables: MacroVariables | None
+    match_failure: MacroMatchFailure | None
 
 
 @dataclass
 @PayloadRegistry.register
-class MatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Path did not match the macro schema."""
-
-    match_failure: MacroMatchFailure
+class AttemptMatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """System error occurred (missing SecretsManager, invalid configuration, etc.)."""
 
 
 @dataclass

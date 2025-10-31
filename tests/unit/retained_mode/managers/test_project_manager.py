@@ -9,14 +9,14 @@ from griptape_nodes.common.macro_parser import MacroMatchFailureReason
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
+    AttemptMatchPathAgainstMacroRequest,
+    AttemptMatchPathAgainstMacroResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
-    MatchPathAgainstMacroRequest,
-    MatchPathAgainstMacroResultFailure,
     PathResolutionFailureReason,
 )
 from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
@@ -34,13 +34,12 @@ class TestProjectManagerMacroHandlers:
         return ProjectManager(mock_event_manager, mock_config, mock_secrets)
 
     def test_match_path_against_macro_success(self, project_manager: ProjectManager) -> None:
-        """Test MatchPathAgainstMacro successfully matches path."""
+        """Test AttemptMatchPathAgainstMacro successfully matches path."""
         from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.retained_mode.events.project_events import MatchPathAgainstMacroResultSuccess
 
         parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
 
-        request = MatchPathAgainstMacroRequest(
+        request = AttemptMatchPathAgainstMacroRequest(
             parsed_macro=parsed_macro,
             file_path="inputs/render.png",
             known_variables={"inputs": "inputs"},
@@ -48,17 +47,18 @@ class TestProjectManagerMacroHandlers:
 
         result = project_manager.on_match_path_against_macro_request(request)
 
-        assert isinstance(result, MatchPathAgainstMacroResultSuccess)
+        assert isinstance(result, AttemptMatchPathAgainstMacroResultSuccess)
+        assert result.match_failure is None
         assert result.extracted_variables == {"inputs": "inputs", "file_name": "render", "ext": "png"}
 
     def test_match_path_mismatch(self, project_manager: ProjectManager) -> None:
-        """Test that MatchPathAgainstMacro returns failure when path doesn't match."""
+        """Test that AttemptMatchPathAgainstMacro returns success with match_failure when path doesn't match."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
         known_vars: dict[str, str | int] = {"inputs": "outputs", "ext": "png"}
         parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
 
-        request = MatchPathAgainstMacroRequest(
+        request = AttemptMatchPathAgainstMacroRequest(
             parsed_macro=parsed_macro,
             file_path="wrong_folder/render.png",
             known_variables=known_vars,
@@ -66,18 +66,19 @@ class TestProjectManagerMacroHandlers:
 
         result = project_manager.on_match_path_against_macro_request(request)
 
-        assert isinstance(result, MatchPathAgainstMacroResultFailure)
+        assert isinstance(result, AttemptMatchPathAgainstMacroResultSuccess)
+        assert result.match_failure is not None
+        assert result.extracted_variables is None
         assert result.match_failure.failure_reason == MacroMatchFailureReason.STATIC_TEXT_MISMATCH
         assert result.match_failure.known_variables_used == known_vars
 
     def test_match_path_empty_known_variables(self, project_manager: ProjectManager) -> None:
-        """Test MatchPathAgainstMacro with empty known_variables."""
+        """Test AttemptMatchPathAgainstMacro with empty known_variables."""
         from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.retained_mode.events.project_events import MatchPathAgainstMacroResultSuccess
 
         parsed_macro = ParsedMacro("{file_name}")
 
-        request = MatchPathAgainstMacroRequest(
+        request = AttemptMatchPathAgainstMacroRequest(
             parsed_macro=parsed_macro,
             file_path="test.txt",
             known_variables={},
@@ -85,7 +86,8 @@ class TestProjectManagerMacroHandlers:
 
         result = project_manager.on_match_path_against_macro_request(request)
 
-        assert isinstance(result, MatchPathAgainstMacroResultSuccess)
+        assert isinstance(result, AttemptMatchPathAgainstMacroResultSuccess)
+        assert result.match_failure is None
         assert result.extracted_variables == {"file_name": "test.txt"}
 
 
