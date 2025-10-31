@@ -97,6 +97,41 @@ class StartFlowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class StartLocalSubflowRequest(RequestPayload):
+    """Start an independent local subflow that runs concurrently with the main flow.
+
+    Use when: Running loop iterations or other independent subflows that need their own
+    execution context and should not interfere with the main flow's state.
+
+    This creates a separate ControlFlowMachine with its own DagBuilder to ensure full isolation.
+
+    Args:
+        flow_name: Name of the flow to start as a subflow
+        start_node: The node to start execution from (optional, defaults to flow start)
+        pickle_control_flow_result: Whether to pickle the result for subprocess retrieval
+
+    Results: StartLocalSubflowResultSuccess | StartLocalSubflowResultFailure
+    """
+
+    flow_name: str
+    start_node: str
+    pickle_control_flow_result: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class StartLocalSubflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Local subflow started successfully and is running independently."""
+
+
+@dataclass
+@PayloadRegistry.register
+class StartLocalSubflowResultFailure(ResultPayloadFailure):
+    """Local subflow failed to start. Check result_details for error information."""
+
+
+@dataclass
+@PayloadRegistry.register
 class StartFlowFromNodeRequest(RequestPayload):
     """Start executing a flow from a specific node.
 

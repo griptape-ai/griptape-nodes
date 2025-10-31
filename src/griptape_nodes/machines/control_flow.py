@@ -60,13 +60,21 @@ class ControlFlowContext:
         *,
         execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
         pickle_control_flow_result: bool = False,
+        use_isolated_dag_builder: bool = False,
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
             # Get the global DagBuilder from FlowManager
+            from griptape_nodes.machines.dag_builder import DagBuilder
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+            # Create isolated DagBuilder for independent subflows
+            if use_isolated_dag_builder:
+                dag_builder = DagBuilder()
+                logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
+            else:
+                dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+
             self.resolution_machine = ParallelResolutionMachine(
                 flow_name, max_nodes_in_parallel, dag_builder=dag_builder
             )
@@ -281,7 +289,13 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, *, pickle_control_flow_result: bool = False) -> None:
+    def __init__(
+        self,
+        flow_name: str,
+        *,
+        pickle_control_flow_result: bool = False,
+        use_isolated_dag_builder: bool = False,
+    ) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
@@ -291,6 +305,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             max_nodes_in_parallel,
             execution_type=execution_type,
             pickle_control_flow_result=pickle_control_flow_result,
+            use_isolated_dag_builder=use_isolated_dag_builder,
         )
         super().__init__(context)
 
@@ -385,17 +400,20 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901, PLR0912
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
         their dependencies into the DAG resolution machine.
+
+        For isolated subflows, this skips the global queue entirely and just
+        processes the start node, as subflows are self-contained.
         """
         if not isinstance(self._context.resolution_machine, ParallelResolutionMachine):
             return []
-        # Get the global flow queue
-        flow_manager = GriptapeNodes.FlowManager()
-        dag_builder = flow_manager.global_dag_builder
+
+        # Use the DagBuilder from the resolution machine context (may be isolated or global)
+        dag_builder = self._context.resolution_machine.context.dag_builder
         if dag_builder is None:
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
@@ -405,6 +423,20 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Build with the first node (it should already be the proxy if it's part of a group)
         dag_builder.add_node_with_dependencies(start_node, start_node.name)
+
+        # Check if we're using an isolated DagBuilder (for subflows)
+        flow_manager = GriptapeNodes.FlowManager()
+        is_isolated = dag_builder is not flow_manager.global_dag_builder
+
+        if is_isolated:
+            # For isolated subflows, we don't process the global queue
+            # Just return the start node - the subflow is self-contained
+            logger.debug(
+                "Using isolated DagBuilder for flow '%s' - skipping global queue processing", self._context.flow_name
+            )
+            return [start_node]
+
+        # For main flows using the global DagBuilder, process the global queue
         queue_items = list(flow_manager.global_flow_queue.queue)
         start_nodes = [start_node]
         # Find data_nodes and remove them from queue

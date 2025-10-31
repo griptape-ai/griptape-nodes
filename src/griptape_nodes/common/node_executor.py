@@ -498,7 +498,9 @@ class NodeExecutor:
                 msg = f"Failed to deserialize flow for iteration {iteration_index}. Error: {deserialize_result.result_details}"
                 raise TypeError(msg)
 
-            deserialized_flows.append((iteration_index, deserialize_result.node_name_mappings))
+            deserialized_flows.append(
+                (iteration_index, deserialize_result.flow_name, deserialize_result.node_name_mappings)
+            )
 
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
 
@@ -509,7 +511,7 @@ class NodeExecutor:
         )
 
         # Set input values on StartFlow nodes for each deserialized flow
-        for iteration_index, node_name_mappings in deserialized_flows:
+        for iteration_index, _, node_name_mappings in deserialized_flows:
             parameter_values = parameter_values_to_set_before_run[iteration_index]
 
             # Get Start node mapping (index 0 in the list)
@@ -550,25 +552,37 @@ class NodeExecutor:
                     )
 
         logger.info("Successfully set input values for %d iterations", total_iterations)
-        return
 
         # Step 7: Run all flows concurrently
-        from griptape_nodes.retained_mode.events.execution_events import (
-            StartFlowRequest,
-            StartFlowResultSuccess,
-        )
 
-        async def run_single_iteration(flow_name: str, iteration_index: int) -> tuple[int, bool]:
+        # Get the packaged Start node name from parameter mappings (index 0 = Start node)
+        packaged_start_node_name = package_result.parameter_name_mappings[0].node_name
+
+        async def run_single_iteration(flow_name: str, iteration_index: int, start_node_name: str) -> tuple[int, bool]:
             """Run a single iteration flow and return success status."""
-            start_flow_request = StartFlowRequest(flow_name=flow_name)
-            start_flow_result = await GriptapeNodes.ahandle_request(start_flow_request)
-            success = isinstance(start_flow_result, StartFlowResultSuccess)
+            from griptape_nodes.retained_mode.events.execution_events import (
+                StartLocalSubflowRequest,
+                StartLocalSubflowResultSuccess,
+            )
+
+            start_subflow_request = StartLocalSubflowRequest(
+                flow_name=flow_name,
+                start_node=start_node_name,
+                pickle_control_flow_result=False,
+            )
+            start_subflow_result = await GriptapeNodes.ahandle_request(start_subflow_request)
+            success = isinstance(start_subflow_result, StartLocalSubflowResultSuccess)
             return iteration_index, success
 
         try:
             # Run all iterations concurrently
             iteration_tasks = [
-                run_single_iteration(flow_name, iteration_index) for flow_name, iteration_index in deserialized_flows
+                run_single_iteration(
+                    flow_name,
+                    iteration_index,
+                    node_name_mappings.get(packaged_start_node_name),
+                )
+                for iteration_index, flow_name, node_name_mappings in deserialized_flows
             ]
             iteration_results = await asyncio.gather(*iteration_tasks, return_exceptions=True)
 
