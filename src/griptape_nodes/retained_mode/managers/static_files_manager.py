@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -225,6 +226,8 @@ class StaticFilesManager:
 
         workspace_path = self.config_manager.workspace_path
         static_files_subdir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+        if (unique_subdir := os.getenv("GT_CLOUD_STRUCTURE_RUN_ID")) is not None:
+            static_files_subdir = str(Path(static_files_subdir) / unique_subdir)
 
         # Check if there's an active workflow context
         context_manager = GriptapeNodes.ContextManager()
