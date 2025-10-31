@@ -4099,7 +4099,7 @@ class WorkflowManager:
                 ),
             )
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:
+    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:  # noqa: C901
         """Process a list of workflow paths for registration.
 
         Returns:
