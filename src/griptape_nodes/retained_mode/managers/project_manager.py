@@ -85,16 +85,34 @@ BUILTIN_WORKSPACE_DIR = "workspace_dir"
 BUILTIN_WORKFLOW_NAME = "workflow_name"
 BUILTIN_WORKFLOW_DIR = "workflow_dir"
 
+
+@dataclass(frozen=True)
+class BuiltinVariableInfo:
+    """Metadata about a builtin variable.
+
+    Attributes:
+        name: The variable name (e.g., "project_dir")
+        is_directory: Whether this variable represents a directory path
+    """
+
+    name: str
+    is_directory: bool
+
+
+# Builtin variable definitions with metadata
+_BUILTIN_VARIABLE_DEFINITIONS = [
+    BuiltinVariableInfo(name=BUILTIN_PROJECT_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_PROJECT_NAME, is_directory=False),
+    BuiltinVariableInfo(name=BUILTIN_WORKSPACE_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_WORKFLOW_NAME, is_directory=False),
+    BuiltinVariableInfo(name=BUILTIN_WORKFLOW_DIR, is_directory=True),
+]
+
+# Map of variable name to metadata
+_BUILTIN_VARIABLE_INFO: dict[str, BuiltinVariableInfo] = {var.name: var for var in _BUILTIN_VARIABLE_DEFINITIONS}
+
 # Builtin variables available in all macros (read-only)
-BUILTIN_VARIABLES = frozenset(
-    [
-        BUILTIN_PROJECT_DIR,
-        BUILTIN_PROJECT_NAME,
-        BUILTIN_WORKFLOW_NAME,
-        BUILTIN_WORKFLOW_DIR,
-        BUILTIN_WORKSPACE_DIR,
-    ]
-)
+BUILTIN_VARIABLES = frozenset(var.name for var in _BUILTIN_VARIABLE_DEFINITIONS)
 
 
 @dataclass
@@ -384,7 +402,7 @@ class ProjectManager:
             result_details=f"Successfully retrieved situation '{request.situation_name}'. Macro: {situation.macro}, Policy: create_dirs={situation.policy.create_dirs}, on_collision={situation.policy.on_collision}",
         )
 
-    def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912
+    def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: GetPathForMacroRequest
     ) -> GetPathForMacroResultSuccess | GetPathForMacroResultFailure:
         """Resolve ANY macro schema with variables to final Path.
@@ -449,7 +467,14 @@ class ProjectManager:
                 # Confirm no monkey business with trying to override builtin values
                 existing = resolution_bag.get(var_name)
                 if existing is not None:
-                    if str(existing) != builtin_value:
+                    # For directory builtin variables, compare as resolved paths
+                    builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
+                    if builtin_info and builtin_info.is_directory:
+                        resolved_existing = Path(str(existing)).resolve()
+                        resolved_builtin = Path(builtin_value).resolve()
+                        if resolved_existing != resolved_builtin:
+                            disallowed_overrides.add(var_name)
+                    elif str(existing) != builtin_value:
                         disallowed_overrides.add(var_name)
                 else:
                     resolution_bag[var_name] = builtin_value
@@ -890,6 +915,9 @@ class ProjectManager:
             /Users/james/project/outputs/inputs/file.png → "{outputs}/inputs/file.png"
             /Users/james/Downloads/file.png → None
         """
+        # Normalize the absolute path for consistent cross-platform comparison
+        absolute_path = absolute_path.resolve()
+
         template = project_info.template
         project_base_dir = project_info.project_base_dir
 
@@ -936,7 +964,9 @@ class ProjectManager:
             # Make absolute (resolve relative paths against project base directory)
             resolved_dir_path = Path(resolved_path_str)
             if not resolved_dir_path.is_absolute():
-                resolved_dir_path = (project_base_dir / resolved_dir_path).resolve()
+                resolved_dir_path = project_base_dir / resolved_dir_path
+            # Normalize for consistent cross-platform comparison
+            resolved_dir_path = resolved_dir_path.resolve()
 
             # Check if absolute_path is inside this directory
             try:
