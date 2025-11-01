@@ -152,11 +152,8 @@ def load_project_template_from_yaml(  # noqa: C901
     Returns:
         ProjectTemplate on success, None if fatal errors prevent construction
     """
-    # Import here to avoid circular dependency:
-    # - loader.py defines YAMLLineInfo
-    # - project.py imports YAMLLineInfo for type hints
-    # - loader.py needs ProjectTemplate at runtime
-    # TYPE_CHECKING import at top is for type hints only, this is for runtime
+    # Lazy import required: circular dependency between this module and project.py
+    # project.py imports ProjectOverlayData from this file, and we need ProjectTemplate from project.py
     from griptape_nodes.common.project_templates.project import ProjectTemplate
 
     # Pass 1: Load YAML with line tracking
@@ -208,9 +205,13 @@ def load_project_template_from_yaml(  # noqa: C901
     else:
         # Add warnings for schema version mismatches
         if template.project_template_schema_version != ProjectTemplate.LATEST_SCHEMA_VERSION:
+            message = (
+                f"Schema version '{template.project_template_schema_version}' "
+                f"differs from latest '{ProjectTemplate.LATEST_SCHEMA_VERSION}'"
+            )
             validation_info.add_warning(
                 field_path=FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION,
-                message=f"Schema version '{template.project_template_schema_version}' differs from latest '{ProjectTemplate.LATEST_SCHEMA_VERSION}'",
+                message=message,
                 line_number=line_info.get_line(FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION),
             )
 
@@ -230,7 +231,7 @@ def load_partial_project_template(
 
     Does NOT:
     - Construct full SituationTemplate/DirectoryDefinition objects
-    - Validate situation schemas or policy values
+    - Validate situation macros or policy values
     - Check directory references
 
     Use this for loading user overlay templates before merge.

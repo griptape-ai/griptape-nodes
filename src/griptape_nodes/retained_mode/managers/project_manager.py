@@ -5,87 +5,133 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.common.macro_parser import (
     MacroMatchFailure,
     MacroMatchFailureReason,
-    MacroParseFailure,
-    MacroParseFailureReason,
     MacroResolutionError,
     MacroResolutionFailureReason,
-    MacroSyntaxError,
     ParsedMacro,
 )
 from griptape_nodes.common.project_templates import (
     DEFAULT_PROJECT_TEMPLATE,
+    DirectoryDefinition,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
+    SituationTemplate,
     load_project_template_from_yaml,
 )
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete  # noqa: TC001
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
+    AttemptMapAbsolutePathToProjectRequest,
+    AttemptMapAbsolutePathToProjectResultFailure,
+    AttemptMapAbsolutePathToProjectResultSuccess,
+    AttemptMatchPathAgainstMacroRequest,
+    AttemptMatchPathAgainstMacroResultFailure,
+    AttemptMatchPathAgainstMacroResultSuccess,
     GetAllSituationsForProjectRequest,
     GetAllSituationsForProjectResultFailure,
     GetAllSituationsForProjectResultSuccess,
     GetCurrentProjectRequest,
+    GetCurrentProjectResultFailure,
     GetCurrentProjectResultSuccess,
-    GetMacroForSituationRequest,
-    GetMacroForSituationResultFailure,
-    GetMacroForSituationResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
     GetProjectTemplateRequest,
     GetProjectTemplateResultFailure,
     GetProjectTemplateResultSuccess,
-    GetVariablesForMacroRequest,
-    GetVariablesForMacroResultFailure,
-    GetVariablesForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultFailure,
+    GetSituationResultSuccess,
+    GetStateForMacroRequest,
+    GetStateForMacroResultFailure,
+    GetStateForMacroResultSuccess,
+    ListProjectTemplatesRequest,
+    ListProjectTemplatesResultSuccess,
     LoadProjectTemplateRequest,
     LoadProjectTemplateResultFailure,
     LoadProjectTemplateResultSuccess,
-    MatchPathAgainstMacroRequest,
-    MatchPathAgainstMacroResultFailure,
-    MatchPathAgainstMacroResultSuccess,
     PathResolutionFailureReason,
+    ProjectTemplateInfo,
     SaveProjectTemplateRequest,
     SaveProjectTemplateResultFailure,
     SetCurrentProjectRequest,
     SetCurrentProjectResultSuccess,
-    ValidateMacroSyntaxRequest,
-    ValidateMacroSyntaxResultFailure,
-    ValidateMacroSyntaxResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 logger = logging.getLogger("griptape_nodes")
 
-# Synthetic path key for the system default project template
-SYSTEM_DEFAULTS_KEY = Path("<system-defaults>")
+# Type alias for project identifiers
+# Usually constructed from file path, but kept opaque to prevent abuse
+ProjectID = str
+
+# Synthetic identifier for the system default project template
+SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
+
+# Builtin variable name constants
+BUILTIN_PROJECT_DIR = "project_dir"
+BUILTIN_PROJECT_NAME = "project_name"
+BUILTIN_WORKSPACE_DIR = "workspace_dir"
+BUILTIN_WORKFLOW_NAME = "workflow_name"
+BUILTIN_WORKFLOW_DIR = "workflow_dir"
 
 
 @dataclass(frozen=True)
-class SituationMacroKey:
-    """Key for caching parsed situation schema macros."""
+class BuiltinVariableInfo:
+    """Metadata about a builtin variable.
 
-    project_path: Path
-    situation_name: str
+    Attributes:
+        name: The variable name (e.g., "project_dir")
+        is_directory: Whether this variable represents a directory path
+    """
+
+    name: str
+    is_directory: bool
 
 
-@dataclass(frozen=True)
-class DirectoryMacroKey:
-    """Key for caching parsed directory schema macros."""
+# Builtin variable definitions with metadata
+_BUILTIN_VARIABLE_DEFINITIONS = [
+    BuiltinVariableInfo(name=BUILTIN_PROJECT_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_PROJECT_NAME, is_directory=False),
+    BuiltinVariableInfo(name=BUILTIN_WORKSPACE_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_WORKFLOW_NAME, is_directory=False),
+    BuiltinVariableInfo(name=BUILTIN_WORKFLOW_DIR, is_directory=True),
+]
 
-    project_path: Path
-    directory_name: str
+# Map of variable name to metadata
+_BUILTIN_VARIABLE_INFO: dict[str, BuiltinVariableInfo] = {var.name: var for var in _BUILTIN_VARIABLE_DEFINITIONS}
+
+# Builtin variables available in all macros (read-only)
+BUILTIN_VARIABLES = frozenset(var.name for var in _BUILTIN_VARIABLE_DEFINITIONS)
+
+
+@dataclass
+class ProjectInfo:
+    """Consolidated information about a loaded project.
+
+    Stores all project-related data including template, validation,
+    file paths, and cached parsed macros.
+    """
+
+    project_id: ProjectID
+    project_file_path: Path | None  # None for system defaults or non-file sources
+    project_base_dir: Path  # Directory for resolving relative paths ({project_dir})
+    template: ProjectTemplate
+    validation: ProjectValidationInfo
+
+    # Cached parsed macros (populated during load for performance)
+    parsed_situation_schemas: dict[str, ParsedMacro]  # situation_name -> ParsedMacro
+    parsed_directory_schemas: dict[str, ParsedMacro]  # directory_name -> ParsedMacro
 
 
 class ProjectManager:
@@ -119,21 +165,16 @@ class ProjectManager:
             config_manager: ConfigManager instance for accessing configuration
             secrets_manager: SecretsManager instance for macro resolution
         """
-        self.config_manager = config_manager
-        self.secrets_manager = secrets_manager
+        self._config_manager = config_manager
+        self._secrets_manager = secrets_manager
+
+        # Consolidated project information storage
+        self._successfully_loaded_project_templates: dict[ProjectID, ProjectInfo] = {}
+        self._current_project_id: ProjectID | None = None
 
         # Track validation status for ALL load attempts (including MISSING/UNUSABLE)
-        self.registered_template_status: dict[Path, ProjectValidationInfo] = {}
-
-        # Cache only successfully loaded templates (GOOD or FLAWED)
-        self.successful_templates: dict[Path, ProjectTemplate] = {}
-
-        # Cache parsed macros for performance (avoid re-parsing schemas)
-        self.parsed_situation_schemas: dict[SituationMacroKey, ParsedMacro] = {}
-        self.parsed_directory_schemas: dict[DirectoryMacroKey, ParsedMacro] = {}
-
-        # Track which project.yml user has selected
-        self.current_project_path: Path | None = None
+        # This allows UI to query why a project failed to load
+        self._registered_template_status: dict[Path, ProjectValidationInfo] = {}
 
         # Register event handlers
         if event_manager is not None:
@@ -144,8 +185,9 @@ class ProjectManager:
                 GetProjectTemplateRequest, self.on_get_project_template_request
             )
             event_manager.assign_manager_to_request_type(
-                GetMacroForSituationRequest, self.on_get_macro_for_situation_request
+                ListProjectTemplatesRequest, self.on_list_project_templates_request
             )
+            event_manager.assign_manager_to_request_type(GetSituationRequest, self.on_get_situation_request)
             event_manager.assign_manager_to_request_type(GetPathForMacroRequest, self.on_get_path_for_macro_request)
             event_manager.assign_manager_to_request_type(SetCurrentProjectRequest, self.on_set_current_project_request)
             event_manager.assign_manager_to_request_type(GetCurrentProjectRequest, self.on_get_current_project_request)
@@ -153,30 +195,25 @@ class ProjectManager:
                 SaveProjectTemplateRequest, self.on_save_project_template_request
             )
             event_manager.assign_manager_to_request_type(
-                MatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
+                AttemptMatchPathAgainstMacroRequest, self.on_match_path_against_macro_request
             )
-            event_manager.assign_manager_to_request_type(
-                GetVariablesForMacroRequest, self.on_get_variables_for_macro_request
-            )
-            event_manager.assign_manager_to_request_type(
-                ValidateMacroSyntaxRequest, self.on_validate_macro_syntax_request
-            )
+            event_manager.assign_manager_to_request_type(GetStateForMacroRequest, self.on_get_state_for_macro_request)
             event_manager.assign_manager_to_request_type(
                 GetAllSituationsForProjectRequest, self.on_get_all_situations_for_project_request
             )
+            event_manager.assign_manager_to_request_type(
+                AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
+            )
 
             # Register app initialization listener
-            # NOTE: This is intentionally commented out to keep ProjectManager inert for code review.
-            # Uncomment the following lines to enable ProjectManager during app initialization.
-            # ruff: noqa: ERA001
-            # event_manager.add_listener_to_app_event(
-            #     AppInitializationComplete,
-            #     self.on_app_initialization_complete,
-            # )
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
+            )
 
-    # Event handler methods (public)
-
-    def on_load_project_template_request(self, request: LoadProjectTemplateRequest) -> ResultPayload:
+    def on_load_project_template_request(
+        self, request: LoadProjectTemplateRequest
+    ) -> LoadProjectTemplateResultSuccess | LoadProjectTemplateResultFailure:
         """Load user's project.yml and merge with system defaults.
 
         Flow:
@@ -187,10 +224,6 @@ class ProjectManager:
         5. If usable, cache template in successful_templates
         6. Return LoadProjectTemplateResultSuccess or LoadProjectTemplateResultFailure
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        logger.debug("Loading project template: %s", request.project_path)
-
         read_request = ReadFileRequest(
             file_path=str(request.project_path),
             encoding="utf-8",
@@ -200,119 +233,182 @@ class ProjectManager:
 
         if read_result.failed():
             validation = ProjectValidationInfo(status=ProjectValidationStatus.MISSING)
-            self.registered_template_status[request.project_path] = validation
+            self._registered_template_status[request.project_path] = validation
 
             return LoadProjectTemplateResultFailure(
-                project_path=request.project_path,
                 validation=validation,
-                result_details=f"File not found: {request.project_path}",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file not found",
             )
 
         if not isinstance(read_result, ReadFileResultSuccess):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self.registered_template_status[request.project_path] = validation
+            self._registered_template_status[request.project_path] = validation
 
             return LoadProjectTemplateResultFailure(
-                project_path=request.project_path,
                 validation=validation,
-                result_details="Unexpected result type from ReadFileRequest",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because file read returned unexpected result type",
             )
 
         yaml_text = read_result.content
         if not isinstance(yaml_text, str):
             validation = ProjectValidationInfo(status=ProjectValidationStatus.UNUSABLE)
-            self.registered_template_status[request.project_path] = validation
+            self._registered_template_status[request.project_path] = validation
 
             return LoadProjectTemplateResultFailure(
-                project_path=request.project_path,
                 validation=validation,
-                result_details="Template must be text, got binary content",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template must be text, got binary content",
             )
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         template = load_project_template_from_yaml(yaml_text, validation)
 
         if template is None:
-            self.registered_template_status[request.project_path] = validation
+            self._registered_template_status[request.project_path] = validation
             return LoadProjectTemplateResultFailure(
-                project_path=request.project_path,
                 validation=validation,
-                result_details="Failed to parse YAML template",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
             )
 
+        # Generate project_id from file path
+        project_file_path = Path(request.project_path)
+        project_id = str(project_file_path)
+        project_base_dir = project_file_path.parent
+
+        # Parse all macros BEFORE creating ProjectInfo - collect ALL errors
+        situation_schemas = self._parse_situation_macros(template.situations, validation)
+        directory_schemas = self._parse_directory_macros(template.directories, validation)
+
+        # Now check if validation is usable after collecting all errors
         if not validation.is_usable():
-            self.registered_template_status[request.project_path] = validation
+            self._registered_template_status[request.project_path] = validation
             return LoadProjectTemplateResultFailure(
-                project_path=request.project_path,
                 validation=validation,
-                result_details=f"Template not usable (status: {validation.status})",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because template is not usable (status: {validation.status})",
             )
 
-        logger.debug("Template loaded successfully (status: %s)", validation.status)
+        # Create consolidated ProjectInfo with fully populated macro caches
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_file_path,
+            project_base_dir=project_base_dir,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
 
-        self.registered_template_status[request.project_path] = validation
-        self.successful_templates[request.project_path] = template
+        # Store in new consolidated dict
+        self._successfully_loaded_project_templates[project_id] = project_info
+
+        # Track validation status for all load attempts (for UI display)
+        self._registered_template_status[request.project_path] = validation
 
         return LoadProjectTemplateResultSuccess(
-            project_path=request.project_path,
+            project_id=project_id,
             template=template,
             validation=validation,
             result_details=f"Template loaded successfully with status: {validation.status}",
         )
 
-    def on_get_project_template_request(self, request: GetProjectTemplateRequest) -> ResultPayload:
-        """Get cached template for a workspace path."""
-        if request.project_path not in self.registered_template_status:
-            return GetProjectTemplateResultFailure(
-                result_details=f"Template not loaded yet: {request.project_path}",
-            )
+    def on_get_project_template_request(
+        self, request: GetProjectTemplateRequest
+    ) -> GetProjectTemplateResultSuccess | GetProjectTemplateResultFailure:
+        """Get cached template for a project ID."""
+        project_info = self._successfully_loaded_project_templates.get(request.project_id)
 
-        validation = self.registered_template_status[request.project_path]
-        template = self.successful_templates.get(request.project_path)
-
-        if template is None:
+        if project_info is None:
             return GetProjectTemplateResultFailure(
-                result_details=f"Template not usable (status: {validation.status})",
+                result_details=f"Attempted to get project template for '{request.project_id}'. Failed because template not loaded yet",
             )
 
         return GetProjectTemplateResultSuccess(
-            template=template,
-            validation=validation,
-            result_details="Project template retrieved from cache",
+            template=project_info.template,
+            validation=project_info.validation,
+            result_details=f"Successfully retrieved project template for '{request.project_id}'. Status: {project_info.validation.status}",
         )
 
-    def on_get_macro_for_situation_request(self, request: GetMacroForSituationRequest) -> ResultPayload:
-        """Get the macro schema for a specific situation.
+    def on_list_project_templates_request(
+        self, request: ListProjectTemplatesRequest
+    ) -> ListProjectTemplatesResultSuccess:
+        """List all project templates that have been loaded or attempted to load.
+
+        Returns separate lists for successfully loaded and failed templates.
+        """
+        successfully_loaded: list[ProjectTemplateInfo] = []
+        failed_to_load: list[ProjectTemplateInfo] = []
+
+        # Gather successfully loaded templates from _successfully_loaded_project_templates
+        for project_id, project_info in self._successfully_loaded_project_templates.items():
+            # Skip system builtins unless requested
+            if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
+                continue
+
+            successfully_loaded.append(ProjectTemplateInfo(project_id=project_id, validation=project_info.validation))
+
+        # Gather failed templates from _registered_template_status
+        # These are tracked by Path, not ProjectID
+        for template_path, validation in self._registered_template_status.items():
+            project_id = str(template_path)
+
+            # Skip if already in successfully loaded (validation status might be FLAWED but still loaded)
+            if project_id in self._successfully_loaded_project_templates:
+                continue
+
+            # Skip system builtins unless requested
+            if not request.include_system_builtins and project_id == SYSTEM_DEFAULTS_KEY:
+                continue
+
+            # Only include if status indicates failure (UNUSABLE or MISSING)
+            if not validation.is_usable():
+                failed_to_load.append(ProjectTemplateInfo(project_id=project_id, validation=validation))
+
+        return ListProjectTemplatesResultSuccess(
+            successfully_loaded=successfully_loaded,
+            failed_to_load=failed_to_load,
+            result_details=f"Successfully listed project templates. Loaded: {len(successfully_loaded)}, Failed: {len(failed_to_load)}",
+        )
+
+    def on_get_situation_request(
+        self, request: GetSituationRequest
+    ) -> GetSituationResultSuccess | GetSituationResultFailure:
+        """Get the complete situation template for a specific situation.
+
+        Returns the full SituationTemplate including macro and policy.
 
         Flow:
-        1. Get template from successful_templates
-        2. Get situation from template
-        3. Return situation's macro schema
+        1. Get current project
+        2. Get template from successful_templates
+        3. Get situation from template
+        4. Return complete SituationTemplate
         """
-        logger.debug("Getting macro for situation: %s in project: %s", request.situation_name, request.project_path)
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
 
-        template = self.successful_templates.get(request.project_path)
-        if template is None:
-            return GetMacroForSituationResultFailure(
-                result_details=f"Project template not loaded: {request.project_path}",
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return GetSituationResultFailure(
+                result_details=f"Attempted to get situation '{request.situation_name}'. Failed because no current project is set or template not loaded",
             )
+
+        template = current_project_result.project_info.template
 
         situation = template.situations.get(request.situation_name)
         if situation is None:
-            return GetMacroForSituationResultFailure(
-                result_details=f"Situation not found: {request.situation_name}",
+            return GetSituationResultFailure(
+                result_details=f"Attempted to get situation '{request.situation_name}'. Failed because situation not found",
             )
 
-        return GetMacroForSituationResultSuccess(
-            macro_schema=situation.schema,
-            result_details=f"Retrieved schema for situation: {request.situation_name}",
+        return GetSituationResultSuccess(
+            situation=situation,
+            result_details=f"Successfully retrieved situation '{request.situation_name}'. Macro: {situation.macro}, Policy: create_dirs={situation.policy.create_dirs}, on_collision={situation.policy.on_collision}",
         )
 
-    def on_get_path_for_macro_request(self, request: GetPathForMacroRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    def on_get_path_for_macro_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
+        self, request: GetPathForMacroRequest
+    ) -> GetPathForMacroResultSuccess | GetPathForMacroResultFailure:
         """Resolve ANY macro schema with variables to final Path.
 
         Flow:
-        1. Parse macro schema with ParsedMacro
+        1. Get current project
         2. Get variables from ParsedMacro.get_variables()
         3. For each variable:
            - If in directories dict → resolve directory, add to resolution bag
@@ -323,47 +419,73 @@ class ProjectManager:
         5. Resolve macro with complete variable bag
         6. Return resolved Path
         """
-        logger.debug("Resolving macro: %s in project: %s", request.macro_schema, request.project_path)
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as e:
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details=str(e),
-                result_details=f"Invalid macro syntax: {e}",
+                result_details="Attempted to resolve macro path. Failed because no current project is set or template not loaded",
             )
 
-        template = self.successful_templates.get(request.project_path)
-        if template is None:
-            return GetPathForMacroResultFailure(
-                failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details="Project template not loaded",
-                result_details=f"Project template not loaded: {request.project_path}",
-            )
+        project_info = current_project_result.project_info
+        template = project_info.template
 
-        variable_infos = parsed_macro.get_variables()
+        variable_infos = request.parsed_macro.get_variables()
         directory_names = set(template.directories.keys())
         user_provided_names = set(request.variables.keys())
 
+        # Check for directory/user variable name conflicts
         conflicting = directory_names & user_provided_names
         if conflicting:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
-                conflicting_variables=sorted(conflicting),
-                result_details=f"Variables conflict with directory names: {', '.join(sorted(conflicting))}",
+                conflicting_variables=conflicting,
+                result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
         resolution_bag: dict[str, str | int] = {}
+        disallowed_overrides: set[str] = set()
 
         for var_info in variable_infos:
             var_name = var_info.name
 
             if var_name in directory_names:
                 directory_def = template.directories[var_name]
-                resolution_bag[var_name] = directory_def.path_schema
+                resolution_bag[var_name] = directory_def.path_macro
             elif var_name in user_provided_names:
                 resolution_bag[var_name] = request.variables[var_name]
+
+            if var_name in BUILTIN_VARIABLES:
+                try:
+                    builtin_value = self._get_builtin_variable_value(var_name, project_info)
+                except (RuntimeError, NotImplementedError) as e:
+                    return GetPathForMacroResultFailure(
+                        failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                        result_details=f"Attempted to resolve macro path. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
+                    )
+                # Confirm no monkey business with trying to override builtin values
+                existing = resolution_bag.get(var_name)
+                if existing is not None:
+                    # For directory builtin variables, compare as resolved paths
+                    builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
+                    if builtin_info and builtin_info.is_directory:
+                        resolved_existing = Path(str(existing)).resolve()
+                        resolved_builtin = Path(builtin_value).resolve()
+                        if resolved_existing != resolved_builtin:
+                            disallowed_overrides.add(var_name)
+                    elif str(existing) != builtin_value:
+                        disallowed_overrides.add(var_name)
+                else:
+                    resolution_bag[var_name] = builtin_value
+
+        # Check if user tried to override builtins with different values
+        if disallowed_overrides:
+            return GetPathForMacroResultFailure(
+                failure_reason=PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED,
+                conflicting_variables=disallowed_overrides,
+                result_details=f"Attempted to resolve macro path. Failed because cannot override builtin variables: {', '.join(sorted(disallowed_overrides))}",
+            )
 
         required_vars = {v.name for v in variable_infos if v.is_required}
         provided_vars = set(resolution_bag.keys())
@@ -372,19 +494,18 @@ class ProjectManager:
         if missing:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
-                missing_variables=sorted(missing),
-                result_details=f"Missing required variables: {', '.join(sorted(missing))}",
+                missing_variables=missing,
+                result_details=f"Attempted to resolve macro path. Failed because missing required variables: {', '.join(sorted(missing))}",
             )
 
-        if self.secrets_manager is None:
+        if self._secrets_manager is None:
             return GetPathForMacroResultFailure(
                 failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
-                error_details="SecretsManager not available",
-                result_details="SecretsManager not available",
+                result_details="Attempted to resolve macro path. Failed because SecretsManager is not available",
             )
 
         try:
-            resolved_string = parsed_macro.resolve(resolution_bag, self.secrets_manager)
+            resolved_string = request.parsed_macro.resolve(resolution_bag, self._secrets_manager)
         except MacroResolutionError as e:
             if e.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES:
                 path_failure_reason = PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES
@@ -394,38 +515,57 @@ class ProjectManager:
             return GetPathForMacroResultFailure(
                 failure_reason=path_failure_reason,
                 missing_variables=e.missing_variables,
-                error_details=str(e),
-                result_details=f"Macro resolution failed: {e}",
+                result_details=f"Attempted to resolve macro path. Failed because macro resolution error: {e}",
             )
 
         resolved_path = Path(resolved_string)
 
+        # Make absolute path by resolving against project base directory
+        if resolved_path.is_absolute():
+            absolute_path = resolved_path
+        else:
+            absolute_path = project_info.project_base_dir / resolved_path
+
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
-            result_details=f"Resolved to: {resolved_path}",
+            absolute_path=absolute_path,
+            result_details=f"Successfully resolved macro path. Result: {resolved_path}",
         )
 
-    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> ResultPayload:
-        """Set which project.yml user has selected."""
-        self.current_project_path = request.project_path
+    def on_set_current_project_request(self, request: SetCurrentProjectRequest) -> SetCurrentProjectResultSuccess:
+        """Set which project user has selected."""
+        self._current_project_id = request.project_id
 
-        if request.project_path is None:
-            logger.info("Current project set to: No Project")
-        else:
-            logger.info("Current project set to: %s", request.project_path)
+        if request.project_id is None:
+            return SetCurrentProjectResultSuccess(
+                result_details="Successfully set current project. No project selected",
+            )
 
         return SetCurrentProjectResultSuccess(
-            result_details="Current project set successfully",
+            result_details=f"Successfully set current project. ID: {request.project_id}",
         )
 
-    def on_get_current_project_request(self, _request: GetCurrentProjectRequest) -> ResultPayload:
-        """Get currently selected project path."""
+    def on_get_current_project_request(
+        self, _request: GetCurrentProjectRequest
+    ) -> GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure:
+        """Get currently selected project with template info."""
+        if self._current_project_id is None:
+            return GetCurrentProjectResultFailure(
+                result_details="Attempted to get current project. Failed because no project is currently set"
+            )
+
+        project_info = self._successfully_loaded_project_templates.get(self._current_project_id)
+        if project_info is None:
+            return GetCurrentProjectResultFailure(
+                result_details=f"Attempted to get current project. Failed because project not found for ID: '{self._current_project_id}'"
+            )
+
         return GetCurrentProjectResultSuccess(
-            project_path=self.current_project_path,
-            result_details="Current project retrieved successfully",
+            project_info=project_info,
+            result_details=f"Successfully retrieved current project. ID: {self._current_project_id}",
         )
 
-    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> ResultPayload:
+    def on_save_project_template_request(self, request: SaveProjectTemplateRequest) -> SaveProjectTemplateResultFailure:
         """Save user customizations to project.yml.
 
         Flow:
@@ -436,128 +576,126 @@ class ProjectManager:
 
         TODO: Implement saving logic when template system merges
         """
-        logger.debug("Saving project template: %s", request.project_path)
-
         return SaveProjectTemplateResultFailure(
-            project_path=request.project_path,
-            result_details="Template saving not yet implemented (stub)",
+            result_details=f"Attempted to save project template to '{request.project_path}'. Failed because template saving not yet implemented",
         )
 
-    def on_match_path_against_macro_request(self, request: MatchPathAgainstMacroRequest) -> ResultPayload:
-        """Check if a path matches a macro schema and extract variables.
+    def on_match_path_against_macro_request(
+        self, request: AttemptMatchPathAgainstMacroRequest
+    ) -> AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure:
+        """Attempt to match a path against a macro schema and extract variables.
 
         Flow:
-        1. Parse macro schema into ParsedMacro
+        1. Check secrets manager is available (failure = true error)
         2. Call ParsedMacro.extract_variables() with path and known variables
-        3. If match succeeds, return extracted variables
-        4. If match fails, return MacroMatchFailure with details
+        3. If match succeeds, return success with extracted_variables
+        4. If match fails, return success with match_failure (not an error)
         """
-        logger.debug("Matching path against macro: %s", request.macro_schema)
-
-        if self.secrets_manager is None:
-            return MatchPathAgainstMacroResultFailure(
-                match_failure=MacroMatchFailure(
-                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
-                    expected_pattern=request.macro_schema,
-                    known_variables_used=request.known_variables,
-                    error_details="SecretsManager not available",
-                ),
-                result_details="SecretsManager not available for macro matching",
+        if self._secrets_manager is None:
+            return AttemptMatchPathAgainstMacroResultFailure(
+                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Failed because SecretsManager not available",
             )
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return MatchPathAgainstMacroResultFailure(
-                match_failure=MacroMatchFailure(
-                    failure_reason=MacroMatchFailureReason.INVALID_MACRO_SYNTAX,
-                    expected_pattern=request.macro_schema,
-                    known_variables_used=request.known_variables,
-                    error_details=str(err),
-                ),
-                result_details=f"Invalid macro syntax: {err}",
-            )
-
-        extracted = parsed_macro.extract_variables(
+        extracted = request.parsed_macro.extract_variables(
             request.file_path,
             request.known_variables,
-            self.secrets_manager,
+            self._secrets_manager,
         )
 
         if extracted is None:
-            return MatchPathAgainstMacroResultFailure(
+            # Pattern didn't match - this is a normal outcome, not an error
+            return AttemptMatchPathAgainstMacroResultSuccess(
+                extracted_variables=None,
                 match_failure=MacroMatchFailure(
                     failure_reason=MacroMatchFailureReason.STATIC_TEXT_MISMATCH,
-                    expected_pattern=request.macro_schema,
+                    expected_pattern=request.parsed_macro.template,
                     known_variables_used=request.known_variables,
                     error_details=f"Path '{request.file_path}' does not match macro pattern",
                 ),
-                result_details="Path does not match macro pattern",
+                result_details=f"Attempted to match path '{request.file_path}' against macro '{request.parsed_macro.template}'. Pattern did not match",
             )
 
-        return MatchPathAgainstMacroResultSuccess(
+        # Pattern matched successfully
+        return AttemptMatchPathAgainstMacroResultSuccess(
             extracted_variables=extracted,
-            result_details="Successfully matched path against macro",
+            match_failure=None,
+            result_details=f"Successfully matched path '{request.file_path}' against macro '{request.parsed_macro.template}'. Extracted {len(extracted)} variables",
         )
 
-    def on_get_variables_for_macro_request(self, request: GetVariablesForMacroRequest) -> ResultPayload:
-        """Get list of all variables in a macro schema.
+    def on_get_state_for_macro_request(  # noqa: C901
+        self, request: GetStateForMacroRequest
+    ) -> GetStateForMacroResultSuccess | GetStateForMacroResultFailure:
+        """Analyze a macro and return comprehensive state information.
 
         Flow:
-        1. Parse macro schema into ParsedMacro
-        2. Call ParsedMacro.get_variables() to extract variable metadata
-        3. Return list of VariableInfo
+        1. Get current project via GetCurrentProjectRequest
+        2. Get template from current project
+        3. For each variable, determine if it's:
+           - A directory (from template)
+           - User-provided (from request)
+           - A builtin
+        4. Check for conflicts:
+           - User providing directory name
+           - User overriding builtin with different value
+        5. Calculate what's satisfied vs missing
+        6. Determine if resolution would succeed
         """
-        logger.debug("Getting variables for macro: %s", request.macro_schema)
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return GetVariablesForMacroResultFailure(
-                parse_failure=MacroParseFailure(
-                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
-                    error_position=err.error_position,
-                    error_details=str(err),
-                ),
-                result_details=f"Failed to parse macro: {err}",
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return GetStateForMacroResultFailure(
+                result_details="Attempted to analyze macro state. Failed because no current project is set or template not loaded",
             )
 
-        variables = parsed_macro.get_variables()
+        project_info = current_project_result.project_info
+        template = project_info.template
 
-        return GetVariablesForMacroResultSuccess(
-            variables=variables,
-            result_details=f"Found {len(variables)} variables in macro",
-        )
+        all_variables = request.parsed_macro.get_variables()
+        directory_names = set(template.directories.keys())
+        user_provided_names = set(request.variables.keys())
 
-    def on_validate_macro_syntax_request(self, request: ValidateMacroSyntaxRequest) -> ResultPayload:
-        """Validate a macro schema string for syntax errors.
+        satisfied_variables: set[str] = set()
+        missing_required_variables: set[str] = set()
+        conflicting_variables: set[str] = set()
 
-        Flow:
-        1. Try to parse macro schema with ParsedMacro()
-        2. If successful, return variables found and any warnings
-        3. If syntax error, return MacroParseFailure with details
-        """
-        logger.debug("Validating macro syntax: %s", request.macro_schema)
+        for var_info in all_variables:
+            var_name = var_info.name
 
-        try:
-            parsed_macro = ParsedMacro(request.macro_schema)
-        except MacroSyntaxError as err:
-            return ValidateMacroSyntaxResultFailure(
-                parse_failure=MacroParseFailure(
-                    failure_reason=err.failure_reason or MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
-                    error_position=err.error_position,
-                    error_details=str(err),
-                ),
-                partial_variables=[],
-                result_details=f"Syntax validation failed: {err}",
-            )
+            if var_name in directory_names:
+                satisfied_variables.add(var_name)
+                if var_name in user_provided_names:
+                    conflicting_variables.add(var_name)
 
-        variables = parsed_macro.get_variables()
+            if var_name in user_provided_names:
+                satisfied_variables.add(var_name)
 
-        return ValidateMacroSyntaxResultSuccess(
-            variables=variables,
-            warnings=[],
-            result_details=f"Macro syntax is valid with {len(variables)} variables",
+            if var_name in BUILTIN_VARIABLES:
+                try:
+                    builtin_value = self._get_builtin_variable_value(var_name, project_info)
+                except (RuntimeError, NotImplementedError) as e:
+                    return GetStateForMacroResultFailure(
+                        result_details=f"Attempted to analyze macro state. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
+                    )
+
+                satisfied_variables.add(var_name)
+                if var_name in user_provided_names:
+                    user_value = str(request.variables[var_name])
+                    if user_value != builtin_value:
+                        conflicting_variables.add(var_name)
+
+            if var_info.is_required and var_name not in satisfied_variables:
+                missing_required_variables.add(var_name)
+
+        can_resolve = len(missing_required_variables) == 0 and len(conflicting_variables) == 0
+
+        return GetStateForMacroResultSuccess(
+            all_variables=all_variables,
+            satisfied_variables=satisfied_variables,
+            missing_required_variables=missing_required_variables,
+            conflicting_variables=conflicting_variables,
+            can_resolve=can_resolve,
+            result_details=f"Analyzed macro with {len(all_variables)} variables: {len(satisfied_variables)} satisfied, {len(missing_required_variables)} missing, {len(conflicting_variables)} conflicting",
         )
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -565,12 +703,10 @@ class ProjectManager:
 
         Called by EventManager after all libraries are loaded.
         """
-        logger.debug("ProjectManager: Loading system default project template")
-
         self._load_system_defaults()
 
         # Set as current project (using synthetic key for system defaults)
-        set_request = SetCurrentProjectRequest(project_path=SYSTEM_DEFAULTS_KEY)
+        set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
         result = self.on_set_current_project_request(set_request)
 
         if result.failed():
@@ -578,25 +714,308 @@ class ProjectManager:
         else:
             logger.debug("Successfully loaded default project template")
 
-    def on_get_all_situations_for_project_request(self, request: GetAllSituationsForProjectRequest) -> ResultPayload:
-        """Get all situation names and schemas from a project template."""
-        logger.debug("Getting all situations for project: %s", request.project_path)
+    def on_get_all_situations_for_project_request(
+        self, _request: GetAllSituationsForProjectRequest
+    ) -> GetAllSituationsForProjectResultSuccess | GetAllSituationsForProjectResultFailure:
+        """Get all situation names and schemas from current project template."""
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
 
-        template_info = self.registered_template_status.get(request.project_path)
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return GetAllSituationsForProjectResultFailure(
+                result_details="Attempted to get all situations. Failed because no current project is set or template not loaded"
+            )
 
-        if template_info is None:
-            self._load_system_defaults()
-            template_info = self.registered_template_status.get(request.project_path)
-
-        if template_info is None or template_info.status != ProjectValidationStatus.GOOD:
-            return GetAllSituationsForProjectResultFailure(result_details="Project template not available or invalid")
-
-        template = self.successful_templates[request.project_path]
-        situations = {situation_name: situation.schema for situation_name, situation in template.situations.items()}
+        template = current_project_result.project_info.template
+        situations = {situation_name: situation.macro for situation_name, situation in template.situations.items()}
 
         return GetAllSituationsForProjectResultSuccess(
-            situations=situations, result_details=f"Found {len(situations)} situations"
+            situations=situations,
+            result_details=f"Successfully retrieved all situations. Found {len(situations)} situations",
         )
+
+    def on_attempt_map_absolute_path_to_project_request(
+        self, request: AttemptMapAbsolutePathToProjectRequest
+    ) -> AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure:
+        """Find out if an absolute path exists anywhere within a Project directory.
+
+        Returns Success with mapped_path if inside project (macro form returned).
+        Returns Success with None if outside project (valid answer: "not in project").
+        Returns Failure if operation cannot be performed (no project, no secrets manager).
+
+        Args:
+            request: Request containing the absolute path to check
+
+        Returns:
+            Success with mapped_path if path is inside project
+            Success with None if path is outside project
+            Failure if operation cannot be performed
+        """
+        # Check prerequisites - return Failure if missing
+        current_project_request = GetCurrentProjectRequest()
+        current_project_result = self.on_get_current_project_request(current_project_request)
+
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details="Attempted to map absolute path. Failed because no current project is set"
+            )
+
+        if self._secrets_manager is None:
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details="Attempted to map absolute path. Failed because SecretsManager not available"
+            )
+
+        project_info = current_project_result.project_info
+
+        # Try to map the path
+        try:
+            mapped_path = self._absolute_path_to_macro_path(request.absolute_path, project_info)
+        except (RuntimeError, NotImplementedError) as e:
+            # Variable resolution failed - this is a Failure (can't complete the operation)
+            return AttemptMapAbsolutePathToProjectResultFailure(
+                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Failed because: {e}"
+            )
+
+        # Path successfully checked
+        if mapped_path is None:
+            # Success: we successfully determined the path is outside project
+            return AttemptMapAbsolutePathToProjectResultSuccess(
+                mapped_path=None,
+                result_details=f"Attempted to map absolute path '{request.absolute_path}'. Path is outside all project directories",
+            )
+
+        # Success: path mapped to macro form
+        return AttemptMapAbsolutePathToProjectResultSuccess(
+            mapped_path=mapped_path,
+            result_details=f"Successfully mapped absolute path to '{mapped_path}'",
+        )
+
+    # Helper methods (private)
+
+    @staticmethod
+    def _parse_situation_macros(
+        situations: dict[str, SituationTemplate], validation: ProjectValidationInfo
+    ) -> dict[str, ParsedMacro]:
+        """Parse all situation macros.
+
+        This is called BEFORE creating ProjectInfo to ensure all macros are valid.
+        Collects all parsing errors into the validation object instead of raising.
+
+        Args:
+            situations: Dictionary of situation templates to parse
+            validation: Validation object to collect errors
+
+        Returns:
+            Dictionary mapping situation_name to ParsedMacro (only for successfully parsed macros)
+        """
+        situation_schemas: dict[str, ParsedMacro] = {}
+
+        for situation_name, situation in situations.items():
+            try:
+                situation_schemas[situation_name] = ParsedMacro(situation.macro)
+            except Exception as e:
+                validation.add_error(f"situations.{situation_name}.macro", f"Failed to parse macro: {e}")
+
+        return situation_schemas
+
+    @staticmethod
+    def _parse_directory_macros(
+        directories: dict[str, DirectoryDefinition], validation: ProjectValidationInfo
+    ) -> dict[str, ParsedMacro]:
+        """Parse all directory macros.
+
+        This is called BEFORE creating ProjectInfo to ensure all macros are valid.
+        Collects all parsing errors into the validation object instead of raising.
+
+        Args:
+            directories: Dictionary of directory definitions to parse
+            validation: Validation object to collect errors
+
+        Returns:
+            Dictionary mapping directory_name to ParsedMacro (only for successfully parsed macros)
+        """
+        directory_schemas: dict[str, ParsedMacro] = {}
+
+        for directory_name, directory_def in directories.items():
+            try:
+                directory_schemas[directory_name] = ParsedMacro(directory_def.path_macro)
+            except Exception as e:
+                validation.add_error(f"directories.{directory_name}.path_macro", f"Failed to parse macro: {e}")
+
+        return directory_schemas
+
+    def _get_builtin_variable_value(self, var_name: str, project_info: ProjectInfo) -> str:
+        """Get the value of a single builtin variable.
+
+        Args:
+            var_name: Name of the builtin variable
+            project_info: Information about the current project
+
+        Returns:
+            String value of the builtin variable
+
+        Raises:
+            ValueError: If var_name is not a recognized builtin variable
+            NotImplementedError: If builtin variable is not yet implemented
+        """
+        match var_name:
+            case "project_dir":
+                return str(project_info.project_base_dir)
+
+            case "project_name":
+                msg = f"{BUILTIN_PROJECT_NAME} not yet implemented"
+                raise NotImplementedError(msg)
+
+            case "workspace_dir":
+                config_manager = GriptapeNodes.ConfigManager()
+                workspace_dir = config_manager.get_config_value("workspace_directory")
+                if workspace_dir is None:
+                    msg = "Attempted to resolve builtin variable '{workspace_dir}'. Failed because 'workspace_directory' config value was None"
+                    raise RuntimeError(msg)
+                return str(workspace_dir)
+
+            case "workflow_name":
+                context_manager = GriptapeNodes.ContextManager()
+                if not context_manager.has_current_workflow():
+                    msg = "No current workflow"
+                    raise RuntimeError(msg)
+                return context_manager.get_current_workflow_name()
+
+            case "workflow_dir":
+                msg = f"{BUILTIN_WORKFLOW_DIR} not yet implemented"
+                raise NotImplementedError(msg)
+
+            case _:
+                msg = f"Unknown builtin variable: {var_name}"
+                raise ValueError(msg)
+
+    def _absolute_path_to_macro_path(  # noqa: C901, PLR0912
+        self, absolute_path: Path, project_info: ProjectInfo
+    ) -> str | None:
+        """Convert an absolute path to macro form using longest prefix matching.
+
+        Resolves all project directories at runtime (to support env vars and macros),
+        then checks if the absolute path is within any of them.
+        Uses longest prefix matching to find the best match.
+
+        Args:
+            absolute_path: Absolute path to convert (e.g., /Users/james/project/outputs/file.png)
+            project_info: Information about the current project
+
+        Returns:
+            Macro-ified path (e.g., {outputs}/file.png) if inside a project directory,
+            or None if outside all project directories
+
+        Raises:
+            RuntimeError: If directory resolution fails or builtin variable cannot be resolved
+            NotImplementedError: If a required builtin variable is not yet implemented
+
+        Examples:
+            /Users/james/project/outputs/renders/file.png → "{outputs}/renders/file.png"
+            /Users/james/project/outputs/inputs/file.png → "{outputs}/inputs/file.png"
+            /Users/james/Downloads/file.png → None
+        """
+        # Normalize paths for consistent cross-platform comparison
+        absolute_path = absolute_path.resolve()
+
+        template = project_info.template
+        project_base_dir = project_info.project_base_dir.resolve()
+
+        # Secrets manager must be available (checked by caller)
+        if self._secrets_manager is None:
+            msg = "SecretsManager not available"
+            raise RuntimeError(msg)
+        secrets_manager = self._secrets_manager
+
+        # Collect all variables used across ALL directory macros
+        variables_needed: set[str] = set()
+        for parsed_macro in project_info.parsed_directory_schemas.values():
+            variable_infos = parsed_macro.get_variables()
+            variables_needed.update(var_info.name for var_info in variable_infos)
+
+        # Build builtin variables dict - only resolve variables actually needed by the macros
+        # If a required variable fails to resolve, let the error propagate (will be caught by handler)
+        builtin_vars: dict[str, str | int] = {}
+        for var_name in variables_needed:
+            if var_name in BUILTIN_VARIABLES:
+                builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)
+
+        # Find all matching directories (where absolute_path is inside the directory)
+        class DirectoryMatch(NamedTuple):
+            directory_name: str
+            resolved_path: Path
+            prefix_length: int
+
+        matches: list[DirectoryMatch] = []
+
+        for directory_name in template.directories:
+            # Get parsed macro from project info cache
+            parsed_macro = project_info.parsed_directory_schemas.get(directory_name)
+            if parsed_macro is None:
+                msg = f"Directory '{directory_name}' not found in parsed schemas"
+                raise RuntimeError(msg)
+
+            try:
+                resolved_path_str = parsed_macro.resolve(builtin_vars, secrets_manager)
+            except MacroResolutionError as e:
+                msg = f"Failed to resolve directory '{directory_name}' macro: {e}"
+                raise RuntimeError(msg) from e
+
+            # Make absolute (resolve relative paths against project base directory)
+            resolved_dir_path = Path(resolved_path_str)
+            if not resolved_dir_path.is_absolute():
+                resolved_dir_path = project_base_dir / resolved_dir_path
+            # Normalize for consistent cross-platform comparison
+            resolved_dir_path = resolved_dir_path.resolve()
+
+            # Check if absolute_path is inside this directory
+            try:
+                # relative_to will raise ValueError if not a subpath
+                _ = absolute_path.relative_to(resolved_dir_path)
+                # Track the match with its prefix length (for longest match)
+                matches.append(
+                    DirectoryMatch(
+                        directory_name=directory_name,
+                        resolved_path=resolved_dir_path,
+                        prefix_length=len(resolved_dir_path.parts),
+                    )
+                )
+            except ValueError:
+                # Not a subpath, skip
+                continue
+
+        # If no defined directories matched, try {project_dir} as fallback
+        if not matches:
+            # Check if path is inside project_base_dir
+            try:
+                relative_path = absolute_path.relative_to(project_base_dir)
+
+                # Convert to {project_dir} macro form
+                if str(relative_path) == ".":
+                    return "{project_dir}"
+                return f"{{project_dir}}/{relative_path.as_posix()}"
+            except ValueError:
+                # Not inside project_base_dir either
+                return None
+
+        # Use longest prefix match (most specific directory)
+        best_match = matches[0]
+        for match in matches:
+            if match.prefix_length > best_match.prefix_length:
+                best_match = match
+
+        # Calculate relative path from the matched directory
+        relative_path = absolute_path.relative_to(best_match.resolved_path)
+
+        # Convert to macro form
+        if str(relative_path) == ".":
+            # File is directly in the directory root
+            # Example: /Users/james/project/outputs → {outputs}
+            return f"{{{best_match.directory_name}}}"
+
+        # File is in a subdirectory
+        # Example: /Users/james/project/outputs/renders/final.png → {outputs}/renders/final.png
+        return f"{{{best_match.directory_name}}}/{relative_path.as_posix()}"
 
     # Private helper methods
 
@@ -611,7 +1030,36 @@ class ProjectManager:
         # Create validation info to track that defaults were loaded
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
 
-        logger.debug("System defaults loaded successfully")
+        # System defaults use workspace directory as the base directory
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        if workspace_dir_value is None:
+            msg = "Attempted to load Project Manager's default project schema. Failed because 'workspace_directory' config value was None"
+            raise RuntimeError(msg)
 
-        self.registered_template_status[SYSTEM_DEFAULTS_KEY] = validation
-        self.successful_templates[SYSTEM_DEFAULTS_KEY] = DEFAULT_PROJECT_TEMPLATE
+        try:
+            workspace_dir = Path(workspace_dir_value)
+        except (TypeError, ValueError) as e:
+            msg = f"Attempted to load Project Manager's default project schema with workspace_directory='{workspace_dir_value}'. Failed due to {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
+        situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = self._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create consolidated ProjectInfo with fully populated macro caches
+        project_info = ProjectInfo(
+            project_id=SYSTEM_DEFAULTS_KEY,
+            project_file_path=None,  # No actual file for system defaults
+            project_base_dir=workspace_dir,  # Use workspace as base
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Store in new consolidated dict
+        self._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
+
+        logger.debug("System defaults loaded successfully")

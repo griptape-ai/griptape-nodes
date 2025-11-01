@@ -1,12 +1,11 @@
 """Events for project template management."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroParseFailure, VariableInfo
-from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -14,6 +13,13 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
+    from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
+    from griptape_nodes.retained_mode.managers.project_manager import ProjectID, ProjectInfo
 
 # Type alias for macro variable dictionaries (used by ParsedMacro)
 MacroVariables = dict[str, str | int]
@@ -49,12 +55,12 @@ class LoadProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     """Project template loaded successfully.
 
     Args:
-        project_path: Path to the loaded project.yml
+        project_id: The identifier for the loaded project
         template: The merged ProjectTemplate (system defaults + user customizations)
         validation: Validation info with status and any problems encountered
     """
 
-    project_path: Path
+    project_id: ProjectID
     template: ProjectTemplate
     validation: ProjectValidationInfo
 
@@ -65,28 +71,26 @@ class LoadProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     """Project template loading failed.
 
     Args:
-        project_path: Path to the project.yml that failed to load
         validation: Validation info with error details
     """
 
-    project_path: Path
     validation: ProjectValidationInfo
 
 
 @dataclass
 @PayloadRegistry.register
 class GetProjectTemplateRequest(RequestPayload):
-    """Get cached project template for a workspace path.
+    """Get cached project template for a project ID.
 
     Use when: Querying current project configuration, checking validation status.
 
     Args:
-        project_path: Path to the project.yml file
+        project_id: Identifier of the project
 
     Results: GetProjectTemplateResultSuccess | GetProjectTemplateResultFailure
     """
 
-    project_path: Path
+    project_id: ProjectID
 
 
 @dataclass
@@ -110,39 +114,79 @@ class GetProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 
 @dataclass
-@PayloadRegistry.register
-class GetMacroForSituationRequest(RequestPayload):
-    """Get the macro schema for a specific situation.
+class ProjectTemplateInfo:
+    """Information about a loaded or failed project template."""
 
-    Use when: Need to know what variables a situation requires, or get schema for custom resolution.
+    project_id: ProjectID
+    validation: ProjectValidationInfo
+
+
+@dataclass
+@PayloadRegistry.register
+class ListProjectTemplatesRequest(RequestPayload):
+    """List all project templates that have been loaded or attempted to load.
+
+    Use when: Displaying available projects, checking which projects are loaded.
 
     Args:
-        project_path: Path to the project.yml to use
-        situation_name: Name of the situation template (e.g., "save_node_output")
+        include_system_builtins: Whether to include system builtin templates like SYSTEM_DEFAULTS_KEY
 
-    Results: GetMacroForSituationResultSuccess | GetMacroForSituationResultFailure
+    Results: ListProjectTemplatesResultSuccess
     """
 
-    project_path: Path
+    include_system_builtins: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class ListProjectTemplatesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """List of all project templates retrieved.
+
+    Args:
+        successfully_loaded: List of templates that loaded successfully
+        failed_to_load: List of templates that failed to load with validation errors
+    """
+
+    successfully_loaded: list[ProjectTemplateInfo]
+    failed_to_load: list[ProjectTemplateInfo]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetSituationRequest(RequestPayload):
+    """Get the full situation template for a specific situation.
+
+    Returns the complete SituationTemplate including macro and policy.
+
+    Use when: Need situation macro and/or policy for file operations.
+    Uses the current project for context.
+
+    Args:
+        situation_name: Name of the situation template (e.g., "save_node_output")
+
+    Results: GetSituationResultSuccess | GetSituationResultFailure
+    """
+
     situation_name: str
 
 
 @dataclass
 @PayloadRegistry.register
-class GetMacroForSituationResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Situation macro retrieved successfully.
+class GetSituationResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Situation template retrieved successfully.
 
     Args:
-        macro_schema: The macro template string (e.g., "{inputs}/{file_name}.{file_ext}")
+        situation: The complete situation template including macro and policy.
+                  Access via situation.macro, situation.policy.create_dirs, etc.
     """
 
-    macro_schema: str
+    situation: SituationTemplate
 
 
 @dataclass
 @PayloadRegistry.register
-class GetMacroForSituationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Situation macro retrieval failed (situation not found or template not loaded)."""
+class GetSituationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Situation template retrieval failed (situation not found or template not loaded)."""
 
 
 @dataclass
@@ -152,16 +196,17 @@ class GetPathForMacroRequest(RequestPayload):
 
     Use when: Resolving paths, saving files. Works with any macro string, not tied to situations.
 
+    Uses the current project for context. Caller must parse the macro string
+    into a ParsedMacro before creating this request.
+
     Args:
-        project_path: Path to the project.yml (used for directory resolution)
-        macro_schema: The macro template string to resolve (e.g., "{inputs}/{file_name}.{file_ext}")
+        parsed_macro: The parsed macro to resolve
         variables: Variable values for macro substitution (e.g., {"file_name": "output", "file_ext": "png"})
 
     Results: GetPathForMacroResultSuccess | GetPathForMacroResultFailure
     """
 
-    project_path: Path
-    macro_schema: str
+    parsed_macro: ParsedMacro
     variables: MacroVariables
 
 
@@ -171,10 +216,12 @@ class GetPathForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
     """Path resolved successfully from macro.
 
     Args:
-        resolved_path: The final Path after macro substitution
+        resolved_path: The relative project path after macro substitution (e.g., "outputs/file.png")
+        absolute_path: The absolute filesystem path (e.g., "/workspace/outputs/file.png")
     """
 
     resolved_path: Path
+    absolute_path: Path
 
 
 @dataclass
@@ -186,29 +233,27 @@ class GetPathForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
         failure_reason: Specific reason for failure
         missing_variables: List of required variable names that were not provided (for MISSING_REQUIRED_VARIABLES)
         conflicting_variables: List of variables that conflict with directory names (for DIRECTORY_OVERRIDE_ATTEMPTED)
-        error_details: Additional error details from ParsedMacro (for MACRO_RESOLUTION_ERROR)
     """
 
     failure_reason: PathResolutionFailureReason
-    missing_variables: list[str] | None = None
-    conflicting_variables: list[str] | None = None
-    error_details: str | None = None
+    missing_variables: set[str] | None = None
+    conflicting_variables: set[str] | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class SetCurrentProjectRequest(RequestPayload):
-    """Set which project.yml user has currently selected.
+    """Set which project user has currently selected.
 
     Use when: User switches between projects, opens a new workspace.
 
     Args:
-        project_path: Path to the project.yml to set as current (None to clear)
+        project_id: Identifier of the project to set as current (None to clear)
 
     Results: SetCurrentProjectResultSuccess
     """
 
-    project_path: Path | None
+    project_id: ProjectID | None
 
 
 @dataclass
@@ -224,7 +269,7 @@ class GetCurrentProjectRequest(RequestPayload):
 
     Use when: Need to know which project user is working with.
 
-    Results: GetCurrentProjectResultSuccess
+    Results: GetCurrentProjectResultSuccess | GetCurrentProjectResultFailure
     """
 
 
@@ -234,10 +279,16 @@ class GetCurrentProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
     """Current project retrieved.
 
     Args:
-        project_path: The currently selected project path ("No Project" if None)
+        project_info: Complete information about the current project
     """
 
-    project_path: Path | None
+    project_info: ProjectInfo
+
+
+@dataclass
+@PayloadRegistry.register
+class GetCurrentProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """No current project is set."""
 
 
 @dataclass
@@ -261,13 +312,7 @@ class SaveProjectTemplateRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class SaveProjectTemplateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Project template saved successfully.
-
-    Args:
-        project_path: Path where project.yml was saved
-    """
-
-    project_path: Path
+    """Project template saved successfully."""
 
 
 @dataclass
@@ -281,122 +326,192 @@ class SaveProjectTemplateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
     - Disk full
     """
 
-    project_path: Path
-
 
 @dataclass
 @PayloadRegistry.register
-class MatchPathAgainstMacroRequest(RequestPayload):
-    """Check if a path matches a macro schema and extract variables.
+class AttemptMatchPathAgainstMacroRequest(RequestPayload):
+    """Attempt to match a path against a macro schema and extract variables.
 
     Use when: Validating paths, extracting info from file paths,
     identifying which schema produced a file.
 
+    Uses the current project for context. Caller must parse the macro string
+    into a ParsedMacro before creating this request.
+
+    Pattern non-matches are returned as success with match_failure populated.
+    Only true system errors (missing SecretsManager, etc.) return failure.
+
     Args:
-        project_path: Path to project.yml (for directory resolution)
-        macro_schema: Macro template string
-        file_path: Path to test
+        parsed_macro: Parsed macro template to match against
+        file_path: Path string to test
         known_variables: Variables we already know
 
-    Results: MatchPathAgainstMacroResultSuccess | MatchPathAgainstMacroResultFailure
+    Results: AttemptMatchPathAgainstMacroResultSuccess | AttemptMatchPathAgainstMacroResultFailure
     """
 
-    project_path: Path
-    macro_schema: str
+    parsed_macro: ParsedMacro
     file_path: str
     known_variables: MacroVariables
 
 
 @dataclass
 @PayloadRegistry.register
-class MatchPathAgainstMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Path matched the macro schema."""
+class AttemptMatchPathAgainstMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Attempt completed (match succeeded or pattern didn't match).
 
-    extracted_variables: MacroVariables
-
-
-@dataclass
-@PayloadRegistry.register
-class MatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Path did not match the macro schema."""
-
-    match_failure: MacroMatchFailure
-
-
-@dataclass
-@PayloadRegistry.register
-class GetVariablesForMacroRequest(RequestPayload):
-    """Get list of all variables in a macro schema.
-
-    Use when: Building UI forms, showing what variables a schema needs,
-    validating before resolution.
-
-    Args:
-        macro_schema: Macro template string to inspect
-
-    Results: GetVariablesForMacroResultSuccess | GetVariablesForMacroResultFailure
+    Check match_failure to determine outcome:
+    - match_failure is None: Pattern matched, extracted_variables contains results
+    - match_failure is not None: Pattern didn't match (normal case, not an error)
     """
 
-    macro_schema: str
+    extracted_variables: MacroVariables | None
+    match_failure: MacroMatchFailure | None
 
 
 @dataclass
 @PayloadRegistry.register
-class GetVariablesForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Variables found in the macro schema."""
-
-    variables: list[VariableInfo]
+class AttemptMatchPathAgainstMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """System error occurred (missing SecretsManager, invalid configuration, etc.)."""
 
 
 @dataclass
 @PayloadRegistry.register
-class GetVariablesForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Failed to parse macro schema."""
+class GetStateForMacroRequest(RequestPayload):
+    """Analyze a macro and return comprehensive state information.
 
-    parse_failure: MacroParseFailure
+    Use when: Building UI forms, real-time validation, checking if resolution
+    would succeed before actually resolving.
 
-
-@dataclass
-@PayloadRegistry.register
-class ValidateMacroSyntaxRequest(RequestPayload):
-    """Validate a macro schema string for syntax errors.
-
-    Use when: User editing schemas in UI, before saving templates,
-    real-time validation.
+    Uses the current project for context. Caller must parse the macro string
+    into a ParsedMacro before creating this request.
 
     Args:
-        macro_schema: Schema string to validate
+        parsed_macro: The parsed macro to analyze
+        variables: Currently provided variable values
 
-    Results: ValidateMacroSyntaxResultSuccess | ValidateMacroSyntaxResultFailure
+    Results: GetStateForMacroResultSuccess | GetStateForMacroResultFailure
     """
 
-    macro_schema: str
+    parsed_macro: ParsedMacro
+    variables: MacroVariables
 
 
 @dataclass
 @PayloadRegistry.register
-class ValidateMacroSyntaxResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Syntax is valid."""
+class GetStateForMacroResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Macro state analysis completed successfully.
 
-    variables: list[VariableInfo]
-    warnings: list[str]
+    Args:
+        all_variables: All variables found in the macro
+        satisfied_variables: Variables that have values (from user, directories, or builtins)
+        missing_required_variables: Required variables that are missing values
+        conflicting_variables: Variables that conflict (e.g., user overriding builtin with different value)
+        can_resolve: Whether the macro can be fully resolved (no missing required vars, no conflicts)
+    """
+
+    all_variables: set[VariableInfo]
+    satisfied_variables: set[str]
+    missing_required_variables: set[str]
+    conflicting_variables: set[str]
+    can_resolve: bool
 
 
 @dataclass
 @PayloadRegistry.register
-class ValidateMacroSyntaxResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Syntax is invalid."""
+class GetStateForMacroResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Macro state analysis failed.
 
-    parse_failure: MacroParseFailure
-    partial_variables: list[VariableInfo]
+    Failure occurs when:
+    - No current project is set
+    - Current project template is not loaded
+    - A builtin variable cannot be resolved (RuntimeError or NotImplementedError)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectRequest(RequestPayload):
+    """Find out if an absolute path exists anywhere within a Project directory.
+
+    Use when: User selects or types an absolute path via FilePicker and you need to know:
+      1. Is this path inside any project directory?
+      2. If yes, what's the macro form (e.g., {outputs}/file.png)?
+
+    This enables automatic conversion of absolute paths to portable macro form for workflow portability.
+
+    Uses longest prefix matching to find the most specific directory match.
+    Returns Success with mapped_path if inside project, or Success with None if outside.
+    Returns Failure if operation cannot be performed (no project loaded, secrets unavailable).
+
+    Args:
+        absolute_path: The absolute filesystem path to check
+
+    Results: AttemptMapAbsolutePathToProjectResultSuccess | AttemptMapAbsolutePathToProjectResultFailure
+
+    Examples:
+        Path inside project directory:
+            Request: absolute_path = /Users/james/project/outputs/renders/image.png
+            Result: mapped_path = "{outputs}/renders/image.png"
+
+        Path outside project:
+            Request: absolute_path = /Users/james/Downloads/image.png
+            Result: mapped_path = None
+
+        Path at directory root:
+            Request: absolute_path = /Users/james/project/outputs
+            Result: mapped_path = "{outputs}"
+    """
+
+    absolute_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Path check completed successfully.
+
+    Success means the check was performed (not necessarily that a match was found).
+    - mapped_path is NOT None: Path is inside a project directory (macro form returned)
+    - mapped_path is None: Path is outside all project directories (valid answer)
+
+    Args:
+        mapped_path: The macro form if path is inside a project directory (e.g., "{outputs}/file.png"),
+                    or None if path is outside all project directories
+
+    Examples:
+        Path inside project:
+            mapped_path = "{outputs}/renders/image.png"
+            result_details = "Successfully mapped absolute path to '{outputs}/renders/image.png'"
+
+        Path outside project:
+            mapped_path = None
+            result_details = "Attempted to map absolute path '/Users/james/Downloads/image.png'. Path is outside all project directories"
+    """
+
+    mapped_path: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class AttemptMapAbsolutePathToProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Path mapping attempt failed.
+
+    Returned when the operation cannot be performed (no current project, secrets manager unavailable).
+    This is distinct from "path is outside project" which returns Success with None values.
+
+    Examples:
+        No current project:
+            result_details = "Attempted to map absolute path. Failed because no current project is set"
+
+        Secrets manager unavailable:
+            result_details = "Attempted to map absolute path. Failed because SecretsManager not available"
+    """
 
 
 @dataclass
 @PayloadRegistry.register
 class GetAllSituationsForProjectRequest(RequestPayload):
-    """Get all situation names and schemas from a project template."""
-
-    project_path: Path
+    """Get all situation names and schemas from current project template."""
 
 
 @dataclass

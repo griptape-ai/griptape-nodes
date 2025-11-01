@@ -46,7 +46,7 @@ class ProjectValidationProblem:
     """Single validation problem with context."""
 
     line_number: int | None
-    field_path: str  # e.g., "situations.copy_external_file.schema"
+    field_path: str  # e.g., "situations.copy_external_file.macro"
     message: str
     severity: ProjectValidationProblemSeverity
 
@@ -92,7 +92,7 @@ class ProjectValidationInfo:
                 field_path=field_path,
                 message=message,
                 severity=ProjectValidationProblemSeverity.ERROR,
-            )
+            ),
         )
         self.status = ProjectValidationStatus.UNUSABLE
 
@@ -112,7 +112,7 @@ class ProjectValidationInfo:
                 field_path=field_path,
                 message=message,
                 severity=ProjectValidationProblemSeverity.WARNING,
-            )
+            ),
         )
 
         if self.status == ProjectValidationStatus.GOOD:

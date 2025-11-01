@@ -32,7 +32,7 @@ class PartiallyResolvedMacro:
         """Convert to string (only valid if fully resolved)."""
         if not self.is_fully_resolved():
             unresolved = self.get_unresolved_variables()
-            unresolved_names = [var.info.name for var in unresolved]
+            unresolved_names = {var.info.name for var in unresolved}
             msg = "Cannot convert partially resolved macro to string - unresolved variables remain"
             raise MacroResolutionError(
                 msg,
@@ -135,7 +135,7 @@ def resolve_variable(
                 msg,
                 failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
                 variable_name=variable_name,
-                missing_variables=[variable_name],
+                missing_variables={variable_name},
             )
         # Optional variable not provided, return None to signal it should be skipped
         return None

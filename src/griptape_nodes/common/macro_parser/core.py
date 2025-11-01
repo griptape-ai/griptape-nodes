@@ -42,9 +42,9 @@ class ParsedMacro:
             segments.append(ParsedStaticValue(text=""))
         self.segments = segments
 
-    def get_variables(self) -> list[VariableInfo]:
+    def get_variables(self) -> set[VariableInfo]:
         """Extract all VariableInfo from parsed segments."""
-        return [seg.info for seg in self.segments if isinstance(seg, ParsedVariable)]
+        return {seg.info for seg in self.segments if isinstance(seg, ParsedVariable)}
 
     def resolve(
         self,
@@ -58,8 +58,8 @@ class ParsedMacro:
         # Check if fully resolved
         if not partial.is_fully_resolved():
             unresolved = partial.get_unresolved_variables()
-            unresolved_names = [var.info.name for var in unresolved]
-            msg = f"Cannot fully resolve macro - missing required variables: {', '.join(unresolved_names)}"
+            unresolved_names = {var.info.name for var in unresolved}
+            msg = f"Cannot fully resolve macro - missing required variables: {', '.join(sorted(unresolved_names))}"
             raise MacroResolutionError(
                 msg,
                 failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,

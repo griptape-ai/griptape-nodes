@@ -142,17 +142,20 @@ class TestParsedMacro:
         variables = macro.get_variables()
 
         assert len(variables) == 3
-        assert variables[0] == VariableInfo(name="inputs", is_required=True)
-        assert variables[1] == VariableInfo(name="workflow_name", is_required=False)
-        assert variables[2] == VariableInfo(name="file_name", is_required=True)
+        assert variables == {
+            VariableInfo(name="inputs", is_required=True),
+            VariableInfo(name="workflow_name", is_required=False),
+            VariableInfo(name="file_name", is_required=True),
+        }
 
     def test_get_variables_empty_for_no_variables(self) -> None:
-        """Test get_variables() returns empty list when no variables."""
+        """Test get_variables() returns empty set when no variables."""
         macro = ParsedMacro("static/path/only")
 
         variables = macro.get_variables()
 
         assert len(variables) == 0
+        assert variables == set()
 
 
 class TestMacroParserParseVariable:
@@ -726,13 +729,13 @@ class TestMacroFailureTypes:
         failure = MacroResolutionFailure(
             failure_reason=MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
             variable_name="workflow_name",
-            missing_variables=["workflow_name", "project_id"],
+            missing_variables={"workflow_name", "project_id"},
             error_details="Required variables not provided",
         )
 
         assert failure.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES
         assert failure.variable_name == "workflow_name"
-        assert failure.missing_variables == ["workflow_name", "project_id"]
+        assert failure.missing_variables == {"workflow_name", "project_id"}
         assert "Required variables" in failure.error_details
 
     def test_macro_resolution_failure_reason_values(self) -> None:
@@ -798,5 +801,5 @@ class TestEnhancedExceptions:
 
         err = exc_info.value
         assert err.failure_reason == MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES
-        assert err.missing_variables == ["workflow_name"]
+        assert err.missing_variables == {"workflow_name"}
         assert "workflow_name" in str(err)
