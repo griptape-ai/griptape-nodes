@@ -655,7 +655,7 @@
       }
     },
     {
-      "class_name": "LoadLoRA",
+      "class_name": "LoadLora",
       "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
       "metadata": {
         "category": "lora",

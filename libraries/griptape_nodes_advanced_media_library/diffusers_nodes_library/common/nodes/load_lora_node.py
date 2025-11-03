@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.node_types import ControlNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class LoadLoRA(ControlNode):
+class LoadLora(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.lora_file_path_params = FilePathParameter(
