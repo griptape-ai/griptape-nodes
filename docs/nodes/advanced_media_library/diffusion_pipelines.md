@@ -8,7 +8,7 @@
 
 The Diffusion Pipeline system consists of two complementary nodes that work together to provide efficient image generation:
 
-- **Diffusion Pipeline Builder**: Builds and caches 🤗 Diffuser Pipelines for reuse across multiple execution nodes
+- **Diffusion Pipeline Builder**: Builds and caches 🤗 Diffusers Pipelines for reuse across multiple execution nodes
 - **Generate Image (Diffusion Pipeline)**: Generates images using the cached pipelines
 
 This modular approach allows you to configure a pipeline once and reuse it multiple times, improving performance and resource efficiency. The system supports a wide range of providers and models through dynamic parameters.
