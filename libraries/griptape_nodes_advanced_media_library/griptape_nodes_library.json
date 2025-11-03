@@ -279,7 +279,11 @@
       "metadata": {
         "category": "image/flux/loras",
         "description": "Load Flux Lora from File for use with 🤗 Diffusers based Flux Nodes. Path must be on the engine's filesystem.",
-        "display_name": "Flux Lora File"
+        "display_name": "Flux Lora File",
+        "deprecation": {
+          "deprecation_message": "Use 'Load LoRA' from the Griptape Nodes Advanced Media Library instead under `LoRAs/Load LoRA`",
+          "removal_version": "0.64.0"
+        }
       }
     },
     {
@@ -641,6 +645,16 @@
         "category": "image",
         "description": "Generate images via 🤗 Diffuser Pipelines.",
         "display_name": "Generate Image (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "LoadLoRA",
+      "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
+      "metadata": {
+        "category": "loras",
+        "description": "Load LoRA from file ('.safetensors', '.pt', '.bin', '.json', '.lora') for use with 🤗 Diffusers based Nodes. Path must be on the engine's filesystem.",
+        "display_name": "Load LoRA",
         "group": "diffusion"
       }
     }
