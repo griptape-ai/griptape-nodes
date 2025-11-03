@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-import jmespath
+import jmespath  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
