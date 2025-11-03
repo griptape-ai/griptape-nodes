@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape_nodes.common.node_executor import NodeExecutor
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -23,7 +24,6 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeGroupProxyNode,
     NodeResolutionState,
-    StartLoopNode,
     StartNode,
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
@@ -3532,12 +3532,12 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
-                        # If the node is a StartLoopNode, it may have an incoming hidden connection from it's EndLoopNode for iteration.
-                        if isinstance(node, StartLoopNode):
+                        # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
+                        if isinstance(node, BaseIterativeStartNode):
                             connection_id = cn_mgr.incoming_index[node.name][param_name][0]
                             connection = cn_mgr.connections[connection_id]
                             connected_node = connection.get_source_node()
-                            # Check if the source node is the end loop node associated with this StartLoopNode.
+                            # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
                             # If it is, then this could still be the first node in the control flow.
                             if connected_node == node.end_node:
                                 continue

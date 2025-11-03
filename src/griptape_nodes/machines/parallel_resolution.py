@@ -5,6 +5,7 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
@@ -13,7 +14,6 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeGroupProxyNode,
     NodeResolutionState,
-    StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
@@ -137,9 +137,9 @@ class ExecuteDagState(State):
             await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
             return
 
-        # Special handling for StartLoopNode - skip control flow processing
-        # The EndLoopNode has already been queued during execution
-        if isinstance(current_node, StartLoopNode):
+        # Special handling for BaseIterativeStartNode - skip control flow processing
+        # The BaseIterativeEndNode has already been queued during execution
+        if isinstance(current_node, BaseIterativeStartNode):
             current_node.state = NodeResolutionState.RESOLVED
             return
 
@@ -686,7 +686,7 @@ class ExecuteDagState(State):
 
             # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
             # if False:
-            if isinstance(node_reference.node_reference, StartLoopNode):
+            if isinstance(node_reference.node_reference, BaseIterativeStartNode):
                 # Call handle_done_state to clear it from everything
                 end_loop_node = node_reference.node_reference.end_node
                 # Set start node to DONE! even if it isn't truly done lolllll.
@@ -700,14 +700,14 @@ class ExecuteDagState(State):
                 # We're going to skip straight to the end node here instead.
                 # Set end node to node reference
                 if context.dag_builder is not None:
-                    # Check if EndLoopNode is already in DAG (from pre-building phase)
+                    # Check if BaseIterativeEndNode is already in DAG (from pre-building phase)
                     if end_loop_node.name in context.dag_builder.node_to_reference:
-                        # EndLoopNode already exists in DAG, just get reference and queue it
+                        # BaseIterativeEndNode already exists in DAG, just get reference and queue it
                         end_node_reference = context.dag_builder.node_to_reference[end_loop_node.name]
                         end_node_reference.node_state = NodeState.QUEUED
                         node_reference = end_node_reference
                     else:
-                        # EndLoopNode not in DAG yet (backwards compatibility), add it
+                        # BaseIterativeEndNode not in DAG yet (backwards compatibility), add it
                         end_node_reference = context.dag_builder.add_node(end_loop_node)
                         end_node_reference.node_state = NodeState.QUEUED
                         node_reference = end_node_reference

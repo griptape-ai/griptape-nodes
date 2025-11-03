@@ -6,8 +6,9 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode
+from griptape_nodes.exe_types.node_types import NodeResolutionState
 
 if TYPE_CHECKING:
     import asyncio
@@ -71,10 +72,10 @@ class DagBuilder:
             if current_node.name in self.node_to_reference:
                 return
 
-            # Special handling for StartLoopNode: jump directly to EndLoopNode
+            # Special handling for BaseIterativeStartNode: jump directly to EndLoopNode
             # if False:
-            if isinstance(current_node, StartLoopNode):
-                # Add StartLoopNode to DAG
+            if isinstance(current_node, BaseIterativeStartNode):
+                # Add BaseIterativeStartNode to DAG
                 if current_node.name not in self.node_to_reference:
                     dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
                     self.node_to_reference[current_node.name] = dag_node
@@ -85,7 +86,7 @@ class DagBuilder:
                 # Get EndLoopNode
                 end_loop_node = current_node.end_node
                 if end_loop_node is None:
-                    msg = f"StartLoopNode '{current_node.name}' has no end_node set"
+                    msg = f"BaseIterativeStartNode '{current_node.name}' has no end_node set"
                     raise ValueError(msg)
 
                 # Add EndLoopNode to DAG
@@ -96,7 +97,7 @@ class DagBuilder:
                     self.graph_to_nodes[graph_name].add(end_loop_node.name)
                     added_nodes.append(end_loop_node)
 
-                # Create direct edge: StartLoopNode → EndLoopNode
+                # Create direct edge: BaseIterativeStartNode → EndLoopNode
                 graph.add_edge(current_node.name, end_loop_node.name)
 
                 # Return early to skip loop body

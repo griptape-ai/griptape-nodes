@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import warnings
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
@@ -1617,52 +1617,10 @@ class EndNode(BaseNode):
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
-class StartLoopNode(BaseNode):
-    end_node: EndLoopNode | None = None
-    exec_out: ControlParameterOutput
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
-
-    @abstractmethod
-    def is_loop_finished(self) -> bool:
-        """Return True if the loop has finished executing.
-
-        This method must be implemented by subclasses to define when
-        the loop should terminate.
-        """
-
-    @abstractmethod
-    def _get_total_iterations(self) -> int:
-        """Return the total number of iterations for this loop.
-
-        This method must be implemented by subclasses to define how many
-        iterations the loop will execute.
-        """
-
-    @abstractmethod
-    def _get_iteration_items(self) -> list[Any]:
-        """Get the list of items to iterate over.
-
-        This method must be implemented by subclasses to return the items for iteration.
-        For ForEach nodes, this returns the actual list of items.
-        For ForLoop nodes, this can return an empty list as they iterate by index calculation.
-
-        Returns:
-            List of items to iterate over
-        """
-
-    @abstractmethod
-    def _initialize_iteration_data(self) -> None:
-        """Initialize iteration-specific data and state.
-
-        This method must be implemented by subclasses to set up any necessary
-        state before iteration begins. Called before accessing iteration items
-        or calculating total iterations.
-        """
-
-
-class EndLoopNode(BaseNode):
-    start_node: StartLoopNode | None = None
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+# StartLoopNode and EndLoopNode have been moved to base_iterative_nodes.py
+# They are now BaseIterativeStartNode and BaseIterativeEndNode
+# Import them here if needed for backwards compatibility in this file
+# (they are imported elsewhere directly from base_iterative_nodes)
 
 
 class ErrorProxyNode(BaseNode):

@@ -1,11 +1,11 @@
 from typing import Any
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
 )
-from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode
 
 
 class ForEachStartNode(BaseIterativeStartNode):

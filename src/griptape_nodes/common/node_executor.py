@@ -9,17 +9,19 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
+from griptape_nodes.exe_types.base_iterative_nodes import (
+    BaseIterativeEndNode,
+    BaseIterativeStartNode,
+)
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
     BaseNode,
-    EndLoopNode,
     EndNode,
     NodeGroup,
     NodeGroupProxyNode,
-    StartLoopNode,
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
@@ -83,7 +85,7 @@ class NodeExecutor:
 
         # If this is a loop node, we need to handle it totally differently.
         # if False:
-        if isinstance(node, EndLoopNode):
+        if isinstance(node, BaseIterativeEndNode):
             await self.handle_loop_execution(node, execution_type)
             return
 
@@ -368,18 +370,18 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:  # noqa: C901, PLR0915
+    async def handle_loop_execution(self, node: BaseIterativeEndNode, execution_type: str) -> None:  # noqa: C901, PLR0915
         """Handle execution of a loop by packaging nodes from start to end and running them.
 
         Args:
-            node: The EndLoopNode marking the end of the loop
+            node: The BaseIterativeEndNode marking the end of the loop
             execution_type: The execution environment type
         """
         from griptape_nodes.machines.dag_builder import DagBuilder
 
         # Validate start node exists
         if node.start_node is None:
-            msg = f"EndLoopNode '{node.name}' has no start_node reference"
+            msg = f"BaseIterativeEndNode '{node.name}' has no start_node reference"
             raise ValueError(msg)
 
         start_node = node.start_node
@@ -542,7 +544,7 @@ class NodeExecutor:
 
     def get_parameter_values_per_iteration(
         self,
-        start_node: StartLoopNode,
+        start_node: BaseIterativeStartNode,
         parameter_name_mappings: list,
     ) -> dict[int, dict[str, Any]]:
         """Get parameter values for each iteration of the loop.
@@ -622,7 +624,7 @@ class NodeExecutor:
         incoming_connections: list,
         end_node_param_mappings: dict,
     ) -> str | None:
-        """Find the EndFlow parameter name that corresponds to EndLoopNode's new_item_to_add.
+        """Find the EndFlow parameter name that corresponds to BaseIterativeEndNode's new_item_to_add.
 
         Args:
             incoming_connections: List of incoming connections to end_loop_node
@@ -650,13 +652,13 @@ class NodeExecutor:
 
     def get_parameter_values_from_iterations(
         self,
-        end_loop_node: EndLoopNode,
+        end_loop_node: BaseIterativeEndNode,
         deserialized_flows: list[tuple[int, str, dict[str, str]]],
         parameter_name_mappings: list,
     ) -> dict[int, Any]:
         """Extract parameter values from each iteration's EndFlow node.
 
-        The EndLoopNode is NOT packaged. Instead, we find what connects TO it,
+        The BaseIterativeEndNode is NOT packaged. Instead, we find what connects TO it,
         then extract those values from the packaged EndFlow node.
 
         Mirrors get_parameter_values_per_iteration pattern but works in reverse.
@@ -687,7 +689,7 @@ class NodeExecutor:
 
         if endflow_param_name is None:
             logger.warning(
-                "No connections found to EndLoopNode '%s' new_item_to_add parameter. No results will be collected.",
+                "No connections found to BaseIterativeEndNode '%s' new_item_to_add parameter. No results will be collected.",
                 end_loop_node.name,
             )
             return {}
@@ -727,7 +729,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: EndLoopNode,
+        end_loop_node: BaseIterativeEndNode,
     ) -> tuple[dict[int, Any], list[int]]:
         """Execute loop iterations locally by deserializing and running flows.
 

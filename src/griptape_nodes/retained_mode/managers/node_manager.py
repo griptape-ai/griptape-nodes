@@ -4,6 +4,10 @@ import pickle
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
+from griptape_nodes.exe_types.base_iterative_nodes import (
+    BaseIterativeEndNode,
+    BaseIterativeStartNode,
+)
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -17,12 +21,10 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
-    EndLoopNode,
     ErrorProxyNode,
     NodeDependencies,
     NodeGroupProxyNode,
     NodeResolutionState,
-    StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -418,7 +420,7 @@ class NodeManager:
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
-        if isinstance(node, StartLoopNode) and not request.initial_setup:
+        if isinstance(node, BaseIterativeStartNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
             # Get the class name of the node
             node_class_name = node.__class__.__name__
@@ -457,7 +459,7 @@ class NodeManager:
                         )
                     )
                     end_node = self.get_node_by_name(end_loop.node_name)
-                    if not isinstance(end_node, EndLoopNode):
+                    if not isinstance(end_node, BaseIterativeEndNode):
                         msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired node '{end_loop.node_name}' was not a proper EndLoop instance. The corresponding node will have to be created by hand and attached manually."
                         logger.error(
                             msg
