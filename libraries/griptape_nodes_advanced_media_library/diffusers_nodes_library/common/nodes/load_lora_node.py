@@ -28,6 +28,7 @@ class LoadLoRA(ControlNode):
                 output_type="str",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="a phrase that shall be included in the prompt to ensure triggering the lora",
+                hide=True,
             )
         )
 
