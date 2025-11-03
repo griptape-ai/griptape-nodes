@@ -20,6 +20,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             node,
             repo_ids=[
                 "Qwen/Qwen-Image-Edit",
+                "Qwen/Qwen-Image-Edit-2509M",
             ],
             parameter_name="model",
             list_all_models=list_all_models,
