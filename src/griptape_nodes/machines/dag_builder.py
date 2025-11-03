@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.exe_types.node_types import NodeResolutionState, StartLoopNode
 
 if TYPE_CHECKING:
     import asyncio
@@ -51,7 +51,7 @@ class DagBuilder:
         self.graph_to_nodes = {}
 
     # Complex with the inner recursive method, but it needs connections and added_nodes.
-    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
+    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901, PLR0915
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -63,13 +63,45 @@ class DagBuilder:
             self.graphs[graph_name] = graph
             self.graph_to_nodes[graph_name] = set()
 
-        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
+        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:  # noqa: C901, PLR0912
             if current_node.name in visited:
                 return
             visited.add(current_node.name)
             # Skip if already in DAG (use DAG membership, not resolved state)
             if current_node.name in self.node_to_reference:
                 return
+
+            # Special handling for StartLoopNode: jump directly to EndLoopNode
+            if False:
+                if isinstance(current_node, StartLoopNode):
+                    # Add StartLoopNode to DAG
+                    if current_node.name not in self.node_to_reference:
+                        dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+                        self.node_to_reference[current_node.name] = dag_node
+                        graph.add_node(node_for_adding=current_node.name)
+                        self.graph_to_nodes[graph_name].add(current_node.name)
+                        added_nodes.append(current_node)
+
+                    # Get EndLoopNode
+                    end_loop_node = current_node.end_node
+                    if end_loop_node is None:
+                        msg = f"StartLoopNode '{current_node.name}' has no end_node set"
+                        raise ValueError(msg)
+
+                    # Add EndLoopNode to DAG
+                    if end_loop_node.name not in self.node_to_reference:
+                        end_dag_node = DagNode(node_reference=end_loop_node, node_state=NodeState.WAITING)
+                        self.node_to_reference[end_loop_node.name] = end_dag_node
+                        graph.add_node(node_for_adding=end_loop_node.name)
+                        self.graph_to_nodes[graph_name].add(end_loop_node.name)
+                        added_nodes.append(end_loop_node)
+
+                    # Create direct edge: StartLoopNode → EndLoopNode
+                    graph.add_edge(current_node.name, end_loop_node.name)
+
+                    # Return early to skip loop body
+                    return
+
             # Process dependencies first (depth-first)
             ignore_data_dependencies = False
             # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.

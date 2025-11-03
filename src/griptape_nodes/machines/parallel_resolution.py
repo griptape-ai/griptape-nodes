@@ -136,6 +136,14 @@ class ExecuteDagState(State):
         if isinstance(current_node, NodeGroupProxyNode):
             await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
             return
+
+        # Special handling for StartLoopNode - skip control flow processing
+        # The EndLoopNode has already been queued during execution
+        if False:
+            if isinstance(current_node, StartLoopNode):
+                current_node.state = NodeResolutionState.RESOLVED
+                return
+
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
         # Track this as the last resolved node
@@ -682,21 +690,27 @@ class ExecuteDagState(State):
                 return ErrorState
 
             # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
-            if False and isinstance(node_reference.node_reference, StartLoopNode):  # noqa: SIM223
-                # Call handle_done_state to clear it from everything
-                end_loop_node = node_reference.node_reference.end_node
-                node_reference.node_state = NodeState.DONE
-                if end_loop_node is None:
-                    msg = (
-                        f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
-                    )
-                    logger.error(msg)
-                    return ErrorState
-                # We're going to skip straight to the end node here instead.
+            if False:
+                if isinstance(node_reference.node_reference, StartLoopNode):
+                    # Call handle_done_state to clear it from everything
+                    end_loop_node = node_reference.node_reference.end_node
+                    node_reference.node_state = NodeState.DONE
+                    if end_loop_node is None:
+                        msg = f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
+                        logger.error(msg)
+                        return ErrorState
+                    # We're going to skip straight to the end node here instead.
 
-                if context.dag_builder is not None:
-                    node_reference = context.dag_builder.add_node(end_loop_node)
-                    node_reference.node_state = NodeState.QUEUED
+                    if context.dag_builder is not None:
+                        # Check if EndLoopNode is already in DAG (from pre-building phase)
+                        if end_loop_node.name in context.dag_builder.node_to_reference:
+                            # EndLoopNode already exists in DAG, just get reference and queue it
+                            end_node_reference = context.dag_builder.node_to_reference[end_loop_node.name]
+                            end_node_reference.node_state = NodeState.QUEUED
+                        else:
+                            # EndLoopNode not in DAG yet (backwards compatibility), add it
+                            end_node_reference = context.dag_builder.add_node(end_loop_node)
+                            end_node_reference.node_state = NodeState.QUEUED
 
             def on_task_done(task: asyncio.Task) -> None:
                 if task in context.task_to_node:
