@@ -250,7 +250,7 @@ class DagBuilder:
 
         # Step 2: Validate each group
         for group in groups.values():
-            group.validate_no_intermediate_nodes(connections.connections)
+            group.validate_no_intermediate_nodes()
 
         # Step 3: Create proxy nodes and replace groups in DAG
         proxy_nodes = {}

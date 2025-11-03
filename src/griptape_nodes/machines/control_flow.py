@@ -475,7 +475,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Step 3: Validate each group
         for group in groups.values():
-            group.validate_no_intermediate_nodes(connections.connections)
+            group.validate_no_intermediate_nodes()
 
         # Step 4: Create proxy nodes and build mapping
         node_to_proxy_map: dict[BaseNode, BaseNode] = {}
