@@ -290,36 +290,40 @@
       "class_name": "LumatalesFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/lumatales_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
+        "category": "lora/flux",
         "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/Lumatales-FL",
-        "display_name": "Flux Lora: Lumatales-FL "
+        "display_name": "Flux Lora: Lumatales-FL ",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "MicroLandscapeOnPhoneFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/micro_landscape_on_phone_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
+        "category": "lora/flux",
         "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
-        "display_name": "Flux Lora: Micro Landscape on Mobile Phone"
+        "display_name": "Flux Lora: Micro Landscape on Mobile Phone",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "MiniatureWorldFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/miniature_world_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
+        "category": "lora/flux",
         "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
-        "display_name": "Flux Lora: Miniature World"
+        "display_name": "Flux Lora: Miniature World",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "RiverZNormalDiptychFluxFillLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/river_z_normal_diptych_flux_fill_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
+        "category": "lora/flux",
         "description": "Load the Flux Lora for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
-        "display_name": "Flux ICEdit Lora: RiverZ Normal"
+        "display_name": "Flux ICEdit Lora: RiverZ Normal",
+        "group": "diffusion"
       }
     },
     {
@@ -601,18 +605,20 @@
       "class_name": "Kijai1Dot3BWanLora",
       "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_1_dot_3_b_wan_lora.py",
       "metadata": {
-        "category": "video/wan/loras",
+        "category": "lora/wan",
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
-        "display_name": "Kijai CausVid 1.3B"
+        "display_name": "Kijai CausVid 1.3B",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "Kijai14BWanLora",
       "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_14_b_wan_lora.py",
       "metadata": {
-        "category": "video/wan/loras",
+        "category": "lora/wan",
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
-        "display_name": "Kijai CausVid 14B"
+        "display_name": "Kijai CausVid 14B",
+        "group": "diffusion"
       }
     },
     {
@@ -652,7 +658,7 @@
       "class_name": "LoadLoRA",
       "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
       "metadata": {
-        "category": "loras",
+        "category": "lora",
         "description": "Load LoRA from file ('.safetensors', '.pt', '.bin', '.json', '.lora') for use with 🤗 Diffusers based Nodes. Path must be on the engine's filesystem.",
         "display_name": "Load LoRA",
         "group": "diffusion"
