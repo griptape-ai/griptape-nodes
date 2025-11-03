@@ -560,7 +560,15 @@ class FlowManager:
             details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             result = DeleteFlowResultFailure(result_details=details)
             return result
-        if self.check_for_existing_running_flow():
+
+        # Only cancel if the flow being deleted is the one tracked by the global control flow machine.
+        # Isolated subflows (e.g., ForEach loop iterations) have their own separate ControlFlowMachine
+        # and should not trigger cancellation of the global machine.
+        if (
+            self.check_for_existing_running_flow()
+            and self._global_control_flow_machine is not None
+            and self._global_control_flow_machine.context.flow_name == flow.name
+        ):
             result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow.name))
             if not result.succeeded():
                 details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
@@ -622,9 +630,14 @@ class FlowManager:
             if flow in self._flow_to_referenced_workflow_name:
                 del self._flow_to_referenced_workflow_name[flow]
 
-            # Clean up ControlFlowMachine and DAG orchestrator for this flow
-            self._global_control_flow_machine = None
-            self._global_dag_builder.clear()
+            # Clean up ControlFlowMachine and DAG orchestrator only if this is the global flow.
+            # Isolated subflows have their own machines and should not clear the global state.
+            if (
+                self._global_control_flow_machine is not None
+                and self._global_control_flow_machine.context.flow_name == flow.name
+            ):
+                self._global_control_flow_machine = None
+                self._global_dag_builder.clear()
 
         details = f"Successfully deleted Flow '{flow_name}'."
         result = DeleteFlowResultSuccess(result_details=details)

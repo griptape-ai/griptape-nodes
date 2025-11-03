@@ -82,10 +82,10 @@ class NodeExecutor:
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
         # If this is a loop node, we need to handle it totally differently.
-        if False:
-            if isinstance(node, EndLoopNode):
-                await self.handle_loop_execution(node, execution_type)
-                return
+        # if False:
+        if isinstance(node, EndLoopNode):
+            await self.handle_loop_execution(node, execution_type)
+            return
 
         if execution_type == LOCAL_EXECUTION:
             await node.aprocess()
@@ -368,8 +368,7 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    # Work in PROGRESS!! DO not CALL!! The noqa stuff will be resolved, but it also must be a complex function.
-    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:  # noqa: C901, PLR0912, PLR0915
+    async def handle_loop_execution(self, node: EndLoopNode, execution_type: str) -> None:  # noqa: C901, PLR0915
         """Handle execution of a loop by packaging nodes from start to end and running them.
 
         Args:
@@ -478,18 +477,299 @@ class NodeExecutor:
             start_node, package_result.parameter_name_mappings
         )
 
-        # Step 5: Deserialize N flow instances from the serialized flow
-        # Each deserialization will create a new flow automatically since the
-        # CreateFlowRequest in the serialized commands has parent_flow_name=None
+        # Step 5: Execute all iterations (locally for now, extensible for other environments)
+        # The helper method handles: deserialization, setting values, running iterations, extracting results, and cleanup
+        iteration_results, successful_iterations = await self._execute_loop_iterations_locally(
+            package_result=package_result,
+            total_iterations=total_iterations,
+            parameter_values_per_iteration=parameter_values_to_set_before_run,
+            end_loop_node=node,
+        )
+
+        if len(successful_iterations) != total_iterations:
+            failed_count = total_iterations - len(successful_iterations)
+            msg = f"Loop execution failed: {failed_count} of {total_iterations} iterations failed"
+            raise RuntimeError(msg)
+
+        logger.info(
+            "Successfully completed parallel execution of %d iterations for loop '%s'",
+            total_iterations,
+            start_node.name,
+        )
+
+        # Step 7: Build results list in iteration order
+        node._results_list = []
+        for iteration_index in sorted(iteration_results.keys()):
+            value = iteration_results[iteration_index]
+            node._results_list.append(value)
+
+        # Step 8: Output final results to the results parameter
+        node._output_results_list()
+
+        logger.info(
+            "Successfully aggregated %d results for loop '%s' to '%s'",
+            len(iteration_results),
+            start_node.name,
+            node.name,
+        )
+
+    def _get_iteration_value_for_parameter(
+        self,
+        source_param_name: str,
+        iteration_index: int,
+        index_values: list[int],
+        current_item_values: list[Any],
+    ) -> Any:
+        """Get the value for a specific parameter at a given iteration.
+
+        Args:
+            source_param_name: Name of the source parameter (e.g., "index" or "current_item")
+            iteration_index: 0-based iteration index
+            index_values: List of actual loop values for ForLoop nodes
+            current_item_values: List of items for ForEach nodes
+
+        Returns:
+            The value to set for this parameter at this iteration
+        """
+        if source_param_name == "index":
+            # For ForLoop nodes, use actual loop value; otherwise use iteration_index
+            if index_values and iteration_index < len(index_values):
+                return index_values[iteration_index]
+            return iteration_index
+        if source_param_name == "current_item" and iteration_index < len(current_item_values):
+            return current_item_values[iteration_index]
+        return None
+
+    def get_parameter_values_per_iteration(
+        self,
+        start_node: StartLoopNode,
+        parameter_name_mappings: list,
+    ) -> dict[int, dict[str, Any]]:
+        """Get parameter values for each iteration of the loop.
+
+        This maps iteration index to parameter values that should be set on the packaged flow's StartFlow node.
+        Useful for: setting local values, sending as input for cloud publishing, or private workflow execution.
+
+        Args:
+            start_node: The start loop node (ForEach or ForLoop)
+            parameter_name_mappings: List of PackagedNodeParameterMapping from
+                                    PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
+
+        Returns:
+            Dict mapping iteration_index -> {startflow_param_name: value}
+        """
+        total_iterations = start_node._get_total_iterations()
+
+        # Calculate current_item values for ForEach nodes
+        current_item_values = []
+        if hasattr(start_node, "current_item"):
+            iteration_items = start_node._get_iteration_items()
+            current_item_values = list(iteration_items)
+
+        # Calculate index values for ForLoop nodes
+        # For ForLoop, we need actual loop values (start, start+step, start+2*step, ...)
+        # not just 0-based iteration indices
+        index_values = []
+        if hasattr(start_node, "get_all_iteration_values"):
+            index_values = start_node.get_all_iteration_values()
+
+        list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
+        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            msg = f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004 This should be a runtime error because it happens during execution.
+        # Build parameter values for each iteration
+        outgoing_connections = list_connections_result.outgoing_connections
+
+        # Get Start node's parameter mappings (index 0 in the list)
+        start_node_mapping = parameter_name_mappings[0]
+        start_node_param_mappings = start_node_mapping.parameter_mappings
+
+        # For each outgoing connection from start_node, find the corresponding StartFlow parameter
+        # The start_node_param_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
+        # We need to match the target of each connection to find the right startflow parameter
+        parameter_val_mappings = {}
+        for iteration_index in range(total_iterations):
+            iteration_values = {}
+            # iteration_values is going to be startflow parameter name -> value to set
+
+            # For each outgoing data connection from start_node
+            for conn in outgoing_connections:
+                source_param_name = conn.source_parameter_name
+                target_node_name = conn.target_node_name
+                target_param_name = conn.target_parameter_name
+
+                # Find the target parameter that corresponds to this target
+                for startflow_param_name, original_node_param in start_node_param_mappings.items():
+                    if (
+                        original_node_param.node_name == target_node_name
+                        and original_node_param.parameter_name == target_param_name
+                    ):
+                        # This StartFlow parameter feeds the target - set the appropriate value
+                        value = self._get_iteration_value_for_parameter(
+                            source_param_name, iteration_index, index_values, current_item_values
+                        )
+                        if value is not None:
+                            iteration_values[startflow_param_name] = value
+                        break
+
+            parameter_val_mappings[iteration_index] = iteration_values
+
+        return parameter_val_mappings
+
+    def _find_endflow_param_for_end_loop_node(
+        self,
+        incoming_connections: list,
+        end_node_param_mappings: dict,
+    ) -> str | None:
+        """Find the EndFlow parameter name that corresponds to EndLoopNode's new_item_to_add.
+
+        Args:
+            incoming_connections: List of incoming connections to end_loop_node
+            end_node_param_mappings: Parameter mappings from EndFlow node
+
+        Returns:
+            Sanitized parameter name on EndFlow node, or None if not found
+        """
+        for conn in incoming_connections:
+            if conn.target_parameter_name != "new_item_to_add":
+                continue
+
+            source_node_name = conn.source_node_name
+            source_param_name = conn.source_parameter_name
+
+            # Find the EndFlow parameter that corresponds to this source
+            for sanitized_param_name, original_node_param in end_node_param_mappings.items():
+                if (
+                    original_node_param.node_name == source_node_name
+                    and original_node_param.parameter_name == source_param_name
+                ):
+                    return sanitized_param_name
+
+        return None
+
+    def get_parameter_values_from_iterations(
+        self,
+        end_loop_node: EndLoopNode,
+        deserialized_flows: list[tuple[int, str, dict[str, str]]],
+        parameter_name_mappings: list,
+    ) -> dict[int, Any]:
+        """Extract parameter values from each iteration's EndFlow node.
+
+        The EndLoopNode is NOT packaged. Instead, we find what connects TO it,
+        then extract those values from the packaged EndFlow node.
+
+        Mirrors get_parameter_values_per_iteration pattern but works in reverse.
+
+        Args:
+            end_loop_node: The End Loop Node (NOT packaged, just used for reference)
+            deserialized_flows: List of (iteration_index, flow_name, node_name_mappings)
+            parameter_name_mappings: List from PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
+
+        Returns:
+            Dict mapping iteration_index -> value for that iteration
+        """
+        # Step 1: Get incoming connections TO the end_loop_node
+        list_connections_request = ListConnectionsForNodeRequest(node_name=end_loop_node.name)
+        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            msg = f"Failed to list connections for node {end_loop_node.name}: {list_connections_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        incoming_connections = list_connections_result.incoming_connections
+
+        # Step 2: Get End node's parameter mappings (index 1 = EndFlow node)
+        end_node_mapping = parameter_name_mappings[1]
+        end_node_param_mappings = end_node_mapping.parameter_mappings
+
+        # Step 3: Find the EndFlow parameter that corresponds to new_item_to_add
+        endflow_param_name = self._find_endflow_param_for_end_loop_node(incoming_connections, end_node_param_mappings)
+
+        if endflow_param_name is None:
+            logger.warning(
+                "No connections found to EndLoopNode '%s' new_item_to_add parameter. No results will be collected.",
+                end_loop_node.name,
+            )
+            return {}
+
+        # Step 4: Extract values from each iteration's EndFlow node
+        packaged_end_node_name = end_node_mapping.node_name
+        iteration_results = {}
+        node_manager = GriptapeNodes.NodeManager()
+
+        for iteration_index, flow_name, node_name_mappings in deserialized_flows:
+            deserialized_end_node_name = node_name_mappings.get(packaged_end_node_name)
+            if deserialized_end_node_name is None:
+                logger.warning(
+                    "Could not find deserialized End node for iteration %d in flow '%s'",
+                    iteration_index,
+                    flow_name,
+                )
+                continue
+
+            try:
+                deserialized_end_node = node_manager.get_node_by_name(deserialized_end_node_name)
+                if endflow_param_name in deserialized_end_node.parameter_output_values:
+                    iteration_results[iteration_index] = deserialized_end_node.parameter_output_values[
+                        endflow_param_name
+                    ]
+            except Exception as e:
+                logger.warning(
+                    "Failed to extract result from End node for iteration %d: %s",
+                    iteration_index,
+                    e,
+                )
+
+        return iteration_results
+
+    async def _execute_loop_iterations_locally(  # noqa: C901, PLR0912, PLR0915
+        self,
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+        total_iterations: int,
+        parameter_values_per_iteration: dict[int, dict[str, Any]],
+        end_loop_node: EndLoopNode,
+    ) -> tuple[dict[int, Any], list[int]]:
+        """Execute loop iterations locally by deserializing and running flows.
+
+        This method handles LOCAL execution of loop iterations. Other libraries
+        can implement their own execution strategies (cloud, remote, etc.) by
+        creating similar methods with the same signature.
+
+        Args:
+            package_result: The packaged flow with parameter mappings
+            total_iterations: Number of iterations to run
+            parameter_values_per_iteration: Dict mapping iteration_index -> parameter values
+            end_loop_node: The End Loop Node to extract results for
+
+        Returns:
+            Tuple of:
+            - iteration_results: Dict mapping iteration_index -> result value
+            - successful_iterations: List of iteration indices that succeeded
+        """
         from griptape_nodes.retained_mode.events.flow_events import (
             DeserializeFlowFromCommandsRequest,
             DeserializeFlowFromCommandsResultSuccess,
         )
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            SetParameterValueRequest,
+            SetParameterValueResultSuccess,
+        )
 
-        deserialized_flows = []  # (deserialized_flow_result, iteration_index)
+        # Step 1: Deserialize N flow instances from the serialized flow
+        # Save the current context and restore it after each deserialization to prevent
+        # iteration flows from becoming children of each other
+        deserialized_flows = []
+        context_manager = GriptapeNodes.ContextManager()
+        saved_context_flow = context_manager.get_current_flow() if context_manager.has_current_flow() else None
 
         for iteration_index in range(total_iterations):
-            # Deserialize creates a new flow with auto-generated name
+            # Restore context before each deserialization to ensure all iteration flows
+            # are created at the same level (not as children of each other)
+            if saved_context_flow is not None:
+                # Pop any flows that were pushed during previous iteration
+                while context_manager.has_current_flow() and context_manager.get_current_flow() != saved_context_flow:
+                    context_manager.pop_flow()
+
             deserialize_request = DeserializeFlowFromCommandsRequest(
                 serialized_flow_commands=package_result.serialized_flow_commands
             )
@@ -502,17 +782,20 @@ class NodeExecutor:
                 (iteration_index, deserialize_result.flow_name, deserialize_result.node_name_mappings)
             )
 
+            # Pop the deserialized flow from the context stack to prevent it from staying there
+            # Deserialization pushes the flow onto the stack, but we don't want iteration flows
+            # to remain on the stack after deserialization
+            if (
+                context_manager.has_current_flow()
+                and context_manager.get_current_flow().name == deserialize_result.flow_name
+            ):
+                context_manager.pop_flow()
+
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
 
-        # Step 6: Set input values on start nodes for each iteration
-        from griptape_nodes.retained_mode.events.parameter_events import (
-            SetParameterValueRequest,
-            SetParameterValueResultSuccess,
-        )
-
-        # Set input values on StartFlow nodes for each deserialized flow
+        # Step 2: Set input values on start nodes for each iteration
         for iteration_index, _, node_name_mappings in deserialized_flows:
-            parameter_values = parameter_values_to_set_before_run[iteration_index]
+            parameter_values = parameter_values_per_iteration[iteration_index]
 
             # Get Start node mapping (index 0 in the list)
             start_node_mapping = package_result.parameter_name_mappings[0]
@@ -553,9 +836,7 @@ class NodeExecutor:
 
         logger.info("Successfully set input values for %d iterations", total_iterations)
 
-        # Step 7: Run all flows concurrently
-
-        # Get the packaged Start node name from parameter mappings (index 0 = Start node)
+        # Step 3: Run all flows concurrently
         packaged_start_node_name = package_result.parameter_name_mappings[0].node_name
 
         async def run_single_iteration(flow_name: str, iteration_index: int, start_node_name: str) -> tuple[int, bool]:
@@ -586,7 +867,7 @@ class NodeExecutor:
             ]
             iteration_results = await asyncio.gather(*iteration_tasks, return_exceptions=True)
 
-            # Step 8: Collect and aggregate results
+            # Step 4: Collect successful and failed iterations
             successful_iterations = []
             failed_iterations = []
 
@@ -605,91 +886,37 @@ class NodeExecutor:
                 msg = f"Loop execution failed: {len(failed_iterations)} of {total_iterations} iterations failed"
                 raise RuntimeError(msg)
 
-            logger.info(
-                "Successfully completed parallel execution of %d iterations for loop '%s'",
-                total_iterations,
-                start_node.name,
+            # Step 4: Extract parameter values from iterations BEFORE cleanup
+            iteration_results = self.get_parameter_values_from_iterations(
+                end_loop_node=end_loop_node,
+                deserialized_flows=deserialized_flows,
+                parameter_name_mappings=package_result.parameter_name_mappings,
             )
 
-            # Aggregate results from all iterations and set them on appropriate nodes. Left todo.
+            return iteration_results, successful_iterations
+
         finally:
-            # Step 9: Cleanup - delete all iteration flows
-            from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+            # Step 5: Cleanup - delete all iteration flows
+            from griptape_nodes.retained_mode.events.flow_events import (
+                DeleteFlowRequest,
+                DeleteFlowResultSuccess,
+            )
 
-            for flow_name, iteration_index, _ in deserialized_flows:
-                try:
-                    delete_request = DeleteFlowRequest(flow_name=flow_name)
-                    await GriptapeNodes.ahandle_request(delete_request)
-                except Exception as e:
-                    logger.warning("Failed to cleanup flow for iteration %d: %s", iteration_index, e)
+            for iteration_index, flow_name, _ in deserialized_flows:
+                delete_request = DeleteFlowRequest(flow_name=flow_name)
+                delete_result = await GriptapeNodes.ahandle_request(delete_request)
+                if not isinstance(delete_result, DeleteFlowResultSuccess):
+                    logger.warning(
+                        "Failed to delete iteration flow '%s' (iteration %d): %s",
+                        flow_name,
+                        iteration_index,
+                        delete_result.result_details,
+                    )
 
-    def get_parameter_values_per_iteration(
-        self,
-        start_node: StartLoopNode,
-        parameter_name_mappings: list,
-    ) -> dict[int, dict[str, Any]]:
-        """Get parameter values for each iteration of the loop.
-
-        This maps iteration index to parameter values that should be set on the packaged flow's StartFlow node.
-        Useful for: setting local values, sending as input for cloud publishing, or private workflow execution.
-
-        Args:
-            start_node: The start loop node (ForEach or ForLoop)
-            parameter_name_mappings: List of PackagedNodeParameterMapping from
-                                    PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
-
-        Returns:
-            Dict mapping iteration_index -> {startflow_param_name: value}
-        """
-        total_iterations = start_node._get_total_iterations()
-
-        # Calculate current_item values for ForEach nodes
-        current_item_values = []
-        if hasattr(start_node, "current_item"):
-            iteration_items = start_node._get_iteration_items()
-            current_item_values = list(iteration_items)
-        list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
-        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            msg = f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
-            raise RuntimeError(msg)  # noqa: TRY004 This should be a runtime error because it happens during execution.
-        # Build parameter values for each iteration
-        outgoing_connections = list_connections_result.outgoing_connections
-
-        # Get Start node's parameter mappings (index 0 in the list)
-        start_node_mapping = parameter_name_mappings[0]
-        start_node_param_mappings = start_node_mapping.parameter_mappings
-
-        # For each outgoing connection from start_node, find the corresponding StartFlow parameter
-        # The start_node_param_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
-        # We need to match the target of each connection to find the right startflow parameter
-        parameter_val_mappings = {}
-        for iteration_index in range(total_iterations):
-            iteration_values = {}
-            # iteration_values is going to be startflow parameter name -> value to set
-
-            # For each outgoing data connection from start_node
-            for conn in outgoing_connections:
-                source_param_name = conn.source_parameter_name
-                target_node_name = conn.target_node_name
-                target_param_name = conn.target_parameter_name
-
-                # Find the target parameter that corresponds to this target
-                for startflow_param_name, original_node_param in start_node_param_mappings.items():
-                    if (
-                        original_node_param.node_name == target_node_name
-                        and original_node_param.parameter_name == target_param_name
-                    ):
-                        # This StartFlow parameter feeds the target - set the appropriate value
-                        if source_param_name == "index":
-                            iteration_values[startflow_param_name] = iteration_index
-                        elif source_param_name == "current_item" and iteration_index < len(current_item_values):
-                            iteration_values[startflow_param_name] = current_item_values[iteration_index]
-                        break
-
-            parameter_val_mappings[iteration_index] = iteration_values
-
-        return parameter_val_mappings
+    def set_parameter_output_values_for_loops(
+        self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]
+    ) -> None:
+        pass
 
     def _extract_parameter_output_values(
         self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]

@@ -151,6 +151,39 @@ class ForLoopStartNode(BaseIterativeStartNode):
         """Return the current loop value (start, start+step, start+2*step, ...)."""
         return self._current_index
 
+    def get_all_iteration_values(self) -> list[int]:
+        """Calculate and return all iteration values for this loop.
+
+        Returns a list of actual loop values (not 0-based indices).
+        For example, a loop from 5 to 10 with step 2 returns [5, 7, 9].
+
+        Returns:
+            List of integer values for each iteration
+        """
+        start = self.get_parameter_value("start")
+        end = self.get_parameter_value("end")
+        step = self.get_parameter_value("step")
+        total_iterations = self._get_total_iterations()
+
+        if total_iterations == 0:
+            return []
+
+        # Determine direction based on start and end
+        ascending = start <= end
+
+        # Calculate all iteration values
+        # Step is always positive, but we subtract when descending
+        values = []
+        current_value = start
+        for _ in range(total_iterations):
+            values.append(current_value)
+            if ascending:
+                current_value += step
+            else:
+                current_value -= step
+
+        return values
+
     def _advance_to_next_iteration(self) -> None:
         """Advance to the next iteration by step amount in the appropriate direction."""
         start = self.get_parameter_value("start")

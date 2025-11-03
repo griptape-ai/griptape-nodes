@@ -72,35 +72,35 @@ class DagBuilder:
                 return
 
             # Special handling for StartLoopNode: jump directly to EndLoopNode
-            if False:
-                if isinstance(current_node, StartLoopNode):
-                    # Add StartLoopNode to DAG
-                    if current_node.name not in self.node_to_reference:
-                        dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
-                        self.node_to_reference[current_node.name] = dag_node
-                        graph.add_node(node_for_adding=current_node.name)
-                        self.graph_to_nodes[graph_name].add(current_node.name)
-                        added_nodes.append(current_node)
+            # if False:
+            if isinstance(current_node, StartLoopNode):
+                # Add StartLoopNode to DAG
+                if current_node.name not in self.node_to_reference:
+                    dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+                    self.node_to_reference[current_node.name] = dag_node
+                    graph.add_node(node_for_adding=current_node.name)
+                    self.graph_to_nodes[graph_name].add(current_node.name)
+                    added_nodes.append(current_node)
 
-                    # Get EndLoopNode
-                    end_loop_node = current_node.end_node
-                    if end_loop_node is None:
-                        msg = f"StartLoopNode '{current_node.name}' has no end_node set"
-                        raise ValueError(msg)
+                # Get EndLoopNode
+                end_loop_node = current_node.end_node
+                if end_loop_node is None:
+                    msg = f"StartLoopNode '{current_node.name}' has no end_node set"
+                    raise ValueError(msg)
 
-                    # Add EndLoopNode to DAG
-                    if end_loop_node.name not in self.node_to_reference:
-                        end_dag_node = DagNode(node_reference=end_loop_node, node_state=NodeState.WAITING)
-                        self.node_to_reference[end_loop_node.name] = end_dag_node
-                        graph.add_node(node_for_adding=end_loop_node.name)
-                        self.graph_to_nodes[graph_name].add(end_loop_node.name)
-                        added_nodes.append(end_loop_node)
+                # Add EndLoopNode to DAG
+                if end_loop_node.name not in self.node_to_reference:
+                    end_dag_node = DagNode(node_reference=end_loop_node, node_state=NodeState.WAITING)
+                    self.node_to_reference[end_loop_node.name] = end_dag_node
+                    graph.add_node(node_for_adding=end_loop_node.name)
+                    self.graph_to_nodes[graph_name].add(end_loop_node.name)
+                    added_nodes.append(end_loop_node)
 
-                    # Create direct edge: StartLoopNode → EndLoopNode
-                    graph.add_edge(current_node.name, end_loop_node.name)
+                # Create direct edge: StartLoopNode → EndLoopNode
+                graph.add_edge(current_node.name, end_loop_node.name)
 
-                    # Return early to skip loop body
-                    return
+                # Return early to skip loop body
+                return
 
             # Process dependencies first (depth-first)
             ignore_data_dependencies = False
