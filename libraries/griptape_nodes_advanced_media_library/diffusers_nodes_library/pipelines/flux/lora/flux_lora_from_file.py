@@ -19,7 +19,7 @@ class FluxLoraFromFile(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.migrate_message = DeprecationMessage(
-            value="This node is being deprecated.\nPlease use the LoadLoRA node from the Griptape Advanced Media Library.",
+            value="This node is being deprecated.\nPlease use the LoadLoRA node from the Griptape Nodes Advanced Media Library.",
             button_text="Create LoadLoRA Node",
             migrate_function=self._migrate,
         )
