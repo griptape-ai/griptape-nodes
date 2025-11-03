@@ -250,7 +250,7 @@ class MCPTaskNode(SuccessFailureNode):
             return None, None, [], []
         return agent, driver, tools, rulesets
 
-    def _add_task_to_agent(
+    def _add_task_to_agent(  # noqa: PLR0913
         self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list, max_subtasks: int
     ) -> bool:
         """Add task to agent."""
