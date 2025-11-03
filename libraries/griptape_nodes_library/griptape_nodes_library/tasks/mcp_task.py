@@ -10,6 +10,7 @@ from griptape.tools import MCPTool
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
@@ -60,6 +61,16 @@ class MCPTaskNode(SuccessFailureNode):
                 type="Agent",
                 default_value=None,
                 tooltip="Optional agent to use - helpful if you want to continue interaction with an existing agent.",
+            )
+        )
+        self.add_parameter(
+            ParameterInt(
+                name="max_subtasks",
+                default_value=20,
+                hide=True,
+                tooltip="The maximum number of subtasks to allow.",
+                min_val=1,
+                max_val=100,
             )
         )
         self.add_parameter(
@@ -171,6 +182,7 @@ class MCPTaskNode(SuccessFailureNode):
         # Get parameter values
         mcp_server_name = self.get_parameter_value("mcp_server_name")
         prompt = self.get_parameter_value("prompt")
+        max_subtasks = self.get_parameter_value("max_subtasks")
 
         # Get MCP server configuration
         server_config = get_server_config(mcp_server_name)
@@ -197,7 +209,7 @@ class MCPTaskNode(SuccessFailureNode):
             return
 
         # Add task to agent
-        if not self._add_task_to_agent(agent, tool, driver, tools, rulesets):
+        if not self._add_task_to_agent(agent, tool, driver, tools, rulesets, max_subtasks):
             error_details = "Failed to add task to agent"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
             logger.error(f"{self.name}: {error_details}")
@@ -238,10 +250,14 @@ class MCPTaskNode(SuccessFailureNode):
             return None, None, [], []
         return agent, driver, tools, rulesets
 
-    def _add_task_to_agent(self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list) -> bool:
+    def _add_task_to_agent(
+        self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list, max_subtasks: int
+    ) -> bool:
         """Add task to agent."""
         try:
-            prompt_task = PromptTask(tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets)
+            prompt_task = PromptTask(
+                tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets, max_subtasks=max_subtasks
+            )
             agent.add_task(prompt_task)
         except Exception as e:
             msg = f"{self.name}: Failed to add task to agent: {e}"
