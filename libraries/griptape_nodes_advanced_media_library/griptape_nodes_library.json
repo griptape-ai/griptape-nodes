@@ -659,7 +659,7 @@
       "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
       "metadata": {
         "category": "lora",
-        "description": "Load LoRA from file ('.safetensors', '.pt', '.bin', '.json', '.lora') for use with 🤗 Diffusers based Nodes. Path must be on the engine's filesystem.",
+        "description": "Load LoRA from file ('.safetensors', '.pt', '.bin', '.json', '.lora') for use with 🤗 Diffuser based Nodes. Path must be on the engine's filesystem.",
         "display_name": "Load LoRA",
         "group": "diffusion"
       }
