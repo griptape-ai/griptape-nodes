@@ -188,7 +188,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         try:
             result_event = event_mgr.handle_request(request=request)
-            event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
+            # Only queue result event if not suppressed
+            if not event_mgr.should_suppress_events():
+                event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
                 "Unhandled exception while processing request of type %s. "
@@ -214,7 +216,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         try:
             result_event = await event_mgr.ahandle_request(request=request)
-            await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
+            # Only queue result event if not suppressed
+            if not event_mgr.should_suppress_events():
+                await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
                 "Unhandled exception while processing async request of type %s. "

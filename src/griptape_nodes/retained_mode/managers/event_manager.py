@@ -23,6 +23,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Awaitable, Callable
 
 
@@ -61,6 +62,8 @@ class EventManager:
         self._loop_thread_id: int | None = None
         # Keep a reference to the event loop for thread-safe operations
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        # Counter for event suppression context managers
+        self._suppress_events_count: int = 0
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -71,6 +74,10 @@ class EventManager:
 
     def clear_flush_in_queue(self) -> None:
         self._flush_in_queue = False
+
+    def should_suppress_events(self) -> bool:
+        """Check if events should be suppressed from being sent to websockets."""
+        return self._suppress_events_count > 0
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.

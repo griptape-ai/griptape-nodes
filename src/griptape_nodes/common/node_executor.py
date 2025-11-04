@@ -764,34 +764,41 @@ class NodeExecutor:
         context_manager = GriptapeNodes.ContextManager()
         saved_context_flow = context_manager.get_current_flow() if context_manager.has_current_flow() else None
 
-        for iteration_index in range(total_iterations):
-            # Restore context before each deserialization to ensure all iteration flows
-            # are created at the same level (not as children of each other)
-            if saved_context_flow is not None:
-                # Pop any flows that were pushed during previous iteration
-                while context_manager.has_current_flow() and context_manager.get_current_flow() != saved_context_flow:
+        # Suppress events during deserialization to prevent sending them to websockets
+        from griptape_nodes.retained_mode.managers.event_manager import EventSuppressionContext
+
+        event_manager = GriptapeNodes.EventManager()
+        with EventSuppressionContext(event_manager):
+            for iteration_index in range(total_iterations):
+                # Restore context before each deserialization to ensure all iteration flows
+                # are created at the same level (not as children of each other)
+                if saved_context_flow is not None:
+                    # Pop any flows that were pushed during previous iteration
+                    while (
+                        context_manager.has_current_flow() and context_manager.get_current_flow() != saved_context_flow
+                    ):
+                        context_manager.pop_flow()
+
+                deserialize_request = DeserializeFlowFromCommandsRequest(
+                    serialized_flow_commands=package_result.serialized_flow_commands
+                )
+                deserialize_result = GriptapeNodes.handle_request(deserialize_request)
+                if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
+                    msg = f"Failed to deserialize flow for iteration {iteration_index}. Error: {deserialize_result.result_details}"
+                    raise TypeError(msg)
+
+                deserialized_flows.append(
+                    (iteration_index, deserialize_result.flow_name, deserialize_result.node_name_mappings)
+                )
+
+                # Pop the deserialized flow from the context stack to prevent it from staying there
+                # Deserialization pushes the flow onto the stack, but we don't want iteration flows
+                # to remain on the stack after deserialization
+                if (
+                    context_manager.has_current_flow()
+                    and context_manager.get_current_flow().name == deserialize_result.flow_name
+                ):
                     context_manager.pop_flow()
-
-            deserialize_request = DeserializeFlowFromCommandsRequest(
-                serialized_flow_commands=package_result.serialized_flow_commands
-            )
-            deserialize_result = GriptapeNodes.handle_request(deserialize_request)
-            if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
-                msg = f"Failed to deserialize flow for iteration {iteration_index}. Error: {deserialize_result.result_details}"
-                raise TypeError(msg)
-
-            deserialized_flows.append(
-                (iteration_index, deserialize_result.flow_name, deserialize_result.node_name_mappings)
-            )
-
-            # Pop the deserialized flow from the context stack to prevent it from staying there
-            # Deserialization pushes the flow onto the stack, but we don't want iteration flows
-            # to remain on the stack after deserialization
-            if (
-                context_manager.has_current_flow()
-                and context_manager.get_current_flow().name == deserialize_result.flow_name
-            ):
-                context_manager.pop_flow()
 
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
 
@@ -904,16 +911,18 @@ class NodeExecutor:
                 DeleteFlowResultSuccess,
             )
 
-            for iteration_index, flow_name, _ in deserialized_flows:
-                delete_request = DeleteFlowRequest(flow_name=flow_name)
-                delete_result = await GriptapeNodes.ahandle_request(delete_request)
-                if not isinstance(delete_result, DeleteFlowResultSuccess):
-                    logger.warning(
-                        "Failed to delete iteration flow '%s' (iteration %d): %s",
-                        flow_name,
-                        iteration_index,
-                        delete_result.result_details,
-                    )
+            # Suppress events during deletion to prevent sending them to websockets
+            with EventSuppressionContext(event_manager):
+                for iteration_index, flow_name, _ in deserialized_flows:
+                    delete_request = DeleteFlowRequest(flow_name=flow_name)
+                    delete_result = await GriptapeNodes.ahandle_request(delete_request)
+                    if not isinstance(delete_result, DeleteFlowResultSuccess):
+                        logger.warning(
+                            "Failed to delete iteration flow '%s' (iteration %d): %s",
+                            flow_name,
+                            iteration_index,
+                            delete_result.result_details,
+                        )
 
     def set_parameter_output_values_for_loops(
         self, subprocess_result: dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]
