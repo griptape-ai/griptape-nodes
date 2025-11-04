@@ -4,6 +4,7 @@ import asyncio
 import json as _json
 import logging
 import os
+import random
 import time
 from contextlib import suppress
 from copy import deepcopy
@@ -536,7 +537,7 @@ class FluxImageGeneration(SuccessFailureNode):
             self._log("Downloading image from URL")
             image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
-                filename = f"flux_image_{int(time.time())}.jpg"
+                filename = f"flux_image_{int(time.time())}_{random.randint(1000, 9999)}.jpg"
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()

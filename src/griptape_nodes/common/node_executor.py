@@ -370,7 +370,7 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def handle_loop_execution(self, node: BaseIterativeEndNode, execution_type: str) -> None:  # noqa: C901, PLR0915
+    async def handle_loop_execution(self, node: BaseIterativeEndNode, execution_type: str) -> None:  # noqa: C901, PLR0912, PLR0915
         """Handle execution of a loop by packaging nodes from start to end and running them.
 
         Args:
@@ -391,17 +391,25 @@ class NodeExecutor:
         # Step 1: Collect all nodes in the forward control path from start to end
         nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, node, connections)
 
-        # Step 2: Collect data dependencies for each node in the control flow
-        all_nodes: set[str] = set(nodes_in_control_flow)
+        # Step 2: Filter out nodes that have already been added to the current DAG
+        # and collect data dependencies for each remaining node
+        dag_builder = flow_manager.global_dag_builder
+        all_nodes: set[str] = set()
         visited_deps: set[str] = set()
 
         node_manager = GriptapeNodes.NodeManager()
         for node_name in nodes_in_control_flow:
-            node_obj = node_manager.get_node_by_name(node_name)
-            deps = DagBuilder.collect_data_dependencies_for_node(
-                node_obj, connections, nodes_in_control_flow, visited_deps
-            )
-            all_nodes.update(deps)
+            # Skip nodes that have already been added to the current DAG
+            # This prevents re-packaging nodes that have already been processed in this flow execution
+            if node_name not in dag_builder.node_to_reference:
+                all_nodes.add(node_name)
+                # Collect dependencies (DagBuilder.collect_data_dependencies_for_node already filters out
+                # resolved nodes, so we don't need to check that here)
+                node_obj = node_manager.get_node_by_name(node_name)
+                deps = DagBuilder.collect_data_dependencies_for_node(
+                    node_obj, connections, nodes_in_control_flow, visited_deps
+                )
+                all_nodes.update(deps)
 
         # Exclude the start and end loop nodes from packaging
         # They will be managed separately and their state will be updated based on results
@@ -911,7 +919,7 @@ class NodeExecutor:
                 DeleteFlowResultSuccess,
             )
 
-            # Suppress events during deletion to prevent sending them to websockets
+            #Suppress events during deletion to prevent sending them to websockets
             with EventSuppressionContext(event_manager):
                 for iteration_index, flow_name, _ in deserialized_flows:
                     delete_request = DeleteFlowRequest(flow_name=flow_name)
