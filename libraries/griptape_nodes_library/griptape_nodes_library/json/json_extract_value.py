@@ -53,30 +53,34 @@ class JsonExtractValue(DataNode):
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
 
-        # Parse JSON string if needed - failure cases first
-        if isinstance(json_data, str):
-            try:
-                json_data = json.loads(json_data)
-            except json.JSONDecodeError as e:
-                msg = f"{self.name}: Invalid JSON string provided. Failed to parse JSON: {e}. Input was: {json_data[:200]!r}"
-                raise ValueError(msg) from e
-            except TypeError as e:
-                msg = f"{self.name}: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
-                raise ValueError(msg) from e
-
-        # Extract value using JMESPath - failure cases first
-        if not path:
-            result = json_data
-        else:
-            try:
-                result = jmespath.search(path, json_data)
-            except (ValueError, TypeError) as e:
-                msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
-                raise ValueError(msg) from e
-
-        # Handle None result - return empty dict like other JSON nodes
-        if result is None:
+        # Handle None or empty values - return empty dict
+        if json_data is None or (isinstance(json_data, str) and not json_data.strip()):
             result = {}
+        else:
+            # Parse JSON string if needed - failure cases first
+            if isinstance(json_data, str):
+                try:
+                    json_data = json.loads(json_data)
+                except json.JSONDecodeError as e:
+                    msg = f"{self.name}: Invalid JSON string provided. Failed to parse JSON: {e}. Input was: {json_data[:200]!r}"
+                    raise ValueError(msg) from e
+                except TypeError as e:
+                    msg = f"{self.name}: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
+                    raise ValueError(msg) from e
+
+            # Extract value using JMESPath - failure cases first
+            if not path:
+                result = json_data
+            else:
+                try:
+                    result = jmespath.search(path, json_data)
+                except (ValueError, TypeError) as e:
+                    msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
+                    raise ValueError(msg) from e
+
+            # Handle None result - return empty dict like other JSON nodes
+            if result is None:
+                result = {}
 
         # Success path at the end - return raw Python value (no JSON serialization needed)
         # JMESPath already returns the correct Python types (str, dict, list, etc.)
