@@ -416,6 +416,69 @@ class NodeExecutor:
         all_nodes.discard(start_node.name)
         all_nodes.discard(node.name)
 
+        # Handle empty loop body (no nodes between start and end)
+        if not all_nodes:
+            logger.info(
+                "No nodes found between ForEach Start '%s' and End '%s'. Processing empty loop body.",
+                start_node.name,
+                node.name,
+            )
+
+            # Initialize iteration data to determine total iterations
+            if hasattr(start_node, "_initialize_iteration_data"):
+                start_node._initialize_iteration_data()  # pyright: ignore[reportAttributeAccessIssue]
+
+            total_iterations = start_node._get_total_iterations()
+
+            if total_iterations == 0:
+                logger.info("No iterations for empty loop from '%s' to '%s'", start_node.name, node.name)
+                return
+
+            # Check if there are direct data connections from start to end
+            # Could be: current_item (ForEach), index (ForLoop or ForEach), or other output parameters
+            list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
+            list_connections_result = GriptapeNodes.handle_request(list_connections_request)
+
+            connected_source_param = None
+            if isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+                for conn in list_connections_result.outgoing_connections:
+                    if conn.target_node_name == node.name and conn.target_parameter_name == "new_item_to_add":
+                        connected_source_param = conn.source_parameter_name
+                        break
+
+            logger.info(
+                "Processing %d iterations for empty loop from '%s' to '%s' (connected param: %s)",
+                total_iterations,
+                start_node.name,
+                node.name,
+                connected_source_param,
+            )
+
+            # Process iterations to collect results from direct connections
+            node._results_list = []
+            if connected_source_param:
+                for iteration_index in range(total_iterations):
+                    # Set the current iteration count
+                    start_node._current_iteration_count = iteration_index
+
+                    # Get the value based on which parameter is connected
+                    if connected_source_param == "current_item":
+                        # ForEach: get current item value
+                        value = start_node._get_current_item_value()
+                    elif connected_source_param == "index":
+                        # ForLoop or ForEach: get index value
+                        value = start_node.get_current_index()
+                    else:
+                        # Other parameters: get from parameter_output_values
+                        start_node._get_current_item_value()  # Ensure values are set
+                        value = start_node.parameter_output_values.get(connected_source_param)
+
+                    if value is not None:
+                        node._results_list.append(value)
+
+            node._output_results_list()
+            return
+
         # Find the first node in the loop body (where start_node.exec_out connects to)
         entry_control_node_name = None
         entry_control_parameter_name = None
@@ -919,7 +982,7 @@ class NodeExecutor:
                 DeleteFlowResultSuccess,
             )
 
-            #Suppress events during deletion to prevent sending them to websockets
+            # Suppress events during deletion to prevent sending them to websockets
             with EventSuppressionContext(event_manager):
                 for iteration_index, flow_name, _ in deserialized_flows:
                     delete_request = DeleteFlowRequest(flow_name=flow_name)
