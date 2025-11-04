@@ -343,3 +343,25 @@ class EventManager:
             async with asyncio.TaskGroup() as tg:
                 for listener_callback in listener_set:
                     tg.create_task(call_function(listener_callback, app_event))
+
+
+class EventSuppressionContext:
+    """Context manager to suppress events from being sent to websockets.
+
+    Use this to prevent internal operations (like deserialization/deletion of iteration flows)
+    from sending events to the GUI while still allowing the operations to complete normally.
+    """
+
+    def __init__(self, manager: EventManager):
+        self.manager = manager
+
+    def __enter__(self) -> None:
+        self.manager._suppress_events_count += 1
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
+        self.manager._suppress_events_count -= 1
