@@ -64,7 +64,7 @@ class DagBuilder:
             self.graphs[graph_name] = graph
             self.graph_to_nodes[graph_name] = set()
 
-        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:  # noqa: C901, PLR0912
+        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:  # noqa: C901, PLR0912, PLR0915
             if current_node.name in visited:
                 return
             visited.add(current_node.name)
@@ -75,6 +75,26 @@ class DagBuilder:
             # Special handling for BaseIterativeStartNode: jump directly to EndLoopNode
             # if False:
             if isinstance(current_node, BaseIterativeStartNode):
+                # Process start node's data dependencies first (e.g., items list for ForEach)
+                ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
+                if not ignore_data_dependencies:
+                    for param in current_node.parameters:
+                        if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                            continue
+                        upstream_connection = connections.get_connected_node(current_node, param)
+                        if upstream_connection:
+                            upstream_node, _ = upstream_connection
+                            # Don't add nodes that have already been resolved
+                            if upstream_node.state == NodeResolutionState.RESOLVED:
+                                continue
+                            # If upstream is already in DAG, skip creating edge (it's in another graph)
+                            if upstream_node.name in self.node_to_reference:
+                                graph.add_edge(upstream_node.name, current_node.name)
+                            # Otherwise, add it to DAG first then create edge
+                            else:
+                                _add_node_recursive(upstream_node, visited, graph)
+                                graph.add_edge(upstream_node.name, current_node.name)
+
                 # Add BaseIterativeStartNode to DAG
                 if current_node.name not in self.node_to_reference:
                     dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
