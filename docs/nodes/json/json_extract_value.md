@@ -27,9 +27,9 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 - **Dot Notation Paths**: Use simple dot notation to navigate JSON structure
 - **Array Indexing**: Access array elements using `[index]` syntax
 - **Wildcard Operations**: Extract all values from arrays using `[*]` syntax
+- **Native Python Types**: Returns raw Python values (strings, dicts, lists, etc.) - no JSON serialization needed
 - **Real-time Updates**: Automatically updates when input changes
-- **Safe Extraction**: Returns empty object `{}` if path doesn't exist
-- **JSON Output**: Returns properly formatted JSON strings
+- **Safe Extraction**: Returns empty dict `{}` if path doesn't exist
 
 ## JMESPath Syntax
 
@@ -76,7 +76,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"user": {"name": "John", "age": 30}}
 # Path: "user.name"
-# Output: "John"
+# Output: "John"  # Returns raw Python string value
 ```
 
 ### Array Element Extraction
@@ -84,7 +84,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"items": [{"title": "Book", "price": 25}, {"title": "Magazine", "price": 10}]}
 # Path: "items[0].title"
-# Output: "Book"
+# Output: "Book"  # Returns raw Python string value
 ```
 
 ### Nested Array Access
@@ -92,7 +92,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"orders": [{"items": [{"name": "Product A"}, {"name": "Product B"}]}]}
 # Path: "orders[0].items[1].name"
-# Output: "Product B"
+# Output: "Product B"  # Returns raw Python string value
 ```
 
 ### Non-existent Path
@@ -100,8 +100,36 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"user": {"name": "John"}}
 # Path: "user.email"
-# Output: "{}"  # Empty object for non-existent paths
+# Output: {}  # Empty dict (Python dict object) for non-existent paths
 ```
+
+### Different Return Types
+
+The node returns raw Python values directly from JMESPath, matching the extracted data type:
+
+```python
+# String extraction
+# Input JSON: {"product": {"name": "Widget", "category": "Electronics"}}
+# Path: "product.name"
+# Output: "Widget"  # Python string
+
+# Object extraction
+# Input JSON: {"user": {"name": "John", "age": 30}}
+# Path: "user"
+# Output: {"name": "John", "age": 30}  # Python dict
+
+# Array extraction
+# Input JSON: {"items": [{"title": "Book"}, {"title": "Magazine"}]}
+# Path: "items"
+# Output: [{"title": "Book"}, {"title": "Magazine"}]  # Python list
+```
+
+**Important Notes:**
+
+- The node returns native Python types (str, dict, list, int, bool, etc.) - no JSON serialization
+- This makes the output directly usable by other nodes without parsing
+- Consistent with other JSON nodes in the library (JsonInput, JsonReplace, etc.)
+- JMESPath handles all type conversions automatically
 
 ## Use Cases
 
