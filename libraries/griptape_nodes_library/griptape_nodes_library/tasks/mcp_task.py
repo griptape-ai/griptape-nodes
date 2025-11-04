@@ -11,6 +11,7 @@ from griptape.tools import MCPTool
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
@@ -35,10 +36,8 @@ class MCPTaskNode(SuccessFailureNode):
         mcp_servers = get_available_mcp_servers()
         default_mcp_server = mcp_servers[0] if mcp_servers else None
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="mcp_server_name",
-                input_types=["str"],
-                type="str",
                 default_value=default_mcp_server,
                 tooltip="Select an MCP server to use",
                 traits={
@@ -51,7 +50,7 @@ class MCPTaskNode(SuccessFailureNode):
                         on_click=self._reload_mcp_servers,
                     ),
                 },
-                ui_options={"placeholder_text": "Select MCP server..."},
+                placeholder_text="Select MCP server...",
             )
         )
         self.add_parameter(
@@ -74,13 +73,12 @@ class MCPTaskNode(SuccessFailureNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 default_value=None,
                 tooltip="The prompt to use",
-                ui_options={"multiline": True, "placeholder_text": "Input text to process"},
+                multiline=True,
+                placeholder_text="Input text to process",
             )
         )
         self.add_parameter(
@@ -91,18 +89,14 @@ class MCPTaskNode(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT},
             )
         )
-        self.output = Parameter(
+        self.output = ParameterString(
             name="output",
-            input_types=["str"],
-            type="str",
             default_value=None,
             tooltip="The output of the task",
             allowed_modes={ParameterMode.OUTPUT},
-            ui_options={
-                "multiline": True,
-                "markdown": True,
-                "placeholder_text": "Input text to process",
-            },  # TODO: (jason) Make this markdown output to handle images: https://github.com/griptape-ai/griptape-nodes/issues/2403
+            multiline=True,
+            markdown=True,
+            placeholder_text="The results of the MCP task will be displayed here.",
         )
         self.add_parameter(self.output)
 
