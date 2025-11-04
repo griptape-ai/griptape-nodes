@@ -13,8 +13,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 class JsonExtractValue(DataNode):
     """Extract values from JSON using JMESPath expressions."""
 
-    MIN_QUOTED_STRING_LENGTH = 2
-
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
@@ -76,41 +74,16 @@ class JsonExtractValue(DataNode):
                 msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
                 raise ValueError(msg) from e
 
-        # Handle None result
+        # Handle None result - return empty dict like other JSON nodes
         if result is None:
-            result = "{}"
-        else:
-            # Serialize to JSON - failure cases first
-            try:
-                result = json.dumps(result, ensure_ascii=False)
-            except (TypeError, ValueError):
-                result = "{}"
+            result = {}
 
-        # Strip quotes for simple string values (not objects/arrays)
-        result = self._strip_quotes_if_simple_value(result)
-
-        # Success path at the end
+        # Success path at the end - return raw Python value (no JSON serialization needed)
+        # JMESPath already returns the correct Python types (str, dict, list, etc.)
         GriptapeNodes.handle_request(
             SetParameterValueRequest(parameter_name="output", value=result, node_name=self.name)
         )
         self.publish_update_to_parameter("output", result)
-
-    def _strip_quotes_if_simple_value(self, result: str) -> str:
-        """Strip outer quotes from a simple string value if it's a quoted string."""
-        if not result or not isinstance(result, str):
-            return result
-
-        # Only strip quotes if it's a simple string value (starts and ends with quotes)
-        # and not a complex object/array (which would start with { or [)
-        if (
-            result.startswith('"')
-            and result.endswith('"')
-            and len(result) >= self.MIN_QUOTED_STRING_LENGTH
-            and not result.strip().startswith(("{", "["))
-        ):
-            return result[1:-1]
-
-        return result
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name in ["json", "path"]:
