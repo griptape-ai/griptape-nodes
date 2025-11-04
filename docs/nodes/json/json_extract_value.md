@@ -10,11 +10,11 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 
 ### Input Parameters
 
-| Parameter     | Type            | Description                                                                                | Default |
-| ------------ | --------------- | ------------------------------------------------------------------------------------------ | ------- |
-| `json`       | json, str, dict | The JSON data to extract from                                                              | `{}`    |
-| `path`       | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee') | `""`    |
-| `strip_quotes` | bool           | If enabled, removes outer quotes from simple string values (does not affect objects or arrays) | `false` |
+| Parameter      | Type            | Description                                                                                    | Default |
+| -------------- | --------------- | ---------------------------------------------------------------------------------------------- | ------- |
+| `json`         | json, str, dict | The JSON data to extract from                                                                  | `{}`    |
+| `path`         | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee')     | `""`    |
+| `strip_quotes` | bool            | If enabled, removes outer quotes from simple string values (does not affect objects or arrays) | `false` |
 
 ### Output Parameters
 
@@ -120,6 +120,7 @@ The `strip_quotes` parameter allows you to remove outer quotes from simple strin
 ```
 
 **Important Notes:**
+
 - Quote stripping only affects simple string values (values that start and end with quotes)
 - Complex objects and arrays are never affected, even when `strip_quotes=true`
 - This is useful when you need plain string values for text processing or concatenation
