@@ -3,11 +3,9 @@ from typing import Any
 
 import jmespath  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterMode,
-)
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -15,6 +13,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 class JsonExtractValue(DataNode):
     """Extract values from JSON using JMESPath expressions."""
+
+    MIN_QUOTED_STRING_LENGTH = 2
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -42,6 +42,15 @@ class JsonExtractValue(DataNode):
             )
         )
 
+        # Add parameter for stripping quotes from simple values
+        self.add_parameter(
+            ParameterBool(
+                name="strip_quotes",
+                default_value=False,
+                tooltip="If enabled, removes outer quotes from simple string values (does not affect objects or arrays)",
+            )
+        )
+
         self.add_parameter(
             Parameter(
                 name="output",
@@ -55,6 +64,7 @@ class JsonExtractValue(DataNode):
         """Perform the JSON extraction using JMESPath."""
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
+        strip_quotes = self.get_parameter_value("strip_quotes")
 
         # Parse JSON string if needed
         if isinstance(json_data, str):
@@ -74,7 +84,7 @@ class JsonExtractValue(DataNode):
             try:
                 # Use JMESPath to extract the value
                 result = jmespath.search(path, json_data)
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
                 raise ValueError(msg) from e
 
@@ -89,14 +99,35 @@ class JsonExtractValue(DataNode):
                 # If the value can't be serialized as JSON, return empty object
                 result = "{}"
 
+        # Strip quotes for simple string values if enabled
+        if strip_quotes:
+            result = self._strip_quotes_if_simple_value(result)
+
         # Set the output
         GriptapeNodes.handle_request(
             SetParameterValueRequest(parameter_name="output", value=result, node_name=self.name)
         )
         self.publish_update_to_parameter("output", result)
 
+    def _strip_quotes_if_simple_value(self, result: str) -> str:
+        """Strip outer quotes from a simple string value if it's a quoted string."""
+        if not result or not isinstance(result, str):
+            return result
+
+        # Only strip quotes if it's a simple string value (starts and ends with quotes)
+        # and not a complex object/array (which would start with { or [)
+        if (
+            result.startswith('"')
+            and result.endswith('"')
+            and len(result) >= self.MIN_QUOTED_STRING_LENGTH
+            and not result.strip().startswith(("{", "["))
+        ):
+            return result[1:-1]
+
+        return result
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in ["json", "path"]:
+        if parameter.name in ["json", "path", "strip_quotes"]:
             self._perform_extraction()
 
         return super().after_value_set(parameter, value)
