@@ -10,10 +10,11 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 
 ### Input Parameters
 
-| Parameter | Type            | Description                                                                                | Default |
-| --------- | --------------- | ------------------------------------------------------------------------------------------ | ------- |
-| `json`    | json, str, dict | The JSON data to extract from                                                              | `{}`    |
-| `path`    | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee') | `""`    |
+| Parameter     | Type            | Description                                                                                | Default |
+| ------------ | --------------- | ------------------------------------------------------------------------------------------ | ------- |
+| `json`       | json, str, dict | The JSON data to extract from                                                              | `{}`    |
+| `path`       | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee') | `""`    |
+| `strip_quotes` | bool           | If enabled, removes outer quotes from simple string values (does not affect objects or arrays) | `false` |
 
 ### Output Parameters
 
@@ -27,6 +28,7 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 - **Dot Notation Paths**: Use simple dot notation to navigate JSON structure
 - **Array Indexing**: Access array elements using `[index]` syntax
 - **Wildcard Operations**: Extract all values from arrays using `[*]` syntax
+- **Quote Stripping**: Optionally remove outer quotes from simple string values for cleaner output
 - **Real-time Updates**: Automatically updates when input changes
 - **Safe Extraction**: Returns empty object `{}` if path doesn't exist
 - **JSON Output**: Returns properly formatted JSON strings
@@ -76,7 +78,8 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"user": {"name": "John", "age": 30}}
 # Path: "user.name"
-# Output: "John"
+# Output (strip_quotes=false): "\"John\""  # With quotes
+# Output (strip_quotes=true): "John"        # Without quotes
 ```
 
 ### Array Element Extraction
@@ -84,7 +87,8 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"items": [{"title": "Book", "price": 25}, {"title": "Magazine", "price": 10}]}
 # Path: "items[0].title"
-# Output: "Book"
+# Output (strip_quotes=false): "\"Book\""  # With quotes
+# Output (strip_quotes=true): "Book"        # Without quotes
 ```
 
 ### Nested Array Access
@@ -92,7 +96,8 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"orders": [{"items": [{"name": "Product A"}, {"name": "Product B"}]}]}
 # Path: "orders[0].items[1].name"
-# Output: "Product B"
+# Output (strip_quotes=false): "\"Product B\""  # With quotes
+# Output (strip_quotes=true): "Product B"        # Without quotes
 ```
 
 ### Non-existent Path
@@ -102,6 +107,23 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 # Path: "user.email"
 # Output: "{}"  # Empty object for non-existent paths
 ```
+
+### Quote Stripping Feature
+
+The `strip_quotes` parameter allows you to remove outer quotes from simple string values, making the output cleaner for use in other nodes:
+
+```python
+# Input JSON: {"product": {"name": "Widget", "category": "Electronics"}}
+# Path: "product.name"
+# strip_quotes=false: Output is "\"Widget\""  # JSON string with quotes
+# strip_quotes=true: Output is "Widget"        # Plain string without quotes
+```
+
+**Important Notes:**
+- Quote stripping only affects simple string values (values that start and end with quotes)
+- Complex objects and arrays are never affected, even when `strip_quotes=true`
+- This is useful when you need plain string values for text processing or concatenation
+- When `strip_quotes=false`, the output is always valid JSON (objects/arrays are unchanged)
 
 ## Use Cases
 
