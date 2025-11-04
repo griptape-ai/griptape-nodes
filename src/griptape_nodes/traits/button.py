@@ -61,7 +61,8 @@ class ButtonDetailsMessagePayload(NodeMessagePayload):
 class ModalContentPayload(NodeMessagePayload):
     """Payload containing content to be displayed in a modal dialog."""
 
-    clipboard_copyable_content: str
+    clipboard_copyable_content: str | None = None
+    render_url: str | None = None
     title: str | None = None
 
 
