@@ -10,11 +10,10 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 
 ### Input Parameters
 
-| Parameter      | Type            | Description                                                                                    | Default |
-| -------------- | --------------- | ---------------------------------------------------------------------------------------------- | ------- |
-| `json`         | json, str, dict | The JSON data to extract from                                                                  | `{}`    |
-| `path`         | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee')     | `""`    |
-| `strip_quotes` | bool            | If enabled, removes outer quotes from simple string values (does not affect objects or arrays) | `false` |
+| Parameter | Type            | Description                                                                                | Default |
+| --------- | --------------- | ------------------------------------------------------------------------------------------ | ------- |
+| `json`    | json, str, dict | The JSON data to extract from                                                              | `{}`    |
+| `path`    | str             | JMESPath expression to extract data (e.g., 'user.name', 'items[0].title', '[\*].assignee') | `""`    |
 
 ### Output Parameters
 
@@ -28,7 +27,7 @@ The JSON Extract Value node allows you to extract specific values from JSON data
 - **Dot Notation Paths**: Use simple dot notation to navigate JSON structure
 - **Array Indexing**: Access array elements using `[index]` syntax
 - **Wildcard Operations**: Extract all values from arrays using `[*]` syntax
-- **Quote Stripping**: Optionally remove outer quotes from simple string values for cleaner output
+- **Automatic Quote Stripping**: Automatically removes outer quotes from simple string values for clean output (objects/arrays are unaffected)
 - **Real-time Updates**: Automatically updates when input changes
 - **Safe Extraction**: Returns empty object `{}` if path doesn't exist
 - **JSON Output**: Returns properly formatted JSON strings
@@ -78,8 +77,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"user": {"name": "John", "age": 30}}
 # Path: "user.name"
-# Output (strip_quotes=false): "\"John\""  # With quotes
-# Output (strip_quotes=true): "John"        # Without quotes
+# Output: "John"  # Quotes automatically stripped from simple string values
 ```
 
 ### Array Element Extraction
@@ -87,8 +85,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"items": [{"title": "Book", "price": 25}, {"title": "Magazine", "price": 10}]}
 # Path: "items[0].title"
-# Output (strip_quotes=false): "\"Book\""  # With quotes
-# Output (strip_quotes=true): "Book"        # Without quotes
+# Output: "Book"  # Quotes automatically stripped from simple string values
 ```
 
 ### Nested Array Access
@@ -96,8 +93,7 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 ```python
 # Input JSON: {"orders": [{"items": [{"name": "Product A"}, {"name": "Product B"}]}]}
 # Path: "orders[0].items[1].name"
-# Output (strip_quotes=false): "\"Product B\""  # With quotes
-# Output (strip_quotes=true): "Product B"        # Without quotes
+# Output: "Product B"  # Quotes automatically stripped from simple string values
 ```
 
 ### Non-existent Path
@@ -108,23 +104,26 @@ path = "projects[*].tasks[*].assignee"  # Gets all assignees from all project ta
 # Output: "{}"  # Empty object for non-existent paths
 ```
 
-### Quote Stripping Feature
+### Automatic Quote Stripping
 
-The `strip_quotes` parameter allows you to remove outer quotes from simple string values, making the output cleaner for use in other nodes:
+The node automatically removes outer quotes from simple string values, making the output cleaner for use in other nodes:
 
 ```python
 # Input JSON: {"product": {"name": "Widget", "category": "Electronics"}}
 # Path: "product.name"
-# strip_quotes=false: Output is "\"Widget\""  # JSON string with quotes
-# strip_quotes=true: Output is "Widget"        # Plain string without quotes
+# Output: "Widget"  # Quotes automatically stripped from simple string values
+
+# Input JSON: {"items": [{"title": "Book"}, {"title": "Magazine"}]}
+# Path: "items"
+# Output: "[{\"title\":\"Book\"},{\"title\":\"Magazine\"}]"  # Objects/arrays are unchanged
 ```
 
 **Important Notes:**
 
-- Quote stripping only affects simple string values (values that start and end with quotes)
-- Complex objects and arrays are never affected, even when `strip_quotes=true`
-- This is useful when you need plain string values for text processing or concatenation
-- When `strip_quotes=false`, the output is always valid JSON (objects/arrays are unchanged)
+- Quote stripping automatically applies to simple string values (values that start and end with quotes)
+- Complex objects and arrays are never affected - they remain as valid JSON
+- This makes the output cleaner for text processing or concatenation with other nodes
+- The output is always valid JSON, with quotes only stripped from simple string values
 
 ## Use Cases
 
