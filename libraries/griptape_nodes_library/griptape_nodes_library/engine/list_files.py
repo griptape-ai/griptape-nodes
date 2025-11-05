@@ -45,8 +45,28 @@ class ListFiles(SuccessFailureNode):
             tooltip="Whether to show hidden files/folders.",
         )
 
+        self.include_files = Parameter(
+            name="include_files",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            input_types=["bool"],
+            type="bool",
+            default_value=True,
+            tooltip="Whether to include files in the results.",
+        )
+
+        self.include_folders = Parameter(
+            name="include_folders",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            input_types=["bool"],
+            type="bool",
+            default_value=True,
+            tooltip="Whether to include folders/directories in the results.",
+        )
+
         self.add_parameter(self.directory_path)
         self.add_parameter(self.show_hidden)
+        self.add_parameter(self.include_files)
+        self.add_parameter(self.include_folders)
 
         # Add output parameters
         self.add_parameter(
@@ -87,6 +107,13 @@ class ListFiles(SuccessFailureNode):
         self._clear_execution_status()
         directory_path = self.get_parameter_value("directory_path")
         show_hidden = self.get_parameter_value("show_hidden")
+        include_files = self.get_parameter_value("include_files")
+        include_folders = self.get_parameter_value("include_folders")
+
+        if not include_files and not include_folders:
+            msg = "Both include_files and include_folders cannot be False"
+            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
+            return
 
         # Create the os_events request
         request = ListDirectoryRequest(
@@ -103,15 +130,28 @@ class ListFiles(SuccessFailureNode):
             error_msg = getattr(result, "error_message", "Unknown error occurred")
             msg = f"Failed to list directory: {error_msg}"
             self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
-        elif isinstance(result, ListDirectoryResultSuccess):
-            # Filter to only include files (not directories)
-            file_entries = list(result.entries)
+            return
 
-            file_paths = [entry.path for entry in file_entries]
-            file_names = [entry.name for entry in file_entries]
+        if not isinstance(result, ListDirectoryResultSuccess):
+            msg = "Unexpected result type from directory listing"
+            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
+            return
 
-            # Set output values
-            self.set_parameter_value("file_paths", file_paths)
-            self.set_parameter_value("file_names", file_names)
-            self.set_parameter_value("file_count", len(file_paths))
-            self._set_status_results(was_successful=True, result_details="Success")
+        # Filter entries based on include_files and include_folders
+        filtered_entries = []
+        for entry in result.entries:
+            if entry.is_dir:
+                if include_folders:
+                    filtered_entries.append(entry)
+            elif include_files:
+                filtered_entries.append(entry)
+
+        # Extract paths and names
+        file_paths = [entry.path for entry in filtered_entries]
+        file_names = [entry.name for entry in filtered_entries]
+
+        # Set output values
+        self.set_parameter_value("file_paths", file_paths)
+        self.set_parameter_value("file_names", file_names)
+        self.set_parameter_value("file_count", len(file_paths))
+        self._set_status_results(was_successful=True, result_details="Success")
