@@ -689,6 +689,28 @@
       }
     },
     {
+      "class_name": "WanTextToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_text_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from text using WAN models via Griptape model proxy",
+        "display_name": "WAN Text to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "WanImageToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_image_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from images using WAN models via Griptape model proxy",
+        "display_name": "WAN Image to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
