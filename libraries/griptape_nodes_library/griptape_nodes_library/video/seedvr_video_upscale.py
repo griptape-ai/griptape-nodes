@@ -211,12 +211,15 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-    def _log(self, message: str) -> None:
-        with suppress(Exception):
-            logger.info(message)
-
         # No separate status message panel; we'll stream updates to the 'status' output
         # Always polls with fixed interval/timeout
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions = super().validate_before_node_run() or []
+        video_url = self.get_parameter_value("video_url")
+        if not video_url:
+            exceptions.append(ValueError("Video URL must be provided"))
+        return exceptions if exceptions else None
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
@@ -305,15 +308,15 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         post_url = urljoin(self._proxy_base, f"models/{params['model_id']}")
         payload = params
 
-        self._log(f"Submitting request to proxy model={params['model_id']}")
+        msg = f"Submitting request to proxy model={params['model_id']}"
+        logger.info(msg)
         self._log_request(post_url, headers, payload)
 
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= 400:  # noqa: PLR2004
             self._set_safe_defaults()
-            self._log(
-                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
-            )
+            msg = f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+            logger.info(msg)
             # Try to parse error response body
             try:
                 error_json = post_resp.json()
@@ -331,16 +334,18 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = provider_response
 
         if generation_id:
-            self._log(f"Submitted. generation_id={generation_id}")
+            msg = f"Submitted. generation_id={generation_id}"
+            logger.info(msg)
         else:
-            self._log("No generation_id returned from POST response")
+            logger.info("No generation_id returned from POST response")
 
         return generation_id
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
         with suppress(Exception):
-            self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(payload, indent=2)}")
+            msg = f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(payload, indent=2)}"
+            logger.info(msg)
 
     def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
@@ -353,7 +358,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         while True:
             if monotonic() - start_time > timeout_s:
                 self.parameter_output_values["video_url"] = self._extract_video_url(last_json)
-                self._log("Polling timed out waiting for result")
+                logger.info("Polling timed out waiting for result")
                 self._set_status_results(
                     was_successful=False,
                     result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
@@ -367,7 +372,8 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 # Update provider_response with latest polling data
                 self.parameter_output_values["provider_response"] = last_json
             except Exception as exc:
-                self._log(f"GET generation failed: {exc}")
+                msg = f"GET generation failed: {exc}"
+                logger.info(msg)
                 error_msg = f"Failed to poll generation status: {exc}"
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(RuntimeError(error_msg))
@@ -375,16 +381,18 @@ class SeedVRVideoUpscale(SuccessFailureNode):
 
             with suppress(Exception):
                 msg = f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}"
-                self._log(msg)
+                logger.info(msg)
                 self.append_value_to_parameter("result_details", f"{msg}\n")
 
             attempt += 1
             status = self._extract_status(last_json) or "IN_PROGRESS"
-            self._log(f"Polling attempt #{attempt} status={status}")
+            msg = f"Polling attempt #{attempt} status={status}"
+            logger.info(msg)
 
             # Check for explicit failure statuses
             if status.lower() in {"failed", "error"}:
-                self._log(f"Generation failed with status: {status}")
+                msg = f"Generation failed with status: {status}"
+                logger.info(msg)
                 self.parameter_output_values["video_url"] = None
                 error_details = self._extract_error_details(last_json)
                 self._set_status_results(was_successful=False, result_details=error_details)
@@ -409,10 +417,11 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             return
 
         try:
-            self._log("Downloading video bytes from provider URL")
+            logger.info("Downloading video bytes from provider URL")
             video_bytes = self._download_bytes_from_url(extracted_url)
         except Exception as e:
-            self._log(f"Failed to download video: {e}")
+            msg = f"Failed to download video: {e}"
+            logger.info(msg)
             video_bytes = None
 
         if video_bytes:
@@ -425,12 +434,14 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
+                msg = f"Saved video to static storage as {filename}"
+                logger.info(msg)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
             except Exception as e:
-                self._log(f"Failed to save to static storage: {e}, using provider URL")
+                msg = f"Failed to save to static storage: {e}, using provider URL"
+                logger.info(msg)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
                     was_successful=True,
