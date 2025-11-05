@@ -1,9 +1,5 @@
 # MergeTexts
 
-!!! warning "Deprecation Notice"
-
-    This node will be deprecated in a future version. We recommend using the **[JoinText](join_text.md)** node instead, which provides more flexibility with dynamic input handling and a cleaner interface.
-
 ## What is it?
 
 The MergeTexts node is a utility node that combines multiple text strings into a single unified text output. It allows you to consolidate separate pieces of text with a configurable separator between them.
