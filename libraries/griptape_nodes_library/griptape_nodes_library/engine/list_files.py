@@ -53,7 +53,7 @@ class ListFiles(SuccessFailureNode):
             traits={Options(choices=LIST_OPTIONS)},
         )
 
-        self.show_hidden = ParameteBool(
+        self.show_hidden = ParameterBool(
             name="show_hidden",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=False,
