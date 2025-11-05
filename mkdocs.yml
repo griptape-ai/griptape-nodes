@@ -206,6 +206,7 @@ nav:
         - Date and Time: nodes/text/date_and_time.md
         - Display Text: nodes/text/display_text.md
         - Evaluate Text Result: nodes/text/evaluate_text_result.md
+        - Join Text: nodes/text/join_text.md
         - Load Text: nodes/text/load_text.md
         - Merge Texts: nodes/text/merge_texts.md
         - Random Text: nodes/text/random_text.md
