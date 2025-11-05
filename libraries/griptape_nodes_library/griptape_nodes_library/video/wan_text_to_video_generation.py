@@ -37,22 +37,22 @@ MODEL_OPTIONS = [
 # Model-specific configurations
 MODEL_CONFIGS = {
     "wan2.5-t2v-preview": {
-        "sizes": ["480p (848×480)", "720p (1280×720)", "1080p (1920×1080)"],
+        "sizes": ["480p (848x480)", "720p (1280x720)", "1080p (1920x1080)"],
         "durations": [5, 10],
         "supports_audio": True,
     },
     "wan2.2-t2v-plus": {
-        "sizes": ["480p (848×480)", "720p (1280×720)"],
+        "sizes": ["480p (848x480)", "720p (1280x720)"],
         "durations": [5],
         "supports_audio": False,
     },
     "wan2.1-t2v-turbo": {
-        "sizes": ["480p (848×480)", "720p (1280×720)"],
+        "sizes": ["480p (848x480)", "720p (1280x720)"],
         "durations": [5],
         "supports_audio": False,
     },
     "wan2.1-t2v-plus": {
-        "sizes": ["480p (848×480)", "720p (1280×720)"],
+        "sizes": ["480p (848x480)", "720p (1280x720)"],
         "durations": [5],
         "supports_audio": False,
     },
@@ -60,9 +60,9 @@ MODEL_CONFIGS = {
 
 # Size resolution mapping
 SIZE_RESOLUTIONS = {
-    "480p (848×480)": "848x480",
-    "720p (1280×720)": "1280x720",
-    "1080p (1920×1080)": "1920x1080",
+    "480p (848x480)": "848x480",
+    "720p (1280x720)": "1280x720",
+    "1080p (1920x1080)": "1920x1080",
 }
 
 # Response status constants
@@ -164,7 +164,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="480p (848×480)",
+                default_value="480p (848x480)",
                 tooltip="Output video resolution (available options depend on selected model)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_CONFIGS["wan2.5-t2v-preview"]["sizes"])},
@@ -501,7 +501,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = BlobArtifact(value=video_bytes, name=filename)
                 self._log(f"Saved video to static storage as {filename}")
                 self._set_status_results(

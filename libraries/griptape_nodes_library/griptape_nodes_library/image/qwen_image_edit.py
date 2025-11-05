@@ -39,6 +39,9 @@ STATUS_ERROR = "Error"
 STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
+# Maximum number of images for editing
+MAX_IMAGES = 6
+
 
 class QwenImageEdit(SuccessFailureNode):
     """Edit images using Qwen image editing models via Griptape model proxy.
@@ -266,8 +269,8 @@ class QwenImageEdit(SuccessFailureNode):
         if model == "qwen-image-edit" and len(images) != 1:
             msg = f"qwen-image-edit only supports 1 image for editing (got {len(images)} images)"
             raise ValueError(msg)
-        if len(images) > 6:
-            msg = f"Maximum 6 images allowed for editing (got {len(images)})"
+        if len(images) > MAX_IMAGES:
+            msg = f"Maximum {MAX_IMAGES} images allowed for editing (got {len(images)})"
             raise ValueError(msg)
 
         # Automatically set num_images to match the number of input images

@@ -27,7 +27,7 @@ __all__ = ["QwenImageGeneration"]
 PROMPT_TRUNCATE_LENGTH = 100
 
 # Size options (Qwen's available resolutions)
-SIZE_OPTIONS = ["1328×1328", "1664×928", "1472×1140", "1140×1472", "928×1664"]
+SIZE_OPTIONS = ["1328x1328", "1664x928", "1472x1140", "1140x1472", "928x1664"]
 
 # Model options
 MODEL_OPTIONS = ["qwen-image", "qwen-image-plus"]
@@ -46,8 +46,8 @@ class QwenImageGeneration(SuccessFailureNode):
         - model (str): Qwen model to use ("qwen-image" or "qwen-image-plus", default: "qwen-image")
         - prompt (str): Text description of the desired image (max 800 characters)
         - input_image (ImageArtifact): Optional input image for image-to-image generation
-        - size (str): Output image resolution (default: "1328×1328")
-            Available sizes: 1328×1328 (1:1), 1664×928 (16:9), 1472×1140 (4:3), 1140×1472 (3:4), 928×1664 (9:16)
+        - size (str): Output image resolution (default: "1328x1328")
+            Available sizes: 1328x1328 (1:1), 1664x928 (16:9), 1472x1140 (4:3), 1140x1472 (3:4), 928x1664 (9:16)
         - randomize_seed (bool): If true, randomize the seed on each run
         - seed (int): Random seed for reproducible results (default: 42)
         - prompt_extend (bool): Enable intelligent prompt rewriting to improve quality (adds 3-4s, default: False)
@@ -123,8 +123,8 @@ class QwenImageGeneration(SuccessFailureNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="1328×1328",
-                tooltip="Output image resolution (1328×1328=1:1, 1664×928=16:9, 1472×1140=4:3, 1140×1472=3:4, 928×1664=9:16)",
+                default_value="1328x1328",
+                tooltip="Output image resolution (1328x1328=1:1, 1664x928=16:9, 1472x1140=4:3, 1140x1472=3:4, 928x1664=9:16)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=SIZE_OPTIONS)},
             )
