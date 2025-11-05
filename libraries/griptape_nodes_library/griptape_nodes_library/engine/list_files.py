@@ -3,6 +3,8 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryRequest,
@@ -29,11 +31,9 @@ class ListFiles(SuccessFailureNode):
         super().__init__(name, metadata)
 
         # Add input parameters
-        self.directory_path = Parameter(
+        self.directory_path = ParameterString(
             name="directory_path",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            input_types=["str"],
-            type="str",
             default_value="",
             tooltip="The directory path to list files from.",
         )
@@ -53,20 +53,16 @@ class ListFiles(SuccessFailureNode):
             traits={Options(choices=LIST_OPTIONS)},
         )
 
-        self.show_hidden = Parameter(
+        self.show_hidden = ParameteBool(
             name="show_hidden",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            input_types=["bool"],
-            type="bool",
             default_value=False,
             tooltip="Whether to show hidden files/folders.",
         )
 
-        self.use_absolute_paths = Parameter(
+        self.use_absolute_paths = ParameterBool(
             name="use_absolute_paths",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            input_types=["bool"],
-            type="bool",
             default_value=False,
             tooltip="Whether to return absolute paths. If False, returns paths as provided by the system (may be relative or absolute).",
         )
@@ -98,10 +94,9 @@ class ListFiles(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="file_count",
                 allowed_modes={ParameterMode.OUTPUT},
-                output_type="int",
                 default_value=0,
                 tooltip="Total number of files found.",
             )
