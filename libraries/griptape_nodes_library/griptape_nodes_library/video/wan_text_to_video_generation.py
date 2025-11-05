@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import BlobArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -93,7 +93,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
-        - video (BlobArtifact): Generated video as blob artifact
+        - video (VideoUrlArtifact): Generated video as URL artifact
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -237,9 +237,9 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="video",
-                output_type="BlobArtifact",
-                type="BlobArtifact",
-                tooltip="Generated video as blob artifact",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                tooltip="Generated video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
                 ui_options={"is_full_width": True, "pulse_on_run": True},
@@ -501,8 +501,8 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = BlobArtifact(value=video_bytes, name=filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
                 self._log(f"Saved video to static storage as {filename}")
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
