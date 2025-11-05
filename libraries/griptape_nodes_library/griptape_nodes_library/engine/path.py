@@ -79,6 +79,17 @@ class FilePathComponents(DataNode):
 
         self.add_parameter(
             ParameterString(
+                name="parent_name",
+                allow_input=False,
+                allow_property=False,
+                default_value="",
+                tooltip="The name of the immediate parent directory (e.g., 'directory').",
+                placeholder_text="Example: directory",
+            )
+        )
+
+        self.add_parameter(
+            ParameterString(
                 name="query_params",
                 allow_input=False,
                 allow_property=False,
@@ -95,6 +106,7 @@ class FilePathComponents(DataNode):
         stem = ""
         extension = ""
         parent = ""
+        parent_name = ""
         query_params = ""
 
         # Extract components if path is provided
@@ -115,18 +127,21 @@ class FilePathComponents(DataNode):
             stem = path_obj.stem
             extension = path_obj.suffix
             parent = str(path_obj.parent) if path_obj.parent else ""
+            parent_name = path_obj.parent.name if path_obj.parent else ""
 
         # Set output values and publish updates
         self.parameter_output_values["filename"] = filename
         self.parameter_output_values["stem"] = stem
         self.parameter_output_values["extension"] = extension
         self.parameter_output_values["parent"] = parent
+        self.parameter_output_values["parent_name"] = parent_name
         self.parameter_output_values["query_params"] = query_params
 
         self.publish_update_to_parameter("filename", filename)
         self.publish_update_to_parameter("stem", stem)
         self.publish_update_to_parameter("extension", extension)
         self.publish_update_to_parameter("parent", parent)
+        self.publish_update_to_parameter("parent_name", parent_name)
         self.publish_update_to_parameter("query_params", query_params)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
