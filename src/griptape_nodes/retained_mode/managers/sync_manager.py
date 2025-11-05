@@ -76,10 +76,7 @@ class SyncManager:
             path: Path to the file that will be written
             content: The exact bytes that will be written to the file
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        os_manager = GriptapeNodes.OSManager()
-        path_str = str(os_manager.resolve_path_safely(Path(path)))
+        path_str = str(Path(path).resolve())
         file_hash = hashlib.sha256(content).hexdigest()
         with self._hash_lock:
             self._file_hashes[path_str] = file_hash

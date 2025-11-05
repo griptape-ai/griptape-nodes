@@ -155,49 +155,7 @@ class OSManager:
         """
         # Expand environment variables first, then tilde
         expanded_vars = os.path.expandvars(path_str)
-        return self.resolve_path_safely(Path(expanded_vars).expanduser())
-
-    def resolve_path_safely(self, path: Path) -> Path:
-        """Resolve a path consistently across platforms.
-
-        Unlike Path.resolve() which behaves differently on Windows vs Unix
-        for non-existent paths, this method provides consistent behavior:
-        - Converts relative paths to absolute (using CWD as base)
-        - Normalizes path separators and removes . and ..
-        - Does NOT resolve symlinks if path doesn't exist
-        - Does NOT change path based on CWD for absolute paths
-
-        Use this instead of .resolve() when:
-        - Path might not exist (file creation, validation, user input)
-        - You need consistent cross-platform comparison
-        - You're about to create the file/directory
-
-        Use .resolve() when:
-        - Path definitely exists and you need symlink resolution
-        - You're checking actual file locations
-
-        Args:
-            path: Path to resolve (relative or absolute, existing or not)
-
-        Returns:
-            Absolute, normalized Path object
-
-        Examples:
-            # Relative path
-            resolve_path_safely(Path("relative/file.txt"))
-            → Path("/current/dir/relative/file.txt")
-
-            # Absolute non-existent path (Windows safe)
-            resolve_path_safely(Path("/abs/nonexistent/path"))
-            → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
-        """
-        # Convert to absolute if relative
-        if not path.is_absolute():
-            path = Path.cwd() / path
-
-        # Normalize (remove . and .., collapse slashes) without resolving symlinks
-        # This works consistently even for non-existent paths on Windows
-        return Path(os.path.normpath(path))
+        return Path(expanded_vars).expanduser().resolve()
 
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
@@ -214,7 +172,7 @@ class OSManager:
                 # Expand tilde and environment variables for absolute paths or paths starting with ~
                 return self._expand_path(path_str)
             # Both workspace and system-wide modes resolve relative to current directory
-            return self.resolve_path_safely(self._get_workspace_path() / path_str)
+            return (self._get_workspace_path() / path_str).resolve()
         except (ValueError, RuntimeError):
             if workspace_only:
                 msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
@@ -235,11 +193,8 @@ class OSManager:
         workspace = GriptapeNodes.ConfigManager().workspace_path
 
         # Ensure both paths are resolved for comparison
-        # Both path and workspace should use .resolve() to follow symlinks consistently
-        # (e.g., /var -> /private/var on macOS). Even if path doesn't exist yet,
-        # .resolve() will resolve parent directories and symlinks in the path.
         path = path.resolve()
-        workspace = workspace.resolve()  # Workspace should always exist
+        workspace = workspace.resolve()
 
         msg = f"Validating path: {path} against workspace: {workspace}"
         logger.debug(msg)
@@ -261,9 +216,6 @@ class OSManager:
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
         need the \\?\ prefix to work correctly. This method transparently adds
         the prefix when needed on Windows.
-
-        Note: This method assumes the path exists or will exist. For non-existent
-        paths that need cross-platform normalization, use resolve_path_safely() first.
 
         Args:
             path: Path object to convert to string
@@ -491,7 +443,7 @@ class OSManager:
                 directory = self._expand_path(request.directory_path)
             else:
                 # Both workspace and system-wide modes resolve relative to current directory
-                directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
+                directory = (self._get_workspace_path() / request.directory_path).resolve()
 
             # Check if directory exists
             if not directory.exists():
@@ -1104,9 +1056,9 @@ class OSManager:
 
         # Resolve path - if absolute, use as-is; if relative, align to workspace
         if is_absolute:
-            file_path = self.resolve_path_safely(Path(full_path_str))
+            file_path = Path(full_path_str).resolve()
         else:
-            file_path = self.resolve_path_safely(self._get_workspace_path() / full_path_str)
+            file_path = (self._get_workspace_path() / full_path_str).resolve()
 
         # Check if it already exists - warn but treat as success
         if file_path.exists():
