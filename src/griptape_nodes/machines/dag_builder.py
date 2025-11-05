@@ -117,8 +117,10 @@ class DagBuilder:
                     self.graph_to_nodes[graph_name].add(end_loop_node.name)
                     added_nodes.append(end_loop_node)
 
-                # Create direct edge: BaseIterativeStartNode → EndLoopNode
-                graph.add_edge(current_node.name, end_loop_node.name)
+                # DO NOT create edge from start → end in the DAG
+                # The start and end nodes should be independent leaf nodes
+                # Control flow from start→end is handled by HandleDoneState in parallel_resolution.py
+                # dag_debug_logger.debug("Start and end nodes added as independent nodes (no edge between them)")
 
                 # Return early to skip loop body
                 return
@@ -234,7 +236,18 @@ class DagBuilder:
             # Find the parameter to check if it's a control type
             param = node.get_parameter_by_name(param_name)
             if param and ParameterTypeBuiltin.CONTROL_TYPE.value in param.input_types:
-                control_connection_count += len(connection_ids)
+                # Skip connections from end node or itself if this is a BaseIterativeStartNode
+                if isinstance(node, BaseIterativeStartNode):
+                    for connection_id in connection_ids:
+                        if connection_id in connections.connections:
+                            connection = connections.connections[connection_id]
+                            source_node = connection.source_node
+                            # Skip if connection is from end node or itself
+                            if source_node in (node.end_node, node):
+                                continue
+                            control_connection_count += 1
+                else:
+                    control_connection_count += len(connection_ids)
 
         return control_connection_count
 

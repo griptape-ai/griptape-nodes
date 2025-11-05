@@ -137,10 +137,17 @@ class ExecuteDagState(State):
             await ExecuteDagState._handle_group_proxy_completion(context, current_node, network_name)
             return
 
-        # Special handling for BaseIterativeStartNode - skip control flow processing
-        # The BaseIterativeEndNode has already been queued during execution
+        # Special handling for BaseIterativeStartNode
+        # Remove it from the network so the end node can process control flow
         if isinstance(current_node, BaseIterativeStartNode):
             current_node.state = NodeResolutionState.RESOLVED
+
+            # Remove start node from the network
+            network = context.networks.get(network_name)
+            if network and current_node.name in network.nodes():
+                network.remove_node(current_node.name)
+                logger.debug("Removed start node '%s' from network '%s'", current_node.name, network_name)
+
             return
 
         # Publish all parameter updates.
