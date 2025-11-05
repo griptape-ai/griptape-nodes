@@ -1684,17 +1684,6 @@
       }
     },
     {
-      "class_name": "JoinText",
-      "file_path": "griptape_nodes_library/text/join_text.py",
-      "metadata": {
-        "category": "text",
-        "description": "JoinText node",
-        "display_name": "Join Text",
-        "icon": "merge",
-        "group": "merge"
-      }
-    },
-    {
       "class_name": "RandomText",
       "file_path": "griptape_nodes_library/text/random_text.py",
       "metadata": {
