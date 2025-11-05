@@ -22,6 +22,7 @@ from griptape_nodes.exe_types.node_types import (
     EndNode,
     NodeGroup,
     NodeGroupProxyNode,
+    NodeResolutionState,
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
@@ -546,9 +547,26 @@ class NodeExecutor:
             return
         logger.info("Starting parallel execution of %d iterations for loop '%s'", total_iterations, start_node.name)
 
+        # Step 4a: Get parameter values from start node (vary per iteration)
         parameter_values_to_set_before_run = self.get_parameter_values_per_iteration(
             start_node, package_result.parameter_name_mappings
         )
+
+        # Step 4b: Get resolved upstream values (constant across all iterations)
+        resolved_upstream_values = self.get_resolved_upstream_values(
+            packaged_node_names=list(all_nodes), parameter_name_mappings=package_result.parameter_name_mappings
+        )
+
+        # Step 4c: Merge upstream values into each iteration
+        # Resolved upstream values are the same for all iterations
+        if resolved_upstream_values:
+            for iteration_index in parameter_values_to_set_before_run:
+                parameter_values_to_set_before_run[iteration_index].update(resolved_upstream_values)
+            logger.info(
+                "Added %d resolved upstream values to %d iterations",
+                len(resolved_upstream_values),
+                len(parameter_values_to_set_before_run),
+            )
 
         # Step 5: Execute all iterations (locally for now, extensible for other environments)
         # The helper method handles: deserialization, setting values, running iterations, extracting results, and cleanup
@@ -695,6 +713,91 @@ class NodeExecutor:
             parameter_val_mappings[iteration_index] = iteration_values
 
         return parameter_val_mappings
+
+    def get_resolved_upstream_values(
+        self,
+        packaged_node_names: list[str],
+        parameter_name_mappings: list,
+    ) -> dict[str, Any]:
+        """Collect parameter values from resolved upstream nodes outside the loop.
+
+        When nodes inside the loop have connections to nodes outside that have already
+        executed (RESOLVED state), we need to pass those values into the packaged flow
+        via the StartFlow node parameters.
+
+        Args:
+            packaged_node_names: List of node names being packaged in the loop
+            parameter_name_mappings: List of PackagedNodeParameterMapping from
+                                    PackageNodesAsSerializedFlowResultSuccess.parameter_name_mappings
+
+        Returns:
+            Dict mapping startflow_param_name -> value from resolved upstream node
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Get Start node's parameter mappings (index 0 in the list)
+        start_node_mapping = parameter_name_mappings[0]
+        start_node_param_mappings = start_node_mapping.parameter_mappings
+
+        resolved_upstream_values = {}
+
+        # For each packaged node, check its incoming data connections
+        for packaged_node_name in packaged_node_names:
+            try:
+                packaged_node = node_manager.get_node_by_name(packaged_node_name)
+            except Exception:
+                logger.warning("Could not find packaged node '%s' to check upstream connections", packaged_node_name)
+                continue
+
+            # Check each parameter for incoming connections
+            for param in packaged_node.parameters:
+                # Skip control parameters
+                if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                    continue
+
+                # Get upstream connection
+                upstream_connection = connections.get_connected_node(packaged_node, param)
+                if not upstream_connection:
+                    continue
+
+                upstream_node, upstream_param = upstream_connection
+
+                # Only process if upstream node is RESOLVED (already executed outside loop)
+                if upstream_node.state != NodeResolutionState.RESOLVED:
+                    continue
+
+                # Skip if upstream node is also in the packaged nodes (internal connection)
+                if upstream_node.name in packaged_node_names:
+                    continue
+
+                # Get the value from the resolved upstream node
+                if upstream_param.name in upstream_node.parameter_output_values:
+                    upstream_value = upstream_node.parameter_output_values[upstream_param.name]
+                else:
+                    upstream_value = upstream_node.get_parameter_value(upstream_param.name)
+
+                # Find the corresponding StartFlow parameter name
+                # start_node_param_mappings maps: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
+                for startflow_param_name, original_node_param in start_node_param_mappings.items():
+                    if (
+                        original_node_param.node_name == packaged_node_name
+                        and original_node_param.parameter_name == param.name
+                    ):
+                        # Found the StartFlow parameter that feeds this packaged node parameter
+                        resolved_upstream_values[startflow_param_name] = upstream_value
+                        logger.debug(
+                            "Collected resolved upstream value: %s.%s -> StartFlow.%s = %s",
+                            upstream_node.name,
+                            upstream_param.name,
+                            startflow_param_name,
+                            upstream_value,
+                        )
+                        break
+
+        logger.info("Collected %d resolved upstream values for loop execution", len(resolved_upstream_values))
+        return resolved_upstream_values
 
     def _find_endflow_param_for_end_loop_node(
         self,
