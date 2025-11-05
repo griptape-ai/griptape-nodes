@@ -1287,6 +1287,17 @@
       }
     },
     {
+      "class_name": "QwenImageGeneration",
+      "file_path": "griptape_nodes_library/image/qwen_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Qwen models via Griptape model proxy",
+        "display_name": "Qwen Image Generation",
+        "group": "create",
+        "icon": "Sparkles"
+      }
+    },
+    {
       "class_name": "AddTextToImage",
       "file_path": "griptape_nodes_library/image/add_text_to_image.py",
       "metadata": {
