@@ -95,9 +95,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         - negative_prompt (str): Description of content to avoid (max 500 characters)
         - resolution (str): Output video resolution (model-dependent)
         - duration (int): Video duration in seconds (model-dependent)
-        - audio_url (str): Optional URL to audio file (only for wan2.5-i2v-preview)
-        - audio (bool): Auto-generate audio (only for wan2.5-i2v-preview, default: True)
-        - prompt_extend (bool): Enable intelligent prompt rewriting (default: True)
+        - audio (bool): Auto-generate audio for video (only for wan2.5-i2v-preview, default: True)
+        - prompt_extend (bool): Enable intelligent prompt rewriting (default: False)
         - watermark (bool): Add "AI-generated" watermark (default: False)
         - randomize_seed (bool): If true, randomize the seed on each run
         - seed (int): Random seed for reproducible results (default: 42)
@@ -209,22 +208,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Audio URL parameter (only for wan2.5-i2v-preview)
-        self.add_parameter(
-            Parameter(
-                name="audio_url",
-                input_types=["str"],
-                type="str",
-                default_value="",
-                tooltip="Optional URL to audio file (only supported by wan2.5-i2v-preview; WAV/MP3, 3-30s, max 15MB)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "placeholder_text": "https://example.com/audio.mp3",
-                    "display_name": "Audio URL",
-                },
-            )
-        )
-
         # Audio auto-generation parameter (only for wan2.5-i2v-preview)
         self.add_parameter(
             Parameter(
@@ -232,8 +215,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 input_types=["bool"],
                 type="bool",
                 default_value=True,
-                tooltip="Auto-generate audio for video (only for wan2.5-i2v-preview; ignored if audio_url is provided)",
+                tooltip="Auto-generate audio for video (only for wan2.5-i2v-preview)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"hide_property": self._should_hide_audio()},
             )
         )
 
@@ -243,7 +227,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 name="prompt_extend",
                 input_types=["bool"],
                 type="bool",
-                default_value=True,
+                default_value=False,
                 tooltip="Enable intelligent prompt rewriting to improve generation quality",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
@@ -310,6 +294,24 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
+    def _should_hide_audio(self) -> bool:
+        """Determine if audio parameter should be hidden based on model selection."""
+        model = self.get_parameter_value("model")
+        if not model:
+            return False
+        return model != "wan2.5-i2v-preview"
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes."""
+        super().after_value_set(parameter, value)
+
+        # Update audio parameter visibility when model changes
+        if parameter.name == "model":
+            if self._should_hide_audio():
+                self.hide_parameter_by_name("audio")
+            else:
+                self.show_parameter_by_name("audio")
+
     async def aprocess(self) -> None:
         await self._process()
 
@@ -365,7 +367,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         input_image = self.get_parameter_value("input_image")
         resolution = self.get_parameter_value("resolution")
         duration = self.get_parameter_value("duration")
-        audio_url = self.get_parameter_value("audio_url") or ""
 
         # Validate input image is provided
         if not input_image:
@@ -385,9 +386,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             msg = f"{model} does not support duration {duration}s. Available durations: {', '.join(str(d) for d in model_config['durations'])}s"
             raise ValueError(msg)
 
-        # Validate audio parameters
-        if (audio_url or self.get_parameter_value("audio")) and not model_config["supports_audio"]:
-            msg = f"{model} does not support audio. Only wan2.5-i2v-preview supports audio parameters."
+        # Validate audio parameter
+        if self.get_parameter_value("audio") and not model_config["supports_audio"]:
+            msg = f"{model} does not support audio. Only wan2.5-i2v-preview supports audio parameter."
             raise ValueError(msg)
 
         return {
@@ -397,7 +398,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "negative_prompt": self.get_parameter_value("negative_prompt") or "",
             "resolution": resolution,
             "duration": duration,
-            "audio_url": audio_url,
             "audio": self.get_parameter_value("audio"),
             "seed": self._seed_parameter.get_seed(),
             "prompt_extend": self.get_parameter_value("prompt_extend"),
@@ -469,10 +469,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if params["negative_prompt"]:
             input_obj["negative_prompt"] = params["negative_prompt"]
 
-        # Add audio_url if provided
-        if params["audio_url"]:
-            input_obj["audio_url"] = params["audio_url"]
-
         payload = {
             "model": params["model"],
             "input": input_obj,
@@ -485,8 +481,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             }
         }
 
-        # Add audio parameter if no audio_url (only for wan2.5-i2v-preview)
-        if not params["audio_url"] and params["model"] == "wan2.5-i2v-preview":
+        # Add audio parameter (only for wan2.5-i2v-preview)
+        if params["model"] == "wan2.5-i2v-preview":
             payload["parameters"]["audio"] = params["audio"]
 
         return payload
