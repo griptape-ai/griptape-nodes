@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
@@ -20,7 +20,6 @@ class FilePathComponents(DataNode):
         # Add input parameter for the path
         self.path_input = ParameterString(
             name="path",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value="",
             tooltip="The file path to extract components from.",
         )
@@ -37,7 +36,6 @@ class FilePathComponents(DataNode):
         self.add_parameter(
             ParameterString(
                 name="filename",
-                allowed_modes={ParameterMode.OUTPUT},
                 allow_input=False,
                 allow_property=False,
                 default_value="",
@@ -49,7 +47,6 @@ class FilePathComponents(DataNode):
         self.add_parameter(
             ParameterString(
                 name="stem",
-                allowed_modes={ParameterMode.OUTPUT},
                 allow_input=False,
                 allow_property=False,
                 default_value="",
@@ -61,7 +58,6 @@ class FilePathComponents(DataNode):
         self.add_parameter(
             ParameterString(
                 name="extension",
-                allowed_modes={ParameterMode.OUTPUT},
                 allow_input=False,
                 allow_property=False,
                 default_value="",
@@ -73,7 +69,6 @@ class FilePathComponents(DataNode):
         self.add_parameter(
             ParameterString(
                 name="parent",
-                allowed_modes={ParameterMode.OUTPUT},
                 allow_input=False,
                 allow_property=False,
                 default_value="",
@@ -85,7 +80,6 @@ class FilePathComponents(DataNode):
         self.add_parameter(
             ParameterString(
                 name="query_params",
-                allowed_modes={ParameterMode.OUTPUT},
                 allow_input=False,
                 allow_property=False,
                 default_value="",

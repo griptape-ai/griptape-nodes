@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -33,7 +33,7 @@ class ListFiles(SuccessFailureNode):
         # Add input parameters
         self.directory_path = ParameterString(
             name="directory_path",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            allow_output=False,
             default_value="",
             tooltip="The directory path to list files from.",
         )
@@ -47,7 +47,7 @@ class ListFiles(SuccessFailureNode):
 
         self.list_options = ParameterString(
             name="list_options",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            allow_output=False,
             default_value=LIST_OPTIONS[0],
             tooltip="The options for the list files and folders.",
             traits={Options(choices=LIST_OPTIONS)},
@@ -55,14 +55,14 @@ class ListFiles(SuccessFailureNode):
 
         self.show_hidden = ParameterBool(
             name="show_hidden",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            allow_output=False,
             default_value=False,
             tooltip="Whether to show hidden files/folders.",
         )
 
         self.use_absolute_paths = ParameterBool(
             name="use_absolute_paths",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            allow_output=False,
             default_value=False,
             tooltip="Whether to return absolute paths. If False, returns paths as provided by the system (may be relative or absolute).",
         )
@@ -76,7 +76,8 @@ class ListFiles(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="file_paths",
-                allowed_modes={ParameterMode.OUTPUT},
+                allow_input=False,
+                allow_property=False,
                 output_type="list",
                 default_value=[],
                 tooltip="List of full file paths found in the directory.",
@@ -86,7 +87,8 @@ class ListFiles(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="file_names",
-                allowed_modes={ParameterMode.OUTPUT},
+                allow_input=False,
+                allow_property=False,
                 output_type="list",
                 default_value=[],
                 tooltip="List of file names (without path) found in the directory.",
@@ -96,7 +98,8 @@ class ListFiles(SuccessFailureNode):
         self.add_parameter(
             ParameterInt(
                 name="file_count",
-                allowed_modes={ParameterMode.OUTPUT},
+                allow_input=False,
+                allow_property=False,
                 default_value=0,
                 tooltip="Total number of files found.",
             )
