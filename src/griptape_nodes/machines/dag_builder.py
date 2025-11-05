@@ -260,40 +260,6 @@ class DagBuilder:
 
         return proxy_nodes
 
-    def _identify_node_groups(self, connections: Connections) -> dict[str, NodeGroup]:
-        """Identify and build NodeGroup instances from nodes in the DAG.
-
-        Args:
-            connections: Connections object for analyzing connection topology
-
-        Returns:
-            Dictionary mapping group IDs to NodeGroup instances
-        """
-        from griptape_nodes.exe_types.node_types import NodeGroup
-
-        groups: dict[str, NodeGroup] = {}
-
-        # Scan all nodes in DAG for group membership
-        for dag_node in self.node_to_reference.values():
-            node = dag_node.node_reference
-            group_id = node.get_parameter_value("job_group")
-
-            # Skip nodes without group assignment or empty group ID
-            if not group_id or group_id == "":
-                continue
-
-            # Create group if it doesn't exist
-            if group_id not in groups:
-                groups[group_id] = NodeGroup(group_id=group_id)
-
-            # Add node to group
-            groups[group_id].add_node(node)
-
-        # Analyze connections for each group
-        for group in groups.values():
-            self._analyze_group_connections(group, connections)
-
-        return groups
 
     def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
         """Analyze and categorize connections for a node group.
@@ -323,48 +289,6 @@ class DagBuilder:
             elif not source_in_group and target_in_group:
                 # From outside to group - external incoming
                 group.external_incoming_connections.append(conn)
-
-    def _create_and_install_proxy_node(self, group_id: str, group: NodeGroup, connections: Connections) -> BaseNode:
-        """Create a proxy node for a group and install it in the DAG.
-
-        Creates a NodeGroupProxyNode, adds it to the DAG, remaps all external
-        connections to point to the proxy, and removes the original grouped
-        nodes from the DAG.
-
-        Args:
-            group_id: Unique identifier for the group
-            group: NodeGroup instance to replace
-            connections: Connections object for remapping connections
-
-        Returns:
-            The created NodeGroupProxyNode
-        """
-        from griptape_nodes.exe_types.node_types import NodeGroupProxyNode
-
-        # Create proxy node with unique name
-        proxy_name = f"__group_proxy_{group_id}"
-        proxy_node = NodeGroupProxyNode(name=proxy_name, node_group=group)
-
-        # Determine which graph to add proxy to (use first grouped node's graph)
-        target_graph_name = None
-        for graph_name, node_set in self.graph_to_nodes.items():
-            if any(node_name in node_set for node_name in group.nodes):
-                target_graph_name = graph_name
-                break
-
-        if target_graph_name is None:
-            target_graph_name = "default"
-
-        # Add proxy node to DAG
-        self.add_node(proxy_node, target_graph_name)
-
-        # Remap external connections to proxy
-        self._remap_connections_to_proxy(group, proxy_node, connections)
-
-        # Remove grouped nodes from DAG
-        self._remove_grouped_nodes_from_dag(group)
-
-        return proxy_node
 
     def _remap_connections_to_proxy(self, group: NodeGroup, proxy_node: BaseNode, connections: Connections) -> None:
         """Remap external connections from group nodes to the proxy node.
