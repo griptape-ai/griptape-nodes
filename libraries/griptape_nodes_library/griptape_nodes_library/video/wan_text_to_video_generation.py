@@ -387,25 +387,14 @@ class WanTextToVideoGeneration(SuccessFailureNode):
 
         payload = {
             "model": params["model"],
-            "input": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": params["prompt"]
-                            }
-                        ]
-                    }
-                ]
-            },
+            "input": {"messages": [{"role": "user", "content": [{"text": params["prompt"]}]}]},
             "parameters": {
                 "size": size_resolution,
                 "duration": params["duration"],
                 "prompt_extend": params["prompt_extend"],
                 "watermark": params["watermark"],
                 "seed": params["seed"],
-            }
+            },
         }
 
         # Add negative prompt if provided

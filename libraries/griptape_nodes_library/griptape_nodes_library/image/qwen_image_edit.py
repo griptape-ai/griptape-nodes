@@ -349,19 +349,12 @@ class QwenImageEdit(SuccessFailureNode):
 
         payload = {
             "model": params["model"],
-            "input": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": content
-                    }
-                ]
-            },
+            "input": {"messages": [{"role": "user", "content": content}]},
             "parameters": {
                 "n": params["num_images"],
                 "watermark": params["watermark"],
                 "seed": params["seed"],
-            }
+            },
         }
 
         # Add negative prompt if provided

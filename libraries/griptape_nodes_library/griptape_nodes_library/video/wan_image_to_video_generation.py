@@ -457,9 +457,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Build input object
-        input_obj: dict[str, Any] = {
-            "img_url": img_url
-        }
+        input_obj: dict[str, Any] = {"img_url": img_url}
 
         # Add prompt if provided
         if params["prompt"]:
@@ -478,7 +476,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 "prompt_extend": params["prompt_extend"],
                 "watermark": params["watermark"],
                 "seed": params["seed"],
-            }
+            },
         }
 
         # Add audio parameter (only for wan2.5-i2v-preview)

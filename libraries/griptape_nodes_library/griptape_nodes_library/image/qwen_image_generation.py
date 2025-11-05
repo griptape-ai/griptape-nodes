@@ -312,34 +312,21 @@ class QwenImageGeneration(SuccessFailureNode):
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "model": params["model"],
-            "input": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": params["prompt"]
-                            }
-                        ]
-                    }
-                ]
-            },
+            "input": {"messages": [{"role": "user", "content": [{"text": params["prompt"]}]}]},
             "parameters": {
                 "size": params["size"],
                 "prompt_extend": params["prompt_upsampling"],
                 "watermark": params["watermark"],
                 "seed": params["seed"],
                 "n": 1,
-            }
+            },
         }
 
         # Add input image if provided
         input_image_data = await self._process_input_image(params["input_image"])
         if input_image_data:
             # Add image to content array
-            payload["input"]["messages"][0]["content"].append({
-                "image": input_image_data
-            })
+            payload["input"]["messages"][0]["content"].append({"image": input_image_data})
 
         return payload
 
