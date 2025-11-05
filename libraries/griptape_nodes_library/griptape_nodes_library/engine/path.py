@@ -96,47 +96,39 @@ class FilePathComponents(DataNode):
 
     def _extract_path_components(self, path_str: str) -> None:
         """Extract path components and update output parameters."""
-        if not path_str:
-            # Empty path - set all outputs to empty strings
-            self.parameter_output_values["filename"] = ""
-            self.parameter_output_values["stem"] = ""
-            self.parameter_output_values["extension"] = ""
-            self.parameter_output_values["parent"] = ""
-            self.parameter_output_values["query_params"] = ""
+        # Initialize all outputs to empty strings
+        filename = ""
+        stem = ""
+        extension = ""
+        parent = ""
+        query_params = ""
 
-            # Publish updates to all output parameters
-            self.publish_update_to_parameter("filename", "")
-            self.publish_update_to_parameter("stem", "")
-            self.publish_update_to_parameter("extension", "")
-            self.publish_update_to_parameter("parent", "")
-            self.publish_update_to_parameter("query_params", "")
-            return
+        # Extract components if path is provided
+        if path_str:
+            # Split path and query parameters
+            if "?" in path_str:
+                path_part, query_part = path_str.split("?", 1)
+                query_params = query_part
+            else:
+                path_part = path_str
+                query_params = ""
 
-        # Split path and query parameters
-        if "?" in path_str:
-            path_part, query_part = path_str.split("?", 1)
-            query_params = query_part
-        else:
-            path_part = path_str
-            query_params = ""
+            # Convert to Path object (without query params)
+            path_obj = Path(path_part)
 
-        # Convert to Path object (without query params)
-        path_obj = Path(path_part)
+            # Extract components (without query params)
+            filename = path_obj.name
+            stem = path_obj.stem
+            extension = path_obj.suffix
+            parent = str(path_obj.parent) if path_obj.parent else ""
 
-        # Extract components (without query params)
-        filename = path_obj.name
-        stem = path_obj.stem
-        extension = path_obj.suffix
-        parent = str(path_obj.parent) if path_obj.parent else ""
-
-        # Set output values
+        # Set output values and publish updates
         self.parameter_output_values["filename"] = filename
         self.parameter_output_values["stem"] = stem
         self.parameter_output_values["extension"] = extension
         self.parameter_output_values["parent"] = parent
         self.parameter_output_values["query_params"] = query_params
 
-        # Publish updates to all output parameters
         self.publish_update_to_parameter("filename", filename)
         self.publish_update_to_parameter("stem", stem)
         self.publish_update_to_parameter("extension", extension)
