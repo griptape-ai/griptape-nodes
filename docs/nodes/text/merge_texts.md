@@ -1,6 +1,7 @@
 # MergeTexts
 
 !!! warning "Deprecation Notice"
+
     This node will be deprecated in a future version. We recommend using the **[JoinText](join_text.md)** node instead, which provides more flexibility with dynamic input handling and a cleaner interface.
 
 ## What is it?
