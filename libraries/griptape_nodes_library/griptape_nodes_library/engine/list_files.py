@@ -106,6 +106,33 @@ class ListFiles(SuccessFailureNode):
             result_details_placeholder="Details on the list file attempt will be presented here.",
         )
 
+    def _filter_entries(self, entries: list, *, include_files: bool, include_folders: bool) -> list:
+        """Filter entries based on include_files and include_folders."""
+        filtered_entries = []
+        for entry in entries:
+            if entry.is_dir:
+                if include_folders:
+                    filtered_entries.append(entry)
+            elif include_files:
+                filtered_entries.append(entry)
+        return filtered_entries
+
+    def _convert_paths(self, entries: list, *, use_absolute_paths: bool) -> list[str]:
+        """Extract paths from entries, optionally converting to absolute paths."""
+        file_paths = []
+        for entry in entries:
+            if use_absolute_paths:
+                entry_path = Path(entry.path)
+                if not entry_path.is_absolute():
+                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                    absolute_path = (workspace_path / entry_path).resolve()
+                    file_paths.append(str(absolute_path))
+                else:
+                    file_paths.append(entry.path)
+            else:
+                file_paths.append(entry.path)
+        return file_paths
+
     def process(self) -> None:
         self._clear_execution_status()
         directory_path = self.get_parameter_value("directory_path")
@@ -139,43 +166,20 @@ class ListFiles(SuccessFailureNode):
         result = GriptapeNodes.handle_request(request)
 
         if isinstance(result, ListDirectoryResultFailure):
-            # Handle failure case
             error_msg = getattr(result, "error_message", "Unknown error occurred")
-            msg = f"Failed to list directory: {error_msg}"
+            msg = f"{self.name} failed to list directory: {error_msg}"
             self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
             return
 
         if not isinstance(result, ListDirectoryResultSuccess):
-            msg = "Unexpected result type from directory listing"
+            msg = f"{self.name} received unexpected result type from directory listing"
             self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
             return
 
-        # Filter entries based on include_files and include_folders
-        filtered_entries = []
-        for entry in result.entries:
-            if entry.is_dir:
-                if include_folders:
-                    filtered_entries.append(entry)
-            elif include_files:
-                filtered_entries.append(entry)
-
-        # Extract paths and names, optionally converting to absolute paths
-        file_paths = []
-        for entry in filtered_entries:
-            if use_absolute_paths:
-                entry_path = Path(entry.path)
-                # Convert relative paths to absolute paths
-                if not entry_path.is_absolute():
-                    # Resolve relative to workspace or current directory
-                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
-                    absolute_path = (workspace_path / entry_path).resolve()
-                    file_paths.append(str(absolute_path))
-                else:
-                    file_paths.append(entry.path)
-            else:
-                # Use paths as provided by the system (may be relative or absolute)
-                file_paths.append(entry.path)
-
+        filtered_entries = self._filter_entries(
+            result.entries, include_files=include_files, include_folders=include_folders
+        )
+        file_paths = self._convert_paths(filtered_entries, use_absolute_paths=use_absolute_paths)
         file_names = [entry.name for entry in filtered_entries]
 
         # Set output values
