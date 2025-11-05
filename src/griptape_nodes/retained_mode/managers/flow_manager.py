@@ -2067,11 +2067,14 @@ class FlowManager:
             output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
 
         # Create parameter command for end node
-        # Use flexible input types to accept any value, while preserving output type
+        # Use flexible input types for data parameters to prevent type mismatch errors
+        # Control parameters must keep their exact types (cannot use "any")
+        is_control_param = parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value
+
         add_param_request = AddParameterToNodeRequest(
             node_name=end_node_name,
             parameter_name=sanitized_param_name,
-            input_types=["any"],  # Accept any input type
+            input_types=parameter.input_types if is_control_param else ["any"],  # Control: exact types; Data: any
             output_type=parameter.output_type,  # Preserve original output type
             default_value=None,
             tooltip=tooltip,
