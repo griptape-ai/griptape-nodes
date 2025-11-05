@@ -849,8 +849,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
             # Mock OSManager - use real resolve_path_safely implementation
             from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
             mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(os.path.normpath(p if p.is_absolute() else Path.cwd() / p))
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
             mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside outputs directory
@@ -909,8 +912,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
             # Mock OSManager - use real resolve_path_safely implementation
             from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
             mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(os.path.normpath(p if p.is_absolute() else Path.cwd() / p))
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
             mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path outside project
@@ -984,8 +990,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
             # Mock OSManager - use real resolve_path_safely implementation
             from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
             mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(os.path.normpath(p if p.is_absolute() else Path.cwd() / p))
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
             mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside outputs/inputs subdirectory (should match outputs, not inputs)
@@ -1044,8 +1053,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
             # Mock OSManager - use real resolve_path_safely implementation
             from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
             mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(os.path.normpath(p if p.is_absolute() else Path.cwd() / p))
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
             mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path exactly at outputs directory
@@ -1102,8 +1114,11 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
             # Mock OSManager - use real resolve_path_safely implementation
             from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
             mock_os_manager = Mock(spec=OSManager)
-            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(os.path.normpath(p if p.is_absolute() else Path.cwd() / p))
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
             mock_gn.OSManager.return_value = mock_os_manager
 
             # Test path inside project_base_dir but not in any defined directory
