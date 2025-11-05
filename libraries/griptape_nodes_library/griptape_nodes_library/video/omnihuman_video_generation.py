@@ -1,0 +1,495 @@
+from __future__ import annotations
+
+import contextlib
+import json as _json
+import logging
+import os
+import time
+from time import monotonic, sleep
+from typing import Any, ClassVar
+from urllib.parse import urljoin
+
+import requests
+from griptape.artifacts import VideoUrlArtifact
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.options import Options
+
+logger = logging.getLogger("griptape_nodes")
+
+__all__ = ["OmnihumanVideoGeneration"]
+
+
+class OmnihumanVideoGeneration(SuccessFailureNode):
+    """Generate video effects from a single image, text prompt, and audio file using OmniHuman 1.5.
+
+    This is Step 3 of the OmniHuman workflow. It generates video matching the input image based
+    on the provided audio and optional mask. The generation process is asynchronous and will
+    poll for completion.
+
+    Inputs:
+        - image_url (str): Source image URL
+        - audio_url (str): Audio file URL
+        - mask_url (str, optional): Optional mask image URL from subject detection
+
+    Outputs:
+        - generation_id (str): Griptape Cloud generation identifier
+        - video_url (VideoUrlArtifact): Generated video URL
+        - generation_result (dict): Full API response
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
+    """
+
+    SERVICE_NAME = "Griptape"
+    API_KEY_NAME = "GT_CLOUD_API_KEY"
+    MODEL_IDS: ClassVar[list[str]] = [
+        "omnihuman-1-0",
+        "omnihuman-1-5",
+    ]
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.category = "API Nodes"
+        self.description = "Generate talking head videos using OmniHuman 1.5 via Griptape Cloud"
+
+        # Compute API base once
+        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
+        api_base = urljoin(base_slash, "api/")
+        self._proxy_base = urljoin(api_base, "proxy/")
+
+        # INPUTS
+        # add model_id parameter with fixed value
+        self.add_parameter(
+            Parameter(
+                name="model_id",
+                input_types=["str"],
+                type="str",
+                default_value="omnihuman-1-5",
+                tooltip="Model identifier to use for generation",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=self.MODEL_IDS)},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="image_url",
+                input_types=["str", "ImageUrlArtifact"],
+                type="str",
+                output_type="str",
+                default_value="",
+                tooltip="Source image URL",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "https://example.com/image.jpg"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="audio_url",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="",
+                tooltip="Audio file URL",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "https://example.com/audio.mp3"},
+            )
+        )
+        # mask_urls parameterlist
+        self.add_parameter(
+            ParameterList(
+                name="mask_urls",
+                input_types=["str", "ImageUrlArtifact"],
+                type="str",
+                output_type="str",
+                default_value=[],
+                tooltip="Optional mask image URLs from subject detection",
+                ui_options={"placeholder_text": "https://example.com/mask1.png"},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # OUTPUTS
+        self.add_parameter(
+            Parameter(
+                name="generation_id",
+                output_type="str",
+                tooltip="Griptape Cloud generation identifier",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="video_url",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                tooltip="Generated video URL artifact",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"is_full_width": True, "pulse_on_run": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="seed",
+                input_types=["int"],
+                type="int",
+                output_type="int",
+                default_value=-1,
+                tooltip="Random seed for generation (-1 for random)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "-1 for random"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="prompt",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="",
+                tooltip="Text prompt to guide generation",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"multiline": True, "placeholder_text": "Text prompt to guide generation"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="fast_mode",
+                input_types=["bool"],
+                type="bool",
+                output_type="bool",
+                default_value=False,
+                tooltip="Enable fast mode (sacrifices some effects for speed)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="generation_result",
+                output_type="dict",
+                type="dict",
+                tooltip="Full API response with generation details",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        # Create status parameters for success/failure tracking
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
+    def _log(self, message: str) -> None:
+        """Log a message."""
+        with contextlib.suppress(Exception):
+            logger.info("%s: %s", self.name, message)
+
+    def process(self) -> AsyncResult[None]:
+        """Process video generation asynchronously."""
+        yield lambda: self._process()
+
+    def _process(self) -> None:
+        """Internal processing method."""
+        # Clear execution status at the start
+        self._clear_execution_status()
+
+        # Get and validate parameters
+        params = self._get_parameters()
+
+        # Validate API key
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        # Submit generation request
+        try:
+            generation_id = self._submit_generation_request(params, api_key)
+            if not generation_id:
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No generation_id returned from proxy. Cannot proceed with generation.",
+                )
+                return
+        except RuntimeError as e:
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        # Poll for result
+        self._poll_for_result(generation_id, api_key)
+
+    def _get_parameters(self) -> dict[str, Any]:
+        """Get and normalize input parameters."""
+        image_url = self.get_parameter_value("image_url")
+        audio_url = self.get_parameter_value("audio_url")
+        mask_urls = self.get_parameter_value("mask_urls")
+
+        model_id = self.get_parameter_value("model_id")
+
+        # image url and audio url are required
+        if not image_url:
+            msg = "image_url parameter is required."
+            raise ValueError(msg)
+        if not audio_url:
+            msg = "audio_url parameter is required."
+            raise ValueError(msg)
+        # Handle artifacts
+        if hasattr(image_url, "value"):
+            image_url = image_url.value
+        if hasattr(mask_urls, "value"):
+            mask_urls = mask_urls.value
+
+        body = {
+            "req_key": self._get_req_key(model_id),
+            "image_url": str(image_url).strip(),
+            "audio_url": str(audio_url).strip(),
+            "mask_url": "; ".join([str(url).strip() for url in mask_urls]) if mask_urls else None,
+        }
+        # remove None values
+        return {k: v for k, v in body.items() if v is not None}
+
+    def _get_req_key(self, model_id: str) -> str:
+        """Get the request key based on model_id."""
+        if model_id == "omnihuman-1-0":
+            return "realman_avatar_picture_omni_cv"
+        if model_id == "omnihuman-1-5":
+            return "realman_avatar_picture_omni15_cv"
+        msg = f"Unsupported model_id: {model_id}"
+        raise ValueError(msg)
+
+    def _validate_api_key(self) -> str:
+        """Validate that the API key is available."""
+        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
+        if not api_key:
+            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
+            raise ValueError(msg)
+        return api_key
+
+    def _submit_generation_request(self, params: dict[str, Any], api_key: str) -> str:
+        """Submit the video generation request via Griptape Cloud proxy."""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        model = self.get_parameter_value("model_id")
+
+        post_url = urljoin(self._proxy_base, f"models/{model}")
+        self._log("Submitting video generation request via proxy")
+
+        try:
+            response = requests.post(
+                post_url,
+                json=params,
+                headers=headers,
+                timeout=60,
+            )
+
+            if response.status_code >= 400:  # noqa: PLR2004
+                self._set_safe_defaults()
+                error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
+                self._log(error_msg)
+                raise RuntimeError(error_msg)
+
+            response_json = response.json()
+            generation_id = str(response_json.get("generation_id") or "")
+
+            self.parameter_output_values["generation_id"] = generation_id
+            self.parameter_output_values["generation_result"] = response_json
+
+            if generation_id:
+                self._log(f"Submitted. Generation ID: {generation_id}")
+            else:
+                self._log("No generation_id returned from POST response")
+
+            return generation_id  # noqa: TRY300
+
+        except requests.RequestException as e:
+            self._set_safe_defaults()
+            error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
+            self._log(error_msg)
+            raise RuntimeError(error_msg) from e
+
+    def _poll_for_result(self, generation_id: str, api_key: str) -> None:
+        """Poll for the generation result via Griptape Cloud proxy."""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
+
+        start_time = monotonic()
+        attempt = 0
+        poll_interval_s = 5.0
+        timeout_s = 600.0
+
+        last_json = None
+
+        while True:
+            if monotonic() - start_time > timeout_s:
+                self._log("Polling timed out waiting for result")
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                )
+                return
+
+            try:
+                response = requests.get(
+                    get_url,
+                    headers=headers,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                last_json = response.json()
+
+                # Update generation result with latest data
+                self.parameter_output_values["generation_result"] = last_json
+
+            except Exception as exc:
+                self._log(f"Polling request failed: {exc}")
+                error_msg = f"Failed to poll generation status: {exc}"
+                self._set_status_results(was_successful=False, result_details=error_msg)
+                self._handle_failure_exception(RuntimeError(error_msg))
+                return
+
+            attempt += 1
+
+            # Extract provider response
+            provider_response = last_json.get("provider_response", {})
+            if isinstance(provider_response, str):
+                try:
+                    provider_response = _json.loads(provider_response)
+                except Exception:
+                    provider_response = {}
+
+            status = provider_response.get("data", {}).get("status", "").lower()
+
+            self._log(f"Polling attempt #{attempt}, status={status}")
+
+            if status != "done" and status not in ["not_found", "expired"]:
+                sleep(poll_interval_s)
+                continue
+
+            # Check for completion
+            # Any other status code is an error
+            self._log(f"Generation failed with status: {status}")
+            self.parameter_output_values["video_url"] = None
+            error_details = f"Video generation failed.\nStatus: {status}\nFull response: {last_json}"
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
+
+    def _handle_completion(self, response_json: dict[str, Any], generation_id: str) -> None:
+        """Handle successful completion of video generation."""
+        # Extract provider response
+        provider_response = response_json.get("provider_response", {})
+        if isinstance(provider_response, str):
+            try:
+                provider_response = _json.loads(provider_response)
+            except Exception:
+                provider_response = {}
+
+        # Extract video URL from provider response
+        video_url = self._extract_video_url(provider_response)
+
+        if not video_url:
+            self.parameter_output_values["video_url"] = None
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no video URL was found in the response.",
+            )
+            return
+
+        try:
+            self._log("Downloading video bytes from provider URL")
+            video_bytes = self._download_bytes_from_url(video_url)
+        except Exception as e:
+            self._log(f"Failed to download video: {e}")
+            video_bytes = None
+
+        if video_bytes:
+            try:
+                filename = (
+                    f"omnihuman_video_{generation_id}.mp4"
+                    if generation_id
+                    else f"omnihuman_video_{int(time.time())}.mp4"
+                )
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved video to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                )
+            except Exception as e:
+                self._log(f"Failed to save to static storage: {e}, using provider URL")
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                )
+        else:
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+            )
+
+    @staticmethod
+    def _extract_video_url(response_json: dict[str, Any]) -> str | None:
+        """Extract video URL from API response."""
+        if not isinstance(response_json, dict):
+            return None
+
+        # Try direct video_url field
+        video_url = response_json.get("video_url")
+        if isinstance(video_url, str) and video_url.startswith("http"):
+            return video_url
+
+        # Try nested in data
+        data = response_json.get("data")
+        if isinstance(data, dict):
+            video_url = data.get("video_url")
+            if isinstance(video_url, str) and video_url.startswith("http"):
+                return video_url
+
+        # Try nested in result
+        result = response_json.get("result")
+        if isinstance(result, dict):
+            video_url = result.get("video_url")
+            if isinstance(video_url, str) and video_url.startswith("http"):
+                return video_url
+
+        return None
+
+    @staticmethod
+    def _download_bytes_from_url(url: str) -> bytes | None:
+        """Download video bytes from URL."""
+        try:
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
+            return response.content  # noqa: TRY300
+        except Exception:
+            return None
+
+    def _set_safe_defaults(self) -> None:
+        """Set safe default values for outputs on error."""
+        self.parameter_output_values["generation_id"] = ""
+        self.parameter_output_values["video_url"] = None
+        self.parameter_output_values["generation_result"] = {}
