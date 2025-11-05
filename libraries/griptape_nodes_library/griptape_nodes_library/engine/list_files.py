@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 
+logger = logging.getLogger("griptape_nodes")
 LIST_OPTIONS = [
     "List files and folders",
     "List files only",
@@ -123,15 +125,18 @@ class ListFiles(SuccessFailureNode):
     def _convert_paths(self, entries: list, *, use_absolute_paths: bool) -> list[str]:
         """Extract paths from entries, optionally converting to absolute paths."""
         file_paths = []
+        os_manager = GriptapeNodes.OSManager()
         for entry in entries:
             if use_absolute_paths:
                 entry_path = Path(entry.path)
                 if not entry_path.is_absolute():
                     workspace_path = GriptapeNodes.ConfigManager().workspace_path
-                    absolute_path = (workspace_path / entry_path).resolve()
+                    combined_path = workspace_path / entry_path
+                    absolute_path = os_manager.resolve_path_safely(combined_path)
                     file_paths.append(str(absolute_path))
                 else:
-                    file_paths.append(entry.path)
+                    absolute_path = os_manager.resolve_path_safely(entry_path)
+                    file_paths.append(str(absolute_path))
             else:
                 file_paths.append(entry.path)
         return file_paths
@@ -155,6 +160,8 @@ class ListFiles(SuccessFailureNode):
             include_folders = True
         else:
             # Fallback to default if invalid option
+            msg = f"{self.name}: Invalid list options: {list_options}, listing all files and folders"
+            logger.warning(msg)
             include_files = True
             include_folders = True
 
