@@ -1298,6 +1298,17 @@
       }
     },
     {
+      "class_name": "QwenImageEdit",
+      "file_path": "griptape_nodes_library/image/qwen_image_edit.py",
+      "metadata": {
+        "category": "image",
+        "description": "Edit images using Qwen image editing models via Griptape model proxy",
+        "display_name": "Qwen Image Edit",
+        "group": "edit",
+        "icon": "Sparkles"
+      }
+    },
+    {
       "class_name": "AddTextToImage",
       "file_path": "griptape_nodes_library/image/add_text_to_image.py",
       "metadata": {
