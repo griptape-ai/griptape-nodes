@@ -552,7 +552,7 @@ class NodeExecutor:
 
         # Step 5: Execute all iterations (locally for now, extensible for other environments)
         # The helper method handles: deserialization, setting values, running iterations, extracting results, and cleanup
-        iteration_results, successful_iterations = await self._execute_loop_iterations_locally(
+        iteration_results, successful_iterations, last_iteration_values = await self._execute_loop_iterations_locally(
             package_result=package_result,
             total_iterations=total_iterations,
             parameter_values_per_iteration=parameter_values_to_set_before_run,
@@ -570,14 +570,20 @@ class NodeExecutor:
             start_node.name,
         )
 
-        # Step 7: Build results list in iteration order
+        # Step 6: Build results list in iteration order
         node._results_list = []
         for iteration_index in sorted(iteration_results.keys()):
             value = iteration_results[iteration_index]
             node._results_list.append(value)
 
-        # Step 8: Output final results to the results parameter
+        # Step 7: Output final results to the results parameter
         node._output_results_list()
+
+        # Step 8: Apply last iteration values to the original packaged nodes in main flow
+        self._apply_last_iteration_to_packaged_nodes(
+            last_iteration_values=last_iteration_values,
+            package_result=package_result,
+        )
 
         logger.info(
             "Successfully aggregated %d results for loop '%s' to '%s'",
@@ -795,13 +801,91 @@ class NodeExecutor:
 
         return iteration_results
 
+    def get_last_iteration_values_for_packaged_nodes(
+        self,
+        deserialized_flows: list[tuple[int, str, dict[str, str]]],
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+        total_iterations: int,
+    ) -> dict[str, Any]:
+        """Extract parameter values from the LAST iteration's End Flow node for all output parameters.
+
+        Returns values in same format as _extract_parameter_output_values(), ready to pass to
+        _apply_parameter_values_to_node(). This sets the final state of packaged nodes after loop completes.
+
+        Args:
+            deserialized_flows: List of (iteration_index, flow_name, node_name_mappings)
+            package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter mappings
+            total_iterations: Total number of iterations that were executed
+
+        Returns:
+            Dict mapping sanitized parameter names -> values from last iteration's End node
+        """
+        if total_iterations == 0:
+            return {}
+
+        last_iteration_index = total_iterations - 1
+
+        # Find the last iteration in deserialized_flows
+        last_iteration_flow = None
+        for iteration_index, flow_name, node_name_mappings in deserialized_flows:
+            if iteration_index == last_iteration_index:
+                last_iteration_flow = (iteration_index, flow_name, node_name_mappings)
+                break
+
+        if last_iteration_flow is None:
+            logger.warning(
+                "Could not find last iteration (index %d) in deserialized flows. Cannot extract final values.",
+                last_iteration_index,
+            )
+            return {}
+
+        # Get End node's parameter mappings (index 1 = EndFlow node)
+        end_node_mapping = package_result.parameter_name_mappings[1]
+        packaged_end_node_name = end_node_mapping.node_name
+
+        # Get the deserialized End node name for last iteration
+        _, _, node_name_mappings = last_iteration_flow
+        deserialized_end_node_name = node_name_mappings.get(packaged_end_node_name)
+
+        if deserialized_end_node_name is None:
+            logger.warning(
+                "Could not find deserialized End node (packaged name: '%s') in last iteration",
+                packaged_end_node_name,
+            )
+            return {}
+
+        # Get the End node instance
+        node_manager = GriptapeNodes.NodeManager()
+        try:
+            deserialized_end_node = node_manager.get_node_by_name(deserialized_end_node_name)
+        except Exception as e:
+            logger.warning("Failed to get End node '%s' for last iteration: %s", deserialized_end_node_name, e)
+            return {}
+
+        # Extract ALL parameter output values from the End node
+        # Return them with sanitized names (as they appear on End node)
+        last_iteration_values = {}
+        for sanitized_param_name in end_node_mapping.parameter_mappings:
+            if sanitized_param_name in deserialized_end_node.parameter_output_values:
+                last_iteration_values[sanitized_param_name] = deserialized_end_node.parameter_output_values[
+                    sanitized_param_name
+                ]
+
+        logger.debug(
+            "Extracted %d parameter values from last iteration's End node '%s'",
+            len(last_iteration_values),
+            deserialized_end_node_name,
+        )
+
+        return last_iteration_values
+
     async def _execute_loop_iterations_locally(  # noqa: C901, PLR0912, PLR0915
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
         end_loop_node: BaseIterativeEndNode,
-    ) -> tuple[dict[int, Any], list[int]]:
+    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations locally by deserializing and running flows.
 
         This method handles LOCAL execution of loop iterations. Other libraries
@@ -818,6 +902,7 @@ class NodeExecutor:
             Tuple of:
             - iteration_results: Dict mapping iteration_index -> result value
             - successful_iterations: List of iteration indices that succeeded
+            - last_iteration_values: Dict mapping parameter names -> values from last iteration
         """
         from griptape_nodes.retained_mode.events.flow_events import (
             DeserializeFlowFromCommandsRequest,
@@ -973,7 +1058,14 @@ class NodeExecutor:
                 parameter_name_mappings=package_result.parameter_name_mappings,
             )
 
-            return iteration_results, successful_iterations
+            # Step 5: Extract last iteration values BEFORE cleanup (flows deleted in finally block)
+            last_iteration_values = self.get_last_iteration_values_for_packaged_nodes(
+                deserialized_flows=deserialized_flows,
+                package_result=package_result,
+                total_iterations=total_iterations,
+            )
+
+            return iteration_results, successful_iterations, last_iteration_values
 
         finally:
             # Step 5: Cleanup - delete all iteration flows
@@ -1140,6 +1232,83 @@ class NodeExecutor:
                 target_node_name,
                 param_value,
             )
+
+    def _apply_last_iteration_to_packaged_nodes(
+        self,
+        last_iteration_values: dict[str, Any],
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+    ) -> None:
+        """Apply last iteration values to the original packaged nodes in main flow.
+
+        After parallel loop execution, this sets the final state of each packaged node
+        to match the last iteration's execution results. This is important for nodes that
+        output values or produce artifacts during loop execution.
+
+        Args:
+            last_iteration_values: Dict mapping sanitized End node parameter names to values
+            package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter mappings and node names
+        """
+        if not last_iteration_values:
+            logger.debug("No last iteration values to apply to packaged nodes")
+            return
+
+        # Get End node parameter mappings (index 1 in the list)
+        end_node_mapping = package_result.parameter_name_mappings[1]
+        end_node_param_mappings = end_node_mapping.parameter_mappings
+
+        node_manager = GriptapeNodes.NodeManager()
+
+        # For each parameter in the End node, map it back to the original node and set the value
+        for sanitized_param_name, param_value in last_iteration_values.items():
+            # Check if this parameter has a mapping in the End node
+            if sanitized_param_name not in end_node_param_mappings:
+                continue
+
+            original_node_param = end_node_param_mappings[sanitized_param_name]
+            target_node_name = original_node_param.node_name
+            target_param_name = original_node_param.parameter_name
+
+            # Get the original packaged node in the main flow
+            try:
+                target_node = node_manager.get_node_by_name(target_node_name)
+            except Exception:
+                logger.warning(
+                    "Could not find packaged node '%s' in main flow to apply last iteration values", target_node_name
+                )
+                continue
+
+            # Get the parameter from the target node
+            target_param = target_node.get_parameter_by_name(target_param_name)
+
+            # Skip if parameter not found or is special parameter
+            if target_param is None or target_param in (
+                target_node.execution_environment,
+                getattr(target_node, "node_group", None),
+            ):
+                logger.debug(
+                    "Skipping special or missing parameter '%s' on node '%s'", target_param_name, target_node_name
+                )
+                continue
+
+            # Skip control parameters
+            if target_param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                logger.debug("Skipping control parameter '%s' on node '%s'", target_param_name, target_node_name)
+                continue
+
+            # Set the value on the target node
+            target_node.set_parameter_value(target_param_name, param_value)
+            target_node.parameter_output_values[target_param_name] = param_value
+
+            logger.debug(
+                "Applied last iteration value to packaged node '%s' parameter '%s'",
+                target_node_name,
+                target_param_name,
+            )
+
+        logger.info(
+            "Successfully applied %d parameter values from last iteration to packaged nodes",
+            len(last_iteration_values),
+        )
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
         try:
