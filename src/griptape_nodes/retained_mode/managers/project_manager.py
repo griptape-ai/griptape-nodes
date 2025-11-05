@@ -470,8 +470,9 @@ class ProjectManager:
                     # For directory builtin variables, compare as resolved paths
                     builtin_info = _BUILTIN_VARIABLE_INFO.get(var_name)
                     if builtin_info and builtin_info.is_directory:
-                        resolved_existing = Path(str(existing)).resolve()
-                        resolved_builtin = Path(builtin_value).resolve()
+                        os_manager = GriptapeNodes.OSManager()
+                        resolved_existing = os_manager.resolve_path_safely(Path(str(existing)))
+                        resolved_builtin = os_manager.resolve_path_safely(Path(builtin_value))
                         if resolved_existing != resolved_builtin:
                             disallowed_overrides.add(var_name)
                     elif str(existing) != builtin_value:
@@ -916,10 +917,11 @@ class ProjectManager:
             /Users/james/Downloads/file.png → None
         """
         # Normalize paths for consistent cross-platform comparison
-        absolute_path = absolute_path.resolve()
+        os_manager = GriptapeNodes.OSManager()
+        absolute_path = os_manager.resolve_path_safely(absolute_path)
 
         template = project_info.template
-        project_base_dir = project_info.project_base_dir.resolve()
+        project_base_dir = os_manager.resolve_path_safely(project_info.project_base_dir)
 
         # Secrets manager must be available (checked by caller)
         if self._secrets_manager is None:
@@ -966,7 +968,7 @@ class ProjectManager:
             if not resolved_dir_path.is_absolute():
                 resolved_dir_path = project_base_dir / resolved_dir_path
             # Normalize for consistent cross-platform comparison
-            resolved_dir_path = resolved_dir_path.resolve()
+            resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 
             # Check if absolute_path is inside this directory
             try:

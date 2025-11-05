@@ -2399,16 +2399,8 @@ class WorkflowManager:
             targets=[ast.Name(id="response", ctx=ast.Store())],
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                            attr="LibraryManager",
-                            ctx=ast.Load(),
-                        ),
-                        args=[],
-                        keywords=[],
-                    ),
-                    attr="get_all_info_for_all_libraries_request",
+                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                    attr="handle_request",
                     ctx=ast.Load(),
                 ),
                 args=[
@@ -4099,7 +4091,7 @@ class WorkflowManager:
                 ),
             )
 
-    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:
+    def _process_workflows_for_registration(self, workflows_to_register: list[str]) -> WorkflowRegistrationResult:  # noqa: C901
         """Process a list of workflow paths for registration.
 
         Returns:
@@ -4128,7 +4120,11 @@ class WorkflowManager:
                 return
             if path.is_dir():
                 # Process all Python files recursively in the directory
+                # Exclude .venv directories to avoid encoding issues with test files
                 for workflow_file in path.rglob("*.py"):
+                    # Skip files in .venv directories
+                    if ".venv" in workflow_file.parts:
+                        continue
                     process_workflow_file(workflow_file)
             elif path.suffix == ".py":
                 process_workflow_file(path)

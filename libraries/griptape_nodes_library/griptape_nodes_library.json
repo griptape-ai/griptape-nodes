@@ -38,7 +38,8 @@
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
-        "jmespath>=1.0.1"
+        "jmespath>=1.0.1",
+        "json-schema-to-pydantic>=0.4.6"
       ]
     }
   },
@@ -144,7 +145,7 @@
     },
     {
       "image": {
-        "color": "border-slate-500",
+        "color": "border-purple-500",
         "title": "Image",
         "description": "Image related nodes",
         "icon": "Image",
@@ -158,54 +159,6 @@
         "description": "Image Generation Models for Griptape Agents",
         "icon": "brain",
         "group": "create"
-      }
-    },
-    {
-      "image/depth": {
-        "color": "border-purple-500",
-        "title": "image/depth",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/edge": {
-        "color": "border-purple-500",
-        "title": "image/edge",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux": {
-        "color": "border-purple-500",
-        "title": "image/flux",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux/controlnet": {
-        "color": "border-purple-500",
-        "title": "image/flux/controlnet",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux/loras": {
-        "color": "border-purple-500",
-        "title": "image/flux/loras",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/upscale": {
-        "color": "border-purple-500",
-        "title": "Image/Upscale",
-        "description": "Image upscaling related nodes",
-        "icon": "Image"
       }
     },
     {
@@ -289,99 +242,11 @@
       }
     },
     {
-      "audio/audioldm": {
-        "color": "border-sky-500",
-        "title": "Audio/AudioLDM",
-        "description": "Audio generation with AudioLDM",
-        "icon": "SpeakerWave"
-      }
-    },
-    {
-      "audio/audioldm2": {
-        "color": "border-sky-500",
-        "title": "Audio/AudioLDM2",
-        "description": "Audio generation with AudioLDM 2",
-        "icon": "SpeakerWave"
-      }
-    },
-    {
-      "image/amused": {
-        "color": "border-purple-500",
-        "title": "Image/aMUSEd",
-        "description": "Image generation with aMUSEd",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion": {
-        "color": "border-purple-500",
-        "title": "Image/Stable Diffusion",
-        "description": "Image generation with Stable Diffusion",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_3": {
-        "color": "border-purple-500",
-        "title": "Image/Stable Diffusion 3",
-        "description": "Image generation with Stable Diffusion 3",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_attend_and_excite": {
-        "color": "border-purple-500",
-        "title": "Image/SD Attend and Excite",
-        "description": "Enhanced attention control",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_diffedit": {
-        "color": "border-purple-500",
-        "title": "Image/SD DiffEdit",
-        "description": "Image editing with DiffEdit",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/würstchen": {
-        "color": "border-purple-500",
-        "title": "image/würstchen",
-        "description": "Efficient generation with Würstchen",
-        "icon": "Image"
-      }
-    },
-    {
-      "video/allegro": {
-        "color": "border-pink-500",
-        "title": "Video/Allegro",
-        "description": "Video generation with Allegro",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan": {
-        "color": "border-pink-500",
-        "title": "video/wan",
+      "lora": {
+        "color": "border-rose-500",
+        "title": "LoRA",
         "description": "",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan/aux": {
-        "color": "border-pink-500",
-        "title": "Video/WAN/Aux",
-        "description": "Auxiliary nodes for WAN video generation",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan/loras": {
-        "color": "border-pink-500",
-        "title": "video/wan/loras",
-        "description": "",
-        "icon": "Video"
+        "icon": "layers-2"
       }
     }
   ],

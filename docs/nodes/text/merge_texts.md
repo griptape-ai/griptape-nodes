@@ -24,8 +24,9 @@ Use the MergeTexts node when:
 
 ### Parameters
 
-- **inputs**: A list of text strings to be combined
-- **merge_string**: The separator to place between text segments (defaults to "\\n\\n")
+- **input_1 through input_4**: Fixed number of text inputs to be combined
+- **merge_string**: The separator to place between text segments (defaults to "\\n\\n" when trim_whitespace is False)
+- **whitespace**: Boolean option to trim whitespace from each input and the final result
 
 ### Outputs
 
@@ -42,8 +43,11 @@ A workflow to create a complete document from separate sections:
 
 ## Important Notes
 
-- Empty input strings are still included in the merge operation
+- When `whitespace` is enabled (trim mode), each input is trimmed of whitespace before joining
+- When `whitespace` is enabled and the separator is empty, inputs are concatenated without any separator
+- When `whitespace` is disabled, empty inputs are filtered out, and the separator defaults to "\\n\\n" if not specified
 - The separator is only added between inputs, not at the beginning or end
+- **Recommendation**: Consider using the **JoinText** node for more flexible input handling
 
 ## Common Issues
 

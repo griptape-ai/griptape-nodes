@@ -787,7 +787,7 @@ class DeprecationMessage(ParameterMessage):
         kwargs.setdefault("traits", {})
         kwargs["traits"][Button(label=button_text, icon="plus", variant="secondary", on_click=migrate_function)] = None
 
-        super().__init__(value=value, **kwargs)
+        super().__init__(value=value, button_text=button_text, **kwargs)
 
     def to_dict(self) -> dict:
         """Override to_dict to use element_type instead of class name.
