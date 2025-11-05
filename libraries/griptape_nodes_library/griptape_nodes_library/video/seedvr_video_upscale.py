@@ -13,6 +13,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -166,17 +167,9 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             )
         )
 
-        # Seed
-        self.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                default_value=0,
-                tooltip="Random seed for reproducibility",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
+        # Initialize SeedParameter component
+        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter.add_input_parameters()
 
         # OUTPUTS
         self.add_parameter(
@@ -227,6 +220,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
+        self._seed_parameter.after_value_set(parameter, value)
 
         if parameter.name == "upscale_mode":
             upscale_mode = str(value)
@@ -237,11 +231,14 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 self.show_parameter_by_name("target_resolution")
                 self.hide_parameter_by_name("upscale_factor")
 
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
+
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
 
     def _process(self) -> None:
-        # Clear execution status at the start
+        self.preprocess()
         self._clear_execution_status()
 
         # Get parameters and validate API key
@@ -288,7 +285,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             "output_write_mode": self.get_parameter_value("output_write_mode"),
             "output_quality": self.get_parameter_value("output_quality"),
             "upscale_factor": self.get_parameter_value("upscale_factor"),
-            "seed": self.get_parameter_value("seed"),
+            "seed": self._seed_parameter.get_seed(),
         }
         if parameters["upscale_mode"] == "factor":
             parameters.pop("target_resolution", None)
