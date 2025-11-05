@@ -1,7 +1,9 @@
+from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryRequest,
     ListDirectoryResultFailure,
@@ -9,6 +11,13 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.traits.options import Options
+
+LIST_OPTIONS = [
+    "List files and folders",
+    "List files only",
+    "List folders only",
+]
 
 
 class ListFiles(SuccessFailureNode):
@@ -36,6 +45,14 @@ class ListFiles(SuccessFailureNode):
             )
         )
 
+        self.list_options = ParameterString(
+            name="list_options",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value=LIST_OPTIONS[0],
+            tooltip="The options for the list files and folders.",
+            traits={Options(choices=LIST_OPTIONS)},
+        )
+
         self.show_hidden = Parameter(
             name="show_hidden",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -45,28 +62,19 @@ class ListFiles(SuccessFailureNode):
             tooltip="Whether to show hidden files/folders.",
         )
 
-        self.include_files = Parameter(
-            name="include_files",
+        self.use_absolute_paths = Parameter(
+            name="use_absolute_paths",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             input_types=["bool"],
             type="bool",
-            default_value=True,
-            tooltip="Whether to include files in the results.",
-        )
-
-        self.include_folders = Parameter(
-            name="include_folders",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            input_types=["bool"],
-            type="bool",
-            default_value=True,
-            tooltip="Whether to include folders/directories in the results.",
+            default_value=False,
+            tooltip="Whether to return absolute paths. If False, returns paths as provided by the system (may be relative or absolute).",
         )
 
         self.add_parameter(self.directory_path)
         self.add_parameter(self.show_hidden)
-        self.add_parameter(self.include_files)
-        self.add_parameter(self.include_folders)
+        self.add_parameter(self.list_options)
+        self.add_parameter(self.use_absolute_paths)
 
         # Add output parameters
         self.add_parameter(
@@ -107,13 +115,23 @@ class ListFiles(SuccessFailureNode):
         self._clear_execution_status()
         directory_path = self.get_parameter_value("directory_path")
         show_hidden = self.get_parameter_value("show_hidden")
-        include_files = self.get_parameter_value("include_files")
-        include_folders = self.get_parameter_value("include_folders")
+        list_options = self.get_parameter_value("list_options")
+        use_absolute_paths = self.get_parameter_value("use_absolute_paths")
 
-        if not include_files and not include_folders:
-            msg = "Both include_files and include_folders cannot be False"
-            self._set_status_results(was_successful=False, result_details=f"Failure: {msg}")
-            return
+        # Determine include_files and include_folders based on list_options
+        if list_options == LIST_OPTIONS[0]:  # "List files and folders"
+            include_files = True
+            include_folders = True
+        elif list_options == LIST_OPTIONS[1]:  # "List files only"
+            include_files = True
+            include_folders = False
+        elif list_options == LIST_OPTIONS[2]:  # "List folders only"
+            include_files = False
+            include_folders = True
+        else:
+            # Fallback to default if invalid option
+            include_files = True
+            include_folders = True
 
         # Create the os_events request
         request = ListDirectoryRequest(
@@ -146,8 +164,23 @@ class ListFiles(SuccessFailureNode):
             elif include_files:
                 filtered_entries.append(entry)
 
-        # Extract paths and names
-        file_paths = [entry.path for entry in filtered_entries]
+        # Extract paths and names, optionally converting to absolute paths
+        file_paths = []
+        for entry in filtered_entries:
+            if use_absolute_paths:
+                entry_path = Path(entry.path)
+                # Convert relative paths to absolute paths
+                if not entry_path.is_absolute():
+                    # Resolve relative to workspace or current directory
+                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                    absolute_path = (workspace_path / entry_path).resolve()
+                    file_paths.append(str(absolute_path))
+                else:
+                    file_paths.append(entry.path)
+            else:
+                # Use paths as provided by the system (may be relative or absolute)
+                file_paths.append(entry.path)
+
         file_names = [entry.name for entry in filtered_entries]
 
         # Set output values
