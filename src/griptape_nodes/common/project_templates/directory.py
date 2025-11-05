@@ -15,7 +15,7 @@ class DirectoryDefinition(BaseModel):
     """Definition of a logical directory in the project."""
 
     name: str = Field(description="Logical name (e.g., 'inputs', 'outputs')")
-    path_schema: str = Field(description="Path string (may contain macros/env vars)")
+    path_macro: str = Field(description="Path string (may contain macros/env vars)")
 
     @staticmethod
     def merge(
@@ -28,7 +28,7 @@ class DirectoryDefinition(BaseModel):
         """Merge overlay fields onto base directory.
 
         Field-level merge behavior:
-        - path_schema: Use overlay if present, else base
+        - path_macro: Use overlay if present, else base
 
         Args:
             base: Complete base directory
@@ -41,11 +41,11 @@ class DirectoryDefinition(BaseModel):
             New merged DirectoryDefinition
         """
         # Start with base fields
-        merged_data = {"name": base.name, "path_schema": base.path_schema}
+        merged_data = {"name": base.name, "path_macro": base.path_macro}
 
         # Apply overlay if present
-        if "path_schema" in overlay_data:
-            merged_data["path_schema"] = overlay_data["path_schema"]
+        if "path_macro" in overlay_data:
+            merged_data["path_macro"] = overlay_data["path_macro"]
 
         try:
             return DirectoryDefinition.model_validate(merged_data)
