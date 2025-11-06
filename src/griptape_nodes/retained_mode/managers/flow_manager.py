@@ -123,6 +123,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    CreateNodeGroupRequest,
     CreateNodeRequest,
     DeleteNodeRequest,
     DeleteNodeResultFailure,
@@ -1501,10 +1502,14 @@ class FlowManager:
                 serialized_node_commands.append(serialize_result.serialized_node_commands)
 
                 # Populate the shared node_name_to_uuid mapping
-                if serialize_result.serialized_node_commands.create_node_command.node_name is not None:
-                    node_name_to_uuid[serialize_result.serialized_node_commands.create_node_command.node_name] = (
-                        serialize_result.serialized_node_commands.node_uuid
-                    )
+                create_cmd = serialize_result.serialized_node_commands.create_node_command
+                node_name = (
+                    create_cmd.node_group_name
+                    if isinstance(create_cmd, CreateNodeGroupRequest)
+                    else create_cmd.node_name
+                )
+                if node_name is not None:
+                    node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
 
                 # Collect set parameter value commands (references to unique_parameter_uuid_to_values)
                 if serialize_result.set_parameter_value_commands:
@@ -1688,7 +1693,13 @@ class FlowManager:
             # Find the corresponding serialized node
             serialized_node = None
             for serialized_node_command in serialized_package_nodes:
-                if serialized_node_command.create_node_command.node_name == package_node.name:
+                create_cmd = serialized_node_command.create_node_command
+                cmd_node_name = (
+                    create_cmd.node_group_name
+                    if isinstance(create_cmd, CreateNodeGroupRequest)
+                    else create_cmd.node_name
+                )
+                if cmd_node_name == package_node.name:
                     serialized_node = serialized_node_command
                     break
 
@@ -2839,8 +2850,12 @@ class FlowManager:
 
         # Collect node types from all nodes in this flow
         for node_cmd in serialized_node_commands:
-            node_type = node_cmd.create_node_command.node_type
-            library_name = node_cmd.create_node_command.specific_library_name
+            create_cmd = node_cmd.create_node_command
+            # Skip NodeGroupNode as it doesn't have node_type/specific_library_name
+            if isinstance(create_cmd, CreateNodeGroupRequest):
+                continue
+            node_type = create_cmd.node_type
+            library_name = create_cmd.specific_library_name
             if library_name is None:
                 msg = f"Node type '{node_type}' has no library name specified during serialization"
                 raise ValueError(msg)

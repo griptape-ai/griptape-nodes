@@ -518,13 +518,12 @@ class NodeManager:
         )
 
         try:
-            # Create NodeGroupNode through library system for proper metadata injection
-            node_group = LibraryRegistry.create_node(
-                name=final_node_group_name,
-                node_type="NodeGroupNode",
-                metadata=request.metadata,
-                specific_library_name="Griptape Nodes Library",
-            )
+            # Create metadata with required keys for serialization
+            metadata = request.metadata if request.metadata else {}
+            metadata["library"] = "griptape_nodes"
+            metadata["node_type"] = "NodeGroupNode"
+
+            node_group = NodeGroupNode(name=final_node_group_name, metadata=metadata)
         except Exception as err:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)
@@ -2337,20 +2336,29 @@ class NodeManager:
                 serialized_node_type = node.__class__.__name__
                 serialized_library_name = library_details.library_name
 
-            # Get the creation details.
-            create_node_request = CreateNodeRequest(
-                node_type=serialized_node_type,
-                node_name=node_name,
-                specific_library_name=serialized_library_name,
-                metadata=copy.deepcopy(node.metadata),
-                # If it is actively resolving, mark as unresolved.
-                resolution=node.state.value,
-                initial_setup=True,
-            )
+            # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
+            from griptape_nodes.exe_types.node_types import NodeGroupNode
+
+            if isinstance(node, NodeGroupNode):
+                create_node_request = CreateNodeGroupRequest(
+                    node_group_name=node_name,
+                    metadata=copy.deepcopy(node.metadata),
+                )
+            else:
+                # Get the creation details for regular nodes
+                create_node_request = CreateNodeRequest(
+                    node_type=serialized_node_type,
+                    node_name=node_name,
+                    specific_library_name=serialized_library_name,
+                    metadata=copy.deepcopy(node.metadata),
+                    # If it is actively resolving, mark as unresolved.
+                    resolution=node.state.value,
+                    initial_setup=True,
+                )
 
             # We're going to compare this node instance vs. a canonical one. Rez that one up.
-            # For ErrorProxyNode, we can't create a reference node, so skip comparison
-            if isinstance(node, ErrorProxyNode):
+            # For ErrorProxyNode and NodeGroupNode, we can't create a reference node, so skip comparison
+            if isinstance(node, (ErrorProxyNode, NodeGroupNode)):
                 reference_node = None
             else:
                 reference_node = type(node)(name="REFERENCE NODE")
@@ -2556,8 +2564,13 @@ class NodeManager:
         # Issue the creation command first.
         create_node_request = request.serialized_node_commands.create_node_command
         create_node_result = GriptapeNodes().handle_request(create_node_request)
-        if not isinstance(create_node_result, CreateNodeResultSuccess):
-            details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{create_node_request.node_name}'."
+        if not isinstance(create_node_result, (CreateNodeResultSuccess, CreateNodeGroupResultSuccess)):
+            req_node_name = (
+                create_node_request.node_group_name
+                if isinstance(create_node_request, CreateNodeGroupRequest)
+                else create_node_request.node_name
+            )
+            details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to create node '{req_node_name}'."
             return DeserializeNodeFromCommandsResultFailure(result_details=details)
 
         # Adopt the newly-created node as our current context.
@@ -2842,7 +2855,7 @@ class NodeManager:
         node: BaseNode,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
-        create_node_request: CreateNodeRequest,
+        create_node_request: CreateNodeRequest | CreateNodeGroupRequest,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -2894,8 +2907,9 @@ class NodeManager:
             if internal_command is None:
                 details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
-                # Set node to unresolved when serialization fails
-                create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
+                # Set node to unresolved when serialization fails (only for CreateNodeRequest)
+                if isinstance(create_node_request, CreateNodeRequest):
+                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
             else:
                 commands.append(internal_command)
         if output_value is not None:
@@ -2911,8 +2925,9 @@ class NodeManager:
             if output_command is None:
                 details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
                 logger.warning(details)
-                # Set node to unresolved when serialization fails
-                create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
+                # Set node to unresolved when serialization fails (only for CreateNodeRequest)
+                if isinstance(create_node_request, CreateNodeRequest):
+                    create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
             else:
                 commands.append(output_command)
         return commands if commands else None

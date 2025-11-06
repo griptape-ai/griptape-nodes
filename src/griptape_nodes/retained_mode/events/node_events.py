@@ -441,7 +441,7 @@ class SerializedNodeCommands:
         set_parameter_value_command: SetParameterValueRequest
         unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
-    create_node_command: CreateNodeRequest
+    create_node_command: CreateNodeRequest | CreateNodeGroupRequest
     element_modification_commands: list[RequestPayload]
     node_dependencies: NodeDependencies
     lock_node_command: SetLockNodeStateRequest | None = None
