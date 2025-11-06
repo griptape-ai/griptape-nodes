@@ -2379,6 +2379,138 @@ class NodeGroupNode(BaseNode):
         for conn in internal_to_remove:
             self.stored_connections.internal_connections.remove(conn)
 
+    def handle_external_connection_created(  # noqa: PLR0913
+        self,
+        grouped_node: BaseNode,
+        grouped_param: Parameter,
+        external_node: BaseNode,
+        external_param: Parameter,
+        is_incoming: bool,  # noqa: FBT001
+        connections: Connections,
+    ) -> None:
+        """Handle a new connection involving a grouped node.
+
+        When a connection is created to/from a node that's already in this group,
+        we need to create a proxy parameter and remap the connection through it.
+
+        Args:
+            grouped_node: The node in this group involved in the connection
+            grouped_param: The parameter on the grouped node
+            external_node: The external node (not in group)
+            external_param: The parameter on the external node
+            is_incoming: True if connection is coming INTO the group
+            connections: The connections manager
+        """
+        from griptape_nodes.exe_types.connections import Connection
+
+        # Create a Connection object to pass to existing helper
+        if is_incoming:
+            conn = Connection(
+                source_node=external_node,
+                source_parameter=external_param,
+                target_node=grouped_node,
+                target_parameter=grouped_param,
+            )
+        else:
+            conn = Connection(
+                source_node=grouped_node,
+                source_parameter=grouped_param,
+                target_node=external_node,
+                target_parameter=external_param,
+            )
+
+        conn_id = id(conn)
+
+        # Use existing proxy creation logic
+        if is_incoming:
+            self._create_and_remap_incoming_proxy(grouped_node, grouped_param, conn, conn_id, connections)
+        else:
+            self._create_and_remap_outgoing_proxy(grouped_node, grouped_param, conn, conn_id, connections)
+
+    def handle_external_connection_deleted(  # noqa: PLR0913, C901
+        self,
+        grouped_node: BaseNode,
+        grouped_param: Parameter,
+        external_node: BaseNode,
+        external_param: Parameter,
+        is_incoming: bool,  # noqa: FBT001
+        connections: Connections,
+    ) -> None:
+        """Handle deletion of a connection involving a grouped node.
+
+        When a connection is deleted from a node in this group, we need to
+        remove the proxy parameter remapping and clean up the proxy if it's
+        no longer used.
+
+        Args:
+            grouped_node: The node in this group involved in the connection
+            grouped_param: The parameter on the grouped node
+            external_node: The external node (not in group)
+            external_param: The parameter on the external node
+            is_incoming: True if connection was coming INTO the group
+            connections: The connections manager
+        """
+        # Find the proxy parameter for this connection
+        sanitized_node_name = grouped_node.name.replace(" ", "_")
+        proxy_param_name = f"{sanitized_node_name}__{grouped_param.name}"
+
+        # Find the connection in our stored connections
+        if is_incoming:
+            conn_list = self.stored_connections.external_connections.incoming_connections
+            original_targets_map = self.stored_connections.original_targets.incoming_sources
+        else:
+            conn_list = self.stored_connections.external_connections.outgoing_connections
+            original_targets_map = self.stored_connections.original_targets.outgoing_targets
+
+        # Find and remove the connection from stored connections
+        conn_to_remove = None
+        for conn in list(conn_list):
+            if (
+                is_incoming
+                and conn.source_node.name == external_node.name
+                and conn.source_parameter.name == external_param.name
+            ):
+                conn_id = id(conn)
+                original_target = original_targets_map.get(conn_id)
+                if original_target and original_target.name == grouped_node.name:
+                    conn_to_remove = conn
+                    break
+            elif (
+                not is_incoming
+                and conn.target_node.name == external_node.name
+                and conn.target_parameter.name == external_param.name
+            ):
+                conn_id = id(conn)
+                original_source = original_targets_map.get(conn_id)
+                if original_source and original_source.name == grouped_node.name:
+                    conn_to_remove = conn
+                    break
+
+        if conn_to_remove:
+            conn_id = id(conn_to_remove)
+            conn_list.remove(conn_to_remove)
+            if conn_id in original_targets_map:
+                del original_targets_map[conn_id]
+
+        # Check if the proxy parameter is still being used by other connections
+        proxy_param = self.get_parameter_by_name(proxy_param_name)
+        if proxy_param:
+            in_use = (
+                self.name in connections.incoming_index
+                and proxy_param_name in connections.incoming_index[self.name]
+                and connections.incoming_index[self.name][proxy_param_name]
+            ) or (
+                self.name in connections.outgoing_index
+                and proxy_param_name in connections.outgoing_index[self.name]
+                and connections.outgoing_index[self.name][proxy_param_name]
+            )
+
+            # If no longer used, remove the proxy parameter
+            if not in_use:
+                self.remove_parameter_element_by_name(proxy_param_name)
+                if proxy_param_name in self._proxy_param_to_node_param:
+                    del self._proxy_param_to_node_param[proxy_param_name]
+
     def add_node_to_group(self, node: BaseNode) -> None:
         if node.parent_node is not None:
             # We must remove this node from the group that it's currently in
