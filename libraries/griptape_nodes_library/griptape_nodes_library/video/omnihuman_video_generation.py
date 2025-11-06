@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import requests
 from griptape.artifacts import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -405,7 +405,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
-    def _handle_completion(self, response_json: dict[str, Any], generation_id: str) -> None:
+    def _handle_completion(self, response_json: dict[str, Any], _generation_id: str) -> None:
         """Handle successful completion of video generation."""
         # Extract provider response
         provider_response = response_json.get("provider_response", {})
@@ -461,7 +461,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             response.raise_for_status()
             video_filename = f"omnihuman_video_{int(time.time())}.mp4"
             GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
-            return video_filename
+            return video_filename  # noqa: TRY300
         except Exception:
             return None
 

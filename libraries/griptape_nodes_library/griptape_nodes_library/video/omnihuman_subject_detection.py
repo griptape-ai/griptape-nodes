@@ -8,9 +8,8 @@ from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 import requests
-from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterList
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -207,7 +206,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         if model_id == "omnihuman-1-5-subject-detection":
             return "realman_avatar_object_detection_cv"
 
-        raise ValueError(f"Unsupported model_id: {model_id}")
+        msg = f"Unsupported model_id: {model_id}"
+        raise ValueError(msg)
 
     def _process_response(self, response_json: dict[str, Any]) -> None:
         """Process the API response from Griptape Cloud proxy."""

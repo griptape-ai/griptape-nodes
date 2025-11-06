@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+import json as _json
 import logging
 import os
-import json as _json
 from time import monotonic, sleep
 from typing import Any, ClassVar
 from urllib.parse import urljoin
@@ -210,7 +210,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 error_msg = "No generation_id returned from recognition request"
                 self._log(error_msg)
                 raise RuntimeError(error_msg)
-            return generation_id
+
+            return generation_id  # noqa: TRY300
 
         except requests.RequestException as e:
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
@@ -302,4 +303,5 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         if model_id == "omnihuman-1-5-subject-recognition":
             return "realman_avatar_picture_create_role_omni_cv"
 
-        raise ValueError(f"Unsupported model_id: {model_id}")
+        msg = f"Unsupported model_id: {model_id}"
+        raise ValueError(msg)
