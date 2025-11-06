@@ -32,9 +32,9 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
     Outputs:
         - generation_id (str): Griptape Cloud generation identifier
-        - recognition_result (dict): Recognition results from the API
+        - does_image_contain_human (bool): Whether the image contains human or human-like subjects
         - was_successful (bool): Whether the recognition succeeded
-        - result_details (str): Details about the recognition result or error
+        - result_details (str): Details about the subject recognition result or any errors
     """
 
     SERVICE_NAME = "Griptape"
@@ -88,17 +88,6 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 output_type="str",
                 tooltip="Griptape Cloud generation identifier",
                 allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="recognition_result",
-                output_type="dict",
-                type="dict",
-                tooltip="Recognition results from the API",
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
             )
         )
 
@@ -207,7 +196,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             response_json = response.json()
             generation_id = response_json.get("generation_id")
             if not generation_id:
-                error_msg = "No generation_id returned from recognition request"
+                error_msg = f"No generation_id returned from recognition request. Response: {response_json}"
                 self._log(error_msg)
                 raise RuntimeError(error_msg)
 
@@ -239,7 +228,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 self._log("Polling timed out waiting for result")
                 self._set_status_results(
                     was_successful=False,
-                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                    result_details=f"Subject recognition timed out after {timeout_s} seconds waiting for result.",
                 )
                 return
 
@@ -253,7 +242,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 last_json = response.json()
 
                 # Update generation result with latest data
-                self.parameter_output_values["recognition_result"] = last_json
+                self.parameter_output_values["result_details"] = last_json
 
             except Exception as exc:
                 self._log(f"Polling request failed: {exc}")
@@ -279,10 +268,13 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             if status == "done":
                 resp_data = _json.loads(provider_response.get("data", {}).get("resp_data", "{}"))
                 status = resp_data.get("status")
-                self.parameter_output_values["does_image_contain_human"] = status == 1
+                contains_human = status == 1
+                self.parameter_output_values["does_image_contain_human"] = contains_human
+
+                result_msg = f"Subject recognition completed successfully. response: {provider_response}. "
                 self._set_status_results(
                     was_successful=True,
-                    result_details="Video generation completed successfully.",
+                    result_details=result_msg,
                 )
                 return
 
@@ -292,9 +284,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
             # Check for completion
             # Any other status code is an error
-            self._log(f"Generation failed with status: {status}")
-            self.parameter_output_values["video_url"] = None
-            error_details = f"Video generation failed.\nStatus: {status}\nFull response: {last_json}"
+            self._log(f"Subject recognition failed with status: {status}")
+            error_details = f"Subject recognition failed.\nStatus: {status}\nFull response: {last_json}"
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 

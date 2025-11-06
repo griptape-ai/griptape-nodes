@@ -32,14 +32,16 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     Inputs:
         - image_url (str): Source image URL
         - audio_url (str): Audio file URL
-        - mask_url (str, optional): Optional mask image URL from subject detection
+        - mask_image_urls (list): Optional mask image URLs from subject detection
+        - prompt (str): Text prompt to guide generation
+        - seed (int): Random seed for generation (-1 for random)
+        - fast_mode (bool): Enable fast mode (sacrifices some effects for speed
 
     Outputs:
         - generation_id (str): Griptape Cloud generation identifier
-        - video_url (VideoUrlArtifact): Generated video URL
-        - generation_result (dict): Full API response
+        - video_url (VideoUrlArtifact): Generated video URL artifact
         - was_successful (bool): Whether the generation succeeded
-        - result_details (str): Details about the generation result or error
+        - result_details (str): Details about the video generation result or any errors
     """
 
     SERVICE_NAME = "Griptape"
@@ -172,23 +174,27 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="generation_result",
-                output_type="dict",
-                type="dict",
-                tooltip="Full API response with generation details",
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
-            )
-        )
-
         # Create status parameters for success/failure tracking
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
             parameter_group_initially_collapsed=False,
         )
+
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        # if the model_id parameter is omnihuman-1-0, remove seed, fast_mode, and prompt parameters
+        if parameter.name == "model_id" and value == "omnihuman-1-0":
+            self.hide_parameter_by_name("seed")
+            self.hide_parameter_by_name("fast_mode")
+            self.hide_parameter_by_name("prompt")
+        else:
+            self.show_parameter_by_name("seed")
+            self.show_parameter_by_name("fast_mode")
+            self.show_parameter_by_name("prompt")
 
     def _log(self, message: str) -> None:
         """Log a message."""
@@ -316,12 +322,11 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             generation_id = str(response_json.get("generation_id") or "")
 
             self.parameter_output_values["generation_id"] = generation_id
-            self.parameter_output_values["generation_result"] = response_json
 
             if generation_id:
                 self._log(f"Submitted. Generation ID: {generation_id}")
             else:
-                self._log("No generation_id returned from POST response")
+                self._log(f"No generation_id returned from POST response. Response: {response_json}")
 
             return generation_id  # noqa: TRY300
 
@@ -364,9 +369,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 )
                 response.raise_for_status()
                 last_json = response.json()
-
-                # Update generation result with latest data
-                self.parameter_output_values["generation_result"] = last_json
 
             except Exception as exc:
                 self._log(f"Polling request failed: {exc}")
@@ -469,4 +471,3 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         """Set safe default values for outputs on error."""
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["video_url"] = None
-        self.parameter_output_values["generation_result"] = {}

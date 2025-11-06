@@ -30,10 +30,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         - image_url (str): URL of the image to analyze for subject detection
 
     Outputs:
-        - profile_image_url (ImageUrlArtifact): URL of the detected subject profile
-        - mask_image_url (ImageUrlArtifact): URL of the subject mask image
-        - bounding_box (dict): Normalized bounding box coordinates
-        - detection_result (dict): Full detection results from the API
+        - mask_image_urls (list[ImageUrlArtifact]): URLs of the subject mask images
+        - does_image_contain_human (bool): Whether the image contains a human subject
         - was_successful (bool): Whether the detection succeeded
         - result_details (str): Details about the detection result or error
     """
@@ -213,14 +211,15 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         """Process the API response from Griptape Cloud proxy."""
         # Extract provider response from Griptape Cloud format
         resp_data = _json.loads(response_json.get("data", {}).get("resp_data", {}))
-        provider_response = response_json.get("provider_response", {})
-        if isinstance(provider_response, str):
-            try:
-                provider_response = _json.loads(provider_response)
-            except Exception:
-                provider_response = {}
 
-        self.parameter_output_values["does_image_contain_human"] = resp_data.get("status") == 1
-        self.parameter_output_values["mask_image_urls"] = (
-            resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
+        contains_human = resp_data.get("status") == 1
+        mask_urls = resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
+
+        self.parameter_output_values["does_image_contain_human"] = contains_human
+        self.parameter_output_values["mask_image_urls"] = mask_urls
+
+        result_msg = f"Subject detection completed successfully. response: {resp_data}. "
+        self._set_status_results(
+            was_successful=True,
+            result_details=result_msg,
         )
