@@ -2179,6 +2179,16 @@
         "display_name": "Path Join",
         "icon": "Combine"
       }
+    },
+    {
+      "class_name": "PathAddExtension",
+      "file_path": "griptape_nodes_library/engine/path_add_extension.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Add or replace a file extension on a path, with option to strip query parameters",
+        "display_name": "Path Add Extension",
+        "icon": "FileText"
+      }
     }
   ],
   "workflows": [
