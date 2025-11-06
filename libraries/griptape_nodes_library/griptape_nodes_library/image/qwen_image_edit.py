@@ -47,6 +47,8 @@ class QwenImageEdit(SuccessFailureNode):
 
     Supports editing 1-6 input images with text instructions.
 
+    Documentation: https://www.alibabacloud.com/help/en/model-studio/qwen-image-edit-api
+
     Inputs:
         - model (str): Qwen edit model to use (default: "qwen-image-edit-plus")
             qwen-image-edit: Generates only 1 image

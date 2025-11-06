@@ -66,6 +66,8 @@ STATUS_CONTENT_MODERATED = "Content Moderated"
 class WanTextToVideoGeneration(SuccessFailureNode):
     """Generate videos from text using WAN models via Griptape model proxy.
 
+    Documentation: https://www.alibabacloud.com/help/en/model-studio/text-to-video-api-reference
+
     Inputs:
         - model (str): WAN model to use (default: "wan2.5-t2v-preview")
             wan2.5-t2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio

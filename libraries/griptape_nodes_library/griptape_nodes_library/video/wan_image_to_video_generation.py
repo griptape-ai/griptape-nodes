@@ -76,6 +76,8 @@ STATUS_CONTENT_MODERATED = "Content Moderated"
 class WanImageToVideoGeneration(SuccessFailureNode):
     """Generate videos from images using WAN models via Griptape model proxy.
 
+    Documentation: https://www.alibabacloud.com/help/en/model-studio/image-to-video-api-reference
+
     Inputs:
         - model (str): WAN model to use (default: "wan2.5-i2v-preview")
             wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio, 2000 char prompts

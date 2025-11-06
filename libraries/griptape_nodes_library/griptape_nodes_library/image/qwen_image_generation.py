@@ -41,6 +41,8 @@ STATUS_CONTENT_MODERATED = "Content Moderated"
 class QwenImageGeneration(SuccessFailureNode):
     """Generate images using Qwen models via Griptape model proxy.
 
+    Documentation: https://www.alibabacloud.com/help/en/model-studio/qwen-image-api
+
     Inputs:
         - model (str): Qwen model to use ("qwen-image" or "qwen-image-plus", default: "qwen-image")
         - prompt (str): Text description of the desired image (max 800 characters)
