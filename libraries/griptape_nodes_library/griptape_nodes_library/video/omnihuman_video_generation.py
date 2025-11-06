@@ -348,7 +348,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         start_time = monotonic()
         attempt = 0
         poll_interval_s = 5.0
-        timeout_s = 600.0
+        timeout_s = 15 * 60
 
         last_json = None
 
