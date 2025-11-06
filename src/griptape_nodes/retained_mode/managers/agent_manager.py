@@ -600,7 +600,14 @@ class AgentManager:
     def _get_threads_directory(self) -> Path:
         """Get the directory for storing thread data."""
         workspace_path = config_manager.workspace_path
-        return workspace_path / "threads"
+        threads_dir = config_manager.get_config_value("threads_directory")
+
+        # Handle both absolute and relative paths
+        threads_path = Path(threads_dir)
+        if threads_path.is_absolute():
+            return threads_path
+
+        return workspace_path / threads_dir
 
     def _get_conversation_meta(self, thread_id: str) -> dict:
         """Get metadata from ConversationMemory.meta for a thread."""
