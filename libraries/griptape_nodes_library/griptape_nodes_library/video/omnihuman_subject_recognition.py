@@ -178,7 +178,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
     def _submit_recognition_request(self, model_id: str, image_url: str, api_key: str) -> str:
         """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
-            # "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -220,7 +220,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
     def _poll_for_result(self, generation_id: str, api_key: str) -> None:
         """Poll for the generation result via Griptape Cloud proxy."""
         headers = {
-            # "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 

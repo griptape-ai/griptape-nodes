@@ -168,7 +168,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
     def _submit_detection_request(self, model_id: str, image_url: str, api_key: str) -> None:
         """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
-            # "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -186,7 +186,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
                 post_url,
                 json=provider_params,
                 headers=headers,
-                timeout=60,
+                timeout=300,  # 5 minutes
             )
 
             if response.status_code >= 400:  # noqa: PLR2004
@@ -212,7 +212,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
     def _process_response(self, response_json: dict[str, Any]) -> None:
         """Process the API response from Griptape Cloud proxy."""
         # Extract provider response from Griptape Cloud format
-        logger.error(response_json)
         resp_data = _json.loads(response_json.get("data", {}).get("resp_data", {}))
         provider_response = response_json.get("provider_response", {})
         if isinstance(provider_response, str):

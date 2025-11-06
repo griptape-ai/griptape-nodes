@@ -267,11 +267,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             "fast_mode": fast_mode if fast_mode else None,
         }
         # remove None values
-        req = {k: v for k, v in body.items() if v is not None}
-        import json
-
-        logger.error(f"Generation request parameters: {json.dumps(req)}")
-        return req
+        return {k: v for k, v in body.items() if v is not None}
 
     def _get_req_key(self, model_id: str) -> str:
         """Get the request key based on model_id."""
@@ -293,7 +289,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     def _submit_generation_request(self, params: dict[str, Any], api_key: str) -> str:
         """Submit the video generation request via Griptape Cloud proxy."""
         headers = {
-            # "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -338,7 +334,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     def _poll_for_result(self, generation_id: str, api_key: str) -> None:
         """Poll for the generation result via Griptape Cloud proxy."""
         headers = {
-            # "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
