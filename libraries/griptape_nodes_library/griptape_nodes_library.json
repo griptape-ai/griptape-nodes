@@ -2096,6 +2096,16 @@
         "display_name": "List Files",
         "icon": "FolderOpen"
       }
+    },
+    {
+      "class_name": "FilePathComponents",
+      "file_path": "griptape_nodes_library/engine/path.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Extract path components from a file path (filename, stem, extension, parent, query params)",
+        "display_name": "FilePath Components",
+        "icon": "FileText"
+      }
     }
   ],
   "workflows": [
