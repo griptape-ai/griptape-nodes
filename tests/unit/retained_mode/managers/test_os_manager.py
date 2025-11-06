@@ -611,12 +611,12 @@ class TestDeleteFileRequest:
         assert Path(result.deleted_paths[0]).resolve() == file_path.resolve()
         assert not file_path.exists()
 
-    def test_delete_empty_directory_recursive(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test deleting an empty directory with recursive=True."""
+    def test_delete_empty_directory(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test deleting an empty directory."""
         os_manager = griptape_nodes.OSManager()
         dir_path = temp_dir / "testdir"
         dir_path.mkdir()
-        request = DeleteFileRequest(path=str(dir_path), recursive=True, workspace_only=False)
+        request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
 
         result = os_manager.on_delete_file_request(request)
 
@@ -626,8 +626,8 @@ class TestDeleteFileRequest:
         assert str(dir_path) in result.deleted_paths or str(dir_path.resolve()) in result.deleted_paths
         assert not dir_path.exists()
 
-    def test_delete_directory_with_contents_recursive(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test deleting a directory with contents recursively."""
+    def test_delete_directory_with_contents(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test deleting a directory with contents."""
         os_manager = griptape_nodes.OSManager()
         dir_path = temp_dir / "testdir"
         dir_path.mkdir()
@@ -637,7 +637,7 @@ class TestDeleteFileRequest:
         subdir.mkdir()
         (subdir / "file3.txt").write_text("content3")
 
-        request = DeleteFileRequest(path=str(dir_path), recursive=True, workspace_only=False)
+        request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
 
         result = os_manager.on_delete_file_request(request)
 
@@ -650,19 +650,6 @@ class TestDeleteFileRequest:
         assert any(str(dir_path / "file2.txt") in path for path in result.deleted_paths)
         assert any(str(subdir / "file3.txt") in path for path in result.deleted_paths)
         assert not dir_path.exists()
-
-    def test_delete_directory_without_recursive_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that deleting a directory without recursive=True fails."""
-        os_manager = griptape_nodes.OSManager()
-        dir_path = temp_dir / "testdir"
-        dir_path.mkdir()
-        request = DeleteFileRequest(path=str(dir_path), recursive=False, workspace_only=False)
-
-        result = os_manager.on_delete_file_request(request)
-
-        assert isinstance(result, DeleteFileResultFailure)
-        assert result.failure_reason == FileIOFailureReason.IS_DIRECTORY
-        assert dir_path.exists()
 
     def test_delete_nonexistent_file_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that deleting a nonexistent file fails."""

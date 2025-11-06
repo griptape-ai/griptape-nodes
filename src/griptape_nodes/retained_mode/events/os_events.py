@@ -484,10 +484,11 @@ class DeleteFileRequest(RequestPayload):
     Use when: Deleting files/directories through file picker,
     implementing file deletion functionality, cleaning up temporary files.
 
+    Note: Directories are always deleted with all their contents.
+
     Args:
         path: Path to file/directory to delete (mutually exclusive with file_entry)
         file_entry: FileSystemEntry from directory listing (mutually exclusive with path)
-        recursive: If True, delete directories and contents recursively (default: False)
         workspace_only: If True, constrain to workspace directory
 
     Results: DeleteFileResultSuccess | DeleteFileResultFailure
@@ -495,7 +496,6 @@ class DeleteFileRequest(RequestPayload):
 
     path: str | None = None
     file_entry: FileSystemEntry | None = None
-    recursive: bool = False
     workspace_only: bool | None = True
 
 

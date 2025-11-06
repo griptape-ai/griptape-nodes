@@ -1356,14 +1356,11 @@ class OSManager:
             msg = f"Attempted to delete file at path {path_to_delete}. Failed due to path not found"
             return DeleteFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
 
-        # Check if path is a directory and recursive=False
+        # Determine if this is a directory
         is_directory = resolved_path.is_dir()
-        if is_directory and not request.recursive:
-            msg = f"Attempted to delete directory at path {path_to_delete}. Failed due to recursive=False"
-            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
 
         # Collect all paths that will be deleted (for reporting)
-        if is_directory and request.recursive:
+        if is_directory:
             # Collect all file and directory paths before deletion
             deleted_paths = [str(item) for item in resolved_path.rglob("*")]
             deleted_paths.append(str(resolved_path))
