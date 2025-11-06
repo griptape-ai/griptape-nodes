@@ -217,11 +217,6 @@ class Settings(BaseModel):
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
     )
-    threads_directory: str = Field(
-        category=FILE_SYSTEM,
-        default="threads",
-        description="Path to the threads directory, relative to the workspace directory.",
-    )
     thread_storage_backend: Literal["local", "gtc"] = Field(
         category=STORAGE,
         default="local",

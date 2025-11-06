@@ -5,7 +5,6 @@ import os
 import threading
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from attrs import define, field
@@ -24,6 +23,7 @@ from griptape.utils.decorators import activity
 from json_repair import repair_json
 from pydantic import create_model
 from schema import Literal, Schema
+from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.drivers.thread_storage import (
     GriptapeCloudThreadStorageDriver,
@@ -131,7 +131,7 @@ class AgentManager:
         self.static_files_manager = static_files_manager
 
         # Thread management
-        self._threads_dir = self._get_threads_directory()
+        self._threads_dir = xdg_data_home() / "griptape_nodes" / "threads"
         self._threads_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize thread storage driver based on config
@@ -518,18 +518,6 @@ class AgentManager:
                 connection[field_name] = server_config[field_name]
 
         return connection
-
-    def _get_threads_directory(self) -> Path:
-        """Get the directory for storing thread data."""
-        workspace_path = config_manager.workspace_path
-        threads_dir = config_manager.get_config_value("threads_directory")
-
-        # Handle both absolute and relative paths
-        threads_path = Path(threads_dir)
-        if threads_path.is_absolute():
-            return threads_path
-
-        return workspace_path / threads_dir
 
     def _generate_title_from_input(self, user_input: str, max_length: int = 50) -> str:
         """Generate a thread title from user input."""
