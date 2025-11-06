@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -8,6 +11,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.project_events import MacroPath
 
 
 class ExistingFilePolicy(StrEnum):
@@ -308,6 +314,68 @@ class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class GetNextUnusedFilenameRequest(RequestPayload):
+    """Find the next available filename with auto-incrementing index.
+
+    Use when: Finding available filenames without file collision, reserving filenames
+    before actual write operations, implementing CREATE_NEW policy.
+
+    This request scans the filesystem for existing files matching the pattern and returns
+    the next available filename with an auto-incremented index. Optionally creates a
+    placeholder (0-byte file) to reserve the filename.
+
+    Args:
+        file_path: Path to the file (str for direct path, MacroPath for macro resolution)
+        create_placeholder: If True, atomically create 0-byte file to reserve filename (default: False)
+
+    Results: GetNextUnusedFilenameResultSuccess | GetNextUnusedFilenameResultFailure
+
+    Examples:
+        # Simple path - auto-injects _{index} before extension
+        file_path = "/outputs/render.png"
+        # Returns: "/outputs/render_1.png", "/outputs/render_2.png", etc.
+
+        # Macro path with explicit {index} placement
+        file_path = MacroPath(
+            parsed_macro=ParsedMacro("{outputs}/frame_{index:05}.png"),
+            variables={"outputs": "/abs/path"}
+        )
+        # Returns: "/abs/path/frame_00001.png", "/abs/path/frame_00002.png", etc.
+    """
+
+    file_path: str | MacroPath
+    create_placeholder: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextUnusedFilenameResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Next unused filename found and optionally reserved.
+
+    Attributes:
+        available_filename: Absolute path to the available filename
+        index_used: The index number that was used (e.g., 1, 2, 3...)
+    """
+
+    available_filename: str
+    index_used: int
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextUnusedFilenameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to find available filename.
+
+    Attributes:
+        failure_reason: Classification of why the operation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
 class WriteFileRequest(RequestPayload):
     """Write content to a file.
 
@@ -317,14 +385,14 @@ class WriteFileRequest(RequestPayload):
     creating configuration files, writing binary data.
 
     Args:
-        file_path: Path to the file to write
+        file_path: Path to the file to write (str for direct path, MacroPath for macro resolution)
         content: Content to write (str for text files, bytes for binary files)
         encoding: Text encoding for str content (default: 'utf-8', ignored for bytes)
         append: If True, append to existing file; if False, use existing_file_policy (default: False)
         existing_file_policy: How to handle existing files when append=False:
             - "overwrite": Replace file content (default)
             - "fail": Return failure if file exists
-            - "create_new": Create new file with modified name (NOT YET IMPLEMENTED)
+            - "create_new": Create new file with auto-incrementing index (e.g., file_1.txt, file_2.txt)
         create_parents: If True, create parent directories if missing (default: True)
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
@@ -332,7 +400,7 @@ class WriteFileRequest(RequestPayload):
     Note: existing_file_policy is ignored when append=True (append always allows existing files)
     """
 
-    file_path: str
+    file_path: str | MacroPath
     content: str | bytes
     encoding: str = "utf-8"  # Ignored for bytes
     append: bool = False
