@@ -1,7 +1,6 @@
 """Base thread storage driver abstract class."""
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 from griptape.drivers.memory.conversation import BaseConversationMemoryDriver
 
@@ -13,15 +12,13 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 class BaseThreadStorageDriver(ABC):
     """Abstract base class for thread storage backends."""
 
-    def __init__(self, threads_directory: Path, config_manager: ConfigManager, secrets_manager: SecretsManager) -> None:
+    def __init__(self, config_manager: ConfigManager, secrets_manager: SecretsManager) -> None:
         """Initialize the thread storage driver.
 
         Args:
-            threads_directory: Directory for storing thread data (local backend)
             config_manager: Configuration manager instance
             secrets_manager: Secrets manager instance
         """
-        self.threads_directory = threads_directory
         self.config_manager = config_manager
         self.secrets_manager = secrets_manager
 

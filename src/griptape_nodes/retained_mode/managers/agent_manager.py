@@ -469,7 +469,7 @@ class AgentManager:
         storage_backend = config_manager.get_config_value("thread_storage_backend")
 
         if storage_backend == "gtc":
-            return GriptapeCloudThreadStorageDriver(self._threads_dir, config_manager, secrets_manager)
+            return GriptapeCloudThreadStorageDriver(config_manager, secrets_manager)
 
         return LocalThreadStorageDriver(self._threads_dir, config_manager, secrets_manager)
 

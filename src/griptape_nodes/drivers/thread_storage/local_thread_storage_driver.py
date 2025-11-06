@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from griptape.drivers.memory.conversation import BaseConversationMemoryDriver
 from griptape.drivers.memory.conversation.local import LocalConversationMemoryDriver
@@ -9,10 +10,23 @@ from griptape.memory.structure import ConversationMemory
 
 from griptape_nodes.drivers.thread_storage.base_thread_storage_driver import BaseThreadStorageDriver
 from griptape_nodes.retained_mode.events.agent_events import ThreadMetadata
+from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 
 class LocalThreadStorageDriver(BaseThreadStorageDriver):
     """Local filesystem implementation of thread storage."""
+
+    def __init__(self, threads_directory: Path, config_manager: ConfigManager, secrets_manager: SecretsManager) -> None:
+        """Initialize the local thread storage driver.
+
+        Args:
+            threads_directory: Directory for storing thread data
+            config_manager: Configuration manager instance
+            secrets_manager: Secrets manager instance
+        """
+        super().__init__(config_manager, secrets_manager)
+        self.threads_directory = threads_directory
 
     def create_thread(self, title: str | None = None, local_id: str | None = None) -> tuple[str, dict]:
         thread_id = str(uuid.uuid4())
