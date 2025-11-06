@@ -3,10 +3,7 @@ from typing import Any
 
 import jmespath  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterMode,
-)
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
@@ -56,7 +53,7 @@ class JsonExtractValue(DataNode):
         json_data = self.get_parameter_value("json")
         path = self.get_parameter_value("path")
 
-        # Parse JSON string if needed
+        # Parse JSON string if needed - failure cases first
         if isinstance(json_data, str):
             try:
                 json_data = json.loads(json_data)
@@ -67,29 +64,22 @@ class JsonExtractValue(DataNode):
                 msg = f"{self.name}: Unable to parse JSON data due to type error: {e}. Input type: {type(json_data)}, value: {json_data[:200]!r}"
                 raise ValueError(msg) from e
 
-        # Handle empty path
+        # Extract value using JMESPath - failure cases first
         if not path:
             result = json_data
         else:
             try:
-                # Use JMESPath to extract the value
                 result = jmespath.search(path, json_data)
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 msg = f"{self.name}: Invalid JMESPath expression '{path}': {e}"
                 raise ValueError(msg) from e
 
-        # Handle None result
+        # Handle None result - return empty dict like other JSON nodes
         if result is None:
-            result = "{}"
-        else:
-            try:
-                # Convert the extracted value to valid JSON string
-                result = json.dumps(result, ensure_ascii=False)
-            except (TypeError, ValueError):
-                # If the value can't be serialized as JSON, return empty object
-                result = "{}"
+            result = {}
 
-        # Set the output
+        # Success path at the end - return raw Python value (no JSON serialization needed)
+        # JMESPath already returns the correct Python types (str, dict, list, etc.)
         GriptapeNodes.handle_request(
             SetParameterValueRequest(parameter_name="output", value=result, node_name=self.name)
         )

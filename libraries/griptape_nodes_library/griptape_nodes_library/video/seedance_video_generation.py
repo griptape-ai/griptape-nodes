@@ -93,6 +93,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                     Options(
                         choices=[
                             "seedance-1-0-pro-250528",
+                            "seedance-1-0-pro-fast-251015",
                             "seedance-1-0-lite-t2v-250428",
                             "seedance-1-0-lite-i2v-250428",
                         ]
