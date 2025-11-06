@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -36,31 +35,31 @@ MODEL_OPTIONS = [
 # Model-specific configurations
 MODEL_CONFIGS = {
     "wan2.5-i2v-preview": {
-        "resolutions": ["480p", "720p", "1080p"],
+        "resolutions": ["480P", "720P", "1080P"],
         "durations": [5, 10],
         "supports_audio": True,
         "max_prompt_length": 2000,
     },
     "wan2.2-i2v-flash": {
-        "resolutions": ["480p", "720p"],
+        "resolutions": ["480P", "720P"],
         "durations": [5],
         "supports_audio": False,
         "max_prompt_length": 800,
     },
     "wan2.2-i2v-plus": {
-        "resolutions": ["480p", "1080p"],
+        "resolutions": ["480P", "1080P"],
         "durations": [5],
         "supports_audio": False,
         "max_prompt_length": 800,
     },
     "wan2.1-i2v-plus": {
-        "resolutions": ["720p"],
+        "resolutions": ["720P"],
         "durations": [5],
         "supports_audio": False,
         "max_prompt_length": 800,
     },
     "wan2.1-i2v-turbo": {
-        "resolutions": ["480p", "720p"],
+        "resolutions": ["480P", "720P"],
         "durations": [3, 4, 5],
         "supports_audio": False,
         "max_prompt_length": 800,
@@ -79,11 +78,11 @@ class WanImageToVideoGeneration(SuccessFailureNode):
 
     Inputs:
         - model (str): WAN model to use (default: "wan2.5-i2v-preview")
-            wan2.5-i2v-preview: Supports 480p/720p/1080p, 5-10s duration, audio, 2000 char prompts
-            wan2.2-i2v-flash: Supports 480p/720p, 5s duration, 50% faster than 2.1
-            wan2.2-i2v-plus: Supports 480p/1080p, 5s duration, improved stability
-            wan2.1-i2v-plus: Supports 720p, 5s duration
-            wan2.1-i2v-turbo: Supports 480p/720p, 3-5s duration
+            wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio, 2000 char prompts
+            wan2.2-i2v-flash: Supports 480P/720P, 5s duration, 50% faster than 2.1
+            wan2.2-i2v-plus: Supports 480P/1080P, 5s duration, improved stability
+            wan2.1-i2v-plus: Supports 720P, 5s duration
+            wan2.1-i2v-turbo: Supports 480P/720P, 3-5s duration
         - input_image (ImageArtifact): Input image for video generation (required)
             Supports JPG, JPEG, PNG, BMP, WEBP
             Resolution: 360-2000 pixels (width and height)
@@ -140,7 +139,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 name="input_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
-                tooltip="Input image for video generation (JPG, PNG, BMP, WEBP; 360-2000px; max 10MB)",
+                tooltip="Input image for video generation (JPG, PNG, BMP, WEBP; 360-2000Px; max 10MB)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
             )
@@ -186,7 +185,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 name="resolution",
                 input_types=["str"],
                 type="str",
-                default_value="1080p",
+                default_value="1080P",
                 tooltip="Output video resolution (available options depend on selected model)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_CONFIGS["wan2.5-i2v-preview"]["resolutions"])},
@@ -337,14 +336,14 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         model = params["model"]
         logger.info("Generating video from image with %s", model)
 
-        # Submit request to get generation ID
+        # Submit request and get synchronous response
         try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
+            response = await self._submit_request(params, headers)
+            if not response:
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                    result_details="No response returned from API. Cannot proceed with generation.",
                 )
                 return
         except RuntimeError as e:
@@ -353,8 +352,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             self._handle_failure_exception(e)
             return
 
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
+        # Handle synchronous response
+        logger.info(f"Response: {json.dumps(response, indent=2)}")
+        await self._handle_response(response)
 
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
@@ -406,7 +406,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
         payload = await self._build_payload(params)
         proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
@@ -433,14 +433,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            logger.info("Submitted. generation_id=%s", generation_id)
-            return str(generation_id)
-        logger.warning("No generation_id returned from POST response")
-        return None
+        return response_json
 
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Process input image to base64 data URI
@@ -449,32 +442,27 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             msg = "Failed to process input image"
             raise ValueError(msg)
 
-        # Build input object
-        input_obj: dict[str, Any] = {"img_url": img_url}
-
-        # Add prompt if provided
-        if params["prompt"]:
-            input_obj["prompt"] = params["prompt"]
-
-        # Add negative prompt if provided
-        if params["negative_prompt"]:
-            input_obj["negative_prompt"] = params["negative_prompt"]
-
+        # Build flattened payload (all params at top level)
         payload = {
             "model": params["model"],
-            "input": input_obj,
-            "parameters": {
-                "resolution": params["resolution"],
-                "duration": params["duration"],
-                "prompt_extend": params["prompt_extend"],
-                "watermark": params["watermark"],
-                "seed": params["seed"],
-            },
+            "img_url": img_url,
+            "resolution": params["resolution"],
+            "duration": params["duration"],
+            "prompt_extend": params["prompt_extend"],
+            "watermark": params["watermark"],
+            "seed": params["seed"],
         }
+
+        # Add optional parameters if provided
+        if params["prompt"]:
+            payload["prompt"] = params["prompt"]
+
+        if params["negative_prompt"]:
+            payload["negative_prompt"] = params["negative_prompt"]
 
         # Add audio parameter (only for wan2.5-i2v-preview)
         if params["model"] == "wan2.5-i2v-preview":
-            payload["parameters"]["audio"] = params["audio"]
+            payload["audio"] = params["audio"]
 
         return payload
 
@@ -538,78 +526,57 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             logger.error("Failed to download image from URL %s: %s", url, e)
         return None
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 120  # 10 minutes with 5s intervals
-        poll_interval = 5
+    async def _handle_response(self, response: dict[str, Any]) -> None:
+        """Handle WAN synchronous response and extract video.
 
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    logger.info("Polling attempt #%s for generation %s", attempt + 1, generation_id)
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
+        Response shape:
+        {
+            "status_code": 200,
+            "request_id": "...",
+            "output": {
+                "task_id": "...",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://..."
+            }
+        }
+        """
+        self.parameter_output_values["provider_response"] = response
 
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
+        # Extract request_id for generation_id
+        request_id = response.get("request_id", response.get("id", ""))
+        self.parameter_output_values["generation_id"] = str(request_id)
 
-                    status = result_json.get("status", "unknown")
-                    logger.info("Status: %s", status)
+        # Check status_code
+        status_code = response.get("status_code")
+        if status_code and status_code != 200:
+            logger.error("Generation failed with status_code: %s", status_code)
+            self._set_safe_defaults()
+            error_details = self._extract_error_details(response)
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
 
-                    if status == "Ready":
-                        # Extract the video URL from result.sample
-                        sample_url = result_json.get("result", {}).get("sample")
-                        if sample_url:
-                            await self._handle_success(result_json, sample_url)
-                        else:
-                            logger.warning("No sample URL found in ready result")
-                            self._set_safe_defaults()
-                            self._set_status_results(
-                                was_successful=False,
-                                result_details="Generation completed but no video URL was found in the response.",
-                            )
-                        return
-                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-                        logger.error("Generation failed with status: %s", status)
-                        self._set_safe_defaults()
-                        # Extract error details from the response
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
+        # Extract video URL from output.video_url
+        output = response.get("output", {})
+        task_status = output.get("task_status")
 
-                    # Still processing, wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
+        # Check task status
+        if task_status != "SUCCEEDED":
+            logger.error("Generation failed with task_status: %s", task_status)
+            self._set_safe_defaults()
+            error_details = self._extract_error_details(response)
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
 
-                except httpx.HTTPStatusError as e:
-                    logger.error("HTTP error while polling: %s - %s", e.response.status_code, e.response.text)
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    logger.error("Error while polling: %s", e)
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            logger.warning("Polling timed out waiting for result")
+        video_url = output.get("video_url")
+        if video_url:
+            await self._save_video_from_url(video_url)
+        else:
+            logger.warning("No video_url found in output")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
-                result_details=f"Video generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
+                result_details="Generation completed but no video URL was found in the response.",
             )
-
-    async def _handle_success(self, response: dict[str, Any], video_url: str) -> None:
-        """Handle successful generation result."""
-        self.parameter_output_values["provider_response"] = response
-        await self._save_video_from_url(video_url)
 
     async def _save_video_from_url(self, video_url: str) -> None:
         """Download and save the video from the provided URL."""

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-import json as _json
+import json as json
 import logging
 import os
 import time
@@ -27,7 +26,7 @@ __all__ = ["QwenImageGeneration"]
 PROMPT_TRUNCATE_LENGTH = 100
 
 # Size options (Qwen's available resolutions)
-SIZE_OPTIONS = ["1328x1328", "1664x928", "1472x1140", "1140x1472", "928x1664"]
+SIZE_OPTIONS = ["1328*1328", "1664*928", "1472*1140", "1140*1472", "928*1664"]
 
 # Model options
 MODEL_OPTIONS = ["qwen-image", "qwen-image-plus"]
@@ -46,8 +45,8 @@ class QwenImageGeneration(SuccessFailureNode):
         - model (str): Qwen model to use ("qwen-image" or "qwen-image-plus", default: "qwen-image")
         - prompt (str): Text description of the desired image (max 800 characters)
         - input_image (ImageArtifact): Optional input image for image-to-image generation
-        - size (str): Output image resolution (default: "1328x1328")
-            Available sizes: 1328x1328 (1:1), 1664x928 (16:9), 1472x1140 (4:3), 1140x1472 (3:4), 928x1664 (9:16)
+        - size (str): Output image resolution (default: "1328*1328")
+            Available sizes: 1328*1328 (1:1), 1664*928 (16:9), 1472*1140 (4:3), 1140*1472 (3:4), 928*1664 (9:16)
         - randomize_seed (bool): If true, randomize the seed on each run
         - seed (int): Random seed for reproducible results (default: 42)
         - prompt_extend (bool): Enable intelligent prompt rewriting to improve quality (adds 3-4s, default: False)
@@ -123,8 +122,8 @@ class QwenImageGeneration(SuccessFailureNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="1328x1328",
-                tooltip="Output image resolution (1328x1328=1:1, 1664x928=16:9, 1472x1140=4:3, 1140x1472=3:4, 928x1664=9:16)",
+                default_value="1328*1328",
+                tooltip="Output image resolution (1328*1328=1:1, 1664*928=16:9, 1472*1140=4:3, 1140*1472=3:4, 928*1664=9:16)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=SIZE_OPTIONS)},
             )
@@ -230,14 +229,14 @@ class QwenImageGeneration(SuccessFailureNode):
         model = params["model"]
         logger.info("Generating image with %s", model)
 
-        # Submit request to get generation ID
+        # Submit request and get synchronous response
         try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
+            response = await self._submit_request(params, headers)
+            if not response:
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                    result_details="No response returned from API. Cannot proceed with generation.",
                 )
                 return
         except RuntimeError as e:
@@ -246,8 +245,8 @@ class QwenImageGeneration(SuccessFailureNode):
             self._handle_failure_exception(e)
             return
 
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
+        # Handle synchronous response
+        await self._handle_response(response)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
@@ -268,7 +267,7 @@ class QwenImageGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
         payload = await self._build_payload(params)
         proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
@@ -296,14 +295,7 @@ class QwenImageGeneration(SuccessFailureNode):
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            logger.info("Submitted. generation_id=%s", generation_id)
-            return str(generation_id)
-        logger.warning("No generation_id returned from POST response")
-        return None
+        return response_json
 
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build content array with text prompt
@@ -403,80 +395,70 @@ class QwenImageGeneration(SuccessFailureNode):
                     b64_len = len(parts[1]) if len(parts) > 1 else 0
                     sanitized_payload["input_image"] = f"{header},<base64 data length={b64_len}>"
 
-            logger.info("Request payload: %s", _json.dumps(sanitized_payload, indent=2))
+            logger.info("Request payload: %s", json.dumps(sanitized_payload, indent=2))
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 120  # 10 minutes with 5s intervals
-        poll_interval = 5
+    async def _handle_response(self, response: dict[str, Any]) -> None:
+        """Handle Qwen synchronous response and extract image.
 
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    logger.info("Polling attempt #%s for generation %s", attempt + 1, generation_id)
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
+        Response shape:
+        {
+            "status_code": 200,
+            "request_id": "...",
+            "output": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": [
+                                {"image": "https://..."}
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+        """
+        self.parameter_output_values["provider_response"] = response
 
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
+        # Extract request_id for generation_id
+        request_id = response.get("request_id", response.get("id", ""))
+        self.parameter_output_values["generation_id"] = str(request_id)
 
-                    status = result_json.get("status", "unknown")
-                    logger.info("Status: %s", status)
+        # Check status_code
+        status_code = response.get("status_code")
+        if status_code and status_code != 200:
+            logger.error("Generation failed with status_code: %s", status_code)
+            self._set_safe_defaults()
+            error_details = self._extract_error_details(response)
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
 
-                    if status == "Ready":
-                        # Extract the image URL from result.sample
-                        sample_url = result_json.get("result", {}).get("sample")
-                        if sample_url:
-                            await self._handle_success(result_json, sample_url)
-                        else:
-                            logger.warning("No sample URL found in ready result")
-                            self._set_safe_defaults()
-                            self._set_status_results(
-                                was_successful=False,
-                                result_details="Generation completed but no image URL was found in the response.",
-                            )
-                        return
-                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-                        logger.error("Generation failed with status: %s", status)
-                        self._set_safe_defaults()
-                        # Extract error details from the response
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing, wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    logger.error("HTTP error while polling: %s - %s", e.response.status_code, e.response.text)
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    logger.error("Error while polling: %s", e)
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            logger.error("Polling timed out waiting for result")
+        # Extract image URL from response.choices[0].message.content[0].image
+        try:
+            choices = response.get("choices", [])
+            choice = choices[0]
+            message = choice.get("message", {})
+            content = message.get("content", [])
+            first_content_item = content[0]
+            image_url = first_content_item.get("image")
+        except Exception as e:
+            logger.error("Failed to extract image URL from response: %s", e)
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
-                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
+                result_details="Generation completed but no content found in the response.",
             )
+            return
 
-    async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
-        """Handle successful generation result."""
-        self.parameter_output_values["provider_response"] = response
-        await self._save_image_from_url(image_url)
+
+        if image_url:
+            await self._save_image_from_url(image_url)
+        else:
+            logger.warning("No image URL found in content")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no image URL was found in the response.",
+            )
 
     async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
@@ -566,7 +548,7 @@ class QwenImageGeneration(SuccessFailureNode):
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                return _json.loads(provider_response)
+                return json.loads(provider_response)
             except Exception:
                 return None
         if isinstance(provider_response, dict):
