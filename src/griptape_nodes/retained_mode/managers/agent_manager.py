@@ -321,9 +321,11 @@ class AgentManager:
         # EventBus functionality removed - events now go directly to event queue
         try:
             # Get or create thread and validate
-            thread_id = self._validate_thread_for_run(request.thread_id)
-            if isinstance(thread_id, RunAgentResultFailure):
-                return thread_id
+            try:
+                thread_id = self._validate_thread_for_run(request.thread_id)
+            except ValueError as e:
+                details = str(e)
+                return RunAgentResultFailure(error={"message": details}, result_details=details)
 
             # Check if this is the first run
             driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
@@ -398,8 +400,8 @@ class AgentManager:
             ],
         )
 
-    def _validate_thread_for_run(self, thread_id: str | None) -> str | RunAgentResultFailure:
-        """Validate and return thread_id for agent run, or return failure."""
+    def _validate_thread_for_run(self, thread_id: str | None) -> str:
+        """Validate and return thread_id for agent run, or raise ValueError."""
         if thread_id is None:
             thread_id, _ = self.thread_storage_driver.create_thread()
             return thread_id
@@ -408,7 +410,7 @@ class AgentManager:
         if meta.get("archived", False):
             details = f"Cannot run agent on archived thread {thread_id}. Unarchive it first."
             logger.error(details)
-            return RunAgentResultFailure(error={"message": details}, result_details=details)
+            raise ValueError(details)
 
         return thread_id
 
