@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import json as _json
+from time import monotonic, sleep
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
@@ -58,7 +60,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 name="model_id",
                 input_types=["str"],
                 type="str",
-                default_value="omnihuman-1-5-subject-recognition",
+                default_value=self.MODEL_IDS[0],
                 tooltip="Model identifier to use for recognition",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=self.MODEL_IDS)},
@@ -100,6 +102,16 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             )
         )
 
+        self.add_parameter(
+            Parameter(
+                name="does_image_contain_human",
+                output_type="bool",
+                type="bool",
+                tooltip="Whether the image contains human or human-like subjects",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
         # Create status parameters for success/failure tracking
         self._create_status_parameters(
             result_details_tooltip="Details about the subject recognition result or any errors",
@@ -118,7 +130,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         self._clear_execution_status()
 
         # Get and validate parameters
-        model_id = self.get_parameter_value("model_id") or "omnihuman-subject-recognition"
+        model_id = self.get_parameter_value("model_id")
         image_url = self._get_image_url()
         if not image_url:
             self._set_status_results(was_successful=False, result_details="Image URL is required")
@@ -128,14 +140,15 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
         # Submit recognition request
         try:
-            self._submit_recognition_request(model_id, image_url, api_key)
+            generation_id = self._submit_recognition_request(model_id, image_url, api_key)
+            self.parameter_output_values["generation_id"] = generation_id
+            self._poll_for_result(generation_id, api_key)
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
@@ -162,21 +175,21 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_recognition_request(self, model_id: str, image_url: str, api_key: str) -> None:
-        """Submit the subject recognition request via Griptape Cloud proxy."""
+    def _submit_recognition_request(self, model_id: str, image_url: str, api_key: str) -> str:
+        """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            # "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
         # Build payload matching BytePlus API format
         provider_params = {
-            "req_key": "realman_avatar_picture_create_role_omni_cv",
+            "req_key": self._get_req_key(model_id),
             "image_url": image_url,
         }
 
         post_url = urljoin(self._proxy_base, f"models/{model_id}")
-        self._log("Submitting subject recognition request via proxy")
+        self._log("Submitting subject detection request via proxy")
 
         try:
             response = requests.post(
@@ -187,40 +200,106 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             )
 
             if response.status_code >= 400:  # noqa: PLR2004
-                self._set_safe_defaults()
                 error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
                 self._log(error_msg)
                 raise RuntimeError(error_msg)
 
             response_json = response.json()
-            self._process_response(response_json)
+            generation_id = response_json.get("generation_id")
+            if not generation_id:
+                error_msg = "No generation_id returned from recognition request"
+                self._log(error_msg)
+                raise RuntimeError(error_msg)
+            return generation_id
 
         except requests.RequestException as e:
-            self._set_safe_defaults()
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
             self._log(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def _process_response(self, response_json: dict[str, Any]) -> None:
-        """Process the API response."""
-        generation_id = str(response_json.get("generation_id") or "")
-        provider_response = response_json.get("provider_response")
+    def _poll_for_result(self, generation_id: str, api_key: str) -> None:
+        """Poll for the generation result via Griptape Cloud proxy."""
+        headers = {
+            # "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
-        self.parameter_output_values["generation_id"] = generation_id
-        self.parameter_output_values["recognition_result"] = response_json
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
 
-        if generation_id:
-            self._log(f"Subject recognition succeeded. Generation ID: {generation_id}")
-            result_details = f"Subject recognition completed successfully.\nGeneration ID: {generation_id}"
-            if provider_response:
-                result_details += "\nProvider response available"
-            self._set_status_results(was_successful=True, result_details=result_details)
-        else:
-            self._log("Subject recognition failed - no generation_id returned")
-            error_details = "Subject recognition failed.\nNo generation_id returned from proxy"
+        start_time = monotonic()
+        attempt = 0
+        poll_interval_s = 5.0
+        timeout_s = 600.0
+
+        last_json = None
+
+        while True:
+            if monotonic() - start_time > timeout_s:
+                self._log("Polling timed out waiting for result")
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                )
+                return
+
+            try:
+                response = requests.get(
+                    get_url,
+                    headers=headers,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                last_json = response.json()
+
+                # Update generation result with latest data
+                self.parameter_output_values["recognition_result"] = last_json
+
+            except Exception as exc:
+                self._log(f"Polling request failed: {exc}")
+                error_msg = f"Failed to poll generation status: {exc}"
+                self._set_status_results(was_successful=False, result_details=error_msg)
+                self._handle_failure_exception(RuntimeError(error_msg))
+                return
+
+            attempt += 1
+
+            # Extract provider response
+            provider_response = last_json.get("provider_response", {})
+            if isinstance(provider_response, str):
+                try:
+                    provider_response = _json.loads(provider_response)
+                except Exception:
+                    provider_response = {}
+
+            status = provider_response.get("data", {}).get("status", "").lower()
+
+            self._log(f"Polling attempt #{attempt}, status={status}")
+
+            if status == "done":
+                resp_data = _json.loads(provider_response.get("data", {}).get("resp_data", "{}"))
+                status = resp_data.get("status")
+                self.parameter_output_values["does_image_contain_human"] = status == 1
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Video generation completed successfully.",
+                )
+                return
+
+            if status != "done" and status not in ["not_found", "expired"]:
+                sleep(poll_interval_s)
+                continue
+
+            # Check for completion
+            # Any other status code is an error
+            self._log(f"Generation failed with status: {status}")
+            self.parameter_output_values["video_url"] = None
+            error_details = f"Video generation failed.\nStatus: {status}\nFull response: {last_json}"
             self._set_status_results(was_successful=False, result_details=error_details)
+            return
 
-    def _set_safe_defaults(self) -> None:
-        """Set safe default values for outputs on error."""
-        self.parameter_output_values["generation_id"] = ""
-        self.parameter_output_values["recognition_result"] = {}
+    def _get_req_key(self, model_id: str) -> str:
+        """Get the request key based on model_id."""
+        if model_id == "omnihuman-1-5-subject-recognition":
+            return "realman_avatar_picture_create_role_omni_cv"
+
+        raise ValueError(f"Unsupported model_id: {model_id}")

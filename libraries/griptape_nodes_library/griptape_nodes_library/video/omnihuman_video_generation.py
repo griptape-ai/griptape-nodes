@@ -98,13 +98,13 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 ui_options={"placeholder_text": "https://example.com/audio.mp3"},
             )
         )
-        # mask_urls parameterlist
+
         self.add_parameter(
-            ParameterList(
-                name="mask_urls",
-                input_types=["str", "ImageUrlArtifact"],
-                type="str",
-                output_type="str",
+            Parameter(
+                name="mask_image_urls",
+                input_types=["list"],
+                type="list",
+                output_type="list",
                 default_value=[],
                 tooltip="Optional mask image URLs from subject detection",
                 ui_options={"placeholder_text": "https://example.com/mask1.png"},
@@ -237,7 +237,10 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         """Get and normalize input parameters."""
         image_url = self.get_parameter_value("image_url")
         audio_url = self.get_parameter_value("audio_url")
-        mask_urls = self.get_parameter_value("mask_urls")
+        mask_image_urls = self.get_parameter_value("mask_image_urls")
+        prompt = self.get_parameter_value("prompt")
+        seed = self.get_parameter_value("seed")
+        fast_mode = self.get_parameter_value("fast_mode")
 
         model_id = self.get_parameter_value("model_id")
 
@@ -251,17 +254,24 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # Handle artifacts
         if hasattr(image_url, "value"):
             image_url = image_url.value
-        if hasattr(mask_urls, "value"):
-            mask_urls = mask_urls.value
+        if hasattr(mask_image_urls, "value"):
+            mask_image_urls = mask_image_urls.value
 
         body = {
             "req_key": self._get_req_key(model_id),
             "image_url": str(image_url).strip(),
             "audio_url": str(audio_url).strip(),
-            "mask_url": "; ".join([str(url).strip() for url in mask_urls]) if mask_urls else None,
+            "mask_url": "; ".join([str(url).strip() for url in mask_image_urls]) if mask_image_urls else None,
+            "prompt": prompt if prompt else None,
+            "seed": seed if seed else None,
+            "fast_mode": fast_mode if fast_mode else None,
         }
         # remove None values
-        return {k: v for k, v in body.items() if v is not None}
+        req = {k: v for k, v in body.items() if v is not None}
+        import json
+
+        logger.error(f"Generation request parameters: {json.dumps(req)}")
+        return req
 
     def _get_req_key(self, model_id: str) -> str:
         """Get the request key based on model_id."""
@@ -283,7 +293,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     def _submit_generation_request(self, params: dict[str, Any], api_key: str) -> str:
         """Submit the video generation request via Griptape Cloud proxy."""
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            # "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -328,7 +338,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     def _poll_for_result(self, generation_id: str, api_key: str) -> None:
         """Poll for the generation result via Griptape Cloud proxy."""
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            # "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
@@ -383,7 +393,11 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
             self._log(f"Polling attempt #{attempt}, status={status}")
 
-            if status != "done" and status not in ["not_found", "expired"]:
+            if status == "done":
+                self._handle_completion(last_json, generation_id)
+                return
+
+            if status not in ["not_found", "expired"]:
                 sleep(poll_interval_s)
                 continue
 
@@ -416,40 +430,19 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             )
             return
 
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
         try:
             self._log("Downloading video bytes from provider URL")
-            video_bytes = self._download_bytes_from_url(video_url)
+            video_filename = self._save_video_bytes(video_url)
         except Exception as e:
             self._log(f"Failed to download video: {e}")
-            video_bytes = None
+            video_filename = None
 
-        if video_bytes:
-            try:
-                filename = (
-                    f"omnihuman_video_{generation_id}.mp4"
-                    if generation_id
-                    else f"omnihuman_video_{int(time.time())}.mp4"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                self._log(f"Failed to save to static storage: {e}, using provider URL")
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
-        else:
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
-            self._set_status_results(
-                was_successful=True,
-                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
-            )
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Video generation completed successfully. Video URL: {video_url}"
+            + (f", saved as: {video_filename}" if video_filename else ""),
+        )
 
     @staticmethod
     def _extract_video_url(response_json: dict[str, Any]) -> str | None:
@@ -458,33 +451,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             return None
 
         # Try direct video_url field
-        video_url = response_json.get("video_url")
+        video_url = _json.loads(response_json.get("data", {}).get("resp_data", "{}")).get("video_url")
         if isinstance(video_url, str) and video_url.startswith("http"):
             return video_url
-
-        # Try nested in data
-        data = response_json.get("data")
-        if isinstance(data, dict):
-            video_url = data.get("video_url")
-            if isinstance(video_url, str) and video_url.startswith("http"):
-                return video_url
-
-        # Try nested in result
-        result = response_json.get("result")
-        if isinstance(result, dict):
-            video_url = result.get("video_url")
-            if isinstance(video_url, str) and video_url.startswith("http"):
-                return video_url
 
         return None
 
     @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
+    def _save_video_bytes(url: str) -> str | None:
         """Download video bytes from URL."""
         try:
             response = requests.get(url, timeout=120)
             response.raise_for_status()
-            return response.content  # noqa: TRY300
+            video_filename = f"omnihuman_video_{int(time.time())}.mp4"
+            GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
+            return video_filename
         except Exception:
             return None
 

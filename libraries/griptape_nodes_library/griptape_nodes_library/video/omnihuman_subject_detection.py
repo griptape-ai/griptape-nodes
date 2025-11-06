@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 import requests
 from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterList
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -62,7 +62,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
                 name="model_id",
                 input_types=["str"],
                 type="str",
-                default_value="omnihuman-1-5-subject-detection",
+                default_value=self.MODEL_IDS[0],
                 tooltip="Model identifier to use for detection",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=self.MODEL_IDS)},
@@ -86,43 +86,31 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         # OUTPUTS
         self.add_parameter(
             Parameter(
-                name="profile_image_url",
+                name="mask_image",
                 output_type="ImageUrlArtifact",
                 type="ImageUrlArtifact",
-                tooltip="URL of the detected subject profile image",
+                tooltip="Mask image URL for the detected subject",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
             Parameter(
-                name="mask_image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
-                tooltip="URL of the subject mask image",
+                name="mask_image_urls",
+                type="list",
+                output_type="list",
+                tooltip="List of mask image URLs for detected subjects",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
             Parameter(
-                name="bounding_box",
-                output_type="dict",
-                type="dict",
-                tooltip="Normalized bounding box coordinates of the detected subject",
+                name="does_image_contain_human",
+                output_type="bool",
+                type="bool",
+                tooltip="Whether the image contains a human subject",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="detection_result",
-                output_type="dict",
-                type="dict",
-                tooltip="Full detection results from the API",
-                allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
             )
         )
 
@@ -154,7 +142,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
@@ -191,13 +178,13 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
     def _submit_detection_request(self, model_id: str, image_url: str, api_key: str) -> None:
         """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            # "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
         # Build payload matching BytePlus API format
         provider_params = {
-            "req_key": "realman_avatar_picture_omni15_cv",
+            "req_key": self._get_req_key(model_id),
             "image_url": image_url,
         }
 
@@ -213,7 +200,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
             )
 
             if response.status_code >= 400:  # noqa: PLR2004
-                self._set_safe_defaults()
                 error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
                 self._log(error_msg)
                 raise RuntimeError(error_msg)
@@ -222,14 +208,22 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
             self._process_response(response_json)
 
         except requests.RequestException as e:
-            self._set_safe_defaults()
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
             self._log(error_msg)
             raise RuntimeError(error_msg) from e
 
+    def _get_req_key(self, model_id: str) -> str:
+        """Get the request key based on model_id."""
+        if model_id == "omnihuman-1-5-subject-detection":
+            return "realman_avatar_object_detection_cv"
+
+        raise ValueError(f"Unsupported model_id: {model_id}")
+
     def _process_response(self, response_json: dict[str, Any]) -> None:
         """Process the API response from Griptape Cloud proxy."""
         # Extract provider response from Griptape Cloud format
+        logger.error(response_json)
+        resp_data = _json.loads(response_json.get("data", {}).get("resp_data", {}))
         provider_response = response_json.get("provider_response", {})
         if isinstance(provider_response, str):
             try:
@@ -237,51 +231,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
             except Exception:
                 provider_response = {}
 
-        status_code = provider_response.get("status_code")
-        status_message = provider_response.get("status_message", "")
-        detection_result = provider_response.get("object_detection_result", {})
-
-        self.parameter_output_values["detection_result"] = response_json
-
-        if status_code == 0:
-            # Extract detection data
-            profile_data = detection_result.get("profile", {}) if isinstance(detection_result, dict) else {}
-            mask_data = detection_result.get("mask", {}) if isinstance(detection_result, dict) else {}
-            bbox = detection_result.get("normalized_bbox", {}) if isinstance(detection_result, dict) else {}
-
-            # Extract URLs
-            profile_url = profile_data.get("image_url", "") if isinstance(profile_data, dict) else ""
-            mask_url = mask_data.get("image_url", "") if isinstance(mask_data, dict) else ""
-
-            # Set outputs
-            if profile_url:
-                self.parameter_output_values["profile_image_url"] = ImageUrlArtifact(value=profile_url)
-            else:
-                self.parameter_output_values["profile_image_url"] = None
-
-            if mask_url:
-                self.parameter_output_values["mask_image_url"] = ImageUrlArtifact(value=mask_url)
-            else:
-                self.parameter_output_values["mask_image_url"] = None
-
-            self.parameter_output_values["bounding_box"] = bbox
-
-            self._log("Subject detection succeeded")
-            result_details = "Subject detection completed successfully."
-            if status_message:
-                result_details += f"\nMessage: {status_message}"
-            if bbox:
-                result_details += "\nBounding box coordinates detected"
-            self._set_status_results(was_successful=True, result_details=result_details)
-        else:
-            self._set_safe_defaults()
-            self._log(f"Subject detection failed. Status code: {status_code}, Message: {status_message}")
-            error_details = f"Subject detection failed.\nStatus code: {status_code}\nMessage: {status_message}"
-            self._set_status_results(was_successful=False, result_details=error_details)
-
-    def _set_safe_defaults(self) -> None:
-        """Set safe default values for outputs on error."""
-        self.parameter_output_values["profile_image_url"] = None
-        self.parameter_output_values["mask_image_url"] = None
-        self.parameter_output_values["bounding_box"] = {}
-        self.parameter_output_values["detection_result"] = {}
+        self.parameter_output_values["does_image_contain_human"] = resp_data.get("status") == 1
+        self.parameter_output_values["mask_image_urls"] = (
+            resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
+        )
