@@ -552,33 +552,23 @@ class WanImageToVideoGeneration(SuccessFailureNode):
 
         Response shape:
         {
-            "status_code": 200,
-            "request_id": "...",
-            "output": {
-                "task_id": "...",
-                "task_status": "SUCCEEDED",
-                "video_url": "https://..."
-            }
+            "task_id": "...",
+            "task_status": "SUCCEEDED",
+            "video_url": "https://...",
+            "submit_time": "...",
+            "scheduled_time": "...",
+            "end_time": "...",
+            "orig_prompt": "..."
         }
         """
         self.parameter_output_values["provider_response"] = response
 
-        # Extract request_id for generation_id
-        request_id = response.get("request_id", response.get("id", ""))
-        self.parameter_output_values["generation_id"] = str(request_id)
+        # Extract task_id for generation_id
+        task_id = response.get("task_id", "")
+        self.parameter_output_values["generation_id"] = str(task_id)
 
-        # Check status_code
-        status_code = response.get("status_code")
-        if status_code and status_code != 200:
-            logger.error("Generation failed with status_code: %s", status_code)
-            self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
-            self._set_status_results(was_successful=False, result_details=error_details)
-            return
-
-        # Extract video URL from output.video_url
-        output = response.get("output", {})
-        task_status = output.get("task_status")
+        # Extract task status and video URL from top-level fields
+        task_status = response.get("task_status")
 
         # Check task status
         if task_status != "SUCCEEDED":
@@ -588,11 +578,11 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
-        video_url = output.get("video_url")
+        video_url = response.get("video_url")
         if video_url:
             await self._save_video_from_url(video_url)
         else:
-            logger.warning("No video_url found in output")
+            logger.warning("No video_url found in response")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
