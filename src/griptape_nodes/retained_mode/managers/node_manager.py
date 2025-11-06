@@ -60,6 +60,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    AddNodeToNodeGroupRequest,
+    AddNodeToNodeGroupResultFailure,
+    AddNodeToNodeGroupResultSuccess,
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
@@ -99,6 +102,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    RemoveNodeFromNodeGroupRequest,
+    RemoveNodeFromNodeGroupResultFailure,
+    RemoveNodeFromNodeGroupResultSuccess,
     ResetNodeToDefaultsRequest,
     ResetNodeToDefaultsResultFailure,
     ResetNodeToDefaultsResultSuccess,
@@ -204,6 +210,10 @@ class NodeManager:
 
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
         event_manager.assign_manager_to_request_type(CreateNodeGroupRequest, self.on_create_node_group_request)
+        event_manager.assign_manager_to_request_type(AddNodeToNodeGroupRequest, self.on_add_node_to_node_group_request)
+        event_manager.assign_manager_to_request_type(
+            RemoveNodeFromNodeGroupRequest, self.on_remove_node_from_node_group_request
+        )
         event_manager.assign_manager_to_request_type(DeleteNodeRequest, self.on_delete_node_request)
         event_manager.assign_manager_to_request_type(
             GetNodeResolutionStateRequest, self.on_get_node_resolution_state_request
@@ -526,6 +536,122 @@ class NodeManager:
 
         return CreateNodeGroupResultSuccess(
             node_group_name=node_group.name, result_details=ResultDetails(message=details, level=logging.DEBUG)
+        )
+
+    def on_add_node_to_node_group_request(self, request: AddNodeToNodeGroupRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle AddNodeToNodeGroupRequest to add a node to an existing NodeGroup."""
+        flow_name = request.flow_name
+        flow = None
+
+        if flow_name is None:
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to add node to NodeGroup in the Current Context. Failed because the Current Context was empty."
+                return AddNodeToNodeGroupResultFailure(result_details=details)
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        if flow is None:
+            flow_mgr = GriptapeNodes.FlowManager()
+            try:
+                flow = flow_mgr.get_flow_by_name(flow_name)
+            except KeyError as err:
+                details = (
+                    f"Attempted to add node to NodeGroup. Failed when attempting to find the parent Flow. Error: {err}"
+                )
+                return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        # Get the node to add
+        obj_mgr = GriptapeNodes.ObjectManager()
+        try:
+            node = obj_mgr.get_object_by_name(request.node_name)
+        except KeyError:
+            details = f"Attempted to add node '{request.node_name}' to NodeGroup '{request.node_group_name}'. Failed because node was not found."
+            return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        if not isinstance(node, BaseNode):
+            details = f"Attempted to add '{request.node_name}' to NodeGroup '{request.node_group_name}'. Failed because '{request.node_name}' is not a node."
+            return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        # Get the NodeGroup
+        try:
+            node_group = obj_mgr.get_object_by_name(request.node_group_name)
+        except KeyError:
+            details = f"Attempted to add node '{request.node_name}' to NodeGroup '{request.node_group_name}'. Failed because NodeGroup was not found."
+            return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        if not isinstance(node_group, NodeGroupNode):
+            details = f"Attempted to add node '{request.node_name}' to '{request.node_group_name}'. Failed because '{request.node_group_name}' is not a NodeGroup."
+            return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        # Add the node to the group
+        try:
+            node_group.add_node_to_group(node)
+        except Exception as err:
+            details = f"Attempted to add node '{request.node_name}' to NodeGroup '{request.node_group_name}'. Failed with error: {err}"
+            return AddNodeToNodeGroupResultFailure(result_details=details)
+
+        details = f"Successfully added node '{request.node_name}' to NodeGroup '{request.node_group_name}'"
+        return AddNodeToNodeGroupResultSuccess(
+            node_name=request.node_name,
+            node_group_name=request.node_group_name,
+            result_details=ResultDetails(message=details, level=logging.DEBUG),
+        )
+
+    def on_remove_node_from_node_group_request(self, request: RemoveNodeFromNodeGroupRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle RemoveNodeFromNodeGroupRequest to remove a node from an existing NodeGroup."""
+        flow_name = request.flow_name
+        flow = None
+
+        if flow_name is None:
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to remove node from NodeGroup in the Current Context. Failed because the Current Context was empty."
+                return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        if flow is None:
+            flow_mgr = GriptapeNodes.FlowManager()
+            try:
+                flow = flow_mgr.get_flow_by_name(flow_name)
+            except KeyError as err:
+                details = f"Attempted to remove node from NodeGroup. Failed when attempting to find the parent Flow. Error: {err}"
+                return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        # Get the node to remove
+        obj_mgr = GriptapeNodes.ObjectManager()
+        try:
+            node = obj_mgr.get_object_by_name(request.node_name)
+        except KeyError:
+            details = f"Attempted to remove node '{request.node_name}' from NodeGroup '{request.node_group_name}'. Failed because node was not found."
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        if not isinstance(node, BaseNode):
+            details = f"Attempted to remove '{request.node_name}' from NodeGroup '{request.node_group_name}'. Failed because '{request.node_name}' is not a node."
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        # Get the NodeGroup
+        try:
+            node_group = obj_mgr.get_object_by_name(request.node_group_name)
+        except KeyError:
+            details = f"Attempted to remove node '{request.node_name}' from NodeGroup '{request.node_group_name}'. Failed because NodeGroup was not found."
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        if not isinstance(node_group, NodeGroupNode):
+            details = f"Attempted to remove node '{request.node_name}' from '{request.node_group_name}'. Failed because '{request.node_group_name}' is not a NodeGroup."
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        # Remove the node from the group
+        try:
+            node_group.remove_node_from_group(node)
+        except ValueError as err:
+            details = f"Attempted to remove node '{request.node_name}' from NodeGroup '{request.node_group_name}'. Failed with error: {err}"
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
+        details = f"Successfully removed node '{request.node_name}' from NodeGroup '{request.node_group_name}'"
+        return RemoveNodeFromNodeGroupResultSuccess(
+            node_name=request.node_name,
+            node_group_name=request.node_group_name,
+            result_details=ResultDetails(message=details, level=logging.DEBUG),
         )
 
     def cancel_conditionally(

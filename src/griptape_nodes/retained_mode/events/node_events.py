@@ -957,6 +957,51 @@ class AddNodeToNodeGroupResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class RemoveNodeFromNodeGroupRequest(RequestPayload):
+    """Remove a node from a NodeGroup.
+
+    Use when: Need to remove a node from a NodeGroup, reorganizing workflow structure,
+    implementing undo operations.
+
+    Args:
+        node_name: Name of the node to remove from the group
+        node_group_name: Name of the NodeGroup to remove the node from
+        flow_name: Optional flow name to search in (None for current context flow)
+
+    Results: RemoveNodeFromNodeGroupResultSuccess | RemoveNodeFromNodeGroupResultFailure (node not found, group not found, node not in group)
+    """
+
+    node_name: str
+    node_group_name: str
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveNodeFromNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node removed from NodeGroup successfully.
+
+    Args:
+        node_name: Name of the node that was removed
+        node_group_name: Name of the NodeGroup it was removed from
+    """
+
+    node_name: str
+    node_group_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveNodeFromNodeGroupResultFailure(ResultPayloadFailure):
+    """Removing node from NodeGroup failed.
+
+    Common causes: node not found, NodeGroup not found, node not in group,
+    flow not found, no current context.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class CreateNodeGroupRequest(RequestPayload):
     """Create a new NodeGroup node.
 
