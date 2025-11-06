@@ -518,7 +518,13 @@ class NodeManager:
         )
 
         try:
-            node_group = NodeGroupNode(name=final_node_group_name, metadata=request.metadata)
+            # Create NodeGroupNode through library system for proper metadata injection
+            node_group = LibraryRegistry.create_node(
+                name=final_node_group_name,
+                node_type="NodeGroupNode",
+                metadata=request.metadata,
+                specific_library_name="Griptape Nodes Library",
+            )
         except Exception as err:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)

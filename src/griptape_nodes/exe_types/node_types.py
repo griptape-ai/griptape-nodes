@@ -2260,58 +2260,13 @@ class NodeGroupNode(BaseNode):
             if conn_id in self.stored_connections.original_targets.outgoing_targets:
                 del self.stored_connections.original_targets.outgoing_targets[conn_id]
 
-    def _restore_connections_through_proxy_to_node(self, node: BaseNode, connections: Connections) -> None:  # noqa: C901
-        """Restore direct connections if a proxy was connecting to this node."""
-        # Check if any proxy parameters on self connect to the node being added
-        proxy_params_to_remove = []
+    def _restore_connections_through_proxy_to_node(self, node: BaseNode, connections: Connections) -> None:
+        """Restore direct connections if a proxy was connecting to this node.
 
-        for proxy_param_name, (original_node, original_param_name) in list(self._proxy_param_to_node_param.items()):
-            if original_node.name == node.name:
-                # This proxy parameter connects to the node being added
-                # We need to restore the direct connection
-                proxy_param = self.get_parameter_by_name(proxy_param_name)
-                if proxy_param is None:
-                    continue
-
-                # Find connections using this proxy parameter
-                if self.name in connections.incoming_index:
-                    param_connections = connections.incoming_index.get(self.name, {}).get(proxy_param_name, [])
-                    for conn_id in list(param_connections):
-                        if conn_id in connections.connections:
-                            conn = connections.connections[conn_id]
-                            original_param = node.get_parameter_by_name(original_param_name)
-                            if original_param:
-                                # Restore connection
-                                conn.target_node = node
-                                conn.target_parameter = original_param
-                                # Update indices
-                                connections.incoming_index[self.name][proxy_param_name].remove(conn_id)
-                                connections.incoming_index.setdefault(node.name, {}).setdefault(
-                                    original_param_name, []
-                                ).append(conn_id)
-
-                if self.name in connections.outgoing_index:
-                    param_connections = connections.outgoing_index.get(self.name, {}).get(proxy_param_name, [])
-                    for conn_id in list(param_connections):
-                        if conn_id in connections.connections:
-                            conn = connections.connections[conn_id]
-                            original_param = node.get_parameter_by_name(original_param_name)
-                            if original_param:
-                                # Restore connection
-                                conn.source_node = node
-                                conn.source_parameter = original_param
-                                # Update indices
-                                connections.outgoing_index[self.name][proxy_param_name].remove(conn_id)
-                                connections.outgoing_index.setdefault(node.name, {}).setdefault(
-                                    original_param_name, []
-                                ).append(conn_id)
-
-                proxy_params_to_remove.append(proxy_param_name)
-
-        # Remove unused proxy parameters
-        for proxy_param_name in proxy_params_to_remove:
-            self.remove_parameter_element_by_name(proxy_param_name)
-            del self._proxy_param_to_node_param[proxy_param_name]
+        NOTE: This method is currently unused and may be deprecated.
+        It was intended to handle connections between nodes already in a group,
+        but that logic is now handled elsewhere.
+        """
 
     def _add_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912
         """Add proxy parameters for external connections when a node joins the group.
@@ -2370,10 +2325,6 @@ class NodeGroupNode(BaseNode):
                     else:
                         # Internal connection (already handled in incoming pass)
                         pass
-
-        # Check if any existing proxy parameters should be removed
-        # (e.g., if a proxy was connecting to this node, and now the node is in the group)
-        self._restore_connections_through_proxy_to_node(node, connections)
 
     def _remove_node_connections(self, node: BaseNode) -> None:
         """Remove proxy parameters and restore connections when a node leaves the group.
