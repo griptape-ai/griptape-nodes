@@ -392,8 +392,8 @@ class AgentManager:
                 return thread_id
 
             # Get existing thread metadata to check if we need to generate title
-            meta = self._get_conversation_meta(thread_id)
-            should_generate_title = not meta or meta.get("title") is None
+            conversation_memory = self._get_or_create_conversation_memory(thread_id)
+            is_first_run = len(conversation_memory.runs) == 0
 
             artifacts = [
                 ImageLoader().parse(ImageUrlArtifact.from_dict(url_artifact).to_bytes())
@@ -408,7 +408,7 @@ class AgentManager:
                 return RunAgentResultFailure(error=agent.output.to_dict(), result_details=agent.output.to_json())
 
             # Auto-generate title from first message if needed
-            if should_generate_title:
+            if is_first_run:
                 title = self._generate_title_from_input(request.input)
                 self._update_conversation_meta(thread_id, title=title)
             else:
