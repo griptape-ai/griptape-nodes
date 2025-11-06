@@ -5,7 +5,6 @@ import json as _json
 import logging
 import os
 import time
-from contextlib import suppress
 from copy import deepcopy
 from typing import Any
 from urllib.parse import urljoin
@@ -253,10 +252,6 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-    def _log(self, message: str) -> None:
-        with suppress(Exception):
-            logger.info(message)
-
     async def aprocess(self) -> None:
         await self._process()
 
@@ -286,7 +281,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         model = params["model"]
-        self._log(f"Generating video with {model}")
+        logger.info("Generating video with %s", model)
 
         # Submit request to get generation ID
         try:
@@ -344,21 +339,30 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:  # noqa: C901
         payload = self._build_payload(params)
         proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
-        self._log(f"Submitting request to Griptape model proxy with {params['model']}")
-        self._log_request(payload)
+        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
+        sanitized_payload = deepcopy(payload)
+        if "input" in sanitized_payload and "messages" in sanitized_payload["input"]:
+            for msg in sanitized_payload["input"]["messages"]:
+                if "content" in msg:
+                    for item in msg["content"]:
+                        if "text" in item:
+                            text = item["text"]
+                            if len(text) > PROMPT_TRUNCATE_LENGTH:
+                                item["text"] = text[:PROMPT_TRUNCATE_LENGTH] + "..."
+        logger.info("Request payload: %s", _json.dumps(sanitized_payload, indent=2))
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
                 response_json = response.json()
-                self._log("Request submitted successfully")
+                logger.info("Request submitted successfully")
         except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
             # Try to parse error response body
             try:
                 error_json = e.response.json()
@@ -368,7 +372,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
         except Exception as e:
-            self._log(f"Request failed: {e}")
+            logger.error("Request failed: %s", e)
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
@@ -376,9 +380,9 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         generation_id = response_json.get("generation_id")
         if generation_id:
             self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
+            logger.info("Submitted. generation_id=%s", generation_id)
             return str(generation_id)
-        self._log("No generation_id returned from POST response")
+        logger.warning("No generation_id returned from POST response")
         return None
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -403,21 +407,6 @@ class WanTextToVideoGeneration(SuccessFailureNode):
 
         return payload
 
-    def _log_request(self, payload: dict[str, Any]) -> None:
-        with suppress(Exception):
-            sanitized_payload = deepcopy(payload)
-            # Truncate long prompts
-            if "input" in sanitized_payload and "messages" in sanitized_payload["input"]:
-                for msg in sanitized_payload["input"]["messages"]:
-                    if "content" in msg:
-                        for item in msg["content"]:
-                            if "text" in item:
-                                text = item["text"]
-                                if len(text) > PROMPT_TRUNCATE_LENGTH:
-                                    item["text"] = text[:PROMPT_TRUNCATE_LENGTH] + "..."
-
-            self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
-
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
         """Poll the generations endpoint until ready."""
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
@@ -427,7 +416,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         async with httpx.AsyncClient() as client:
             for attempt in range(max_attempts):
                 try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
+                    logger.info("Polling attempt #%s for generation %s", attempt + 1, generation_id)
                     response = await client.get(get_url, headers=headers, timeout=60)
                     response.raise_for_status()
                     result_json = response.json()
@@ -436,7 +425,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                     self.parameter_output_values["provider_response"] = result_json
 
                     status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
+                    logger.info("Status: %s", status)
 
                     if status == "Ready":
                         # Extract the video URL from result.sample
@@ -444,7 +433,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                         if sample_url:
                             await self._handle_success(result_json, sample_url)
                         else:
-                            self._log("No sample URL found in ready result")
+                            logger.warning("No sample URL found in ready result")
                             self._set_safe_defaults()
                             self._set_status_results(
                                 was_successful=False,
@@ -452,7 +441,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                             )
                         return
                     if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-                        self._log(f"Generation failed with status: {status}")
+                        logger.error("Generation failed with status: %s", status)
                         self._set_safe_defaults()
                         # Extract error details from the response
                         error_details = self._extract_error_details(result_json)
@@ -464,14 +453,14 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                         await asyncio.sleep(poll_interval)
 
                 except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
+                    logger.error("HTTP error while polling: %s - %s", e.response.status_code, e.response.text)
                     if attempt == max_attempts - 1:
                         self._set_safe_defaults()
                         error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
                         self._set_status_results(was_successful=False, result_details=error_msg)
                         return
                 except Exception as e:
-                    self._log(f"Error while polling: {e}")
+                    logger.error("Error while polling: %s", e)
                     if attempt == max_attempts - 1:
                         self._set_safe_defaults()
                         error_msg = f"Failed to poll generation status: {e}"
@@ -479,7 +468,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                         return
 
             # Timeout reached
-            self._log("Polling timed out waiting for result")
+            logger.warning("Polling timed out waiting for result")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -494,7 +483,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
     async def _save_video_from_url(self, video_url: str) -> None:
         """Download and save the video from the provided URL."""
         try:
-            self._log("Downloading video from URL")
+            logger.info("Downloading video from URL")
             video_bytes = await self._download_bytes_from_url(video_url)
             if video_bytes:
                 filename = f"wan_video_{int(time.time())}.mp4"
@@ -503,7 +492,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
+                logger.info("Saved video to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
@@ -513,7 +502,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                     result_details="Video generation completed but could not download video bytes from URL.",
                 )
         except Exception as e:
-            self._log(f"Failed to save video from URL: {e}")
+            logger.error("Failed to save video from URL: %s", e)
             self._set_status_results(
                 was_successful=False,
                 result_details=f"Video generation completed but could not save to static storage: {e}",
