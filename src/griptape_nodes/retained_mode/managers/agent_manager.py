@@ -131,7 +131,6 @@ class AgentManager:
         self.static_files_manager = static_files_manager
 
         # Thread management
-        self._conversation_memory_cache: dict[str, ConversationMemory] = {}
         self._threads_dir = self._get_threads_directory()
 
         # Ensure threads directory exists
@@ -263,11 +262,10 @@ class AgentManager:
         try:
             thread_id = request.thread_id
 
-            # Check if thread exists (in cache or on disk)
+            # Check if thread exists
             thread_file = self._threads_dir / f"thread_{thread_id}.json"
-            thread_exists = thread_id in self._conversation_memory_cache or thread_file.exists()
 
-            if not thread_exists:
+            if not thread_file.exists():
                 details = f"Thread {thread_id} not found"
                 logger.error(details)
                 return DeleteThreadResultFailure(result_details=details)
@@ -278,10 +276,6 @@ class AgentManager:
                 details = f"Cannot delete thread {thread_id}. Archive it first."
                 logger.error(details)
                 return DeleteThreadResultFailure(result_details=details)
-
-            # Remove from cache
-            if thread_id in self._conversation_memory_cache:
-                del self._conversation_memory_cache[thread_id]
 
             # Delete thread file
             if thread_file.exists():
@@ -297,11 +291,10 @@ class AgentManager:
         try:
             thread_id = request.thread_id
 
-            # Check if thread exists (in cache or on disk)
+            # Check if thread exists
             thread_file = self._threads_dir / f"thread_{thread_id}.json"
-            thread_exists = thread_id in self._conversation_memory_cache or thread_file.exists()
 
-            if not thread_exists:
+            if not thread_file.exists():
                 details = f"Thread {thread_id} not found"
                 logger.error(details)
                 return RenameThreadResultFailure(result_details=details)
@@ -324,11 +317,10 @@ class AgentManager:
         try:
             thread_id = request.thread_id
 
-            # Check if thread exists (in cache or on disk)
+            # Check if thread exists
             thread_file = self._threads_dir / f"thread_{thread_id}.json"
-            thread_exists = thread_id in self._conversation_memory_cache or thread_file.exists()
 
-            if not thread_exists:
+            if not thread_file.exists():
                 details = f"Thread {thread_id} not found"
                 logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
@@ -357,11 +349,10 @@ class AgentManager:
         try:
             thread_id = request.thread_id
 
-            # Check if thread exists (in cache or on disk)
+            # Check if thread exists
             thread_file = self._threads_dir / f"thread_{thread_id}.json"
-            thread_exists = thread_id in self._conversation_memory_cache or thread_file.exists()
 
-            if not thread_exists:
+            if not thread_file.exists():
                 details = f"Thread {thread_id} not found"
                 logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
@@ -583,14 +574,8 @@ class AgentManager:
 
     def _get_or_create_conversation_memory(self, thread_id: str) -> ConversationMemory:
         """Get or create ConversationMemory instance for a thread."""
-        if thread_id in self._conversation_memory_cache:
-            return self._conversation_memory_cache[thread_id]
-
         driver = self._get_conversation_memory_driver(thread_id)
-        conversation_memory = ConversationMemory(conversation_memory_driver=driver)
-
-        self._conversation_memory_cache[thread_id] = conversation_memory
-        return conversation_memory
+        return ConversationMemory(conversation_memory_driver=driver)
 
     def _get_conversation_memory_driver(self, thread_id: str) -> BaseConversationMemoryDriver:
         """Create or retrieve conversation memory driver for a thread."""
@@ -633,6 +618,9 @@ class AgentManager:
         # Ensure created_at exists
         if "created_at" not in conversation_memory.meta:
             conversation_memory.meta["created_at"] = now
+
+        # Persist metadata changes to disk
+        conversation_memory.conversation_memory_driver.store(conversation_memory.runs, conversation_memory.meta)
 
         return conversation_memory.meta
 
