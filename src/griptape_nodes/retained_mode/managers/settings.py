@@ -222,6 +222,11 @@ class Settings(BaseModel):
         default="threads",
         description="Path to the threads directory, relative to the workspace directory.",
     )
+    thread_storage_backend: Literal["local", "gtc"] = Field(
+        category=STORAGE,
+        default="local",
+        description="Storage backend for conversation threads: 'local' for filesystem or 'gtc' for Griptape Cloud",
+    )
     enable_workspace_file_watching: bool = Field(
         category=FILE_SYSTEM,
         default=True,

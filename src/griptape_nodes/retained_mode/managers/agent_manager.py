@@ -5,7 +5,6 @@ import os
 import threading
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -13,8 +12,6 @@ from attrs import define, field
 from griptape.artifacts import ErrorArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation import BaseImageGenerationDriver
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
-from griptape.drivers.memory.conversation import BaseConversationMemoryDriver
-from griptape.drivers.memory.conversation.local import LocalConversationMemoryDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import TextChunkEvent
 from griptape.loaders import ImageLoader
@@ -28,6 +25,10 @@ from json_repair import repair_json
 from pydantic import create_model
 from schema import Literal, Schema
 
+from griptape_nodes.drivers.thread_storage import (
+    GriptapeCloudThreadStorageDriver,
+    LocalThreadStorageDriver,
+)
 from griptape_nodes.retained_mode.events.agent_events import (
     AgentStreamEvent,
     ArchiveThreadRequest,
@@ -54,7 +55,6 @@ from griptape_nodes.retained_mode.events.agent_events import (
     RunAgentRequest,
     RunAgentResultFailure,
     RunAgentResultSuccess,
-    ThreadMetadata,
     UnarchiveThreadRequest,
     UnarchiveThreadResultFailure,
     UnarchiveThreadResultSuccess,
@@ -132,9 +132,10 @@ class AgentManager:
 
         # Thread management
         self._threads_dir = self._get_threads_directory()
-
-        # Ensure threads directory exists
         self._threads_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize thread storage driver based on config
+        self.thread_storage_driver = self._initialize_thread_storage_driver()
 
         if event_manager is not None:
             # Existing handlers
@@ -189,7 +190,8 @@ class AgentManager:
         try:
             thread_id = request.thread_id
 
-            conversation_memory = self._get_or_create_conversation_memory(thread_id)
+            driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
+            conversation_memory = ConversationMemory(conversation_memory_driver=driver)
             runs = conversation_memory.runs
 
         except Exception as e:
@@ -203,10 +205,7 @@ class AgentManager:
 
     def on_handle_create_thread_request(self, request: CreateThreadRequest) -> ResultPayload:
         try:
-            thread_id = str(uuid.uuid4())
-
-            # Create thread with metadata in ConversationMemory.meta
-            meta = self._update_conversation_meta(thread_id, title=request.title, local_id=request.local_id)
+            thread_id, meta = self.thread_storage_driver.create_thread(title=request.title, local_id=request.local_id)
 
             return CreateThreadResultSuccess(
                 thread_id=thread_id,
@@ -222,36 +221,7 @@ class AgentManager:
 
     def on_handle_list_threads_request(self, _: ListThreadsRequest) -> ResultPayload:
         try:
-            threads = []
-            thread_ids = []
-
-            # Scan thread files
-            if self._threads_dir.exists():
-                for thread_file in self._threads_dir.glob("thread_*.json"):
-                    thread_id = thread_file.stem.replace("thread_", "")
-                    thread_ids.append(thread_id)
-
-            # Get metadata for each thread
-            for thread_id in thread_ids:
-                meta = self._get_conversation_meta(thread_id)
-                conversation_memory = self._get_or_create_conversation_memory(thread_id)
-                message_count = len(conversation_memory.runs)
-
-                threads.append(
-                    ThreadMetadata(
-                        thread_id=thread_id,
-                        title=meta.get("title"),
-                        created_at=meta.get("created_at", ""),
-                        updated_at=meta.get("updated_at", ""),
-                        message_count=message_count,
-                        archived=meta.get("archived", False),
-                        local_id=meta.get("local_id"),
-                    )
-                )
-
-            # Sort by updated_at descending (most recent first)
-            threads.sort(key=lambda t: t.updated_at, reverse=True)
-
+            threads = self.thread_storage_driver.list_threads()
             return ListThreadsResultSuccess(threads=threads, result_details="Threads retrieved successfully.")
         except Exception as e:
             details = f"Error listing threads: {e}"
@@ -260,28 +230,12 @@ class AgentManager:
 
     def on_handle_delete_thread_request(self, request: DeleteThreadRequest) -> ResultPayload:
         try:
-            thread_id = request.thread_id
-
-            # Check if thread exists
-            thread_file = self._threads_dir / f"thread_{thread_id}.json"
-
-            if not thread_file.exists():
-                details = f"Thread {thread_id} not found"
-                logger.error(details)
-                return DeleteThreadResultFailure(result_details=details)
-
-            # Check if thread is archived
-            meta = self._get_conversation_meta(thread_id)
-            if not meta.get("archived", False):
-                details = f"Cannot delete thread {thread_id}. Archive it first."
-                logger.error(details)
-                return DeleteThreadResultFailure(result_details=details)
-
-            # Delete thread file
-            if thread_file.exists():
-                thread_file.unlink()
-
-            return DeleteThreadResultSuccess(thread_id=thread_id, result_details="Thread deleted successfully.")
+            self.thread_storage_driver.delete_thread(request.thread_id)
+            return DeleteThreadResultSuccess(thread_id=request.thread_id, result_details="Thread deleted successfully.")
+        except ValueError as e:
+            details = str(e)
+            logger.error(details)
+            return DeleteThreadResultFailure(result_details=details)
         except Exception as e:
             details = f"Error deleting thread: {e}"
             logger.error(details)
@@ -289,21 +243,15 @@ class AgentManager:
 
     def on_handle_rename_thread_request(self, request: RenameThreadRequest) -> ResultPayload:
         try:
-            thread_id = request.thread_id
-
-            # Check if thread exists
-            thread_file = self._threads_dir / f"thread_{thread_id}.json"
-
-            if not thread_file.exists():
-                details = f"Thread {thread_id} not found"
+            if not self.thread_storage_driver.thread_exists(request.thread_id):
+                details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return RenameThreadResultFailure(result_details=details)
 
-            # Update title in ConversationMemory.meta
-            updated_meta = self._update_conversation_meta(thread_id, title=request.new_title)
+            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, title=request.new_title)
 
             return RenameThreadResultSuccess(
-                thread_id=thread_id,
+                thread_id=request.thread_id,
                 title=updated_meta["title"],
                 updated_at=updated_meta["updated_at"],
                 result_details="Thread renamed successfully.",
@@ -315,28 +263,21 @@ class AgentManager:
 
     def on_handle_archive_thread_request(self, request: ArchiveThreadRequest) -> ResultPayload:
         try:
-            thread_id = request.thread_id
-
-            # Check if thread exists
-            thread_file = self._threads_dir / f"thread_{thread_id}.json"
-
-            if not thread_file.exists():
-                details = f"Thread {thread_id} not found"
+            if not self.thread_storage_driver.thread_exists(request.thread_id):
+                details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
-            # Check if already archived
-            meta = self._get_conversation_meta(thread_id)
+            meta = self.thread_storage_driver.get_thread_metadata(request.thread_id)
             if meta.get("archived", False):
-                details = f"Thread {thread_id} is already archived"
+                details = f"Thread {request.thread_id} is already archived"
                 logger.error(details)
                 return ArchiveThreadResultFailure(result_details=details)
 
-            # Update archived status in ConversationMemory.meta
-            updated_meta = self._update_conversation_meta(thread_id, archived=True)
+            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, archived=True)
 
             return ArchiveThreadResultSuccess(
-                thread_id=thread_id,
+                thread_id=request.thread_id,
                 updated_at=updated_meta["updated_at"],
                 result_details="Thread archived successfully.",
             )
@@ -347,28 +288,21 @@ class AgentManager:
 
     def on_handle_unarchive_thread_request(self, request: UnarchiveThreadRequest) -> ResultPayload:
         try:
-            thread_id = request.thread_id
-
-            # Check if thread exists
-            thread_file = self._threads_dir / f"thread_{thread_id}.json"
-
-            if not thread_file.exists():
-                details = f"Thread {thread_id} not found"
+            if not self.thread_storage_driver.thread_exists(request.thread_id):
+                details = f"Thread {request.thread_id} not found"
                 logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
-            # Check if thread is archived
-            meta = self._get_conversation_meta(thread_id)
+            meta = self.thread_storage_driver.get_thread_metadata(request.thread_id)
             if not meta.get("archived", False):
-                details = f"Thread {thread_id} is not archived"
+                details = f"Thread {request.thread_id} is not archived"
                 logger.error(details)
                 return UnarchiveThreadResultFailure(result_details=details)
 
-            # Update archived status in ConversationMemory.meta
-            updated_meta = self._update_conversation_meta(thread_id, archived=False)
+            updated_meta = self.thread_storage_driver.update_thread_metadata(request.thread_id, archived=False)
 
             return UnarchiveThreadResultSuccess(
-                thread_id=thread_id,
+                thread_id=request.thread_id,
                 updated_at=updated_meta["updated_at"],
                 result_details="Thread unarchived successfully.",
             )
@@ -391,8 +325,9 @@ class AgentManager:
             if isinstance(thread_id, RunAgentResultFailure):
                 return thread_id
 
-            # Get existing thread metadata to check if we need to generate title
-            conversation_memory = self._get_or_create_conversation_memory(thread_id)
+            # Check if this is the first run
+            driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
+            conversation_memory = ConversationMemory(conversation_memory_driver=driver)
             is_first_run = len(conversation_memory.runs) == 0
 
             artifacts = [
@@ -410,10 +345,10 @@ class AgentManager:
             # Auto-generate title from first message if needed
             if is_first_run:
                 title = self._generate_title_from_input(request.input)
-                self._update_conversation_meta(thread_id, title=title)
+                self.thread_storage_driver.update_thread_metadata(thread_id, title=title)
             else:
                 # Just update the timestamp
-                self._update_conversation_meta(thread_id)
+                self.thread_storage_driver.update_thread_metadata(thread_id)
 
             return RunAgentResultSuccess(
                 output=agent.output.to_dict(),
@@ -444,7 +379,8 @@ class AgentManager:
             tools.extend(additional_tools)
 
         # Get thread-specific conversation memory
-        conversation_memory = self._get_or_create_conversation_memory(thread_id)
+        driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
+        conversation_memory = ConversationMemory(conversation_memory_driver=driver)
 
         return Agent(
             prompt_driver=self.prompt_driver,
@@ -465,10 +401,10 @@ class AgentManager:
     def _validate_thread_for_run(self, thread_id: str | None) -> str | RunAgentResultFailure:
         """Validate and return thread_id for agent run, or return failure."""
         if thread_id is None:
-            return str(uuid.uuid4())
+            thread_id, _ = self.thread_storage_driver.create_thread()
+            return thread_id
 
-        # Check if thread is archived
-        meta = self._get_conversation_meta(thread_id)
+        meta = self.thread_storage_driver.get_thread_metadata(thread_id)
         if meta.get("archived", False):
             details = f"Cannot run agent on archived thread {thread_id}. Unarchive it first."
             logger.error(details)
@@ -526,6 +462,15 @@ class AgentManager:
         }
         return MCPTool(connection=connection, name="mcpGriptapeNodes")
 
+    def _initialize_thread_storage_driver(self) -> LocalThreadStorageDriver | GriptapeCloudThreadStorageDriver:
+        """Initialize the appropriate thread storage driver based on configuration."""
+        storage_backend = config_manager.get_config_value("thread_storage_backend")
+
+        if storage_backend == "gtc":
+            return GriptapeCloudThreadStorageDriver(self._threads_dir, config_manager, secrets_manager)
+
+        return LocalThreadStorageDriver(self._threads_dir, config_manager, secrets_manager)
+
     def _create_additional_mcp_tools(self, server_names: list[str]) -> list[MCPTool]:
         """Create MCP tools for additional servers specified in the request."""
         additional_tools = []
@@ -572,16 +517,6 @@ class AgentManager:
 
         return connection
 
-    def _get_or_create_conversation_memory(self, thread_id: str) -> ConversationMemory:
-        """Get or create ConversationMemory instance for a thread."""
-        driver = self._get_conversation_memory_driver(thread_id)
-        return ConversationMemory(conversation_memory_driver=driver)
-
-    def _get_conversation_memory_driver(self, thread_id: str) -> BaseConversationMemoryDriver:
-        """Create or retrieve conversation memory driver for a thread."""
-        thread_file = self._threads_dir / f"thread_{thread_id}.json"
-        return LocalConversationMemoryDriver(persist_file=str(thread_file))
-
     def _get_threads_directory(self) -> Path:
         """Get the directory for storing thread data."""
         workspace_path = config_manager.workspace_path
@@ -593,36 +528,6 @@ class AgentManager:
             return threads_path
 
         return workspace_path / threads_dir
-
-    def _get_conversation_meta(self, thread_id: str) -> dict:
-        """Get metadata from ConversationMemory.meta for a thread."""
-        conversation_memory = self._get_or_create_conversation_memory(thread_id)
-        return conversation_memory.meta if conversation_memory.meta else {}
-
-    def _update_conversation_meta(self, thread_id: str, **updates) -> dict:
-        """Update metadata in ConversationMemory.meta for a thread."""
-        conversation_memory = self._get_or_create_conversation_memory(thread_id)
-        now = datetime.now(UTC).isoformat()
-
-        if conversation_memory.meta is None:
-            conversation_memory.meta = {}
-
-        # Update provided fields
-        for key, value in updates.items():
-            if value is not None:
-                conversation_memory.meta[key] = value
-
-        # Always update updated_at timestamp
-        conversation_memory.meta["updated_at"] = now
-
-        # Ensure created_at exists
-        if "created_at" not in conversation_memory.meta:
-            conversation_memory.meta["created_at"] = now
-
-        # Persist metadata changes to disk
-        conversation_memory.conversation_memory_driver.store(conversation_memory.runs, conversation_memory.meta)
-
-        return conversation_memory.meta
 
     def _generate_title_from_input(self, user_input: str, max_length: int = 50) -> str:
         """Generate a thread title from user input."""
