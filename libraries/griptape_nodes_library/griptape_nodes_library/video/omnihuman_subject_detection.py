@@ -86,16 +86,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         # OUTPUTS
         self.add_parameter(
             Parameter(
-                name="mask_image",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
-                tooltip="Mask image URL for the detected subject",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
                 name="mask_image_urls",
                 type="list",
                 output_type="list",
