@@ -24,6 +24,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+    DeleteFileResultSuccess,
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
@@ -135,6 +138,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=CopyFileRequest, callback=self.on_copy_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=DeleteFileRequest, callback=self.on_delete_file_request
             )
 
             # Register for app initialization event to setup system resources
@@ -1318,6 +1325,73 @@ class OSManager:
             destination_path=str(destination_path),
             bytes_copied=bytes_copied,
             result_details=f"File copied successfully: {source_path} -> {destination_path}",
+        )
+
+    def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+        """Handle a request to delete a file or directory."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate exactly one of path or file_entry provided and determine path to delete
+        if request.path is not None and request.file_entry is not None:
+            msg = "Attempted to delete file with both path and file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        if request.path is not None:
+            path_to_delete = request.path
+        elif request.file_entry is not None:
+            path_to_delete = request.file_entry.path
+        else:
+            msg = "Attempted to delete file with neither path nor file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(path_to_delete, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to invalid path: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists
+        if not resolved_path.exists():
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to path not found"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Check if path is a directory and recursive=False
+        is_directory = resolved_path.is_dir()
+        if is_directory and not request.recursive:
+            msg = f"Attempted to delete directory at path {path_to_delete}. Failed due to recursive=False"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
+
+        # Collect all paths that will be deleted (for reporting)
+        if is_directory and request.recursive:
+            # Collect all file and directory paths before deletion
+            deleted_paths = [str(item) for item in resolved_path.rglob("*")]
+            deleted_paths.append(str(resolved_path))
+        else:
+            deleted_paths = [str(resolved_path)]
+
+        # Perform deletion
+        try:
+            if is_directory:
+                shutil.rmtree(resolved_path)
+            else:
+                resolved_path.unlink()
+        except PermissionError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to I/O error: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return DeleteFileResultSuccess(
+            deleted_path=str(resolved_path),
+            was_directory=is_directory,
+            deleted_paths=deleted_paths,
+            result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
         )
 
     def _validate_copy_tree_paths(
