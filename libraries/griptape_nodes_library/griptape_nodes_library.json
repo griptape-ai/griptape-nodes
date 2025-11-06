@@ -29,10 +29,7 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.50.0",
     "engine_version": "0.50.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
@@ -689,6 +686,17 @@
       }
     },
     {
+      "class_name": "SeedVRVideoUpscale",
+      "file_path": "griptape_nodes_library/video/seedvr_video_upscale.py",
+      "metadata": {
+        "category": "video",
+        "description": "Upscale video using SeedVR models via Griptape Cloud model proxy",
+        "display_name": "SeedVR Video Upscale",
+        "icon": "Sparkles",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
@@ -1295,6 +1303,17 @@
         "display_name": "Add Text to Image",
         "group": "create",
         "icon": "Type"
+      }
+    },
+    {
+      "class_name": "SeedVRImageUpscale",
+      "file_path": "griptape_nodes_library/image/seedvr_image_upscale.py",
+      "metadata": {
+        "category": "image",
+        "description": "Upscales an image using SeedVR models (seedvr-2.0) via Griptape model proxy",
+        "display_name": "SeedVR Image Upscale",
+        "group": "edit",
+        "icon": "Sparkles"
       }
     },
     {
