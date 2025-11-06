@@ -28,8 +28,8 @@ MODEL_OPTIONS = [
     "wan2.5-i2v-preview",
     "wan2.2-i2v-flash",
     "wan2.2-i2v-plus",
-    "wan2.1-i2v-plus",
-    "wan2.1-i2v-turbo",
+    "wanx2.1-i2v-plus",
+    "wanx2.1-i2v-turbo",
 ]
 
 # Model-specific configurations
@@ -52,13 +52,13 @@ MODEL_CONFIGS = {
         "supports_audio": False,
         "max_prompt_length": 800,
     },
-    "wan2.1-i2v-plus": {
+    "wanx2.1-i2v-plus": {
         "resolutions": ["720P"],
         "durations": [5],
         "supports_audio": False,
         "max_prompt_length": 800,
     },
-    "wan2.1-i2v-turbo": {
+    "wanx2.1-i2v-turbo": {
         "resolutions": ["480P", "720P"],
         "durations": [3, 4, 5],
         "supports_audio": False,
@@ -83,8 +83,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio, 2000 char prompts
             wan2.2-i2v-flash: Supports 480P/720P, 5s duration, 50% faster than 2.1
             wan2.2-i2v-plus: Supports 480P/1080P, 5s duration, improved stability
-            wan2.1-i2v-plus: Supports 720P, 5s duration
-            wan2.1-i2v-turbo: Supports 480P/720P, 3-5s duration
+            wanx2.1-i2v-plus: Supports 720P, 5s duration
+            wanx2.1-i2v-turbo: Supports 480P/720P, 3-5s duration
         - input_image (ImageArtifact): Input image for video generation (required)
             Supports JPG, JPEG, PNG, BMP, WEBP
             Resolution: 360-2000 pixels (width and height)
@@ -437,7 +437,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=300)
                 response.raise_for_status()
                 response_json = response.json()
                 logger.info("Request submitted successfully")
@@ -730,7 +730,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         """Download bytes from a URL."""
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
+                resp = await client.get(url, timeout=30)
                 resp.raise_for_status()
                 return resp.content
         except Exception:

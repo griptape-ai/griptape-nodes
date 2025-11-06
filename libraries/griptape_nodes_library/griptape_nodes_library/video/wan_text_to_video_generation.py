@@ -28,8 +28,8 @@ PROMPT_TRUNCATE_LENGTH = 100
 MODEL_OPTIONS = [
     "wan2.5-t2v-preview",
     "wan2.2-t2v-plus",
-    "wan2.1-t2v-turbo",
-    "wan2.1-t2v-plus",
+    "wanx2.1-t2v-turbo",
+    "wanx2.1-t2v-plus",
 ]
 
 # Model-specific configurations
@@ -44,12 +44,12 @@ MODEL_CONFIGS = {
         "durations": [5],
         "supports_audio": False,
     },
-    "wan2.1-t2v-turbo": {
+    "wanx2.1-t2v-turbo": {
         "sizes": ["480P", "720P"],
         "durations": [5],
         "supports_audio": False,
     },
-    "wan2.1-t2v-plus": {
+    "wanx2.1-t2v-plus": {
         "sizes": ["480P", "720P"],
         "durations": [5],
         "supports_audio": False,
@@ -72,8 +72,8 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         - model (str): WAN model to use (default: "wan2.5-t2v-preview")
             wan2.5-t2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio
             wan2.2-t2v-plus: Supports 480P/720P, 5s duration
-            wan2.1-t2v-turbo: Supports 480P/720P, 5s duration
-            wan2.1-t2v-plus: Supports 480P/720P, 5s duration
+            wanx2.1-t2v-turbo: Supports 480P/720P, 5s duration
+            wanx2.1-t2v-plus: Supports 480P/720P, 5s duration
         - prompt (str): Text description of the desired video (max 2000 characters)
         - negative_prompt (str): Description of content to avoid (max 2000 characters)
         - size (str): Output video resolution (model-dependent)
@@ -375,7 +375,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=300)
                 response.raise_for_status()
                 response_json = response.json()
                 logger.info("Request submitted successfully")
@@ -595,7 +595,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         """Download bytes from a URL."""
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
+                resp = await client.get(url, timeout=30)
                 resp.raise_for_status()
                 return resp.content
         except Exception:
