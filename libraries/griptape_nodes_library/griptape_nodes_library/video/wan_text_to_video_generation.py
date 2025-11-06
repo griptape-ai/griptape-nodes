@@ -244,6 +244,32 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes."""
+        super().after_value_set(parameter, value)
+
+        # Update parameters when model changes
+        if parameter.name == "model" and value in MODEL_CONFIGS:
+            model_config = MODEL_CONFIGS[value]
+
+            # Update size choices
+            current_size = self.get_parameter_value("size")
+            new_sizes = model_config["sizes"]
+            if current_size in new_sizes:
+                self._update_option_choices("size", new_sizes, current_size)
+            else:
+                # Set to first available size if current is not supported
+                self._update_option_choices("size", new_sizes, new_sizes[0])
+
+            # Update duration choices
+            current_duration = self.get_parameter_value("duration")
+            new_durations = model_config["durations"]
+            if current_duration in new_durations:
+                self._update_option_choices("duration", new_durations, current_duration)
+            else:
+                # Set to first available duration if current is not supported
+                self._update_option_choices("duration", new_durations, new_durations[0])
+
     async def aprocess(self) -> None:
         await self._process()
 

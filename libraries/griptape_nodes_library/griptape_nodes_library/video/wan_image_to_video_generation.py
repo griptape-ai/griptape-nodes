@@ -298,12 +298,33 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         """Handle parameter value changes."""
         super().after_value_set(parameter, value)
 
-        # Update audio parameter visibility when model changes
-        if parameter.name == "model":
+        # Update parameters when model changes
+        if parameter.name == "model" and value in MODEL_CONFIGS:
+            model_config = MODEL_CONFIGS[value]
+
+            # Update audio parameter visibility
             if self._should_hide_audio():
                 self.hide_parameter_by_name("audio")
             else:
                 self.show_parameter_by_name("audio")
+
+            # Update resolution choices
+            current_resolution = self.get_parameter_value("resolution")
+            new_resolutions = model_config["resolutions"]
+            if current_resolution in new_resolutions:
+                self._update_option_choices("resolution", new_resolutions, current_resolution)
+            else:
+                # Set to first available resolution if current is not supported
+                self._update_option_choices("resolution", new_resolutions, new_resolutions[0])
+
+            # Update duration choices
+            current_duration = self.get_parameter_value("duration")
+            new_durations = model_config["durations"]
+            if current_duration in new_durations:
+                self._update_option_choices("duration", new_durations, current_duration)
+            else:
+                # Set to first available duration if current is not supported
+                self._update_option_choices("duration", new_durations, new_durations[0])
 
     async def aprocess(self) -> None:
         await self._process()
