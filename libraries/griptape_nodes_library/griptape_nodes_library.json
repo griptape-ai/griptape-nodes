@@ -2106,6 +2106,16 @@
         "display_name": "FilePath Components",
         "icon": "FileText"
       }
+    },
+    {
+      "class_name": "PathJoin",
+      "file_path": "griptape_nodes_library/engine/path_join.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Join multiple path components together to create a file path using appropriate path separators",
+        "display_name": "Path Join",
+        "icon": "Combine"
+      }
     }
   ],
   "workflows": [
