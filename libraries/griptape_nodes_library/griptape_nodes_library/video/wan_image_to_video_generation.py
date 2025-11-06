@@ -376,7 +376,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             return
 
         # Handle synchronous response
-        logger.info(f"Response: {json.dumps(response, indent=2)}")
         await self._handle_response(response)
 
     def _get_parameters(self) -> dict[str, Any]:

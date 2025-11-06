@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json as json
+import json
 import logging
 import os
 import time
@@ -320,7 +320,6 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             return
 
         # Handle synchronous response
-        logger.info(f"Response: {json.dumps(response, indent=2)}")
         await self._handle_response(response)
 
     def _get_parameters(self) -> dict[str, Any]:
@@ -360,7 +359,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:  # noqa: C901
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
         payload = self._build_payload(params)
         proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 

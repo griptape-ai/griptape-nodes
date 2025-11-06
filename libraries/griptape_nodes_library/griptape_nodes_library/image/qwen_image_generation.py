@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json as json
+import json
 import logging
 import os
 import time
 from contextlib import suppress
 from copy import deepcopy
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urljoin
 
@@ -427,7 +428,7 @@ class QwenImageGeneration(SuccessFailureNode):
 
         # Check status_code
         status_code = response.get("status_code")
-        if status_code and status_code != 200:
+        if status_code and status_code != HTTPStatus.OK:
             logger.error("Generation failed with status_code: %s", status_code)
             self._set_safe_defaults()
             error_details = self._extract_error_details(response)
@@ -450,7 +451,6 @@ class QwenImageGeneration(SuccessFailureNode):
                 result_details="Generation completed but no content found in the response.",
             )
             return
-
 
         if image_url:
             await self._save_image_from_url(image_url)
