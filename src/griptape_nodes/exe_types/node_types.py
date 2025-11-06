@@ -2253,7 +2253,7 @@ class NodeGroupNode(BaseNode):
         # (e.g., if a proxy was connecting to this node, and now the node is in the group)
         self._restore_connections_through_proxy_to_node(node, connections)
 
-    def _remove_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912, PLR0915
+    def _remove_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912
         """Remove proxy parameters and restore connections when a node leaves the group.
 
         When a node is removed from the group, we need to:

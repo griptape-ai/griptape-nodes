@@ -15,8 +15,7 @@ from griptape_nodes.exe_types.node_types import (
     PRIVATE_EXECUTION,
     BaseNode,
     EndNode,
-    NodeGroup,
-    NodeGroupProxyNode,
+    NodeGroupNode,
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
@@ -72,14 +71,17 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        execution_type = node.get_parameter_value(node.execution_environment.name)
-
-        if execution_type == LOCAL_EXECUTION:
-            await node.aprocess()
-        elif execution_type == PRIVATE_EXECUTION:
-            await self._execute_private_workflow(node)
-        else:
+        if isinstance(node, NodeGroupNode):
+            execution_type = node.get_parameter_value(node.execution_environment.name)
+            if execution_type == LOCAL_EXECUTION:
+                await node.aprocess()
+                return
+            if execution_type == PRIVATE_EXECUTION:
+                await self._execute_private_workflow(node)
+                return
             await self._execute_library_workflow(node, execution_type)
+            return
+        await node.aprocess()
 
     async def _execute_and_apply_workflow(
         self,
@@ -243,15 +245,15 @@ class NodeExecutor:
                 end_node_type = end_nodes[0]
                 library_name = library.get_library_data().name
         sanitized_library_name = library_name.replace(" ", "_")
-        # If we are packaging a NodeGroupProxyNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the proxy node.
-        if isinstance(node, NodeGroupProxyNode):
-            node_names = list(node.node_group_data.nodes.keys())
+        # If we are packaging a NodeGroupNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the group node.
+        if isinstance(node, NodeGroupNode):
+            node_names = list(node.nodes.keys())
         else:
             # Otherwise, it's a list of one node!
             node_names = [node.name]
 
-        # Pass the proxy node if this is a NodeGroupProxyNode so serialization can use stored connections
-        proxy_node_for_packaging = node if isinstance(node, NodeGroupProxyNode) else None
+        # Pass the group node if this is a NodeGroupNode so serialization can use stored connections
+        proxy_node_for_packaging = node if isinstance(node, NodeGroupNode) else None
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
@@ -420,7 +422,7 @@ class NodeExecutor:
             return stored_value
         return stored_value
 
-    def _apply_parameter_values_to_node(  # noqa: C901
+    def _apply_parameter_values_to_node(
         self,
         node: BaseNode,
         parameter_output_values: dict[str, Any],
@@ -453,22 +455,18 @@ class NodeExecutor:
 
             # Get the parameter from the target node
             target_param = target_node.get_parameter_by_name(target_param_name)
-
+            if target_param is None:
+                logger.warning(
+                    "Parameter '%s' not found on node '%s', skipping value application",
+                    target_param_name,
+                    target_node_name,
+                )
+                continue
 
             # Set the value on the target node
             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 target_node.set_parameter_value(target_param_name, param_value)
             target_node.parameter_output_values[target_param_name] = param_value
-
-            # For multi-node packages, also set the value on the proxy node's corresponding output parameter
-            if isinstance(node, NodeGroupProxyNode):
-                sanitized_node_name = target_node_name.replace(" ", "_")
-                proxy_param_name = f"{sanitized_node_name}__{target_param_name}"
-                proxy_param = node.get_parameter_by_name(proxy_param_name)
-                if proxy_param is not None:
-                    if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                        node.set_parameter_value(proxy_param_name, param_value)
-                    node.parameter_output_values[proxy_param_name] = param_value
 
             logger.debug(
                 "Set parameter '%s' on node '%s' to value: %s",
@@ -514,7 +512,7 @@ class NodeExecutor:
     def _toggle_directional_control_connections(
         self,
         proxy_node: BaseNode,
-        node_group: NodeGroup,
+        node_group: NodeGroupNode,
         connections: Connections,
         *,
         restore_to_original: bool,
@@ -522,14 +520,14 @@ class NodeExecutor:
     ) -> None:
         """Toggle control connections between proxy and original nodes for a specific direction.
 
-        When a NodeGroupProxyNode is created, control connections from/to the original nodes are
-        redirected to/from the proxy node. Before packaging the flow for execution, we need to
+        When a NodeGroupNode is created, control connections from/to the original nodes are
+        redirected to/from the group node. Before packaging the flow for execution, we need to
         temporarily restore these connections back to the original nodes so the packaged flow
         has the correct control flow structure. After packaging, we toggle them back to the proxy.
 
         Args:
-            proxy_node: The proxy node containing the node group
-            node_group: The node group data containing original nodes and connection mappings
+            proxy_node: The NodeGroupNode containing the grouped nodes
+            node_group: The NodeGroupNode containing nodes and connection mappings
             connections: The connections manager that tracks all connections via indexes
             restore_to_original: If True, restore connections to original nodes (for packaging);
                                if False, remap connections to proxy (after packaging)
@@ -539,13 +537,13 @@ class NodeExecutor:
         # Select the appropriate connection list, mapping, and index based on direction
         if is_incoming:
             # Incoming: connections pointing TO nodes in this group
-            connection_list = node_group.external_incoming_connections
-            original_nodes_map = node_group.original_incoming_targets
+            connection_list = node_group.stored_connections.external_connections.incoming_connections
+            original_nodes_map = node_group.stored_connections.original_targets.incoming_sources
             index = connections.incoming_index
         else:
             # Outgoing: connections originating FROM nodes in this group
-            connection_list = node_group.external_outgoing_connections
-            original_nodes_map = node_group.original_outgoing_sources
+            connection_list = node_group.stored_connections.external_connections.outgoing_connections
+            original_nodes_map = node_group.stored_connections.original_targets.outgoing_targets
             index = connections.outgoing_index
 
         for conn in connection_list:
@@ -564,7 +562,7 @@ class NodeExecutor:
             # Outgoing connections may not have originals in some cases (skip if missing)
             if original_node is None:
                 if is_incoming:
-                    msg = f"No original target found for connection {conn_id} in node group '{node_group.group_id}'"
+                    msg = f"No original target found for connection {conn_id} in node group '{node_group.name}'"
                     raise RuntimeError(msg)
                 continue
 
@@ -612,9 +610,9 @@ class NodeExecutor:
             restore_to_original: If True, restore connections from proxy to original nodes.
                                If False, remap connections from original nodes back to proxy.
         """
-        if not isinstance(proxy_node, NodeGroupProxyNode):
+        if not isinstance(proxy_node, NodeGroupNode):
             return
-        node_group = proxy_node.node_group_data
+        node_group = proxy_node
         connections = GriptapeNodes.FlowManager().get_connections()
 
         # Toggle both incoming and outgoing connections

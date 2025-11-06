@@ -209,11 +209,19 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
-        if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
+        from griptape_nodes.exe_types.node_types import NodeGroupNode
+
+        if (
+            isinstance(node, NodeGroupNode)
+            and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
+        ):
             next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
         else:
             next_output = node.get_next_control_output()
-        if node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION:
+        if (
+            isinstance(node, NodeGroupNode)
+            and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
+        ):
             next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
         else:
             next_output = node.get_next_control_output()
@@ -591,7 +599,6 @@ class ErrorState(State):
             logger.error("DAG execution error: %s", context.error_message)
 
         for node in context.node_to_reference.values():
-
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
