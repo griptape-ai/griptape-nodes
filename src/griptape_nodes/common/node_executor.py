@@ -448,28 +448,12 @@ class NodeExecutor:
             target_node_name = original_node_param.node_name
             target_param_name = original_node_param.parameter_name
 
-            # For multi-node packages, get the target node from the group
-            # For single-node packages, use the node itself
-            if isinstance(node, NodeGroupProxyNode):
-                if target_node_name not in node.node_group_data.nodes:
-                    msg = f"Target node '{target_node_name}' not found in node group for proxy node '{node.name}'. Available nodes: {list(node.node_group_data.nodes.keys())}"
-                    raise RuntimeError(msg)
-                target_node = node.node_group_data.nodes[target_node_name]
-            else:
-                target_node = node
+            # Set target node. may have special group handling.
+            target_node = node
 
             # Get the parameter from the target node
             target_param = target_node.get_parameter_by_name(target_param_name)
 
-            # Skip if parameter not found or is special parameter (execution_environment, node_group)
-            if target_param is None or target_param in (
-                target_node.execution_environment,
-                target_node.node_group,
-            ):
-                logger.debug(
-                    "Skipping special or missing parameter '%s' on node '%s'", target_param_name, target_node_name
-                )
-                continue
 
             # Set the value on the target node
             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:

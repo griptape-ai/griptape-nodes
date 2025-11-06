@@ -40,6 +40,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -128,7 +129,7 @@ class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-    parent_node: BaseNode | None
+    _parent_node: BaseNode | None
     # Node Context Fields
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
@@ -171,16 +172,6 @@ class BaseNode(ABC):
         self._tracked_parameters = []
         self._cancellation_requested = threading.Event()
         self.set_entry_control_parameter(None)
-        self.add_parameter(self.execution_environment)
-        self.node_group = Parameter(
-            name="job_group",
-            tooltip="Groupings of multiple nodes to send up as a Deadline Cloud job.",
-            type=ParameterTypeBuiltin.STR,
-            allowed_modes={ParameterMode.PROPERTY},
-            default_value="",
-            ui_options={"hide": True},
-        )
-        self.add_parameter(self.node_group)
 
     @property
     def state(self) -> NodeResolutionState:
@@ -196,11 +187,11 @@ class BaseNode(ABC):
 
     @property
     def parent_node(self) -> BaseNode | None:
-        return self.parent_node
+        return self._parent_node
 
     @parent_node.setter
     def parent_node(self, parent_node: BaseNode | None) -> None:
-        self.parent_node = parent_node
+        self._parent_node = parent_node
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -2067,11 +2058,326 @@ class NodeGroupNode(BaseNode):
                     )
                     raise ValueError(msg)
 
-    def _add_node_connections(self, node: BaseNode) -> None:
-        pass
+    def _create_and_remap_incoming_proxy(
+        self, node: BaseNode, param: Parameter, conn: Connection, conn_id: int, connections: Connections
+    ) -> None:
+        """Create proxy parameter for external incoming connection and remap it."""
+        sanitized_node_name = node.name.replace(" ", "_")
+        proxy_param_name = f"{sanitized_node_name}__{param.name}"
 
-    def _remove_node_connections(self, node: BaseNode) -> None:
-        pass
+        # Check if proxy parameter already exists
+        proxy_param = self.get_parameter_by_name(proxy_param_name)
+        if proxy_param is None:
+            # Create new proxy parameter
+            proxy_param = Parameter(
+                name=proxy_param_name,
+                type=param.type,
+                input_types=param.input_types,
+                output_type=param.output_type,
+                tooltip=f"Proxy input for {node.name}.{param.name}",
+                allowed_modes={ParameterMode.INPUT},
+            )
+            self.add_parameter(proxy_param)
+
+            # Track mapping from proxy param to original node/param
+            self._proxy_param_to_node_param[proxy_param_name] = (node, param.name)
+
+        # Store connection and original target
+        if conn not in self.stored_connections.external_connections.incoming_connections:
+            self.stored_connections.external_connections.incoming_connections.append(conn)
+        self.stored_connections.original_targets.incoming_sources[conn_id] = node
+
+        # Remove old incoming index entry for the node
+        if node.name in connections.incoming_index and param.name in connections.incoming_index[node.name]:
+            connections.incoming_index[node.name][param.name].remove(conn_id)
+
+        # Remap connection to proxy
+        conn.target_node = self
+        conn.target_parameter = proxy_param
+
+        # Add new incoming index entry for the proxy
+        connections.incoming_index.setdefault(self.name, {}).setdefault(proxy_param.name, []).append(conn_id)
+
+    def _create_and_remap_outgoing_proxy(
+        self, node: BaseNode, param: Parameter, conn: Connection, conn_id: int, connections: Connections
+    ) -> None:
+        """Create proxy parameter for external outgoing connection and remap it."""
+        sanitized_node_name = node.name.replace(" ", "_")
+        proxy_param_name = f"{sanitized_node_name}__{param.name}"
+
+        # Check if proxy parameter already exists
+        proxy_param = self.get_parameter_by_name(proxy_param_name)
+        if proxy_param is None:
+            # Create new proxy parameter
+            proxy_param = Parameter(
+                name=proxy_param_name,
+                type=param.type,
+                input_types=param.input_types,
+                output_type=param.output_type,
+                tooltip=f"Proxy output for {node.name}.{param.name}",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+            self.add_parameter(proxy_param)
+
+            # Track mapping from proxy param to original node/param
+            self._proxy_param_to_node_param[proxy_param_name] = (node, param.name)
+
+        # Store connection and original source
+        if conn not in self.stored_connections.external_connections.outgoing_connections:
+            self.stored_connections.external_connections.outgoing_connections.append(conn)
+        self.stored_connections.original_targets.outgoing_targets[conn_id] = node
+
+        # Remove old outgoing index entry for the node
+        if node.name in connections.outgoing_index and param.name in connections.outgoing_index[node.name]:
+            connections.outgoing_index[node.name][param.name].remove(conn_id)
+
+        # Remap connection to proxy
+        conn.source_node = self
+        conn.source_parameter = proxy_param
+
+        # Add new outgoing index entry for the proxy
+        connections.outgoing_index.setdefault(self.name, {}).setdefault(proxy_param.name, []).append(conn_id)
+
+    def _restore_connections_through_proxy_to_node(self, node: BaseNode, connections: Connections) -> None:  # noqa: C901
+        """Restore direct connections if a proxy was connecting to this node."""
+        # Check if any proxy parameters on self connect to the node being added
+        proxy_params_to_remove = []
+
+        for proxy_param_name, (original_node, original_param_name) in list(self._proxy_param_to_node_param.items()):
+            if original_node.name == node.name:
+                # This proxy parameter connects to the node being added
+                # We need to restore the direct connection
+                proxy_param = self.get_parameter_by_name(proxy_param_name)
+                if proxy_param is None:
+                    continue
+
+                # Find connections using this proxy parameter
+                if self.name in connections.incoming_index:
+                    param_connections = connections.incoming_index.get(self.name, {}).get(proxy_param_name, [])
+                    for conn_id in list(param_connections):
+                        if conn_id in connections.connections:
+                            conn = connections.connections[conn_id]
+                            original_param = node.get_parameter_by_name(original_param_name)
+                            if original_param:
+                                # Restore connection
+                                conn.target_node = node
+                                conn.target_parameter = original_param
+                                # Update indices
+                                connections.incoming_index[self.name][proxy_param_name].remove(conn_id)
+                                connections.incoming_index.setdefault(node.name, {}).setdefault(
+                                    original_param_name, []
+                                ).append(conn_id)
+
+                if self.name in connections.outgoing_index:
+                    param_connections = connections.outgoing_index.get(self.name, {}).get(proxy_param_name, [])
+                    for conn_id in list(param_connections):
+                        if conn_id in connections.connections:
+                            conn = connections.connections[conn_id]
+                            original_param = node.get_parameter_by_name(original_param_name)
+                            if original_param:
+                                # Restore connection
+                                conn.source_node = node
+                                conn.source_parameter = original_param
+                                # Update indices
+                                connections.outgoing_index[self.name][proxy_param_name].remove(conn_id)
+                                connections.outgoing_index.setdefault(node.name, {}).setdefault(
+                                    original_param_name, []
+                                ).append(conn_id)
+
+                proxy_params_to_remove.append(proxy_param_name)
+
+        # Remove unused proxy parameters
+        for proxy_param_name in proxy_params_to_remove:
+            self.remove_parameter_element(proxy_param_name)
+            del self._proxy_param_to_node_param[proxy_param_name]
+
+    def _add_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912
+        """Add proxy parameters for external connections when a node joins the group.
+
+        When a node is added to the group, we need to:
+        1. Find all connections involving this node
+        2. Determine which are external (to/from non-grouped nodes)
+        3. Create proxy parameters on the NodeGroup for external connections
+        4. Remap those connections to go through the proxy
+        5. If a proxy already exists that connects to this node, restore the direct connection
+
+        Args:
+            node: The node being added to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        node_names_in_group = set(self.nodes.keys())
+
+        # Process incoming connections
+        if node.name in connections.incoming_index:
+            for param_name, connection_ids in connections.incoming_index[node.name].items():
+                param = node.get_parameter_by_name(param_name)
+                if param is None:
+                    continue
+
+                for conn_id in list(connection_ids):
+                    if conn_id not in connections.connections:
+                        continue
+                    conn = connections.connections[conn_id]
+
+                    # Check if this is an external connection (source not in group)
+                    if conn.source_node.name not in node_names_in_group:
+                        # External incoming: outside → grouped node
+                        self._create_and_remap_incoming_proxy(node, param, conn, conn_id, connections)
+                    # Internal connection
+                    elif conn not in self.stored_connections.internal_connections:
+                        self.stored_connections.internal_connections.append(conn)
+
+        # Process outgoing connections
+        if node.name in connections.outgoing_index:
+            for param_name, connection_ids in connections.outgoing_index[node.name].items():
+                param = node.get_parameter_by_name(param_name)
+                if param is None:
+                    continue
+
+                for conn_id in list(connection_ids):
+                    if conn_id not in connections.connections:
+                        continue
+                    conn = connections.connections[conn_id]
+
+                    # Check if this is an external connection (target not in group)
+                    if conn.target_node.name not in node_names_in_group:
+                        # External outgoing: grouped node → outside
+                        self._create_and_remap_outgoing_proxy(node, param, conn, conn_id, connections)
+                    else:
+                        # Internal connection (already handled in incoming pass)
+                        pass
+
+        # Check if any existing proxy parameters should be removed
+        # (e.g., if a proxy was connecting to this node, and now the node is in the group)
+        self._restore_connections_through_proxy_to_node(node, connections)
+
+    def _remove_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912, PLR0915
+        """Remove proxy parameters and restore connections when a node leaves the group.
+
+        When a node is removed from the group, we need to:
+        1. Find all external connections that were routed through proxies for this node
+        2. Restore those connections to point directly to the node
+        3. Remove proxy parameters that are no longer needed
+        4. Clean up internal connections involving this node
+
+        Args:
+            node: The node being removed from the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Process external incoming connections (proxies that route to this node)
+        incoming_to_restore = []
+        for conn in list(self.stored_connections.external_connections.incoming_connections):
+            conn_id = id(conn)
+            original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
+
+            if original_target and original_target.name == node.name:
+                incoming_to_restore.append((conn, conn_id))
+
+        for conn, conn_id in incoming_to_restore:
+            # Get the original parameter on the node
+            proxy_param_name = conn.target_parameter.name
+            original_param_name = None
+            if proxy_param_name in self._proxy_param_to_node_param:
+                _, original_param_name = self._proxy_param_to_node_param[proxy_param_name]
+
+            if original_param_name:
+                original_param = node.get_parameter_by_name(original_param_name)
+                if original_param:
+                    # Remove from proxy's incoming index
+                    if (
+                        self.name in connections.incoming_index
+                        and proxy_param_name in connections.incoming_index[self.name]
+                    ):
+                        connections.incoming_index[self.name][proxy_param_name].remove(conn_id)
+
+                    # Restore connection to original node
+                    conn.target_node = node
+                    conn.target_parameter = original_param
+
+                    # Add back to node's incoming index
+                    connections.incoming_index.setdefault(node.name, {}).setdefault(original_param_name, []).append(
+                        conn_id
+                    )
+
+            # Remove from stored connections
+            self.stored_connections.external_connections.incoming_connections.remove(conn)
+            del self.stored_connections.original_targets.incoming_sources[conn_id]
+
+        # Process external outgoing connections (proxies that route from this node)
+        outgoing_to_restore = []
+        for conn in list(self.stored_connections.external_connections.outgoing_connections):
+            conn_id = id(conn)
+            original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
+
+            if original_source and original_source.name == node.name:
+                outgoing_to_restore.append((conn, conn_id))
+
+        for conn, conn_id in outgoing_to_restore:
+            # Get the original parameter on the node
+            proxy_param_name = conn.source_parameter.name
+            original_param_name = None
+            if proxy_param_name in self._proxy_param_to_node_param:
+                _, original_param_name = self._proxy_param_to_node_param[proxy_param_name]
+
+            if original_param_name:
+                original_param = node.get_parameter_by_name(original_param_name)
+                if original_param:
+                    # Remove from proxy's outgoing index
+                    if (
+                        self.name in connections.outgoing_index
+                        and proxy_param_name in connections.outgoing_index[self.name]
+                    ):
+                        connections.outgoing_index[self.name][proxy_param_name].remove(conn_id)
+
+                    # Restore connection to original node
+                    conn.source_node = node
+                    conn.source_parameter = original_param
+
+                    # Add back to node's outgoing index
+                    connections.outgoing_index.setdefault(node.name, {}).setdefault(original_param_name, []).append(
+                        conn_id
+                    )
+
+            # Remove from stored connections
+            self.stored_connections.external_connections.outgoing_connections.remove(conn)
+            del self.stored_connections.original_targets.outgoing_targets[conn_id]
+
+        # Clean up proxy parameters that are no longer needed
+        proxy_params_to_remove = []
+        for proxy_param_name, (original_node, _) in list(self._proxy_param_to_node_param.items()):
+            if original_node.name == node.name:
+                # Check if this proxy parameter is still being used by any connections
+                in_use = (
+                    self.name in connections.incoming_index
+                    and proxy_param_name in connections.incoming_index[self.name]
+                    and connections.incoming_index[self.name][proxy_param_name]
+                ) or (
+                    self.name in connections.outgoing_index
+                    and proxy_param_name in connections.outgoing_index[self.name]
+                    and connections.outgoing_index[self.name][proxy_param_name]
+                )
+
+                if not in_use:
+                    proxy_params_to_remove.append(proxy_param_name)
+
+        for proxy_param_name in proxy_params_to_remove:
+            self.remove_parameter_element(proxy_param_name)
+            del self._proxy_param_to_node_param[proxy_param_name]
+
+        # Remove internal connections involving this node
+        internal_to_remove = [
+            conn
+            for conn in self.stored_connections.internal_connections
+            if node.name in (conn.source_node.name, conn.target_node.name)
+        ]
+
+        for conn in internal_to_remove:
+            self.stored_connections.internal_connections.remove(conn)
 
     def add_node_to_group(self, node: BaseNode) -> None:
         if node.parent_node is not None:
@@ -2100,12 +2406,12 @@ class NodeGroupNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
-        msg = "NodeGroupProxyNode should not be executed locally."
+        msg = "NodeGroupNode should not be executed locally."
         raise NotImplementedError(msg)
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
-        msg = "NodeGroupProxyNode should use aprocess() for async execution."
+        msg = "NodeGroupNode should use aprocess() for async execution."
         raise NotImplementedError(msg)
 
 

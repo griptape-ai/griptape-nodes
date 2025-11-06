@@ -20,7 +20,7 @@ from griptape_nodes.exe_types.node_types import (
     EndLoopNode,
     ErrorProxyNode,
     NodeDependencies,
-    NodeGroupProxyNode,
+    NodeGroupNode,
     NodeResolutionState,
     StartLoopNode,
 )
@@ -66,6 +66,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     CanResetNodeToDefaultsRequest,
     CanResetNodeToDefaultsResultFailure,
     CanResetNodeToDefaultsResultSuccess,
+    CreateNodeGroupRequest,
+    CreateNodeGroupResultFailure,
+    CreateNodeGroupResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     CreateNodeResultSuccess,
@@ -200,6 +203,7 @@ class NodeManager:
         self._name_to_parent_flow_name = {}
 
         event_manager.assign_manager_to_request_type(CreateNodeRequest, self.on_create_node_request)
+        event_manager.assign_manager_to_request_type(CreateNodeGroupRequest, self.on_create_node_group_request)
         event_manager.assign_manager_to_request_type(DeleteNodeRequest, self.on_delete_node_request)
         event_manager.assign_manager_to_request_type(
             GetNodeResolutionStateRequest, self.on_get_node_resolution_state_request
@@ -472,6 +476,56 @@ class NodeManager:
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
             result_details=ResultDetails(message=details, level=log_level),
+        )
+
+    def on_create_node_group_request(self, request: CreateNodeGroupRequest) -> ResultPayload:
+        """Handle CreateNodeGroupRequest to create a new NodeGroupNode."""
+        flow_name = request.flow_name
+        flow = None
+
+        if flow_name is None:
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to create NodeGroup in the Current Context. Failed because the Current Context was empty."
+                return CreateNodeGroupResultFailure(result_details=details)
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        if flow is None:
+            flow_mgr = GriptapeNodes.FlowManager()
+            try:
+                flow = flow_mgr.get_flow_by_name(flow_name)
+            except KeyError as err:
+                details = f"Attempted to create NodeGroup. Failed when attempting to find the parent Flow. Error: {err}"
+                return CreateNodeGroupResultFailure(result_details=details)
+
+        requested_node_group_name = request.node_group_name
+        if requested_node_group_name is None:
+            requested_node_group_name = "NodeGroup"
+
+        obj_mgr = GriptapeNodes.ObjectManager()
+        final_node_group_name = obj_mgr.generate_name_for_object(
+            type_name="NodeGroupNode", requested_name=requested_node_group_name
+        )
+
+        try:
+            node_group = NodeGroupNode(name=final_node_group_name, metadata=request.metadata)
+        except Exception as err:
+            details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
+            return CreateNodeGroupResultFailure(result_details=details)
+
+        flow.add_node(node_group)
+        obj_mgr.add_object_by_name(node_group.name, node_group)
+        self._name_to_parent_flow_name[node_group.name] = flow_name
+
+        if request.flow_name is None:
+            details = (
+                f"Successfully created NodeGroup '{final_node_group_name}' in the Current Context (Flow '{flow_name}')"
+            )
+        else:
+            details = f"Successfully created NodeGroup '{final_node_group_name}' in Flow '{flow_name}'"
+
+        return CreateNodeGroupResultSuccess(
+            node_group_name=node_group.name, result_details=ResultDetails(message=details, level=logging.DEBUG)
         )
 
     def cancel_conditionally(
