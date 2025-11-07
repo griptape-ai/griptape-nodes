@@ -1896,7 +1896,6 @@ class NodeGroupNode(BaseNode):
         self._proxy_param_to_node_param = {}
         self.stored_connections = NodeGroupStoredConnections()
 
-    # This should only be called at runtime.
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode
     ) -> set[BaseNode]:
@@ -1955,7 +1954,6 @@ class NodeGroupNode(BaseNode):
 
         return intermediate
 
-    # This should only be called at runtime.
     def validate_no_intermediate_nodes(self) -> None:
         """Validate that no ungrouped nodes exist between grouped nodes.
 
@@ -1988,106 +1986,30 @@ class NodeGroupNode(BaseNode):
                     )
                     raise ValueError(msg)
 
-    def _get_or_create_proxy_param(self, node: BaseNode, param: Parameter) -> Parameter:
-        """Get existing or create new proxy parameter for a node's parameter.
+    def track_internal_connection(self, conn: Connection) -> None:
+        """Track a connection between nodes within the group.
 
         Args:
-            node: The node whose parameter needs a proxy
-            param: The parameter to create a proxy for
-
-        Returns:
-            The proxy parameter (existing or newly created)
+            conn: The internal connection to track
         """
-        sanitized_node_name = node.name.replace(" ", "_")
-        proxy_param_name = f"{sanitized_node_name}__{param.name}"
+        if conn not in self.stored_connections.internal_connections:
+            self.stored_connections.internal_connections.append(conn)
 
-        # Check if proxy parameter already exists
-        proxy_param = self.get_parameter_by_name(proxy_param_name)
-        if proxy_param is None:
-            # Create new proxy parameter with INPUT_OUTPUT mode to route connections
-            proxy_param = Parameter(
-                name=proxy_param_name,
-                type=param.type,
-                input_types=param.input_types,
-                output_type=param.output_type,
-                tooltip=f"Proxy for {node.name}.{param.name}",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
-            )
-            self.add_parameter(proxy_param)
-
-            # Track mapping from proxy param to original node/param
-            self._proxy_param_to_node_param[proxy_param_name] = (node, param.name)
-
-        return proxy_param
-
-    def _create_internal_connection(
+    def track_external_connection(
         self,
-        source_node: BaseNode,
-        source_param: Parameter,
-        target_node: BaseNode,
-        target_param: Parameter,
-        connections: Connections,
-    ) -> Connection:
-        """Create an internal connection within the node group.
-
-        Args:
-            source_node: Source node for the connection
-            source_param: Source parameter
-            target_node: Target node for the connection
-            target_param: Target parameter
-            connections: Connections manager
-
-        Returns:
-            The created Connection object
-        """
-        from griptape_nodes.exe_types.connections import Connection
-
-        internal_conn = Connection(
-            source_node=source_node,
-            source_parameter=source_param,
-            target_node=target_node,
-            target_parameter=target_param,
-        )
-        internal_conn_id = id(internal_conn)
-
-        # Add to connections manager
-        connections.connections[internal_conn_id] = internal_conn
-        connections.outgoing_index.setdefault(source_node.name, {}).setdefault(source_param.name, []).append(
-            internal_conn_id
-        )
-        connections.incoming_index.setdefault(target_node.name, {}).setdefault(target_param.name, []).append(
-            internal_conn_id
-        )
-
-        # Track as internal connection
-        if internal_conn not in self.stored_connections.internal_connections:
-            self.stored_connections.internal_connections.append(internal_conn)
-
-        return internal_conn
-
-    def track_external_connection_to_proxy(
-        self,
-        proxy_param_name: str,
         conn: Connection,
         conn_id: int,
         is_incoming: bool,  # noqa: FBT001
+        grouped_node: BaseNode,
     ) -> None:
-        """Track a connection to/from a proxy parameter.
-
-        When a connection is made directly to a NodeGroup's proxy parameter,
-        track it so we can restore it when the grouped node is removed.
+        """Track a connection to/from a node in the group.
 
         Args:
-            proxy_param_name: Name of the proxy parameter
-            conn: The connection object
+            conn: The external connection to track
             conn_id: ID of the connection
             is_incoming: True if connection is coming INTO the group
+            grouped_node: The node in the group involved in the connection
         """
-        if proxy_param_name not in self._proxy_param_to_node_param:
-            return
-
-        grouped_node, _ = self._proxy_param_to_node_param[proxy_param_name]
-
         if is_incoming:
             if conn not in self.stored_connections.external_connections.incoming_connections:
                 self.stored_connections.external_connections.incoming_connections.append(conn)
@@ -2097,216 +2019,28 @@ class NodeGroupNode(BaseNode):
                 self.stored_connections.external_connections.outgoing_connections.append(conn)
             self.stored_connections.original_targets.outgoing_targets[conn_id] = grouped_node
 
-    def _remap_connections_to_grouped_node(
-        self,
-        grouped_node: BaseNode,
-        external_node: BaseNode,
-        connections: Connections,
-        is_incoming: bool,  # noqa: FBT001
-    ) -> None:
-        """Remap connections between a grouped node and external node through proxy.
+    def untrack_internal_connection(self, conn: Connection) -> None:
+        """Remove tracking of an internal connection.
 
         Args:
-            grouped_node: Node that is in the group
-            external_node: Node that is outside the group
-            connections: Connections manager
-            is_incoming: True if external→grouped, False if grouped→external
+            conn: The internal connection to untrack
         """
-        conns_between = connections.get_connections_between_nodes({grouped_node.name, external_node.name})
-
-        for conn in conns_between:
-            # Check if this connection matches the direction we're looking for
-            if is_incoming:
-                if conn.source_node.name != external_node.name or conn.target_node.name != grouped_node.name:
-                    continue
-                param = conn.target_parameter
-            else:
-                if conn.source_node.name != grouped_node.name or conn.target_node.name != external_node.name:
-                    continue
-                param = conn.source_parameter
-
-            conn_id = id(conn)
-            self._create_and_remap_proxy(grouped_node, param, conn, conn_id, connections, is_incoming)
-
-    def _convert_grouped_node_connections_to_external(
-        self, node_being_removed: BaseNode, connections: Connections, nodes_being_removed: set[str] | None = None
-    ) -> None:
-        """Convert connections between node being removed and grouped nodes to external.
-
-        When a node leaves the group, connections between it and nodes still in the group
-        must be converted to external connections through proxies. However, if multiple nodes
-        are being removed together, connections between those nodes should be removed from tracking.
-
-        Args:
-            node_being_removed: The node leaving the group
-            connections: Connections manager
-            nodes_being_removed: Set of node names being removed together. Remove connections to these nodes from tracking.
-        """
-        for grouped_node_name in self.nodes:
-            grouped_node = self.nodes[grouped_node_name]
-
-            # If this grouped node is also being removed, clean up internal connection tracking
-            if nodes_being_removed and grouped_node_name in nodes_being_removed:
-                # Find connections between these two nodes being removed
-                conns_between = connections.get_connections_between_nodes({grouped_node.name, node_being_removed.name})
-                for conn in conns_between:
-                    # Remove from internal connections list but keep in connection manager
-                    if conn in self.stored_connections.internal_connections:
-                        self.stored_connections.internal_connections.remove(conn)
-                continue
-
-            # Handle connections FROM grouped nodes TO node being removed
-            self._remap_connections_to_grouped_node(grouped_node, node_being_removed, connections, is_incoming=False)
-
-            # Handle connections FROM node being removed TO grouped nodes
-            self._remap_connections_to_grouped_node(grouped_node, node_being_removed, connections, is_incoming=True)
-
-    def _delete_connection_from_manager(self, conn: Connection, connections: Connections) -> None:
-        """Delete a connection from the connections manager.
-
-        Args:
-            conn: The connection to delete
-            connections: Connections manager
-        """
-        # Use the Connections helper method to remove from indices and connections dict
-        connections.remove_connection_by_object(conn)
-
-        # Remove from internal connections list if present (NodeGroupNode-specific)
         if conn in self.stored_connections.internal_connections:
             self.stored_connections.internal_connections.remove(conn)
 
-    def _create_and_remap_proxy(  # noqa: PLR0913
+    def untrack_external_connection(
         self,
-        node: BaseNode,
-        param: Parameter,
         conn: Connection,
         conn_id: int,
-        connections: Connections,
         is_incoming: bool,  # noqa: FBT001
     ) -> None:
-        """Create proxy parameter and remap external connection through it.
+        """Remove tracking of an external connection.
 
         Args:
-            node: The grouped node
-            param: The parameter on the grouped node
-            conn: The external connection to remap
-            conn_id: ID of the external connection
-            connections: Connections manager
-            is_incoming: True if external→node (incoming), False if node→external (outgoing)
+            conn: The external connection to untrack
+            conn_id: ID of the connection
+            is_incoming: True if connection was coming INTO the group
         """
-        # 1. Get or create proxy parameter
-        proxy_param = self._get_or_create_proxy_param(node, param)
-
-        # 2. Create internal connection (direction depends on is_incoming)
-        if is_incoming:
-            # For incoming: proxy → node
-            self._create_internal_connection(self, proxy_param, node, param, connections)
-        else:
-            # For outgoing: node → proxy
-            self._create_internal_connection(node, param, self, proxy_param, connections)
-
-        # 3. Update external connection indices (move from node to proxy)
-        if is_incoming:
-            # Remove from node's incoming, add to proxy's incoming
-            if node.name in connections.incoming_index and param.name in connections.incoming_index[node.name]:
-                connections.incoming_index[node.name][param.name].remove(conn_id)
-            connections.incoming_index.setdefault(self.name, {}).setdefault(proxy_param.name, []).append(conn_id)
-        else:
-            # Remove from node's outgoing, add to proxy's outgoing
-            if node.name in connections.outgoing_index and param.name in connections.outgoing_index[node.name]:
-                connections.outgoing_index[node.name][param.name].remove(conn_id)
-            connections.outgoing_index.setdefault(self.name, {}).setdefault(proxy_param.name, []).append(conn_id)
-
-        # 4. Update external connection object
-        if is_incoming:
-            conn.target_node = self
-            conn.target_parameter = proxy_param
-        else:
-            conn.source_node = self
-            conn.source_parameter = proxy_param
-
-        # 5. Store external connection reference
-        if is_incoming:
-            if conn not in self.stored_connections.external_connections.incoming_connections:
-                self.stored_connections.external_connections.incoming_connections.append(conn)
-            self.stored_connections.original_targets.incoming_sources[conn_id] = node
-        else:
-            if conn not in self.stored_connections.external_connections.outgoing_connections:
-                self.stored_connections.external_connections.outgoing_connections.append(conn)
-            self.stored_connections.original_targets.outgoing_targets[conn_id] = node
-
-    def _restore_connection_from_proxy(  # noqa: C901, PLR0912
-        self,
-        conn: Connection,
-        node: BaseNode,
-        connections: Connections,
-        is_incoming: bool,  # noqa: FBT001
-    ) -> None:
-        """Restore direct connection when node leaves group.
-
-        Args:
-            conn: The external connection to restore
-            node: The node leaving the group
-            connections: Connections manager
-            is_incoming: True if external→node (incoming), False if node→external (outgoing)
-        """
-        conn_id = id(conn)
-
-        # Get proxy param and original param
-        if is_incoming:
-            proxy_param = conn.target_parameter
-        else:
-            proxy_param = conn.source_parameter
-
-        proxy_param_name = proxy_param.name
-        if proxy_param_name not in self._proxy_param_to_node_param:
-            logger.warning(
-                "%s: Proxy parameter %s not found in mapping during restore",
-                self.name,
-                proxy_param_name,
-            )
-            return
-
-        _, original_param_name = self._proxy_param_to_node_param[proxy_param_name]
-        original_param = node.get_parameter_by_name(original_param_name)
-        if not original_param:
-            logger.warning(
-                "%s: Original parameter %s not found on node %s",
-                self.name,
-                original_param_name,
-                node.name,
-            )
-            return
-
-        # Find and delete internal connection (proxy ↔ node)
-        internal_conns_to_delete = []
-        if is_incoming:
-            # Find internal: proxy → node
-            if proxy_param_name in connections.outgoing_index.get(self.name, {}):
-                for internal_conn_id in connections.outgoing_index[self.name][proxy_param_name]:
-                    internal_conn = connections.connections.get(internal_conn_id)
-                    if (
-                        internal_conn
-                        and internal_conn.target_node.name == node.name
-                        and internal_conn.target_parameter.name == original_param_name
-                    ):
-                        internal_conns_to_delete.append(internal_conn)
-        elif not is_incoming and original_param_name in connections.outgoing_index.get(node.name, {}):
-            # Find internal: node → proxy
-            for internal_conn_id in connections.outgoing_index[node.name][original_param_name]:
-                internal_conn = connections.connections.get(internal_conn_id)
-                if (
-                    internal_conn
-                    and internal_conn.target_node.name == self.name
-                    and internal_conn.target_parameter.name == proxy_param_name
-                ):
-                    internal_conns_to_delete.append(internal_conn)
-
-        for internal_conn in internal_conns_to_delete:
-            self._delete_connection_from_manager(internal_conn, connections)
-
-        # Remove from storage BEFORE modifying the connection object
-        # This must happen first because list.remove() uses object identity/equality
         if is_incoming:
             if conn in self.stored_connections.external_connections.incoming_connections:
                 self.stored_connections.external_connections.incoming_connections.remove(conn)
@@ -2318,358 +2052,114 @@ class NodeGroupNode(BaseNode):
             if conn_id in self.stored_connections.original_targets.outgoing_targets:
                 del self.stored_connections.original_targets.outgoing_targets[conn_id]
 
-        # Update external connection indices (move from proxy back to node)
-        if is_incoming:
-            # Remove from proxy's incoming, add to node's incoming
-            if (
-                self.name in connections.incoming_index
-                and proxy_param_name in connections.incoming_index[self.name]
-                and conn_id in connections.incoming_index[self.name][proxy_param_name]
-            ):
-                connections.incoming_index[self.name][proxy_param_name].remove(conn_id)
-            connections.incoming_index.setdefault(node.name, {}).setdefault(original_param_name, []).append(conn_id)
-        else:
-            # Remove from proxy's outgoing, add to node's outgoing
-            if (
-                self.name in connections.outgoing_index
-                and proxy_param_name in connections.outgoing_index[self.name]
-                and conn_id in connections.outgoing_index[self.name][proxy_param_name]
-            ):
-                connections.outgoing_index[self.name][proxy_param_name].remove(conn_id)
-            connections.outgoing_index.setdefault(node.name, {}).setdefault(original_param_name, []).append(conn_id)
-
-        # Update external connection object
-        if is_incoming:
-            conn.target_node = node
-            conn.target_parameter = original_param
-        else:
-            conn.source_node = node
-            conn.source_parameter = original_param
-
-    def _add_node_connections(self, node: BaseNode) -> None:  # noqa: C901, PLR0912
-        """Add proxy parameters for external connections when a node joins the group.
-
-        When a node is added to the group, we need to:
-        1. Find all connections involving this node
-        2. Determine which are external (to/from non-grouped nodes)
-        3. Create proxy parameters on the NodeGroup for external connections
-        4. Remap those connections to go through the proxy
-        5. If a proxy already exists that connects to this node, restore the direct connection
-
-        Args:
-            node: The node being added to the group
-        """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-        node_names_in_group = set(self.nodes.keys())
-
-        # Process incoming connections
-        if node.name in connections.incoming_index:
-            for param_name, connection_ids in connections.incoming_index[node.name].items():
-                param = node.get_parameter_by_name(param_name)
-                if param is None:
-                    continue
-
-                for conn_id in list(connection_ids):
-                    if conn_id not in connections.connections:
-                        continue
-                    conn = connections.connections[conn_id]
-
-                    # Check if this is an external connection (source not in group)
-                    if conn.source_node.name not in node_names_in_group:
-                        # External incoming: outside → grouped node
-                        self._create_and_remap_proxy(node, param, conn, conn_id, connections, is_incoming=True)
-                    # Internal connection
-                    elif conn not in self.stored_connections.internal_connections:
-                        self.stored_connections.internal_connections.append(conn)
-
-        # Process outgoing connections
-        if node.name in connections.outgoing_index:
-            for param_name, connection_ids in connections.outgoing_index[node.name].items():
-                param = node.get_parameter_by_name(param_name)
-                if param is None:
-                    continue
-
-                for conn_id in list(connection_ids):
-                    if conn_id not in connections.connections:
-                        continue
-                    conn = connections.connections[conn_id]
-
-                    # Check if this is an external connection (target not in group)
-                    if conn.target_node.name not in node_names_in_group:
-                        # External outgoing: grouped node → outside
-                        self._create_and_remap_proxy(node, param, conn, conn_id, connections, is_incoming=False)
-                    # Otherwise Internal connection (already handled in incoming pass)
-
-    def _remove_node_connections(self, node: BaseNode, nodes_being_removed: set[str] | None = None) -> None:
-        """Remove proxy parameters and restore connections when a node leaves the group.
-
-        Args:
-            node: The node being removed from the group
-            nodes_being_removed: Set of node names being removed together. Connections between these nodes will not be converted to external.
-        """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Restore external incoming connections (external → proxy → node becomes external → node)
-        for conn in list(self.stored_connections.external_connections.incoming_connections):
-            conn_id = id(conn)
-            original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
-
-            if original_target and original_target.name == node.name:
-                self._restore_connection_from_proxy(conn, node, connections, is_incoming=True)
-
-        # Restore external outgoing connections (node → proxy → external becomes node → external)
-        for conn in list(self.stored_connections.external_connections.outgoing_connections):
-            conn_id = id(conn)
-            original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
-
-            if original_source and original_source.name == node.name:
-                self._restore_connection_from_proxy(conn, node, connections, is_incoming=False)
-
-        # Convert connections between node and remaining grouped nodes to external connections
-        # Skip only if the grouped node is also being removed
-        self._convert_grouped_node_connections_to_external(node, connections, nodes_being_removed)
-
-        # Clean up proxy parameters that are no longer needed
-        proxy_params_to_remove = []
-        for proxy_param_name, (original_node, _) in list(self._proxy_param_to_node_param.items()):
-            if original_node.name == node.name:
-                # Check if this proxy parameter is still being used by any connections
-                in_use = (
-                    self.name in connections.incoming_index
-                    and proxy_param_name in connections.incoming_index[self.name]
-                    and connections.incoming_index[self.name][proxy_param_name]
-                ) or (
-                    self.name in connections.outgoing_index
-                    and proxy_param_name in connections.outgoing_index[self.name]
-                    and connections.outgoing_index[self.name][proxy_param_name]
-                )
-
-                if not in_use:
-                    proxy_params_to_remove.append(proxy_param_name)
-
-        for proxy_param_name in proxy_params_to_remove:
-            self.remove_parameter_element_by_name(proxy_param_name)
-            del self._proxy_param_to_node_param[proxy_param_name]
-
-    def handle_external_connection_created(  # noqa: PLR0913
-        self,
-        grouped_node: BaseNode,
-        grouped_param: Parameter,
-        external_node: BaseNode,
-        external_param: Parameter,
-        is_incoming: bool,  # noqa: FBT001
-        connections: Connections,
-    ) -> None:
-        """Handle a new connection involving a grouped node.
-
-        When a connection is created to/from a node that's already in this group,
-        we need to create a proxy parameter and remap the connection through it.
-
-        Args:
-            grouped_node: The node in this group involved in the connection
-            grouped_param: The parameter on the grouped node
-            external_node: The external node (not in group)
-            external_param: The parameter on the external node
-            is_incoming: True if connection is coming INTO the group
-            connections: The connections manager
-        """
-        # Find the connection that was just created in the indices
-        conn = None
-        conn_id = None
-
-        if is_incoming:
-            # For incoming connections, look in the grouped node's incoming index
-            if (
-                grouped_node.name in connections.incoming_index
-                and grouped_param.name in connections.incoming_index[grouped_node.name]
-            ):
-                connection_ids = connections.incoming_index[grouped_node.name][grouped_param.name]
-                for candidate_id in connection_ids:
-                    candidate = connections.connections[candidate_id]
-                    if (
-                        candidate.source_node.name == external_node.name
-                        and candidate.source_parameter.name == external_param.name
-                    ):
-                        conn = candidate
-                        conn_id = candidate_id
-                        break
-        elif (
-            not is_incoming
-            and grouped_node.name in connections.outgoing_index
-            and grouped_param.name in connections.outgoing_index[grouped_node.name]
-        ):
-            # For outgoing connections, look in the grouped node's outgoing index
-            connection_ids = connections.outgoing_index[grouped_node.name][grouped_param.name]
-            for candidate_id in connection_ids:
-                candidate = connections.connections[candidate_id]
-                if (
-                    candidate.target_node.name == external_node.name
-                    and candidate.target_parameter.name == external_param.name
-                ):
-                    conn = candidate
-                    conn_id = candidate_id
-                    break
-
-        if conn is None or conn_id is None:
-            logger.warning(
-                "%s: Could not find connection between %s.%s and %s.%s",
-                self.name,
-                grouped_node.name,
-                grouped_param.name,
-                external_node.name,
-                external_param.name,
-            )
-            return
-
-        # Use unified proxy creation logic
-        self._create_and_remap_proxy(grouped_node, grouped_param, conn, conn_id, connections, is_incoming)
-
-    def handle_external_connection_deleted(  # noqa: PLR0913, C901
-        self,
-        grouped_node: BaseNode,
-        grouped_param: Parameter,
-        external_node: BaseNode,
-        external_param: Parameter,
-        is_incoming: bool,  # noqa: FBT001
-        connections: Connections,
-    ) -> None:
-        """Handle deletion of a connection involving a grouped node.
-
-        When a connection is deleted from a node in this group, we need to
-        remove the proxy parameter remapping and clean up the proxy if it's
-        no longer used.
-
-        Args:
-            grouped_node: The node in this group involved in the connection
-            grouped_param: The parameter on the grouped node
-            external_node: The external node (not in group)
-            external_param: The parameter on the external node
-            is_incoming: True if connection was coming INTO the group
-            connections: The connections manager
-        """
-        # Find the proxy parameter for this connection
-        sanitized_node_name = grouped_node.name.replace(" ", "_")
-        proxy_param_name = f"{sanitized_node_name}__{grouped_param.name}"
-
-        # Find the connection in our stored connections
-        if is_incoming:
-            conn_list = self.stored_connections.external_connections.incoming_connections
-            original_targets_map = self.stored_connections.original_targets.incoming_sources
-        else:
-            conn_list = self.stored_connections.external_connections.outgoing_connections
-            original_targets_map = self.stored_connections.original_targets.outgoing_targets
-
-        # Find and remove the connection from stored connections
-        conn_to_remove = None
-        for conn in list(conn_list):
-            if (
-                is_incoming
-                and conn.source_node.name == external_node.name
-                and conn.source_parameter.name == external_param.name
-            ):
-                conn_id = id(conn)
-                original_target = original_targets_map.get(conn_id)
-                if original_target and original_target.name == grouped_node.name:
-                    conn_to_remove = conn
-                    break
-            elif (
-                not is_incoming
-                and conn.target_node.name == external_node.name
-                and conn.target_parameter.name == external_param.name
-            ):
-                conn_id = id(conn)
-                original_source = original_targets_map.get(conn_id)
-                if original_source and original_source.name == grouped_node.name:
-                    conn_to_remove = conn
-                    break
-
-        if conn_to_remove:
-            conn_id = id(conn_to_remove)
-            conn_list.remove(conn_to_remove)
-            if conn_id in original_targets_map:
-                del original_targets_map[conn_id]
-
-        # Check if the proxy parameter is still being used by other connections
-        proxy_param = self.get_parameter_by_name(proxy_param_name)
-        if proxy_param:
-            in_use = (
-                self.name in connections.incoming_index
-                and proxy_param_name in connections.incoming_index[self.name]
-                and connections.incoming_index[self.name][proxy_param_name]
-            ) or (
-                self.name in connections.outgoing_index
-                and proxy_param_name in connections.outgoing_index[self.name]
-                and connections.outgoing_index[self.name][proxy_param_name]
-            )
-
-            # If no longer used, remove the proxy parameter
-            if not in_use:
-                self.remove_parameter_element_by_name(proxy_param_name)
-                if proxy_param_name in self._proxy_param_to_node_param:
-                    del self._proxy_param_to_node_param[proxy_param_name]
-
-    def _add_nodes_connections(self, nodes: list[BaseNode]) -> None:
-        """Handle connections when multiple nodes are added to the group.
-
-        First identifies internal connections (between nodes in the list) and stores
-        them to prevent remapping. Then handles external connections via the single
-        node handler.
-
-        Args:
-            nodes: List of nodes being added to the group
-        """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        node_names_in_list = {node.name for node in nodes}
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # First pass: Identify and store internal connections
-        internal_conns = connections.get_connections_between_nodes(node_names_in_list)
-        for conn in internal_conns:
-            if conn not in self.stored_connections.internal_connections:
-                self.stored_connections.internal_connections.append(conn)
-
-        # Second pass: Handle external connections for each node
-        for node in nodes:
-            self._add_node_connections(node)
 
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
+        """Add nodes to the group and track their connections.
+
+        Args:
+            nodes: List of nodes to add to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Remove nodes from existing parent groups
         child_nodes = {}
         for node in nodes:
             if node.parent_node is not None:
-                # We must remove this node from the group that it's currently in
                 existing_parent_node = node.parent_node
                 if isinstance(existing_parent_node, NodeGroupNode):
                     child_nodes.setdefault(existing_parent_node, []).append(node)
         for parent_node, node_list in child_nodes.items():
             parent_node.remove_nodes_from_group(node_list)
+
+        # Add nodes to this group
         for node in nodes:
             node.parent_node = self
             self.nodes[node.name] = node
-        # Now we need to have special handling for multiple nodes.
-        if len(nodes) == 1:
-            # If there's just one node, we add it this way.
-            self._add_node_connections(nodes[0])
-        else:
-            self._add_nodes_connections(nodes)
+
+        # Track connections for the newly added nodes
+        connections = GriptapeNodes.FlowManager().get_connections()
+        node_names_in_group = set(self.nodes.keys())
+
+        # Identify internal connections (between nodes being added)
+        nodes_being_added = {node.name for node in nodes}
+        internal_conns = connections.get_connections_between_nodes(nodes_being_added)
+        for conn in internal_conns:
+            self.track_internal_connection(conn)
+
+        # Identify and track external connections for each node
+        for node in nodes:
+            # Track incoming external connections
+            if node.name in connections.incoming_index:
+                for param_name, connection_ids in connections.incoming_index[node.name].items():
+                    for conn_id in connection_ids:
+                        if conn_id not in connections.connections:
+                            continue
+                        conn = connections.connections[conn_id]
+
+                        # If source is not in group, this is an external incoming connection
+                        if conn.source_node.name not in node_names_in_group:
+                            self.track_external_connection(conn, conn_id, is_incoming=True, grouped_node=node)
+                        # Otherwise it's internal (may already be tracked)
+                        elif conn not in self.stored_connections.internal_connections:
+                            self.track_internal_connection(conn)
+
+            # Track outgoing external connections
+            if node.name in connections.outgoing_index:
+                for param_name, connection_ids in connections.outgoing_index[node.name].items():
+                    for conn_id in connection_ids:
+                        if conn_id not in connections.connections:
+                            continue
+                        conn = connections.connections[conn_id]
+
+                        # If target is not in group, this is an external outgoing connection
+                        if conn.target_node.name not in node_names_in_group:
+                            self.track_external_connection(conn, conn_id, is_incoming=False, grouped_node=node)
 
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
+        """Remove nodes from the group and untrack their connections.
+
+        Args:
+            nodes: List of nodes to remove from the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         for node in nodes:
             if node.name not in self.nodes:
                 msg = f"Node {node.name} is not in node group {self.name}"
                 raise ValueError(msg)
-            # The node exists
+
+        # Untrack connections before removing nodes
+        connections = GriptapeNodes.FlowManager().get_connections()
+        nodes_being_removed = {node.name for node in nodes}
+
+        for node in nodes:
+            # Untrack external incoming connections
+            for conn in list(self.stored_connections.external_connections.incoming_connections):
+                conn_id = id(conn)
+                original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
+                if original_target and original_target.name == node.name:
+                    self.untrack_external_connection(conn, conn_id, is_incoming=True)
+
+            # Untrack external outgoing connections
+            for conn in list(self.stored_connections.external_connections.outgoing_connections):
+                conn_id = id(conn)
+                original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
+                if original_source and original_source.name == node.name:
+                    self.untrack_external_connection(conn, conn_id, is_incoming=False)
+
+            # Untrack internal connections involving this node
+            for conn in list(self.stored_connections.internal_connections):
+                # If connection involves this node and the other node is also being removed, untrack it
+                if conn.source_node.name == node.name or conn.target_node.name == node.name:
+                    other_node_name = conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
+                    # Only untrack if the other node is also being removed or not in group
+                    if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
+                        self.untrack_internal_connection(conn)
+
+        # Remove nodes from group
+        for node in nodes:
             node.parent_node = None
             self.nodes.pop(node.name)
-
-        # Handle connections - pass set of nodes being removed to skip internal connections
-        nodes_being_removed = {node.name for node in nodes} if len(nodes) > 1 else None
-        for node in nodes:
-            self._remove_node_connections(node, nodes_being_removed=nodes_being_removed)
 
     async def aprocess(self) -> None:
         """Execute all nodes in the group in parallel.

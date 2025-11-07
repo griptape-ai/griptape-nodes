@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.exe_types.node_types import NodeResolutionState, NodeGroupNode
 
 if TYPE_CHECKING:
     import asyncio
@@ -70,9 +70,6 @@ class DagBuilder:
             # Skip if already in DAG (use DAG membership, not resolved state)
             if current_node.name in self.node_to_reference:
                 return
-            if current_node.parent_node is not None:
-                # Don't add grouped nodes or edges to the DAG. It'll be executed separately.
-                return
             # Process dependencies first (depth-first)
             ignore_data_dependencies = False
             # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.
@@ -87,24 +84,56 @@ class DagBuilder:
                 if upstream_connection:
                     upstream_node, _ = upstream_connection
                     # Don't add nodes that have already been resolved.
-                    if upstream_node.state == NodeResolutionState.RESOLVED or upstream_node.parent_node is not None:
+                    if upstream_node.state == NodeResolutionState.RESOLVED:
                         continue
-                    # If upstream is already in DAG, skip creating edge (it's in another graph)
-                    if upstream_node.name in self.node_to_reference:
-                        graph.add_edge(upstream_node.name, current_node.name)
-                    # Otherwise, add it to DAG first then create edge
+
+                    # Check if this is an internal connection within the same node group
+                    if isinstance(current_node.parent_node, NodeGroupNode):
+                        if upstream_node.parent_node == current_node.parent_node:
+                            # Internal connection - traverse upstream but don't add edge
+                            _add_node_recursive(upstream_node, visited, graph)
+                            continue
+
+                    # Determine which nodes to use for the edge
+                    upstream_node_for_edge = upstream_node
+                    current_node_for_edge = current_node
+
+                    # If upstream_node has a parent group, use the parent for the edge
+                    if isinstance(upstream_node.parent_node, NodeGroupNode):
+                        upstream_node_for_edge = upstream_node.parent_node
+                        # Ensure the parent NodeGroupNode is in the DAG
+                        if upstream_node_for_edge.name not in self.node_to_reference:
+                            dag_node = DagNode(node_reference=upstream_node_for_edge, node_state=NodeState.WAITING)
+                            self.node_to_reference[upstream_node_for_edge.name] = dag_node
+                            graph.add_node(node_for_adding=upstream_node_for_edge.name)
+                            self.graph_to_nodes[graph_name].add(upstream_node_for_edge.name)
+
+                    # If current_node has a parent group, use the parent for the edge
+                    if isinstance(current_node.parent_node, NodeGroupNode):
+                        current_node_for_edge = current_node.parent_node
+                        # Ensure the parent NodeGroupNode is in the DAG
+                        if current_node_for_edge.name not in self.node_to_reference:
+                            dag_node = DagNode(node_reference=current_node_for_edge, node_state=NodeState.WAITING)
+                            self.node_to_reference[current_node_for_edge.name] = dag_node
+                            graph.add_node(node_for_adding=current_node_for_edge.name)
+                            self.graph_to_nodes[graph_name].add(current_node_for_edge.name)
+
+                    # Check if upstream node is already in DAG
+                    if upstream_node_for_edge.name in self.node_to_reference:
+                        graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
                     else:
+                        # Add upstream node to DAG first, then create edge
                         _add_node_recursive(upstream_node, visited, graph)
-                        graph.add_edge(upstream_node.name, current_node.name)
+                        graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
 
             # Add current node to DAG (but keep original resolution state)
+            if current_node.parent_node is not None:
+                dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+                self.node_to_reference[current_node.name] = dag_node
+                graph.add_node(node_for_adding=current_node.name)
 
-            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
-            self.node_to_reference[current_node.name] = dag_node
-            graph.add_node(node_for_adding=current_node.name)
-
-            # Track which nodes belong to this graph
-            self.graph_to_nodes[graph_name].add(current_node.name)
+                # Track which nodes belong to this graph
+                self.graph_to_nodes[graph_name].add(current_node.name)
 
             # DON'T mark as resolved - that happens during actual execution
             added_nodes.append(current_node)

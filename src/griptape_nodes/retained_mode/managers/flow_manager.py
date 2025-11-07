@@ -921,7 +921,7 @@ class FlowManager:
             target_parameter=target_param,
         )
 
-        # Check if either node is in a NodeGroup and handle proxy creation
+        # Check if either node is in a NodeGroup and track connections
         from griptape_nodes.exe_types.node_types import NodeGroupNode
 
         source_parent = source_node.parent_node
@@ -929,37 +929,25 @@ class FlowManager:
 
         # If source is in a group, this is an outgoing external connection
         if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
-            source_parent.handle_external_connection_created(
-                grouped_node=source_node,
-                grouped_param=source_param,
-                external_node=target_node,
-                external_param=target_param,
+            source_parent.track_external_connection(
+                conn=conn,
+                conn_id=conn_id,
                 is_incoming=False,
-                connections=self._connections,
+                grouped_node=source_node,
             )
 
         # If target is in a group, this is an incoming external connection
         if target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
-            target_parent.handle_external_connection_created(
-                grouped_node=target_node,
-                grouped_param=target_param,
-                external_node=source_node,
-                external_param=source_param,
+            target_parent.track_external_connection(
+                conn=conn,
+                conn_id=conn_id,
                 is_incoming=True,
-                connections=self._connections,
+                grouped_node=target_node,
             )
 
         # If both in same group, track as internal connection
         if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
-            if conn not in source_parent.stored_connections.internal_connections:
-                source_parent.stored_connections.internal_connections.append(conn)
-
-        # If connecting directly to/from a NodeGroup's proxy parameter, track it
-        if isinstance(source_node, NodeGroupNode):
-            source_node.track_external_connection_to_proxy(source_param.name, conn, conn_id, is_incoming=False)
-
-        if isinstance(target_node, NodeGroupNode):
-            target_node.track_external_connection_to_proxy(target_param.name, conn, conn_id, is_incoming=True)
+            source_parent.track_internal_connection(conn)
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
 
@@ -1099,53 +1087,49 @@ class FlowManager:
 
             return DeleteConnectionResultFailure(result_details=details)
 
-        # Check if either node is in a NodeGroup and handle proxy deletion BEFORE removing connection
+        # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
         from griptape_nodes.exe_types.node_types import NodeGroupNode
 
         source_parent = source_node.parent_node
         target_parent = target_node.parent_node
 
-        # If source is in a group, handle outgoing proxy deletion
-        if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
-            source_parent.handle_external_connection_deleted(
-                grouped_node=source_node,
-                grouped_param=source_param,
-                external_node=target_node,
-                external_param=target_param,
+        # Find the connection before it's deleted
+        conn = None
+        conn_id = None
+        if (
+            source_node.name in self._connections.outgoing_index
+            and source_param.name in self._connections.outgoing_index[source_node.name]
+        ):
+            connection_ids = self._connections.outgoing_index[source_node.name][source_param.name]
+            for candidate_id in connection_ids:
+                candidate = self._connections.connections[candidate_id]
+                if (
+                    candidate.target_node.name == target_node.name
+                    and candidate.target_parameter.name == target_param.name
+                ):
+                    conn = candidate
+                    conn_id = candidate_id
+                    break
+
+        # If source is in a group, untrack outgoing external connection
+        if conn and source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
+            source_parent.untrack_external_connection(
+                conn=conn,
+                conn_id=conn_id,
                 is_incoming=False,
-                connections=self._connections,
             )
 
-        # If target is in a group, handle incoming proxy deletion
-        if target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
-            target_parent.handle_external_connection_deleted(
-                grouped_node=target_node,
-                grouped_param=target_param,
-                external_node=source_node,
-                external_param=source_param,
+        # If target is in a group, untrack incoming external connection
+        if conn and target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
+            target_parent.untrack_external_connection(
+                conn=conn,
+                conn_id=conn_id,
                 is_incoming=True,
-                connections=self._connections,
             )
 
-        # If both in same group, remove from internal connections
-        if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
-            # Find the connection before it's deleted
-            conn = None
-            if (
-                source_node.name in self._connections.outgoing_index
-                and source_param.name in self._connections.outgoing_index[source_node.name]
-            ):
-                connection_ids = self._connections.outgoing_index[source_node.name][source_param.name]
-                for conn_id in connection_ids:
-                    candidate = self._connections.connections[conn_id]
-                    if (
-                        candidate.target_node.name == target_node.name
-                        and candidate.target_parameter.name == target_param.name
-                    ):
-                        conn = candidate
-                        break
-            if conn and conn in source_parent.stored_connections.internal_connections:
-                source_parent.stored_connections.internal_connections.remove(conn)
+        # If both in same group, untrack internal connection
+        if conn and source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
+            source_parent.untrack_internal_connection(conn)
 
         # Remove the connection.
         if not self._connections.remove_connection(
@@ -3529,9 +3513,6 @@ class FlowManager:
         cn_mgr = self.get_connections()
         for node in all_nodes:
             # if it's a start node, start here! Return the first one!
-            if node.parent_node is not None:
-                # This can't be a start node.
-                continue
             if isinstance(node, StartNode):
                 start_nodes.append(node)
                 continue
