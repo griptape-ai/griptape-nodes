@@ -72,7 +72,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
                 name="image_url",
                 input_types=["str", "ImageUrlArtifact"],
                 type="str",
-                tooltip="URL of the image to analyze for subject detection",
+                tooltip="URL of the image to analyze for subject detection. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "placeholder_text": "https://example.com/image.jpg",

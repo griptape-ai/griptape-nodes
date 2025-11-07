@@ -83,7 +83,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 type="str",
                 output_type="str",
                 default_value="",
-                tooltip="Source image URL",
+                tooltip="Source image URL. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "https://example.com/image.jpg"},
             )
@@ -95,7 +95,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 type="str",
                 output_type="str",
                 default_value="",
-                tooltip="Audio file URL",
+                tooltip="Audio file URL. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "https://example.com/audio.mp3"},
             )
