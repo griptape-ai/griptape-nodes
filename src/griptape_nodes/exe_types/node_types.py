@@ -1888,8 +1888,7 @@ class NodeGroupNode(BaseNode):
             type=ParameterTypeBuiltin.STR,
             allowed_modes={ParameterMode.PROPERTY},
             default_value=LOCAL_EXECUTION,
-            traits={Options(choices=get_library_names_with_publish_handlers())},
-            ui_options={"hide": True},
+            traits={Options(choices=get_library_names_with_publish_handlers())}
         )
         self.add_parameter(self.execution_environment)
         self.nodes = {}
