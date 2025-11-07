@@ -1639,6 +1639,13 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
 
+        # Filter out empty or whitespace-only entries
+        original_count = len(libraries_to_register) if libraries_to_register else 0
+        libraries_to_register = [path for path in (libraries_to_register or []) if path and path.strip()]
+        filtered_count = original_count - len(libraries_to_register)
+        if filtered_count > 0:
+            logger.warning("Filtered out %d empty library path entries from configuration", filtered_count)
+
         if not libraries_to_register:
             logger.info("No libraries to register from config")
             return
@@ -1985,24 +1992,6 @@ class LibraryManager:
                     file_path = Path(root) / file
                     ret_val.append(file_path)
         return ret_val
-
-    def _load_libraries_from_config_category(self, config_category: str, *, load_as_default_library: bool) -> None:
-        config_mgr = GriptapeNodes.ConfigManager()
-        libraries_to_register_category: list[str] = config_mgr.get_config_value(config_category)
-
-        if libraries_to_register_category is not None:
-            for library_to_register in libraries_to_register_category:
-                if library_to_register:
-                    if library_to_register.endswith(".json"):
-                        library_load_request = RegisterLibraryFromFileRequest(
-                            file_path=library_to_register,
-                            load_as_default_library=load_as_default_library,
-                        )
-                    else:
-                        library_load_request = RegisterLibraryFromRequirementSpecifierRequest(
-                            requirement_specifier=library_to_register
-                        )
-                    GriptapeNodes.handle_request(library_load_request)
 
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
         # Now remove all libraries that were missing from the user's config.
