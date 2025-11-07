@@ -2059,8 +2059,13 @@ class LibraryManager:
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
     async def load_all_libraries_request(self, request: LoadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        if len(self._library_file_path_to_info) > 0:
-            details = "Libraries are already loaded, no action needed."
+        # Check if there are any new libraries in config that haven't been loaded yet
+        discovered_libraries = {str(path) for path in self._discover_library_files()}
+        loaded_libraries = set(self._library_file_path_to_info.keys())
+        unloaded_libraries = discovered_libraries - loaded_libraries
+
+        if not unloaded_libraries:
+            details = "All configured libraries are already loaded, no action needed."
             return LoadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
         try:
