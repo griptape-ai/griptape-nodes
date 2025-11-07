@@ -2531,16 +2531,47 @@ class NodeGroupNode(BaseNode):
                 if proxy_param_name in self._proxy_param_to_node_param:
                     del self._proxy_param_to_node_param[proxy_param_name]
 
-    def add_node_to_group(self, node: BaseNode) -> None:
-        if node.parent_node is not None:
-            # We must remove this node from the group that it's currently in
-            existing_parent_node = node.parent_node
-            if isinstance(existing_parent_node, NodeGroupNode):
-                existing_parent_node.remove_node_from_group(node)
-        # Now it should be removed, so we can set parent node to this.
-        node.parent_node = self
-        self.nodes[node.name] = node
-        self._add_node_connections(node)
+    def _add_nodes_connections(self, nodes: list[BaseNode]) -> None:
+        """Handle connections when multiple nodes are added to the group.
+
+        First identifies internal connections (between nodes in the list) and stores
+        them to prevent remapping. Then handles external connections via the single
+        node handler.
+
+        Args:
+            nodes: List of nodes being added to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        node_names_in_list = {node.name for node in nodes}
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # First pass: Identify and store internal connections
+        internal_conns = connections.get_connections_between_nodes(node_names_in_list)
+        for conn in internal_conns:
+            if conn not in self.stored_connections.internal_connections:
+                self.stored_connections.internal_connections.append(conn)
+
+        # Second pass: Handle external connections for each node
+        for node in nodes:
+            self._add_node_connections(node)
+
+    def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
+        for node in nodes:
+            if node.parent_node is not None:
+                # We must remove this node from the group that it's currently in
+                existing_parent_node = node.parent_node
+                if isinstance(existing_parent_node, NodeGroupNode):
+                    existing_parent_node.remove_node_from_group(node)
+            # Now it should be removed, so we can set parent node to this.
+            node.parent_node = self
+            self.nodes[node.name] = node
+        # Now we need to have special handling for multiple nodes.
+        if len(nodes) == 1:
+            # If there's just one node, we add it this way.
+            self._add_node_connections(nodes[0])
+        else:
+            self._add_nodes_connections(nodes)
 
     def remove_node_from_group(self, node: BaseNode) -> None:
         if node.name not in self.nodes:

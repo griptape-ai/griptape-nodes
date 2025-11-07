@@ -912,10 +912,10 @@ class ResetNodeToDefaultsResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class AddNodeToNodeGroupRequest(RequestPayload):
-    """Add a node to a NodeGroup.
+class AddNodesToNodeGroupRequest(RequestPayload):
+    """Adds nodes to a NodeGroup.
 
-    Use when: Need to add a node to an existing NodeGroup, building node groups programmatically,
+    Use when: Need to add nodes to an existing NodeGroup, building node groups programmatically,
     organizing nodes into logical groups.
 
     Args:
@@ -926,7 +926,7 @@ class AddNodeToNodeGroupRequest(RequestPayload):
     Results: AddNodeToNodeGroupResultSuccess | AddNodeToNodeGroupResultFailure (node not found, group not found, add failed)
     """
 
-    node_name: str
+    node_names: list[str]
     node_group_name: str
     flow_name: str | None = None
 
@@ -941,7 +941,7 @@ class AddNodeToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
         node_group_name: Name of the NodeGroup it was added to
     """
 
-    node_name: str
+    node_names: list[str]
     node_group_name: str
 
 
@@ -1019,6 +1019,7 @@ class CreateNodeGroupRequest(RequestPayload):
     node_group_name: str | None = None
     flow_name: str | None = None
     metadata: dict | None = None
+    node_names_to_add: list[str] = field(default_factory=list)
 
 
 @dataclass

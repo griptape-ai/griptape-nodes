@@ -228,6 +228,32 @@ class Connections:
         # delete from the connections dictionary
         del self.connections[connection_id]
 
+    def get_connections_between_nodes(self, node_names: set[str]) -> list[Connection]:
+        """Get all connections where both source and target are in the provided set.
+
+        Args:
+            node_names: Set of node names to check for internal connections
+
+        Returns:
+            List of connections that have both endpoints in the node_names set
+        """
+        internal_connections = []
+
+        for node_name in node_names:
+            if node_name not in self.outgoing_index:
+                continue
+
+            for connection_ids in self.outgoing_index[node_name].values():
+                for conn_id in connection_ids:
+                    if conn_id not in self.connections:
+                        continue
+                    conn = self.connections[conn_id]
+
+                    if conn.target_node.name in node_names:
+                        internal_connections.append(conn)
+
+        return internal_connections
+
     # Used to check data connections for all future nodes to be BAD!
     def unresolve_future_nodes(self, node: BaseNode) -> None:
         # Recursive loop
