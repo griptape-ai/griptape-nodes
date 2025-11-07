@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_nodes_library.utils.image_utils import extract_image_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -31,7 +32,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
     Outputs:
         - mask_image_urls (list[ImageUrlArtifact]): URLs of the subject mask images
-        - does_image_contain_human (bool): Whether the image contains a human subject
+        - contains_subject (bool): Whether the image contains a human subject
         - was_successful (bool): Whether the detection succeeded
         - result_details (str): Details about the detection result or error
     """
@@ -93,7 +94,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         self.add_parameter(
             Parameter(
-                name="does_image_contain_human",
+                name="contains_subject",
                 output_type="bool",
                 type="bool",
                 tooltip="Whether the image contains a human subject",
@@ -120,7 +121,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         # Get and validate parameters
         model_id = self.get_parameter_value("model_id")
-        image_url = self._get_image_url()
+        image_url = extract_image_url(self.get_parameter_value("image_url"))
         if not image_url:
             self._set_status_results(was_successful=False, result_details="Image URL is required")
             return
@@ -139,20 +140,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
-
-    def _get_image_url(self) -> str | None:
-        """Get and validate the image URL parameter."""
-        image_url = self.get_parameter_value("image_url")
-
-        if not image_url:
-            return None
-
-        # Handle ImageUrlArtifact
-        if hasattr(image_url, "value"):
-            image_url = image_url.value
-
-        image_url_str = str(image_url).strip()
-        return image_url_str if image_url_str else None
 
     def _validate_api_key(self) -> str:
         """Validate that the API key is available."""
@@ -179,6 +166,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         self._log("Submitting subject detection request via proxy")
 
         try:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
             response = requests.post(
                 post_url,
                 json=provider_params,
@@ -215,7 +203,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         contains_human = resp_data.get("status") == 1
         mask_urls = resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
 
-        self.parameter_output_values["does_image_contain_human"] = contains_human
+        self.parameter_output_values["contains_subject"] = contains_human
         self.parameter_output_values["mask_image_urls"] = mask_urls
 
         result_msg = f"Subject detection completed successfully. response: {resp_data}. "

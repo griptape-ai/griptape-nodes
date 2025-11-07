@@ -305,6 +305,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._log("Submitting video generation request via proxy")
 
         try:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
             response = requests.post(
                 post_url,
                 json=params,
@@ -362,6 +363,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 return
 
             try:
+                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
                 response = requests.get(
                     get_url,
                     headers=headers,
