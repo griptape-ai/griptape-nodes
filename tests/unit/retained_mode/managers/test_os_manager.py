@@ -594,14 +594,14 @@ class TestDeleteFileRequest:
         yield
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
-    def test_delete_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    async def test_delete_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully deleting a file."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("test content")
         request = DeleteFileRequest(path=str(file_path), workspace_only=False)
 
-        result = os_manager.on_delete_file_request(request)
+        result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultSuccess)
         # Compare resolved paths to handle symlinks (e.g., /var -> /private/var on macOS)
@@ -611,14 +611,14 @@ class TestDeleteFileRequest:
         assert Path(result.deleted_paths[0]).resolve() == file_path.resolve()
         assert not file_path.exists()
 
-    def test_delete_empty_directory(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    async def test_delete_empty_directory(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test deleting an empty directory."""
         os_manager = griptape_nodes.OSManager()
         dir_path = temp_dir / "testdir"
         dir_path.mkdir()
         request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
 
-        result = os_manager.on_delete_file_request(request)
+        result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultSuccess)
         assert result.was_directory is True
@@ -626,7 +626,7 @@ class TestDeleteFileRequest:
         assert str(dir_path) in result.deleted_paths or str(dir_path.resolve()) in result.deleted_paths
         assert not dir_path.exists()
 
-    def test_delete_directory_with_contents(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    async def test_delete_directory_with_contents(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test deleting a directory with contents."""
         os_manager = griptape_nodes.OSManager()
         dir_path = temp_dir / "testdir"
@@ -639,7 +639,7 @@ class TestDeleteFileRequest:
 
         request = DeleteFileRequest(path=str(dir_path), workspace_only=False)
 
-        result = os_manager.on_delete_file_request(request)
+        result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultSuccess)
         assert result.was_directory is True
@@ -651,28 +651,28 @@ class TestDeleteFileRequest:
         assert any(str(subdir / "file3.txt") in path for path in result.deleted_paths)
         assert not dir_path.exists()
 
-    def test_delete_nonexistent_file_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    async def test_delete_nonexistent_file_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that deleting a nonexistent file fails."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "nonexistent.txt"
         request = DeleteFileRequest(path=str(file_path), workspace_only=False)
 
-        result = os_manager.on_delete_file_request(request)
+        result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
 
-    def test_delete_invalid_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
+    async def test_delete_invalid_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that deleting with neither path nor file_entry fails."""
         os_manager = griptape_nodes.OSManager()
         request = DeleteFileRequest(path=None, file_entry=None)
 
-        result = os_manager.on_delete_file_request(request)
+        result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.INVALID_PATH
 
-    def test_delete_with_permission_error(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    async def test_delete_with_permission_error(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that permission errors are properly handled."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
@@ -680,7 +680,7 @@ class TestDeleteFileRequest:
 
         with patch.object(Path, "unlink", side_effect=PermissionError("Access denied")):
             request = DeleteFileRequest(path=str(file_path), workspace_only=False)
-            result = os_manager.on_delete_file_request(request)
+            result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED

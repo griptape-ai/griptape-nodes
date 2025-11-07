@@ -28,6 +28,7 @@ dependencies = [
   "rich>=14.1.0",
   "semver>=3.0.4",
   "aiofiles>=25.1.0",
+  "aioshutil>=1.5",
   "ruamel.yaml>=0.18.15",
   "asyncio-thread-runner>=1.0",
 ]

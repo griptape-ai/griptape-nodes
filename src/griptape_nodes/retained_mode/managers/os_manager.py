@@ -3,12 +3,14 @@ import logging
 import mimetypes
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import aioshutil
 from binaryornot.check import is_binary
 from rich.console import Console
 
@@ -1327,7 +1329,26 @@ class OSManager:
             result_details=f"File copied successfully: {source_path} -> {destination_path}",
         )
 
-    def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+    @staticmethod
+    def remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG004
+        """Handles read-only files and long paths on Windows during shutil.rmtree.
+
+        https://stackoverflow.com/a/50924863
+        """
+        if not GriptapeNodes.OSManager().is_windows():
+            return
+
+        long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
+
+        try:
+            Path.chmod(long_path, stat.S_IWRITE)
+            func(long_path)
+        except Exception as e:
+            console.print(f"[red]Error removing read-only file: {path}[/red]")
+            console.print(f"[red]Details: {e}[/red]")
+            raise
+
+    async def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
         """Handle a request to delete a file or directory."""
         # FAILURE CASES FIRST (per CLAUDE.md)
 
@@ -1370,7 +1391,7 @@ class OSManager:
         # Perform deletion
         try:
             if is_directory:
-                shutil.rmtree(resolved_path)
+                await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
             else:
                 resolved_path.unlink()
         except PermissionError as e:

@@ -2,7 +2,6 @@
 
 import asyncio
 import shutil
-import stat
 import tarfile
 import tempfile
 from pathlib import Path
@@ -81,7 +80,7 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
                 if dest_library_dir.exists():
-                    shutil.rmtree(dest_library_dir, onexc=_remove_readonly)
+                    shutil.rmtree(dest_library_dir, onexc=GriptapeNodes.OSManager().remove_readonly)
                 shutil.copytree(library_dir, dest_library_dir)
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
@@ -95,22 +94,3 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             console.print(f"[red]Error initializing libraries: {e}[/red]")
 
     console.print("[bold green]Libraries synced.[/bold green]")
-
-
-def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
-    """Handles read-only files and long paths on Windows during shutil.rmtree.
-
-    https://stackoverflow.com/a/50924863
-    """
-    if not GriptapeNodes.OSManager().is_windows():
-        return
-
-    long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
-
-    try:
-        Path.chmod(long_path, stat.S_IWRITE)
-        func(long_path)
-    except Exception as e:
-        console.print(f"[red]Error removing read-only file: {path}[/red]")
-        console.print(f"[red]Details: {e}[/red]")
-        raise
