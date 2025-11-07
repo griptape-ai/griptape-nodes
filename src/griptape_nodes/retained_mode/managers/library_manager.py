@@ -1639,6 +1639,13 @@ class LibraryManager:
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
         libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
 
+        # Filter out empty or whitespace-only entries
+        original_count = len(libraries_to_register) if libraries_to_register else 0
+        libraries_to_register = [path for path in (libraries_to_register or []) if path and path.strip()]
+        filtered_count = original_count - len(libraries_to_register)
+        if filtered_count > 0:
+            logger.warning("Filtered out %d empty library path entries from configuration", filtered_count)
+
         if not libraries_to_register:
             logger.info("No libraries to register from config")
             return
