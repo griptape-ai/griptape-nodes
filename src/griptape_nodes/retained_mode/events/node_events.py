@@ -923,7 +923,7 @@ class AddNodesToNodeGroupRequest(RequestPayload):
         node_group_name: Name of the NodeGroup to add the node to
         flow_name: Optional flow name to search in (None for current context flow)
 
-    Results: AddNodeToNodeGroupResultSuccess | AddNodeToNodeGroupResultFailure (node not found, group not found, add failed)
+    Results: AddNodesToNodeGroupResultSuccess | AddNodeToNodeGroupResultFailure (node not found, group not found, add failed)
     """
 
     node_names: list[str]
@@ -933,7 +933,7 @@ class AddNodesToNodeGroupRequest(RequestPayload):
 
 @dataclass
 @PayloadRegistry.register
-class AddNodeToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class AddNodesToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Node added to NodeGroup successfully.
 
     Args:
@@ -947,7 +947,7 @@ class AddNodeToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 
 @dataclass
 @PayloadRegistry.register
-class AddNodeToNodeGroupResultFailure(ResultPayloadFailure):
+class AddNodesToNodeGroupResultFailure(ResultPayloadFailure):
     """Adding node to NodeGroup failed.
 
     Common causes: node not found, NodeGroup not found, node already in group,
@@ -958,20 +958,20 @@ class AddNodeToNodeGroupResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class RemoveNodeFromNodeGroupRequest(RequestPayload):
-    """Remove a node from a NodeGroup.
+    """Remove nodes from a NodeGroup.
 
-    Use when: Need to remove a node from a NodeGroup, reorganizing workflow structure,
+    Use when: Need to remove nodes from a NodeGroup, reorganizing workflow structure,
     implementing undo operations.
 
     Args:
-        node_name: Name of the node to remove from the group
-        node_group_name: Name of the NodeGroup to remove the node from
+        node_names: Names of the nodes to remove from the group
+        node_group_name: Name of the NodeGroup to remove the nodes from
         flow_name: Optional flow name to search in (None for current context flow)
 
     Results: RemoveNodeFromNodeGroupResultSuccess | RemoveNodeFromNodeGroupResultFailure (node not found, group not found, node not in group)
     """
 
-    node_name: str
+    node_names: list[str]
     node_group_name: str
     flow_name: str | None = None
 
@@ -979,14 +979,14 @@ class RemoveNodeFromNodeGroupRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RemoveNodeFromNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Node removed from NodeGroup successfully.
+    """Nodes removed from NodeGroup successfully.
 
     Args:
-        node_name: Name of the node that was removed
-        node_group_name: Name of the NodeGroup it was removed from
+        node_names: Names of the nodes that were removed
+        node_group_name: Name of the NodeGroup they were removed from
     """
 
-    node_name: str
+    node_names: list[str]
     node_group_name: str
 
 

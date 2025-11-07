@@ -880,12 +880,13 @@ class FlowManager:
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
         try:
             # Actually create the Connection.
-            self._connections.add_connection(
+            conn = self._connections.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
                 target_parameter=target_param,
             )
+            conn_id = id(conn)
         except ValueError as e:
             details = f'Connection failed: "{e}"'
 
@@ -950,23 +951,15 @@ class FlowManager:
 
         # If both in same group, track as internal connection
         if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
-            # Find the connection that was just created
-            conn = None
-            if (
-                source_node.name in self._connections.outgoing_index
-                and source_param.name in self._connections.outgoing_index[source_node.name]
-            ):
-                connection_ids = self._connections.outgoing_index[source_node.name][source_param.name]
-                for conn_id in connection_ids:
-                    candidate = self._connections.connections[conn_id]
-                    if (
-                        candidate.target_node.name == target_node.name
-                        and candidate.target_parameter.name == target_param.name
-                    ):
-                        conn = candidate
-                        break
-            if conn and conn not in source_parent.stored_connections.internal_connections:
+            if conn not in source_parent.stored_connections.internal_connections:
                 source_parent.stored_connections.internal_connections.append(conn)
+
+        # If connecting directly to/from a NodeGroup's proxy parameter, track it
+        if isinstance(source_node, NodeGroupNode):
+            source_node.track_external_connection_to_proxy(source_param.name, conn, conn_id, is_incoming=False)
+
+        if isinstance(target_node, NodeGroupNode):
+            target_node.track_external_connection_to_proxy(target_param.name, conn, conn_id, is_incoming=True)
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
 
