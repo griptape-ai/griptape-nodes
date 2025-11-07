@@ -13,7 +13,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.griptape_nodes_library.utils.image_utils import extract_image_url
+from griptape_nodes_library.utils.image_utils import extract_image_url
 
 logger = logging.getLogger("griptape_nodes")
 
