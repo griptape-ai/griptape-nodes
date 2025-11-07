@@ -430,7 +430,7 @@ class NodeExecutor:
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
         Uses parameter_name_mappings from package_result to map packaged parameters back to original nodes.
-        Works for both single-node and multi-node packages.
+        Works for both single-node and multi-node packages (NodeGroupNode).
         """
         # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
@@ -448,7 +448,18 @@ class NodeExecutor:
             target_node_name = original_node_param.node_name
             target_param_name = original_node_param.parameter_name
 
-            target_node = node
+            # Determine the target node - if this is a NodeGroupNode, look up the child node
+            if isinstance(node, NodeGroupNode):
+                if target_node_name not in node.nodes:
+                    logger.warning(
+                        "Node '%s' not found in NodeGroupNode '%s', skipping value application",
+                        target_node_name,
+                        node.name,
+                    )
+                    continue
+                target_node = node.nodes[target_node_name]
+            else:
+                target_node = node
 
             # Get the parameter from the target node
             target_param = target_node.get_parameter_by_name(target_param_name)
@@ -505,117 +516,3 @@ class NodeExecutor:
         except ValueError:
             storage_backend = StorageBackend.LOCAL
         return storage_backend
-
-    def _toggle_directional_control_connections(
-        self,
-        proxy_node: BaseNode,
-        node_group: NodeGroupNode,
-        connections: Connections,
-        *,
-        restore_to_original: bool,
-        is_incoming: bool,
-    ) -> None:
-        """Toggle control connections between proxy and original nodes for a specific direction.
-
-        When a NodeGroupNode is created, control connections from/to the original nodes are
-        redirected to/from the group node. Before packaging the flow for execution, we need to
-        temporarily restore these connections back to the original nodes so the packaged flow
-        has the correct control flow structure. After packaging, we toggle them back to the proxy.
-
-        Args:
-            proxy_node: The NodeGroupNode containing the grouped nodes
-            node_group: The NodeGroupNode containing nodes and connection mappings
-            connections: The connections manager that tracks all connections via indexes
-            restore_to_original: If True, restore connections to original nodes (for packaging);
-                               if False, remap connections to proxy (after packaging)
-            is_incoming: If True, handle incoming connections (target_node/target_parameter);
-                        if False, handle outgoing connections (source_node/source_parameter)
-        """
-        # Select the appropriate connection list, mapping, and index based on direction
-        if is_incoming:
-            # Incoming: connections pointing TO nodes in this group
-            connection_list = node_group.stored_connections.external_connections.incoming_connections
-            original_nodes_map = node_group.stored_connections.original_targets.incoming_sources
-            index = connections.incoming_index
-        else:
-            # Outgoing: connections originating FROM nodes in this group
-            connection_list = node_group.stored_connections.external_connections.outgoing_connections
-            original_nodes_map = node_group.stored_connections.original_targets.outgoing_targets
-            index = connections.outgoing_index
-
-        for conn in connection_list:
-            # Get the parameter based on connection direction (target for incoming, source for outgoing)
-            parameter = conn.target_parameter if is_incoming else conn.source_parameter
-
-            # Only toggle control flow connections, skip data connections
-            if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                continue
-
-            conn_id = id(conn)
-            original_node = original_nodes_map.get(conn_id)
-
-            # Validate we have the original node mapping
-            # Incoming connections must have originals (error if missing)
-            # Outgoing connections may not have originals in some cases (skip if missing)
-            if original_node is None:
-                if is_incoming:
-                    msg = f"No original target found for connection {conn_id} in node group '{node_group.name}'"
-                    raise RuntimeError(msg)
-                continue
-
-            # Build the proxy parameter name: {sanitized_node_name}__{parameter_name}
-            # Example: "My Node" with param "enter" -> "My_Node__enter"
-            sanitized_node_name = original_node.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{parameter.name}"
-
-            # Determine the direction of the toggle
-            if restore_to_original:
-                # Restore: proxy -> original (for packaging)
-                # Before: External -> Proxy -> (internal nodes)
-                # After:  External -> Original node in group
-                from_node = proxy_node
-                from_param = proxy_param_name
-                to_node = original_node
-                to_param = parameter.name
-            else:
-                # Remap: original -> proxy (after packaging)
-                # Before: External -> Original node in group
-                # After:  External -> Proxy -> (internal nodes)
-                from_node = original_node
-                from_param = parameter.name
-                to_node = proxy_node
-                to_param = proxy_param_name
-
-            # Step 1: Remove connection reference from the old node's index
-            if from_node.name in index and from_param in index[from_node.name]:
-                index[from_node.name][from_param].remove(conn_id)
-
-            # Step 2: Update the connection object to point to the new node
-            if is_incoming:
-                conn.target_node = to_node
-            else:
-                conn.source_node = to_node
-
-            # Step 3: Add connection reference to the new node's index
-            index.setdefault(to_node.name, {}).setdefault(to_param, []).append(conn_id)
-
-    def _toggle_control_connections(self, proxy_node: BaseNode, *, restore_to_original: bool) -> None:
-        """Toggle control connections between proxy node and original nodes.
-
-        Args:
-            proxy_node: The proxy node containing the node group
-            restore_to_original: If True, restore connections from proxy to original nodes.
-                               If False, remap connections from original nodes back to proxy.
-        """
-        if not isinstance(proxy_node, NodeGroupNode):
-            return
-        node_group = proxy_node
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        # Toggle both incoming and outgoing connections
-        self._toggle_directional_control_connections(
-            proxy_node, node_group, connections, restore_to_original=restore_to_original, is_incoming=True
-        )
-        self._toggle_directional_control_connections(
-            proxy_node, node_group, connections, restore_to_original=restore_to_original, is_incoming=False
-        )

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import NodeResolutionState, NodeGroupNode
+from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode, NodeResolutionState
 
 if TYPE_CHECKING:
     import asyncio
@@ -50,6 +50,34 @@ class DagBuilder:
         self.node_to_reference: dict[str, DagNode] = {}
         self.graph_to_nodes = {}
 
+    @staticmethod
+    def _should_use_parent_group(node: BaseNode) -> bool:
+        """Check if a node's parent group should be used for DAG edges.
+
+        Returns True if the node has a parent NodeGroupNode that is NOT in LOCAL_EXECUTION mode.
+        In LOCAL_EXECUTION mode, groups are transparent and children are treated as separate nodes.
+        """
+        if not isinstance(node.parent_node, NodeGroupNode):
+            return False
+        parent_execution_env = node.parent_node.get_parameter_value(node.parent_node.execution_environment.name)
+        return parent_execution_env != LOCAL_EXECUTION
+
+    def _ensure_group_node_in_dag(
+        self, group_node: NodeGroupNode, graph: DirectedGraph, graph_name: str
+    ) -> None:
+        """Ensure a NodeGroupNode is added to the DAG if not already present.
+
+        Args:
+            group_node: The NodeGroupNode to add
+            graph: The graph to add it to
+            graph_name: Name of the graph for tracking
+        """
+        if group_node.name not in self.node_to_reference:
+            dag_node = DagNode(node_reference=group_node, node_state=NodeState.WAITING)
+            self.node_to_reference[group_node.name] = dag_node
+            graph.add_node(node_for_adding=group_node.name)
+            self.graph_to_nodes[graph_name].add(group_node.name)
+
     # Complex with the inner recursive method, but it needs connections and added_nodes.
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
@@ -88,7 +116,8 @@ class DagBuilder:
                         continue
 
                     # Check if this is an internal connection within the same node group
-                    if isinstance(current_node.parent_node, NodeGroupNode):
+                    # Only skip internal edges if parent group is NOT in LOCAL_EXECUTION mode
+                    if self._should_use_parent_group(current_node):
                         if upstream_node.parent_node == current_node.parent_node:
                             # Internal connection - traverse upstream but don't add edge
                             _add_node_recursive(upstream_node, visited, graph)
@@ -98,25 +127,15 @@ class DagBuilder:
                     upstream_node_for_edge = upstream_node
                     current_node_for_edge = current_node
 
-                    # If upstream_node has a parent group, use the parent for the edge
-                    if isinstance(upstream_node.parent_node, NodeGroupNode):
+                    # If upstream_node should use its parent group, use the parent for the edge
+                    if self._should_use_parent_group(upstream_node):
                         upstream_node_for_edge = upstream_node.parent_node
-                        # Ensure the parent NodeGroupNode is in the DAG
-                        if upstream_node_for_edge.name not in self.node_to_reference:
-                            dag_node = DagNode(node_reference=upstream_node_for_edge, node_state=NodeState.WAITING)
-                            self.node_to_reference[upstream_node_for_edge.name] = dag_node
-                            graph.add_node(node_for_adding=upstream_node_for_edge.name)
-                            self.graph_to_nodes[graph_name].add(upstream_node_for_edge.name)
+                        self._ensure_group_node_in_dag(upstream_node_for_edge, graph, graph_name)
 
-                    # If current_node has a parent group, use the parent for the edge
-                    if isinstance(current_node.parent_node, NodeGroupNode):
+                    # If current_node should use its parent group, use the parent for the edge
+                    if self._should_use_parent_group(current_node):
                         current_node_for_edge = current_node.parent_node
-                        # Ensure the parent NodeGroupNode is in the DAG
-                        if current_node_for_edge.name not in self.node_to_reference:
-                            dag_node = DagNode(node_reference=current_node_for_edge, node_state=NodeState.WAITING)
-                            self.node_to_reference[current_node_for_edge.name] = dag_node
-                            graph.add_node(node_for_adding=current_node_for_edge.name)
-                            self.graph_to_nodes[graph_name].add(current_node_for_edge.name)
+                        self._ensure_group_node_in_dag(current_node_for_edge, graph, graph_name)
 
                     # Check if upstream node is already in DAG
                     if upstream_node_for_edge.name in self.node_to_reference:
@@ -127,7 +146,7 @@ class DagBuilder:
                         graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
 
             # Add current node to DAG (but keep original resolution state)
-            if current_node.parent_node is None:
+            if not self._should_use_parent_group(current_node):
                 dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
                 self.node_to_reference[current_node.name] = dag_node
                 graph.add_node(node_for_adding=current_node.name)

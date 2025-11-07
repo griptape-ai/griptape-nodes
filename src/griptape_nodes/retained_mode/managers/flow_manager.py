@@ -1419,7 +1419,7 @@ class FlowManager:
         ],
         internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
     ) -> list[SerializedNodeCommands] | PackageNodesAsSerializedFlowResultFailure:
-        """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops
+        """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops.
 
         Args:
             nodes_to_package: List of nodes to serialize

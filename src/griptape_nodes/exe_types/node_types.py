@@ -2168,13 +2168,9 @@ class NodeGroupNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
-        msg = "NodeGroupNode should not be executed locally."
-        raise NotImplementedError(msg)
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
-        msg = "NodeGroupNode should use aprocess() for async execution."
-        raise NotImplementedError(msg)
 
 
 class Connection:
