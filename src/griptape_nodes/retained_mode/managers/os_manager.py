@@ -32,6 +32,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    GetFileInfoResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -144,6 +147,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=DeleteFileRequest, callback=self.on_delete_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
             )
 
             # Register for app initialization event to setup system resources
@@ -527,10 +534,16 @@ class OSManager:
                     if not request.show_hidden and entry.name.startswith("."):
                         continue
 
+                    # Apply pattern filter if specified
+                    if request.pattern is not None and not entry.match(request.pattern):
+                        continue
+
                     try:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
-                        _is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        _, entry_path = self._validate_workspace_path(entry)
+                        # Also get absolute resolved path
+                        absolute_resolved_path = str(entry.resolve())
                         mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
@@ -540,6 +553,7 @@ class OSManager:
                                 size=stat.st_size,
                                 modified_time=stat.st_mtime,
                                 mime_type=mime_type,
+                                absolute_path=absolute_resolved_path,
                             )
                         )
                     except (OSError, PermissionError) as e:
@@ -1410,6 +1424,69 @@ class OSManager:
             was_directory=is_directory,
             deleted_paths=deleted_paths,
             result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
+        )
+
+    def on_get_file_info_request(self, request: GetFileInfoRequest) -> ResultPayload:  # noqa: PLR0911
+        """Handle a request to get file/directory information."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate path provided
+        if not request.path:
+            msg = "Attempted to get file info with empty path. Failed due to invalid parameters"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(request.path, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to invalid path: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists
+        if not resolved_path.exists():
+            msg = f"Attempted to get file info at path {request.path}. Failed due to path not found"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Get file information
+        try:
+            is_dir = resolved_path.is_dir()
+            size = 0 if is_dir else resolved_path.stat().st_size
+            modified_time = resolved_path.stat().st_mtime
+
+            # Get MIME type for files only
+            mime_type = None
+            if not is_dir:
+                mime_type = self._detect_mime_type(resolved_path)
+
+            # Get path relative to workspace if within workspace
+            _, file_path = self._validate_workspace_path(resolved_path)
+
+            # Also get absolute resolved path
+            absolute_resolved_path = str(resolved_path.resolve())
+
+            file_entry = FileSystemEntry(
+                name=resolved_path.name,
+                path=str(file_path),
+                is_dir=is_dir,
+                size=size,
+                modified_time=modified_time,
+                mime_type=mime_type,
+                absolute_path=absolute_resolved_path,
+            )
+        except PermissionError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to permission denied: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to I/O error: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return GetFileInfoResultSuccess(
+            file_entry=file_entry,
+            result_details=f"Successfully retrieved file info for path {request.path}",
         )
 
     def _validate_copy_tree_paths(

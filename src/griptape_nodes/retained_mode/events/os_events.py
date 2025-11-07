@@ -52,10 +52,11 @@ class FileSystemEntry:
     """Represents a file or directory in the file system."""
 
     name: str
-    path: str
+    path: str  # Workspace-relative path (for portability)
     is_dir: bool
     size: int
     modified_time: float
+    absolute_path: str  # Absolute resolved path
     mime_type: str | None = None  # None for directories, mimetype for files
 
 
@@ -111,6 +112,8 @@ class ListDirectoryRequest(RequestPayload):
         show_hidden: Whether to show hidden files/folders
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide browsing.
                         If None, workspace constraints don't apply (e.g., cloud environments).
+        pattern: Optional glob pattern to filter entries (e.g., "*.txt", "file_*.json").
+                 Only matches against file/directory names, not full paths.
 
     Results: ListDirectoryResultSuccess (with entries) | ListDirectoryResultFailure (access denied, not found)
     """
@@ -118,6 +121,7 @@ class ListDirectoryRequest(RequestPayload):
     directory_path: str | None = None
     show_hidden: bool = False
     workspace_only: bool | None = True
+    pattern: str | None = None
 
 
 @dataclass
@@ -522,6 +526,50 @@ class DeleteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
     Attributes:
         failure_reason: Classification of why the deletion failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoRequest(RequestPayload):
+    """Get information about a file or directory.
+
+    Use when: Checking if a path exists, determining if path is file/directory,
+    getting file metadata before operations.
+
+    Args:
+        path: Path to file/directory to get info about
+        workspace_only: If True, constrain to workspace directory
+
+    Results: GetFileInfoResultSuccess | GetFileInfoResultFailure
+    """
+
+    path: str
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory info retrieved successfully.
+
+    Attributes:
+        file_entry: FileSystemEntry with complete metadata
+    """
+
+    file_entry: FileSystemEntry
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory info retrieval failed.
+
+    Attributes:
+        failure_reason: Classification of why retrieval failed
         result_details: Human-readable error message (inherited from ResultPayloadFailure)
     """
 

@@ -2161,6 +2161,16 @@
       }
     },
     {
+      "class_name": "DeleteFile",
+      "file_path": "griptape_nodes_library/engine/delete_file.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Delete a file or directory from the file system. Directories are deleted with all their contents.",
+        "display_name": "Delete File",
+        "icon": "Trash"
+      }
+    },
+    {
       "class_name": "FilePathComponents",
       "file_path": "griptape_nodes_library/engine/path.py",
       "metadata": {

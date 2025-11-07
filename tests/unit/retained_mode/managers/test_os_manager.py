@@ -16,6 +16,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileResultSuccess,
     ExistingFilePolicy,
     FileIOFailureReason,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    GetFileInfoResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -690,6 +693,74 @@ class TestDeleteFileRequest:
 
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
+
+
+class TestGetFileInfoRequest:
+    """Test GetFileInfoRequest with various scenarios."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Automatically set workspace to temp_dir for all tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_get_file_info_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test successfully getting file info."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+        request = GetFileInfoRequest(path=str(file_path), workspace_only=False)
+
+        result = os_manager.on_get_file_info_request(request)
+
+        assert isinstance(result, GetFileInfoResultSuccess)
+        assert result.file_entry.is_dir is False
+        assert result.file_entry.name == "test.txt"
+        assert result.file_entry.size > 0
+        assert result.file_entry.mime_type is not None
+
+    def test_get_directory_info_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test successfully getting directory info."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        request = GetFileInfoRequest(path=str(dir_path), workspace_only=False)
+
+        result = os_manager.on_get_file_info_request(request)
+
+        assert isinstance(result, GetFileInfoResultSuccess)
+        assert result.file_entry.is_dir is True
+        assert result.file_entry.name == "testdir"
+        assert result.file_entry.mime_type is None
+
+    def test_get_file_info_nonexistent_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that getting info for nonexistent path fails."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "nonexistent.txt"
+        request = GetFileInfoRequest(path=str(file_path), workspace_only=False)
+
+        result = os_manager.on_get_file_info_request(request)
+
+        assert isinstance(result, GetFileInfoResultFailure)
+        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+
+    def test_get_file_info_empty_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that empty path fails."""
+        os_manager = griptape_nodes.OSManager()
+        request = GetFileInfoRequest(path="", workspace_only=False)
+
+        result = os_manager.on_get_file_info_request(request)
+
+        assert isinstance(result, GetFileInfoResultFailure)
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
 
 
 class TestFileIOFailureReasons:
