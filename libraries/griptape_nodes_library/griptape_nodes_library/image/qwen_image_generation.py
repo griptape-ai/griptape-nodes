@@ -47,7 +47,6 @@ class QwenImageGeneration(SuccessFailureNode):
     Inputs:
         - model (str): Qwen model to use ("qwen-image" or "qwen-image-plus", default: "qwen-image")
         - prompt (str): Text description of the desired image (max 800 characters)
-        - input_image (ImageArtifact): Optional input image for image-to-image generation
         - size (str): Output image resolution (default: "1328*1328")
             Available sizes: 1328*1328 (1:1), 1664*928 (16:9), 1472*1140 (4:3), 1140*1472 (3:4), 928*1664 (9:16)
         - randomize_seed (bool): If true, randomize the seed on each run
@@ -103,19 +102,6 @@ class QwenImageGeneration(SuccessFailureNode):
                     "placeholder_text": "Describe the image you want to generate...",
                     "display_name": "Prompt",
                 },
-            )
-        )
-
-        # Optional input image for image-to-image generation
-        self.add_parameter(
-            Parameter(
-                name="input_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                default_value=None,
-                tooltip="Optional input image for image-to-image generation (supports up to 20MB or 20 megapixels)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Image"},
             )
         )
 
@@ -255,7 +241,6 @@ class QwenImageGeneration(SuccessFailureNode):
         return {
             "model": self.get_parameter_value("model"),
             "prompt": self.get_parameter_value("prompt"),
-            "input_image": self.get_parameter_value("input_image"),
             "size": self.get_parameter_value("size"),
             "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_extend"),
@@ -304,11 +289,6 @@ class QwenImageGeneration(SuccessFailureNode):
         # Build content array with text prompt
         content = [{"text": params["prompt"]}]
 
-        # Add input image if provided
-        input_image_data = await self._process_input_image(params["input_image"])
-        if input_image_data:
-            content.append({"image": input_image_data})
-
         # Flatten structure - parameters should be at top level for MultiModalConversation.call()
         payload = {
             "model": params["model"],
@@ -322,66 +302,6 @@ class QwenImageGeneration(SuccessFailureNode):
 
         return payload
 
-    async def _process_input_image(self, image_input: Any) -> str | None:
-        """Process input image and convert to base64 data URI."""
-        if not image_input:
-            return None
-
-        # Extract string value from input
-        image_value = self._extract_image_value(image_input)
-        if not image_value:
-            return None
-
-        return await self._convert_to_base64_data_uri(image_value)
-
-    def _extract_image_value(self, image_input: Any) -> str | None:
-        """Extract string value from various image input types."""
-        if isinstance(image_input, str):
-            return image_input
-
-        try:
-            # ImageUrlArtifact: .value holds URL string
-            if hasattr(image_input, "value"):
-                value = getattr(image_input, "value", None)
-                if isinstance(value, str):
-                    return value
-
-            # ImageArtifact: .base64 holds raw or data-URI
-            if hasattr(image_input, "base64"):
-                b64 = getattr(image_input, "base64", None)
-                if isinstance(b64, str) and b64:
-                    return b64
-        except Exception as e:
-            logger.error("Failed to extract image value: %s", e)
-
-        return None
-
-    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
-        """Convert image value to base64 data URI."""
-        # If it's already a data URI, return it
-        if image_value.startswith("data:image/"):
-            return image_value
-
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_image(image_value)
-
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
-
-    async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
-
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            logger.error("Failed to download image from URL %s: %s", url, e)
-        return None
-
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
             sanitized_payload = deepcopy(payload)
@@ -389,14 +309,6 @@ class QwenImageGeneration(SuccessFailureNode):
             prompt = sanitized_payload.get("prompt", "")
             if len(prompt) > PROMPT_TRUNCATE_LENGTH:
                 sanitized_payload["prompt"] = prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
-            # Redact base64 input image data
-            if "input_image" in sanitized_payload:
-                image_data = sanitized_payload["input_image"]
-                if isinstance(image_data, str) and image_data.startswith("data:image/"):
-                    parts = image_data.split(",", 1)
-                    header = parts[0] if parts else "data:image/"
-                    b64_len = len(parts[1]) if len(parts) > 1 else 0
-                    sanitized_payload["input_image"] = f"{header},<base64 data length={b64_len}>"
 
             logger.info("Request payload: %s", json.dumps(sanitized_payload, indent=2))
 
