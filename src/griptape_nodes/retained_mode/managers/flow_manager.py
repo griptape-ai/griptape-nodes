@@ -1584,59 +1584,50 @@ class FlowManager:
                     )
 
             # 2. Add external incoming connections (from outside into the group)
-            # These connections have been redirected to point TO the proxy, but we want the original targets
+            # These connections have been redirected to point TO the NodeGroupNode proxy parameter
+            # We want to keep them pointing to the NodeGroupNode, not the original grouped nodes
             for conn in node_group.stored_connections.external_connections.incoming_connections:
-                conn_id = id(conn)
-                original_target = node_group.stored_connections.original_targets.incoming_sources.get(conn_id)
+                source_node_name = conn.source_node.name  # External node
+                target_node_name = conn.target_node.name  # NodeGroupNode
 
-                if original_target and original_target.name in package_node_names_set:
-                    # The source is outside the package, target is inside
-                    # We include these because the source will be external (like StartFlow)
-                    source_node_name = conn.source_node.name
-                    target_node_name = original_target.name
+                # Only include if source is NOT in package (external)
+                if source_node_name not in package_node_names_set:
+                    source_uuid = node_name_to_uuid.get(source_node_name)
+                    target_uuid = node_name_to_uuid.get(target_node_name)
 
-                    # Only include if source is NOT in package (external) and target IS in package
-                    if source_node_name not in package_node_names_set:
-                        source_uuid = node_name_to_uuid.get(source_node_name)
-                        target_uuid = node_name_to_uuid[target_node_name]
-
-                        # Source might not have a UUID if it's external to the package
-                        if source_uuid:
-                            internal_connections.append(
-                                SerializedFlowCommands.IndirectConnectionSerialization(
-                                    source_node_uuid=source_uuid,
-                                    source_parameter_name=conn.source_parameter.name,
-                                    target_node_uuid=target_uuid,
-                                    target_parameter_name=conn.target_parameter.name,
-                                )
+                    # Both nodes need UUIDs to be included in the package
+                    if source_uuid and target_uuid:
+                        internal_connections.append(
+                            SerializedFlowCommands.IndirectConnectionSerialization(
+                                source_node_uuid=source_uuid,
+                                source_parameter_name=conn.source_parameter.name,
+                                target_node_uuid=target_uuid,
+                                target_parameter_name=conn.target_parameter.name,  # Proxy parameter
                             )
+                        )
 
             # 3. Add external outgoing connections (from the group to outside)
-            # These connections have been redirected to point FROM the proxy, but we want the original sources
+            # These connections have been redirected to point FROM the NodeGroupNode proxy parameter
+            # We want to keep them pointing from the NodeGroupNode, not the original grouped nodes
             for conn in node_group.stored_connections.external_connections.outgoing_connections:
-                conn_id = id(conn)
-                original_source = node_group.stored_connections.original_targets.outgoing_targets.get(conn_id)
+                source_node_name = conn.source_node.name  # NodeGroupNode
+                target_node_name = conn.target_node.name  # External node
 
-                if original_source and original_source.name in package_node_names_set:
-                    # The source is inside the package, target is outside
-                    source_node_name = original_source.name
-                    target_node_name = conn.target_node.name
+                # Only include if target is NOT in package (external)
+                if target_node_name not in package_node_names_set:
+                    source_uuid = node_name_to_uuid.get(source_node_name)
+                    target_uuid = node_name_to_uuid.get(target_node_name)
 
-                    # Only include if source IS in package and target is NOT in package (external)
-                    if target_node_name not in package_node_names_set:
-                        source_uuid = node_name_to_uuid[source_node_name]
-                        target_uuid = node_name_to_uuid.get(target_node_name)
-
-                        # Target might not have a UUID if it's external to the package
-                        if target_uuid:
-                            internal_connections.append(
-                                SerializedFlowCommands.IndirectConnectionSerialization(
-                                    source_node_uuid=source_uuid,
-                                    source_parameter_name=conn.source_parameter.name,
-                                    target_node_uuid=target_uuid,
-                                    target_parameter_name=conn.target_parameter.name,
-                                )
+                    # Both nodes need UUIDs to be included in the package
+                    if source_uuid and target_uuid:
+                        internal_connections.append(
+                            SerializedFlowCommands.IndirectConnectionSerialization(
+                                source_node_uuid=source_uuid,
+                                source_parameter_name=conn.source_parameter.name,  # Proxy parameter
+                                target_node_uuid=target_uuid,
+                                target_parameter_name=conn.target_parameter.name,
                             )
+                        )
         else:
             # No proxy node - query connections from connection manager
             for node in nodes_to_package:
@@ -3211,8 +3202,6 @@ class FlowManager:
             await self._global_control_flow_machine.start_flow(start_node, debug_mode=debug_mode)
         except Exception:
             if self.check_for_existing_running_flow():
-                # Cleanup proxy nodes before canceling flow
-                self._global_control_flow_machine.cleanup_proxy_nodes()
                 await self.cancel_flow_run()
             raise
         GriptapeNodes.EventManager().put_event(
@@ -3241,10 +3230,6 @@ class FlowManager:
         if self._global_control_flow_machine is not None:
             await self._global_control_flow_machine.cancel_flow()
 
-        # Cleanup proxy nodes and restore connections
-        if self._global_control_flow_machine is not None:
-            self._global_control_flow_machine.cleanup_proxy_nodes()
-
         # Reset control flow machine
         if self._global_control_flow_machine is not None:
             self._global_control_flow_machine.reset_machine(cancel=True)
@@ -3265,7 +3250,6 @@ class FlowManager:
 
         # Cleanup proxy nodes and restore connections before resetting machine
         if self._global_control_flow_machine is not None:
-            self._global_control_flow_machine.cleanup_proxy_nodes()
             self._global_control_flow_machine.reset_machine()
 
         # Reset control flow machine
@@ -3377,8 +3361,6 @@ class FlowManager:
             except Exception as e:
                 logger.exception("Exception during single node resolution")
                 if self.check_for_existing_running_flow():
-                    if self._global_control_flow_machine is not None:
-                        self._global_control_flow_machine.cleanup_proxy_nodes()
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
             if resolution_machine.is_complete():
@@ -3523,6 +3505,9 @@ class FlowManager:
         cn_mgr = self.get_connections()
         for node in all_nodes:
             # if it's a start node, start here! Return the first one!
+            if node.parent_node is not None:
+                # This can't be a start node.
+                continue
             if isinstance(node, StartNode):
                 start_nodes.append(node)
                 continue

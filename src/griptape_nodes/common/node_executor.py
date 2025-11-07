@@ -450,8 +450,14 @@ class NodeExecutor:
             target_node_name = original_node_param.node_name
             target_param_name = original_node_param.parameter_name
 
-            # Set target node. may have special group handling.
-            target_node = node
+            # For NodeGroupNode, look up the actual grouped node by name
+            if isinstance(node, NodeGroupNode):
+                if target_node_name not in node.nodes:
+                    msg = f"Target node '{target_node_name}' not found in NodeGroupNode '{node.name}'. Available nodes: {list(node.nodes.keys())}"
+                    raise RuntimeError(msg)
+                target_node = node.nodes[target_node_name]
+            else:
+                target_node = node
 
             # Get the parameter from the target node
             target_param = target_node.get_parameter_by_name(target_param_name)

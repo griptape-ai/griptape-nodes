@@ -70,6 +70,9 @@ class DagBuilder:
             # Skip if already in DAG (use DAG membership, not resolved state)
             if current_node.name in self.node_to_reference:
                 return
+            if current_node.parent_node is not None:
+                # Don't add grouped nodes or edges to the DAG. It'll be executed separately.
+                return
             # Process dependencies first (depth-first)
             ignore_data_dependencies = False
             # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.
