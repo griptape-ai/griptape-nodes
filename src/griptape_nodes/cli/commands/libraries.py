@@ -16,6 +16,7 @@ from griptape_nodes.cli.shared import (
     NODES_TARBALL_URL,
     console,
 )
+from griptape_nodes.retained_mode.events.os_events import DeleteFileRequest, DeleteFileResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
@@ -80,7 +81,11 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
                 if dest_library_dir.exists():
-                    shutil.rmtree(dest_library_dir, onexc=GriptapeNodes.OSManager().remove_readonly)
+                    # Use DeleteFileRequest for centralized deletion with Windows compatibility
+                    request = DeleteFileRequest(path=str(dest_library_dir), workspace_only=False)
+                    result = await GriptapeNodes.OSManager().on_delete_file_request(request)
+                    if not isinstance(result, DeleteFileResultSuccess):
+                        console.print(f"[yellow]Warning: Failed to delete existing library {library_dir.name}[/yellow]")
                 shutil.copytree(library_dir, dest_library_dir)
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
