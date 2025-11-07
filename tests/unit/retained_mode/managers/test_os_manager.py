@@ -594,6 +594,7 @@ class TestDeleteFileRequest:
         yield
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
+    @pytest.mark.asyncio
     async def test_delete_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully deleting a file."""
         os_manager = griptape_nodes.OSManager()
@@ -611,6 +612,7 @@ class TestDeleteFileRequest:
         assert Path(result.deleted_paths[0]).resolve() == file_path.resolve()
         assert not file_path.exists()
 
+    @pytest.mark.asyncio
     async def test_delete_empty_directory(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test deleting an empty directory."""
         os_manager = griptape_nodes.OSManager()
@@ -626,6 +628,7 @@ class TestDeleteFileRequest:
         assert str(dir_path) in result.deleted_paths or str(dir_path.resolve()) in result.deleted_paths
         assert not dir_path.exists()
 
+    @pytest.mark.asyncio
     async def test_delete_directory_with_contents(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test deleting a directory with contents."""
         os_manager = griptape_nodes.OSManager()
@@ -651,6 +654,7 @@ class TestDeleteFileRequest:
         assert any(str(subdir / "file3.txt") in path for path in result.deleted_paths)
         assert not dir_path.exists()
 
+    @pytest.mark.asyncio
     async def test_delete_nonexistent_file_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that deleting a nonexistent file fails."""
         os_manager = griptape_nodes.OSManager()
@@ -662,6 +666,7 @@ class TestDeleteFileRequest:
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
 
+    @pytest.mark.asyncio
     async def test_delete_invalid_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that deleting with neither path nor file_entry fails."""
         os_manager = griptape_nodes.OSManager()
@@ -672,6 +677,7 @@ class TestDeleteFileRequest:
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.INVALID_PATH
 
+    @pytest.mark.asyncio
     async def test_delete_with_permission_error(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that permission errors are properly handled."""
         os_manager = griptape_nodes.OSManager()
