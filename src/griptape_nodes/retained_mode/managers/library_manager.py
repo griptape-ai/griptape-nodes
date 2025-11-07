@@ -72,6 +72,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadAllLibrariesRequest,
+    LoadAllLibrariesResultFailure,
+    LoadAllLibrariesResultSuccess,
     LoadLibraryMetadataFromFileRequest,
     LoadLibraryMetadataFromFileResultFailure,
     LoadLibraryMetadataFromFileResultSuccess,
@@ -214,6 +217,7 @@ class LibraryManager:
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
         event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
+        event_manager.assign_manager_to_request_type(LoadAllLibrariesRequest, self.load_all_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -2053,6 +2057,20 @@ class LibraryManager:
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+    async def load_all_libraries_request(self, request: LoadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        if len(self._library_file_path_to_info) > 0:
+            details = "Libraries are already loaded, no action needed."
+            return LoadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+        try:
+            await self.load_all_libraries_from_config()
+            details = "Successfully loaded all libraries from configuration."
+            return LoadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+        except Exception as e:
+            details = f"Failed to load libraries from configuration: {e}"
+            logger.error(details)
+            return LoadAllLibrariesResultFailure(result_details=details)
 
     def _discover_library_files(self) -> list[Path]:
         """Discover library JSON files from config and workspace recursively.

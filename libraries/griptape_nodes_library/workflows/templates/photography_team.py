@@ -20,11 +20,7 @@ import pickle
 from griptape_nodes.node_library.library_registry import IconVariant, NodeDeprecationMetadata, NodeMetadata
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
-from griptape_nodes.retained_mode.events.library_events import (
-    GetAllInfoForAllLibrariesRequest,
-    GetAllInfoForAllLibrariesResultSuccess,
-    ReloadAllLibrariesRequest,
-)
+from griptape_nodes.retained_mode.events.library_events import LoadAllLibrariesRequest
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -33,13 +29,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-response = GriptapeNodes.LibraryManager().get_all_info_for_all_libraries_request(GetAllInfoForAllLibrariesRequest())
-
-if (
-    isinstance(response, GetAllInfoForAllLibrariesResultSuccess)
-    and len(response.library_name_to_library_info.keys()) < 1
-):
-    GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
+GriptapeNodes.handle_request(LoadAllLibrariesRequest())
 
 context_manager = GriptapeNodes.ContextManager()
 
