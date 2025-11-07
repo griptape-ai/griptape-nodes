@@ -253,7 +253,6 @@ class NodeExecutor:
             node_names = [node.name]
 
         # Pass the group node if this is a NodeGroupNode so serialization can use stored connections
-        proxy_node_for_packaging = node if isinstance(node, NodeGroupNode) else None
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
@@ -263,7 +262,6 @@ class NodeExecutor:
             output_parameter_prefix=output_parameter_prefix,
             entry_control_node_name=None,
             entry_control_parameter_name=None,
-            proxy_node=proxy_node_for_packaging,
         )
         package_result = GriptapeNodes.handle_request(request)
         if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):

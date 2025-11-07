@@ -127,7 +127,7 @@ class DagBuilder:
                         graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
 
             # Add current node to DAG (but keep original resolution state)
-            if current_node.parent_node is not None:
+            if current_node.parent_node is None:
                 dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
                 self.node_to_reference[current_node.name] = dag_node
                 graph.add_node(node_for_adding=current_node.name)

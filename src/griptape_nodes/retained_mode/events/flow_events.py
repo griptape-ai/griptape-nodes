@@ -444,9 +444,6 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
-    proxy_node: NodeGroupNode | None = (
-        None  # NodeGroupNode if packaging nodes from a group, used to access original connections
-    )
 
 
 @dataclass
