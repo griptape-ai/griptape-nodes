@@ -5,7 +5,7 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
@@ -574,12 +574,19 @@ class ExecuteDagState(State):
     def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str], set[str]]:
         networks = context.networks
         leaf_nodes = set()
-        for network in networks.values():
+        for network_name, network in networks.items():
             # Check and see if there are leaf nodes that are cancelled.
             # Reinitialize leaf nodes since maybe we changed things up.
             # We removed nodes from the network. There may be new leaf nodes.
             # Add all leaf nodes from all networks (using set union to avoid duplicates)
-            leaf_nodes.update([n for n in network.nodes() if network.in_degree(n) == 0])
+            network_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+            if network_leaf_nodes:
+                logger.info(
+                    "Network '%s' leaf nodes (in_degree=0): %s",
+                    network_name,
+                    ", ".join(f"{n} (in_degree={network.in_degree(n)})" for n in network_leaf_nodes),
+                )
+            leaf_nodes.update(network_leaf_nodes)
         canceled_nodes = set()
         queued_nodes = set()
         for node in leaf_nodes:
@@ -670,7 +677,9 @@ class ExecuteDagState(State):
         for node in queued_nodes:
             # Process all queued nodes - the async semaphore will handle concurrency limits
             node_reference = context.node_to_reference[node]
-
+            #HACK
+            if isinstance(node_reference.node_reference, BaseIterativeEndNode):
+                continue
             # Collect parameter values from upstream nodes before executing
             try:
                 await ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
