@@ -1425,7 +1425,8 @@ class LibraryManager:
             old_module = sys.modules.pop(module_name)
 
             # Create a fresh spec and module
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            normalized_file_path = OSManager().normalize_path_for_platform(file_path)
+            spec = importlib.util.spec_from_file_location(module_name, normalized_file_path)
             if spec is None or spec.loader is None:
                 msg = f"Could not load module specification from {file_path}"
                 raise ImportError(msg)
@@ -1449,7 +1450,8 @@ class LibraryManager:
         # Load it for the first time
         else:
             # Load the module specification
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            normalized_file_path = OSManager().normalize_path_for_platform(file_path)
+            spec = importlib.util.spec_from_file_location(module_name, normalized_file_path)
             if spec is None or spec.loader is None:
                 msg = f"Could not load module specification from {file_path}"
                 raise ImportError(msg)
