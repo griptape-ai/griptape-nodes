@@ -2399,8 +2399,18 @@ class WorkflowManager:
             targets=[ast.Name(id="response", ctx=ast.Store())],
             value=ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
+                    # Effectively reverts: https://github.com/griptape-ai/griptape-nodes/pull/2951
+                    # Revisit this
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                            attr="LibraryManager",
+                            ctx=ast.Load(),
+                        ),
+                        args=[],
+                        keywords=[],
+                    ),
+                    attr="get_all_info_for_all_libraries_request",
                     ctx=ast.Load(),
                 ),
                 args=[
