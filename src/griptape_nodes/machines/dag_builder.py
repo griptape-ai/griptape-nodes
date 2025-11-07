@@ -87,7 +87,7 @@ class DagBuilder:
                 if upstream_connection:
                     upstream_node, _ = upstream_connection
                     # Don't add nodes that have already been resolved.
-                    if upstream_node.state == NodeResolutionState.RESOLVED:
+                    if upstream_node.state == NodeResolutionState.RESOLVED or upstream_node.parent_node is not None:
                         continue
                     # If upstream is already in DAG, skip creating edge (it's in another graph)
                     if upstream_node.name in self.node_to_reference:

@@ -210,14 +210,6 @@ class ExecuteDagState(State):
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
         from griptape_nodes.exe_types.node_types import NodeGroupNode
-
-        if (
-            isinstance(node, NodeGroupNode)
-            and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
-        ):
-            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
-        else:
-            next_output = node.get_next_control_output()
         if (
             isinstance(node, NodeGroupNode)
             and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
@@ -261,14 +253,6 @@ class ExecuteDagState(State):
         """Process the next control node in the flow."""
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
         if node_connection is not None:
-            next_node, next_parameter = node_connection
-            # Set entry control parameter
-            logger.debug(
-                "Parallel Resolution: Setting entry control parameter for node '%s' to '%s'",
-                next_node.name,
-                next_parameter.name if next_parameter else None,
-            )
-            next_node.set_entry_control_parameter(next_parameter)
             next_node, next_parameter = node_connection
             # Set entry control parameter
             logger.debug(
@@ -355,7 +339,6 @@ class ExecuteDagState(State):
         for parameter in current_node.parameters:
             # Get the connected upstream node for this parameter
             upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
-            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 
@@ -366,20 +349,6 @@ class ExecuteDagState(State):
                     output_value = upstream_node.get_parameter_value(upstream_parameter.name)
 
                 # Pass the value through using the same mechanism as normal resolution
-                result = await GriptapeNodes.get_instance().ahandle_request(
-                    SetParameterValueRequest(
-                        parameter_name=parameter.name,
-                        node_name=current_node.name,
-                        value=output_value,
-                        data_type=upstream_parameter.output_type,
-                        incoming_connection_source_node_name=upstream_node.name,
-                        incoming_connection_source_parameter_name=upstream_parameter.name,
-                    )
-                )
-                if isinstance(result, SetParameterValueResultFailure):
-                    msg = f"Failed to set value for parameter '{parameter.name}' on node '{current_node.name}': {result.result_details}"
-                    logger.error(msg)
-                    raise RuntimeError(msg)
                 result = await GriptapeNodes.get_instance().ahandle_request(
                     SetParameterValueRequest(
                         parameter_name=parameter.name,
@@ -564,22 +533,8 @@ class ExecuteDagState(State):
                         exc,
                     )
 
-                    dag_node = context.task_to_node.get(task)
-                    node_name = dag_node.node_reference.name if dag_node else "Unknown"
-                    node_type = dag_node.node_reference.__class__.__name__ if dag_node else "Unknown"
-
-                    logger.exception(
-                        "Task execution failed for node '%s' (type: %s) in flow '%s'. Exception: %s",
-                        node_name,
-                        node_type,
-                        context.flow_name,
-                        exc,
-                    )
 
                     context.task_to_node.pop(task)
-                    context.error_message = f"Task execution failed for node '{node_name}': {exc}"
-                    context.workflow_state = WorkflowState.ERRORED
-                    return ErrorState
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"
                     context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
@@ -613,15 +568,6 @@ class ErrorState(State):
     @staticmethod
     async def on_update(context: ParallelResolutionContext) -> type[State] | None:
         # Don't modify lists while iterating through them.
-        task_to_node = context.task_to_node
-        for task, node in task_to_node.copy().items():
-            if task.done():
-                node.node_state = NodeState.DONE
-            elif task.cancelled():
-                node.node_state = NodeState.CANCELED
-            task_to_node.pop(task)
-
-        # Handle async tasks
         task_to_node = context.task_to_node
         for task, node in task_to_node.copy().items():
             if task.done():

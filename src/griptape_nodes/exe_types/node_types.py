@@ -1891,6 +1891,7 @@ class NodeGroupNode(BaseNode):
             traits={Options(choices=get_library_names_with_publish_handlers())},
             ui_options={"hide": True},
         )
+        self.add_parameter(self.execution_environment)
         self.nodes = {}
         # Track mapping from proxy parameter name to (original_node, original_param_name)
         self._proxy_param_to_node_param = {}
@@ -2645,11 +2646,11 @@ class NodeGroupNode(BaseNode):
                 existing_parent_node = node.parent_node
                 if isinstance(existing_parent_node, NodeGroupNode):
                     child_nodes.setdefault(existing_parent_node, []).append(node)
-            # Now it should be removed, so we can set parent node to this.
+        for parent_node, node_list in child_nodes.items():
+            parent_node.remove_nodes_from_group(node_list)
+        for node in nodes:
             node.parent_node = self
             self.nodes[node.name] = node
-        for parent_node, child_node in child_nodes.items():
-            parent_node.remove_nodes_from_group(child_node)
         # Now we need to have special handling for multiple nodes.
         if len(nodes) == 1:
             # If there's just one node, we add it this way.

@@ -1440,11 +1440,7 @@ class FlowManager:
         internal_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],  # OUTPUT: will be populated
         proxy_node: NodeGroupNode | None = None,  # NodeGroupNode if packaging nodes from a proxy
     ) -> list[SerializedNodeCommands] | PackageNodesAsSerializedFlowResultFailure:
-        """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops.
-
-        This method temporarily overrides each node's execution_environment parameter to LOCAL_EXECUTION
-        during serialization, then restores the original values. This prevents recursive packaging loops
-        that could occur if nodes were configured for remote execution environments.
+        """Serialize package nodes while temporarily setting execution environment to local to prevent recursive loops
 
         Args:
             nodes_to_package: List of nodes to serialize
@@ -1459,82 +1455,57 @@ class FlowManager:
         Returns:
             List of SerializedNodeCommands on success, or PackageNodesAsSerializedFlowResultFailure on failure
         """
-        # Intercept execution_environment and job_group for all nodes before serialization
-        original_execution_environments = {}
-        original_job_groups = {}
+        # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
+        serialized_node_commands = []
+
         for node in nodes_to_package:
-            # Save and override execution_environment to prevent recursive packaging loops
-            original_exec_value = node.get_parameter_value("execution_environment")
-            original_execution_environments[node.name] = original_exec_value
-            node.set_parameter_value("execution_environment", LOCAL_EXECUTION)
-
-            # Save and clear job_group to prevent group processing in packaged flow
-            original_job_group_value = node.get_parameter_value("job_group")
-            original_job_groups[node.name] = original_job_group_value
-            node.set_parameter_value("job_group", "")
-
-        try:
-            # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
-            serialized_node_commands = []
-
-            for node in nodes_to_package:
-                # Serialize this node using shared dictionaries for value deduplication
-                serialize_request = SerializeNodeToCommandsRequest(
-                    node_name=node.name,
-                    unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
-                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                )
-                serialize_result = GriptapeNodes.NodeManager().on_serialize_node_to_commands(serialize_request)
-
-                if not isinstance(serialize_result, SerializeNodeToCommandsResultSuccess):
-                    return PackageNodesAsSerializedFlowResultFailure(
-                        result_details=f"Attempted to package nodes as serialized flow. Failed to serialize node '{node.name}': {serialize_result.result_details}"
-                    )
-
-                # Collect serialized node
-                serialized_node_commands.append(serialize_result.serialized_node_commands)
-
-                # Populate the shared node_name_to_uuid mapping
-                create_cmd = serialize_result.serialized_node_commands.create_node_command
-                node_name = (
-                    create_cmd.node_group_name
-                    if isinstance(create_cmd, CreateNodeGroupRequest)
-                    else create_cmd.node_name
-                )
-                if node_name is not None:
-                    node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
-
-                # Collect set parameter value commands (references to unique_parameter_uuid_to_values)
-                if serialize_result.set_parameter_value_commands:
-                    set_parameter_value_commands[serialize_result.serialized_node_commands.node_uuid] = (
-                        serialize_result.set_parameter_value_commands
-                    )
-
-            # Build internal connections between package nodes
-            package_node_names_set = {n.name for n in nodes_to_package}
-
-            # Get connections using appropriate method based on whether we have a proxy node
-            connections_result = self._get_internal_connections_for_package(
-                nodes_to_package=nodes_to_package,
-                package_node_names_set=package_node_names_set,
-                node_name_to_uuid=node_name_to_uuid,
-                proxy_node=proxy_node,
+            # Serialize this node using shared dictionaries for value deduplication
+            serialize_request = SerializeNodeToCommandsRequest(
+                node_name=node.name,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
             )
+            serialize_result = GriptapeNodes.NodeManager().on_serialize_node_to_commands(serialize_request)
 
-            if isinstance(connections_result, PackageNodesAsSerializedFlowResultFailure):
-                return connections_result
+            if not isinstance(serialize_result, SerializeNodeToCommandsResultSuccess):
+                return PackageNodesAsSerializedFlowResultFailure(
+                    result_details=f"Attempted to package nodes as serialized flow. Failed to serialize node '{node.name}': {serialize_result.result_details}"
+                )
 
-            internal_connections.extend(connections_result)
-        finally:
-            # Always restore original execution_environment and job_group values, even on failure
-            for node_name, original_value in original_execution_environments.items():
-                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-                restore_node.set_parameter_value("execution_environment", original_value)
+            # Collect serialized node
+            serialized_node_commands.append(serialize_result.serialized_node_commands)
 
-            for node_name, original_job_group in original_job_groups.items():
-                restore_node = GriptapeNodes.NodeManager().get_node_by_name(node_name)
-                restore_node.set_parameter_value("job_group", original_job_group)
+            # Populate the shared node_name_to_uuid mapping
+            create_cmd = serialize_result.serialized_node_commands.create_node_command
+            node_name = (
+                create_cmd.node_group_name
+                if isinstance(create_cmd, CreateNodeGroupRequest)
+                else create_cmd.node_name
+            )
+            if node_name is not None:
+                node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
 
+            # Collect set parameter value commands (references to unique_parameter_uuid_to_values)
+            if serialize_result.set_parameter_value_commands:
+                set_parameter_value_commands[serialize_result.serialized_node_commands.node_uuid] = (
+                    serialize_result.set_parameter_value_commands
+                )
+
+        # Build internal connections between package nodes
+        package_node_names_set = {n.name for n in nodes_to_package}
+
+        # Get connections using appropriate method based on whether we have a proxy node
+        connections_result = self._get_internal_connections_for_package(
+            nodes_to_package=nodes_to_package,
+            package_node_names_set=package_node_names_set,
+            node_name_to_uuid=node_name_to_uuid,
+            proxy_node=proxy_node,
+        )
+
+        if isinstance(connections_result, PackageNodesAsSerializedFlowResultFailure):
+            return connections_result
+
+        internal_connections.extend(connections_result)
         return serialized_node_commands
 
     def _get_internal_connections_for_package(  # noqa: C901, PLR0912
@@ -1570,6 +1541,10 @@ class FlowManager:
                 source_node_name = conn.source_node.name
                 target_node_name = conn.target_node.name
 
+                # Skip connections that involve the NodeGroupNode itself (proxy bridge connections)
+                if source_node_name == node_group.name or target_node_name == node_group.name:
+                    continue
+
                 # Only include connections where BOTH nodes are in our package
                 if source_node_name in package_node_names_set and target_node_name in package_node_names_set:
                     source_uuid = node_name_to_uuid[source_node_name]
@@ -1584,16 +1559,22 @@ class FlowManager:
                     )
 
             # 2. Add external incoming connections (from outside into the group)
-            # These connections have been redirected to point TO the NodeGroupNode proxy parameter
-            # We want to keep them pointing to the NodeGroupNode, not the original grouped nodes
+            # These connections point to NodeGroupNode proxy parameters, but we need to map them
+            # back to the original grouped nodes for the packaged flow
             for conn in node_group.stored_connections.external_connections.incoming_connections:
-                source_node_name = conn.source_node.name  # External node
-                target_node_name = conn.target_node.name  # NodeGroupNode
+                conn_id = id(conn)
+                original_target = node_group.stored_connections.original_targets.incoming_sources.get(conn_id)
+
+                # Skip if we don't have the original target or it's not in the package
+                if original_target is None or original_target.name not in package_node_names_set:
+                    continue
+
+                source_node_name = conn.source_node.name  # External node (like StartFlow)
 
                 # Only include if source is NOT in package (external)
                 if source_node_name not in package_node_names_set:
                     source_uuid = node_name_to_uuid.get(source_node_name)
-                    target_uuid = node_name_to_uuid.get(target_node_name)
+                    target_uuid = node_name_to_uuid.get(original_target.name)
 
                     # Both nodes need UUIDs to be included in the package
                     if source_uuid and target_uuid:
@@ -1602,20 +1583,26 @@ class FlowManager:
                                 source_node_uuid=source_uuid,
                                 source_parameter_name=conn.source_parameter.name,
                                 target_node_uuid=target_uuid,
-                                target_parameter_name=conn.target_parameter.name,  # Proxy parameter
+                                target_parameter_name=conn.target_parameter.name,  # Original parameter name
                             )
                         )
 
             # 3. Add external outgoing connections (from the group to outside)
-            # These connections have been redirected to point FROM the NodeGroupNode proxy parameter
-            # We want to keep them pointing from the NodeGroupNode, not the original grouped nodes
+            # These connections point from NodeGroupNode proxy parameters, but we need to map them
+            # back to the original grouped nodes for the packaged flow
             for conn in node_group.stored_connections.external_connections.outgoing_connections:
-                source_node_name = conn.source_node.name  # NodeGroupNode
-                target_node_name = conn.target_node.name  # External node
+                conn_id = id(conn)
+                original_source = node_group.stored_connections.original_targets.outgoing_targets.get(conn_id)
+
+                # Skip if we don't have the original source or it's not in the package
+                if original_source is None or original_source.name not in package_node_names_set:
+                    continue
+
+                target_node_name = conn.target_node.name  # External node (like EndFlow)
 
                 # Only include if target is NOT in package (external)
                 if target_node_name not in package_node_names_set:
-                    source_uuid = node_name_to_uuid.get(source_node_name)
+                    source_uuid = node_name_to_uuid.get(original_source.name)
                     target_uuid = node_name_to_uuid.get(target_node_name)
 
                     # Both nodes need UUIDs to be included in the package
@@ -1623,7 +1610,7 @@ class FlowManager:
                         internal_connections.append(
                             SerializedFlowCommands.IndirectConnectionSerialization(
                                 source_node_uuid=source_uuid,
-                                source_parameter_name=conn.source_parameter.name,  # Proxy parameter
+                                source_parameter_name=conn.source_parameter.name,  # Original parameter name
                                 target_node_uuid=target_uuid,
                                 target_parameter_name=conn.target_parameter.name,
                             )
@@ -1755,22 +1742,23 @@ class FlowManager:
     ) -> tuple[list[IncomingConnection], list[OutgoingConnection]]:
         """Extract incoming and outgoing connections for a specific node from the proxy node's stored data.
 
-        Returns connections in the same format as ListConnectionsForNodeRequest would return them,
-        using the original node references from before proxy redirection.
+        For grouped nodes in a NodeGroupNode, we only return INTERNAL connections (between grouped nodes).
+        External connections go through the NodeGroupNode's proxy parameters and are handled separately
+        in _get_internal_connections_for_package().
 
         Args:
             node_name: Name of the node to get connections for
             proxy_node: The proxy node containing the NodeGroup data with stored connections
 
         Returns:
-            Tuple of (incoming_connections, outgoing_connections) matching the ListConnectionsForNodeResultSuccess format
+            Tuple of (incoming_connections, outgoing_connections) with only internal connections
         """
         node_group = proxy_node
         incoming_connections: list[IncomingConnection] = []
         outgoing_connections: list[OutgoingConnection] = []
 
-        # Get incoming connections: check internal_connections and external_incoming_connections
-        # Internal connections where this node is the target
+        # Get incoming connections: only internal connections where this node is the target
+        # Skip connections involving the NodeGroupNode itself (proxy bridge connections)
         incoming_connections.extend(
             IncomingConnection(
                 source_node_name=conn.source_node.name,
@@ -1778,23 +1766,11 @@ class FlowManager:
                 target_parameter_name=conn.target_parameter.name,
             )
             for conn in node_group.stored_connections.internal_connections
-            if conn.target_node.name == node_name
+            if conn.target_node.name == node_name and conn.source_node.name != node_group.name
         )
 
-        # External incoming connections where this node is the original target
-        incoming_connections.extend(
-            IncomingConnection(
-                source_node_name=conn.source_node.name,
-                source_parameter_name=conn.source_parameter.name,
-                target_parameter_name=conn.target_parameter.name,
-            )
-            for conn in node_group.stored_connections.external_connections.incoming_connections
-            if (original_target := node_group.stored_connections.original_targets.incoming_sources.get(id(conn)))
-            and original_target.name == node_name
-        )
-
-        # Get outgoing connections: check internal_connections and external_outgoing_connections
-        # Internal connections where this node is the source
+        # Get outgoing connections: only internal connections where this node is the source
+        # Skip connections involving the NodeGroupNode itself (proxy bridge connections)
         outgoing_connections.extend(
             OutgoingConnection(
                 source_parameter_name=conn.source_parameter.name,
@@ -1802,20 +1778,68 @@ class FlowManager:
                 target_parameter_name=conn.target_parameter.name,
             )
             for conn in node_group.stored_connections.internal_connections
-            if conn.source_node.name == node_name
+            if conn.source_node.name == node_name and conn.target_node.name != node_group.name
         )
 
-        # External outgoing connections where this node is the original source
-        outgoing_connections.extend(
-            OutgoingConnection(
-                source_parameter_name=conn.source_parameter.name,
-                target_node_name=conn.target_node.name,
-                target_parameter_name=conn.target_parameter.name,
-            )
-            for conn in node_group.stored_connections.external_connections.outgoing_connections
-            if (original_source := node_group.stored_connections.original_targets.outgoing_targets.get(id(conn)))
-            and original_source.name == node_name
-        )
+        # Add external incoming connections where this node was the original target
+        # We need to find the original parameter name from the internal proxy connection
+        for conn in node_group.stored_connections.external_connections.incoming_connections:
+            conn_id = id(conn)
+            original_target = node_group.stored_connections.original_targets.incoming_sources.get(conn_id)
+
+            if original_target is None or original_target.name != node_name:
+                continue
+
+            # Find the internal connection from NodeGroupNode proxy param to this node
+            # to get the original parameter name
+            proxy_param = conn.target_parameter  # This is the proxy parameter on NodeGroupNode
+            original_param_name = None
+
+            for internal_conn in node_group.stored_connections.internal_connections:
+                if (internal_conn.source_node.name == node_group.name and
+                    internal_conn.source_parameter == proxy_param and
+                    internal_conn.target_node.name == node_name):
+                    original_param_name = internal_conn.target_parameter.name
+                    break
+
+            if original_param_name:
+                incoming_connections.append(
+                    IncomingConnection(
+                        source_node_name=conn.source_node.name,
+                        source_parameter_name=conn.source_parameter.name,
+                        target_parameter_name=original_param_name,  # Original parameter on grouped node
+                    )
+                )
+
+        # Add external outgoing connections where this node was the original source
+        # We need to find the original parameter name from the internal proxy connection
+        for conn in node_group.stored_connections.external_connections.outgoing_connections:
+            conn_id = id(conn)
+            original_source = node_group.stored_connections.original_targets.outgoing_targets.get(conn_id)
+
+            if original_source is None or original_source.name != node_name:
+                continue
+
+            # Find the internal connection from this node to NodeGroupNode proxy param
+            # to get the original parameter name
+            proxy_param = conn.source_parameter  # This is the proxy parameter on NodeGroupNode
+            original_param_name = None
+
+            for internal_conn in node_group.stored_connections.internal_connections:
+                if (internal_conn.source_node.name == node_name and
+                    internal_conn.target_node.name == node_group.name and
+                    internal_conn.target_parameter == proxy_param):
+                    original_param_name = internal_conn.source_parameter.name
+                    break
+
+            if original_param_name:
+                outgoing_connections.append(
+                    OutgoingConnection(
+                        source_parameter_name=original_param_name,  # Original parameter on grouped node
+                        target_node_name=conn.target_node.name,
+                        target_parameter_name=conn.target_parameter.name,
+                    )
+                )
 
         return incoming_connections, outgoing_connections
 
