@@ -3,13 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
@@ -198,14 +195,14 @@ class DeleteFile(SuccessFailureNode):
                 if entry.is_dir:
                     self._list_directory_recursively(entry.path, targets)
 
-    def _collect_all_deletion_targets(self, paths: list[str]) -> list[DeleteFileInfo]:
+    def _collect_all_deletion_targets(self, paths: set[str]) -> list[DeleteFileInfo]:
         """Collect all files/directories that will be deleted.
 
         Handles both explicit paths and glob patterns (e.g., "/path/to/*.txt").
         Glob patterns match individual files in a directory, not subdirectories.
 
         Returns:
-            List of DeleteFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
+            Set of DeleteFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
         """
         all_targets: list[DeleteFileInfo] = []
 
@@ -334,18 +331,6 @@ class DeleteFile(SuccessFailureNode):
 
         return "\n".join(lines)
 
-    def after_incoming_connection_removed(
-        self,
-        source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,
-    ) -> None:
-        """Override to clear state when connection to file_paths is removed."""
-        # If connection to file_paths was removed, reset the warning
-        if target_parameter is self.file_paths:
-            # Clear the parameter value and reset warning
-            self.file_paths.clear_list()
-
     def set_parameter_value(
         self,
         param_name: str,
@@ -367,8 +352,13 @@ class DeleteFile(SuccessFailureNode):
 
         # Update warning if file_paths changed
         if param_name == self.file_paths.name:
+            # Reset variant to warning when parameters change
+            self.deletion_warning.variant = "warning"
+
             # Normalize input to list
-            paths = self.get_parameter_list_value(self.file_paths.name)
+            param_values = self.get_parameter_list_value(self.file_paths.name)
+            # Dupe strip
+            paths = set(param_values)
 
             if paths:
                 # Collect all files/directories that will be deleted
@@ -457,14 +447,19 @@ class DeleteFile(SuccessFailureNode):
         """Execute the file deletion."""
         self._clear_execution_status()
 
-        # Get parameter value
-        paths = self.get_parameter_list_value(self.file_paths.name)
+        # Get paths from param list.
+        param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Dupe strip
+        paths = set(param_values)
 
-        # FAILURE CASE: Empty paths
+        # Handle empty paths as success with info message
         if not paths:
-            msg = f"{self.name} attempted to delete with empty paths. Failed due to no paths provided"
-            self.set_parameter_value(self.deleted_paths_output.name, None)
-            self._set_status_results(was_successful=False, result_details=msg)
+            msg = "No files specified for deletion"
+            self.set_parameter_value(self.deleted_paths_output.name, [])
+            self._set_status_results(was_successful=True, result_details=msg)
+            # Update warning message with info
+            self.deletion_warning.variant = "info"
+            self.deletion_warning.value = msg
             return
 
         # Collect all targets (includes INVALID status for bad paths)
@@ -479,6 +474,9 @@ class DeleteFile(SuccessFailureNode):
             details = self._format_result_details(all_targets)
             self.set_parameter_value(self.deleted_paths_output.name, None)
             self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
+            # Update warning message with error
+            self.deletion_warning.variant = "error"
+            self.deletion_warning.value = details
             return
 
         # Only delete explicitly requested items
@@ -499,18 +497,20 @@ class DeleteFile(SuccessFailureNode):
         # Execute deletions and track results
         all_deleted_paths_str = self._execute_deletions(deletion_order)[0]
 
-        # Only report on explicitly requested items (not children discovered via recursion)
+        # For summary counts, only count explicitly requested items
         requested_targets = [t for t in all_targets if t.explicitly_requested]
-
-        # Determine success/failure
         succeeded_count = len([t for t in requested_targets if t.status == DeletionStatus.SUCCESS])
 
         # FAILURE CASE: Zero files were successfully deleted
         if succeeded_count == 0:
             msg = f"{self.name} failed to delete any files"
-            details = self._format_result_details(requested_targets)
+            # Show all targets in details (including children)
+            details = self._format_result_details(all_targets)
             self.set_parameter_value(self.deleted_paths_output.name, None)
             self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
+            # Update warning message with error
+            self.deletion_warning.variant = "error"
+            self.deletion_warning.value = details
             return
 
         # SUCCESS PATH AT END (even if some failed, as long as at least one succeeded)
@@ -518,7 +518,19 @@ class DeleteFile(SuccessFailureNode):
         self.set_parameter_value(self.deleted_paths_output.name, all_deleted_paths_str)
         self.parameter_output_values[self.deleted_paths_output.name] = all_deleted_paths_str
 
-        # Generate detailed result message (only for explicitly requested items)
-        details = self._format_result_details(requested_targets)
+        # Generate detailed result message showing all targets (including children)
+        details = self._format_result_details(all_targets)
 
         self._set_status_results(was_successful=True, result_details=details)
+
+        # Update warning message with results
+        # Determine variant: success if no problems, error if there were failures or invalid paths
+        failed_count = len([t for t in all_targets if t.status == DeletionStatus.FAILED])
+        invalid_count = len([t for t in all_targets if t.status == DeletionStatus.INVALID])
+
+        if failed_count > 0 or invalid_count > 0:
+            self.deletion_warning.variant = "error"
+        else:
+            self.deletion_warning.variant = "success"
+
+        self.deletion_warning.value = details
