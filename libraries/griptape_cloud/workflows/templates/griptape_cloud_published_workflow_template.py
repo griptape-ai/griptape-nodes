@@ -31,7 +31,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
 )
-from griptape_nodes.retained_mode.events.library_events import LoadAllLibrariesRequest
+from griptape_nodes.retained_mode.events.library_events import LoadLibrariesRequest
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
@@ -39,7 +39,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-GriptapeNodes.handle_request(LoadAllLibrariesRequest())
+GriptapeNodes.handle_request(LoadLibrariesRequest())
 
 context_manager = GriptapeNodes.ContextManager()
 

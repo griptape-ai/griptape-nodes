@@ -514,7 +514,7 @@ class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class LoadAllLibrariesRequest(RequestPayload):
+class LoadLibrariesRequest(RequestPayload):
     """Load all libraries from configuration if they are not already loaded.
 
     This is a non-destructive operation that checks if libraries are already loaded
@@ -524,17 +524,17 @@ class LoadAllLibrariesRequest(RequestPayload):
     Use when: Ensuring libraries are loaded at workflow startup, initializing library
     system on demand, preparing library catalog without disrupting existing workflows.
 
-    Results: LoadAllLibrariesResultSuccess | LoadAllLibrariesResultFailure (loading error)
+    Results: LoadLibrariesResultSuccess | LoadLibrariesResultFailure (loading error)
     """
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadAllLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+class LoadLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Libraries loaded successfully (or were already loaded)."""
 
 
 @dataclass
 @PayloadRegistry.register
-class LoadAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+class LoadLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library loading failed. Common causes: library loading errors, configuration issues, initialization failures."""

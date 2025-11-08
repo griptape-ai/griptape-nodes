@@ -2383,7 +2383,7 @@ class WorkflowManager:
         workflow_name: str,
         import_recorder: ImportRecorder,
     ) -> list[ast.AST]:
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadAllLibrariesRequest")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
 
         code_blocks: list[ast.AST] = []
 
@@ -2398,7 +2398,7 @@ class WorkflowManager:
                 ),
                 args=[
                     ast.Call(
-                        func=ast.Name(id="LoadAllLibrariesRequest", ctx=ast.Load()),
+                        func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
                         args=[],
                         keywords=[],
                     )

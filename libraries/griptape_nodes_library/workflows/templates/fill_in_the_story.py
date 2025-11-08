@@ -29,12 +29,12 @@ from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.node_library.library_registry import IconVariant, NodeDeprecationMetadata, NodeMetadata
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, GetTopLevelFlowRequest, GetTopLevelFlowResultSuccess
-from griptape_nodes.retained_mode.events.library_events import LoadAllLibrariesRequest
+from griptape_nodes.retained_mode.events.library_events import LoadLibrariesRequest
 from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
 from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, AlterParameterDetailsRequest, SetParameterValueRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-GriptapeNodes.handle_request(LoadAllLibrariesRequest())
+GriptapeNodes.handle_request(LoadLibrariesRequest())
 
 context_manager = GriptapeNodes.ContextManager()
 

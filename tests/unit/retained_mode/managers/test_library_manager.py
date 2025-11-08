@@ -5,15 +5,15 @@ import pytest
 
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
-    LoadAllLibrariesRequest,
-    LoadAllLibrariesResultFailure,
-    LoadAllLibrariesResultSuccess,
+    LoadLibrariesRequest,
+    LoadLibrariesResultFailure,
+    LoadLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
-class TestLibraryManagerLoadAllLibraries:
-    """Test the load_all_libraries_request functionality in LibraryManager."""
+class TestLibraryManagerLoadLibraries:
+    """Test the load_libraries_request functionality in LibraryManager."""
 
     @pytest.mark.asyncio
     async def test_libraries_already_loaded_returns_success_without_reloading(
@@ -29,10 +29,10 @@ class TestLibraryManagerLoadAllLibraries:
             patch.object(library_manager, "_discover_library_files", return_value=[Path("some_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
-            request = LoadAllLibrariesRequest()
-            result = await library_manager.load_all_libraries_request(request)
+            request = LoadLibrariesRequest()
+            result = await library_manager.load_libraries_request(request)
 
-            assert isinstance(result, LoadAllLibrariesResultSuccess)
+            assert isinstance(result, LoadLibrariesResultSuccess)
             assert isinstance(result.result_details, ResultDetails)
             assert "already loaded" in result.result_details.result_details[0].message.lower()
             mock_load_config.assert_not_called()
@@ -49,10 +49,10 @@ class TestLibraryManagerLoadAllLibraries:
             patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
-            request = LoadAllLibrariesRequest()
-            result = await library_manager.load_all_libraries_request(request)
+            request = LoadLibrariesRequest()
+            result = await library_manager.load_libraries_request(request)
 
-            assert isinstance(result, LoadAllLibrariesResultSuccess)
+            assert isinstance(result, LoadLibrariesResultSuccess)
             assert isinstance(result.result_details, ResultDetails)
             assert "successfully loaded" in result.result_details.result_details[0].message.lower()
             mock_load_config.assert_called_once()
@@ -69,9 +69,9 @@ class TestLibraryManagerLoadAllLibraries:
             patch.object(library_manager, "_discover_library_files", return_value=[Path("new_lib")]),
             patch.object(library_manager, "load_all_libraries_from_config", mock_load_config),
         ):
-            request = LoadAllLibrariesRequest()
-            result = await library_manager.load_all_libraries_request(request)
+            request = LoadLibrariesRequest()
+            result = await library_manager.load_libraries_request(request)
 
-            assert isinstance(result, LoadAllLibrariesResultFailure)
+            assert isinstance(result, LoadLibrariesResultFailure)
             assert isinstance(result.result_details, ResultDetails)
             assert "Config error" in result.result_details.result_details[0].message
