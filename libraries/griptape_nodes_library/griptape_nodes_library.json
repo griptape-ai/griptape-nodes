@@ -2222,6 +2222,36 @@
         "display_name": "Path Add Extension",
         "icon": "FileText"
       }
+    },
+    {
+      "class_name": "CopyFiles",
+      "file_path": "griptape_nodes_library/engine/copy_files.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Copy files and/or directories from source to destination. Supports glob patterns and multiple sources.",
+        "display_name": "Copy Files",
+        "icon": "Copy"
+      }
+    },
+    {
+      "class_name": "MoveFiles",
+      "file_path": "griptape_nodes_library/engine/move_files.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Move files and/or directories from source to destination. Implemented as copy + delete. Supports glob patterns and multiple sources.",
+        "display_name": "Move Files",
+        "icon": "ArrowRight"
+      }
+    },
+    {
+      "class_name": "RenameFile",
+      "file_path": "griptape_nodes_library/engine/rename_file.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Rename a file or directory. Can rename to a new name in the same directory or to a full path.",
+        "display_name": "Rename File",
+        "icon": "Edit"
+      }
     }
   ],
   "workflows": [
