@@ -821,6 +821,17 @@
       }
     },
     {
+      "class_name": "MinimaxHailuoVideoGeneration",
+      "file_path": "griptape_nodes_library/video/minimax_hailuo_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video using the MiniMax Hailuo models via Griptape Cloud model proxy.",
+        "display_name": "MiniMax Hailuo Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {
