@@ -12,6 +12,10 @@ from typing import Any, NamedTuple
 from binaryornot.check import is_binary
 from rich.console import Console
 
+from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.macro_parser.formats import FormatSpec, NumericPaddingFormat
+from griptape_nodes.common.macro_parser.resolution import partial_resolve
+from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
@@ -27,6 +31,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
+    GetNextUnusedFilenameRequest,
+    GetNextUnusedFilenameResultFailure,
+    GetNextUnusedFilenameResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -87,6 +94,32 @@ class CopyTreeValidationResult:
     dest_normalized: str
     source_path: Path
     destination_path: Path
+
+
+class IndexVariableInfo(NamedTuple):
+    """Information about the auto-increment index variable in a macro.
+
+    Attributes:
+        variable_name: Name of the variable to use for auto-incrementing (e.g., "frame_num", "index")
+        format_specs: All format specs for this variable (from ParsedVariable.format_specs)
+    """
+
+    variable_name: str
+    format_specs: list[FormatSpec]
+
+
+class FilenameParts(NamedTuple):
+    """Components of a filename for suffix injection strategy.
+
+    Attributes:
+        directory: Parent directory path
+        basename: Filename without extension or suffix
+        extension: File extension including dot (e.g., ".png"), empty string if no extension
+    """
+
+    directory: Path
+    basename: str
+    extension: str
 
 
 @dataclass
@@ -282,6 +315,481 @@ class OSManager:
             return f"\\\\?\\{path_str}"
 
         return path_str
+
+    # ============================================================================
+    # CREATE_NEW File Collision Policy - Helper Methods
+    # ============================================================================
+
+    def _identify_index_variable(
+        self, parsed_macro: ParsedMacro, variables: dict[str, str | int]
+    ) -> IndexVariableInfo | None:
+        """Identify which variable should be used for auto-incrementing.
+
+        Analyzes the macro to find unresolved required variables. Returns None if all
+        variables are resolved (fallback to suffix injection), returns IndexVariableInfo
+        if exactly one unresolved variable exists, raises error if multiple unresolved.
+
+        Args:
+            parsed_macro: Parsed macro template
+            variables: Variable values provided by user
+
+        Returns:
+            IndexVariableInfo if exactly one unresolved required variable exists,
+            None if all variables resolved (use suffix injection fallback)
+
+        Raises:
+            ValueError: If multiple unresolved required variables exist (ambiguous)
+
+        Examples:
+            Template: "{outputs}/frame_{frame_num:05}.png"
+            Variables: {"outputs": "/path"}
+            → Returns IndexVariableInfo(variable_name="frame_num", format_specs=[NumericPaddingFormat(5)])
+
+            Template: "{outputs}/render.png"
+            Variables: {"outputs": "/path"}
+            → Returns None (use suffix injection)
+
+            Template: "{outputs}/{batch}/frame_{frame_num}.png"
+            Variables: {"outputs": "/path"}
+            → Raises ValueError (batch and frame_num both unresolved)
+        """
+        # Partially resolve to identify unresolved variables
+        secrets_manager = GriptapeNodes.SecretsManager()
+        partial = partial_resolve(parsed_macro.template, parsed_macro.segments, variables, secrets_manager)
+
+        # Get unresolved variables (optional variables already filtered out)
+        unresolved = partial.get_unresolved_variables()
+
+        if len(unresolved) == 0:
+            # All variables resolved - use suffix injection fallback
+            return None
+
+        if len(unresolved) > 1:
+            # Multiple unresolved - ambiguous which to auto-increment
+            unresolved_names = [var.info.name for var in unresolved]
+            msg = (
+                f"CREATE_NEW policy requires at most one unresolved variable for auto-increment, "
+                f"found {len(unresolved)}: {', '.join(unresolved_names)}"
+            )
+            raise ValueError(msg)
+
+        # Exactly one unresolved variable - use it as index
+        index_var = unresolved[0]
+        return IndexVariableInfo(variable_name=index_var.info.name, format_specs=index_var.format_specs)
+
+    def _build_glob_pattern_from_partially_resolved(self, partial_segments: list, index_var_name: str) -> str:
+        """Build glob pattern by replacing index variable with wildcards.
+
+        Takes partially resolved segments (from partial_resolve) and replaces the index
+        variable with wildcard patterns based on its format specs.
+
+        Args:
+            partial_segments: Segments from PartiallyResolvedMacro.segments
+            index_var_name: Name of the variable to replace with wildcards
+
+        Returns:
+            Glob pattern string with wildcards for index variable
+
+        Examples:
+            Segments for "/path/frame_{index:05}.png" with index unresolved:
+            → "/path/frame_?????.png"
+
+            Segments for "/path/batch_{index:03}_frame_{index:05}.png":
+            → "/path/batch_???_frame_?????.png"
+
+            Segments for "/path/frame_{index}.png" (no padding):
+            → "/path/frame_*.png"
+        """
+        pattern_parts = []
+
+        for segment in partial_segments:
+            if isinstance(segment, ParsedStaticValue):
+                # Keep static text as-is
+                pattern_parts.append(segment.text)
+            elif isinstance(segment, ParsedVariable):
+                if segment.info.name == index_var_name:
+                    # Replace index variable with wildcards based on padding
+                    has_padding = False
+                    for format_spec in segment.format_specs:
+                        if isinstance(format_spec, NumericPaddingFormat):
+                            # Use exact number of wildcards for padding width
+                            pattern_parts.append("?" * format_spec.width)
+                            has_padding = True
+                            break
+
+                    if not has_padding:
+                        # No padding format - match any number of digits
+                        pattern_parts.append("*")
+                else:
+                    # This shouldn't happen - all non-index variables should be resolved
+                    msg = f"Unexpected unresolved variable '{segment.info.name}' when building glob pattern"
+                    raise ValueError(msg)
+
+        return "".join(pattern_parts)
+
+    def _extract_index_from_filename(
+        self, filename: str, parsed_macro: ParsedMacro, index_var_name: str, variables: dict[str, str | int]
+    ) -> int | None:
+        """Extract index value from a filename by reverse-matching against macro.
+
+        Uses the macro's extract_variables() method to parse the filename and extract
+        the index variable value.
+
+        Args:
+            filename: Filename to parse (e.g., "frame_00123.png")
+            parsed_macro: Original parsed macro template
+            index_var_name: Name of the index variable to extract
+            variables: Known variable values (for partial matching)
+
+        Returns:
+            Integer index value if successfully extracted, None if filename doesn't match
+
+        Examples:
+            Filename: "frame_00123.png"
+            Template: "{outputs}/frame_{frame_num:05}.png"
+            Variables: {"outputs": "/path"}
+            → Returns 123
+        """
+        secrets_manager = GriptapeNodes.SecretsManager()
+
+        # Use macro's extract_variables to reverse-match
+        extracted = parsed_macro.extract_variables(filename, variables, secrets_manager)
+
+        if extracted is None:
+            # Filename doesn't match template
+            return None
+
+        if index_var_name not in extracted:
+            # Index variable not found in extraction
+            return None
+
+        value = extracted[index_var_name]
+
+        # Convert to int (format_spec.reverse() should have done this already)
+        if isinstance(value, int):
+            return value
+
+        # Try to parse as string
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+
+        return None
+
+    def _parse_filename_parts(self, path: Path) -> FilenameParts:
+        """Parse filename into directory, basename, and extension for suffix injection.
+
+        Args:
+            path: Full file path to parse
+
+        Returns:
+            FilenameParts with directory, basename, extension
+
+        Examples:
+            /path/to/render.png → FilenameParts(Path("/path/to"), "render", ".png")
+            /path/to/file → FilenameParts(Path("/path/to"), "file", "")
+            /path/to/.dotfile → FilenameParts(Path("/path/to"), ".dotfile", "")
+            /path/to/file.tar.gz → FilenameParts(Path("/path/to"), "file.tar", ".gz")
+        """
+        directory = path.parent
+        filename = path.name
+
+        # Handle dotfiles (files starting with .)
+        if filename.startswith(".") and filename.count(".") == 1:
+            # .dotfile with no extension
+            return FilenameParts(directory=directory, basename=filename, extension="")
+
+        # Find last dot for extension
+        if "." in filename:
+            last_dot = filename.rfind(".")
+            basename = filename[:last_dot]
+            extension = filename[last_dot:]
+            return FilenameParts(directory=directory, basename=basename, extension=extension)
+
+        # No extension
+        return FilenameParts(directory=directory, basename=filename, extension="")
+
+    def _build_suffix_glob_pattern(self, directory: Path, basename: str, extension: str) -> str:
+        """Build glob pattern for suffix injection strategy.
+
+        Args:
+            directory: Parent directory
+            basename: Filename without extension
+            extension: File extension including dot
+
+        Returns:
+            Glob pattern string
+
+        Examples:
+            ("render", ".png") → "render_*.png"
+            ("file", "") → "file_*"
+        """
+        if extension:
+            return str(directory / f"{basename}_*{extension}")
+        return str(directory / f"{basename}_*")
+
+    def _extract_suffix_index(self, filename: str, basename: str, extension: str) -> int | None:
+        """Extract numeric index from suffix in filename.
+
+        Args:
+            filename: Full filename (e.g., "render_123.png")
+            basename: Expected base name (e.g., "render")
+            extension: Expected extension (e.g., ".png")
+
+        Returns:
+            Integer index if found, None otherwise
+
+        Examples:
+            ("render_123.png", "render", ".png") → 123
+            ("render_1.png", "render", ".png") → 1
+            ("render.png", "render", ".png") → None (no suffix)
+            ("other_123.png", "render", ".png") → None (different basename)
+        """
+        # Remove extension if present
+        if extension and filename.endswith(extension):
+            name_without_ext = filename[: -len(extension)]
+        else:
+            name_without_ext = filename
+
+        # Check if it starts with basename
+        expected_prefix = f"{basename}_"
+        if not name_without_ext.startswith(expected_prefix):
+            return None
+
+        # Extract suffix after basename_
+        suffix = name_without_ext[len(expected_prefix) :]
+
+        # Try to parse as integer
+        if suffix.isdigit():
+            return int(suffix)
+
+        return None
+
+    def _atomic_create_placeholder(self, path: Path, *, create_parents: bool = True) -> bool:
+        """Atomically create a 0-byte placeholder file.
+
+        Uses os.open with O_CREAT|O_EXCL flags for atomic "create only if doesn't exist"
+        operation. This works across all platforms and all processes.
+
+        Args:
+            path: Path to create
+            create_parents: If True, create parent directories if they don't exist (default: True)
+
+        Returns:
+            True if file was created, False if file already exists (race condition)
+
+        Raises:
+            OSError: If parent directory doesn't exist and create_parents=False, or if
+                    parent directory creation fails
+
+        Examples:
+            path = Path("/tmp/test.txt")
+            if _atomic_create_placeholder(path):
+                # Successfully claimed the filename
+                # Now write actual content
+            else:
+                # Someone else claimed it first - try next index
+        """
+        # Check/create parent directory based on policy
+        parent = path.parent
+        if not parent.exists():
+            if not create_parents:
+                msg = f"Parent directory does not exist and create_parents is False: {parent}"
+                raise OSError(msg)
+            try:
+                parent.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                msg = f"Failed to create parent directory {parent}: {e}"
+                logger.error(msg)
+                raise
+
+        try:
+            # O_CREAT: Create file if it doesn't exist
+            # O_EXCL: Fail if file already exists (atomic check)
+            # O_WRONLY: Write-only mode
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+            os.close(fd)
+        except FileExistsError:
+            # File already exists - race condition, someone else claimed it
+            return False
+        except OSError as e:
+            # Other error (permissions, invalid path, etc.)
+            msg = f"Failed to create placeholder file at {path}: {e}"
+            logger.error(msg)
+            raise
+        else:
+            return True
+
+    def _find_next_available_with_macro(
+        self,
+        parsed_macro: ParsedMacro,
+        variables: dict[str, str | int],
+        index_var_info: IndexVariableInfo,
+        *,
+        max_attempts: int = 1000,
+        create_parents: bool = True,
+    ) -> tuple[Path, int]:
+        """Find next available filename using macro variable resolution strategy.
+
+        Tries index values starting from 1 until finding an available filename.
+        Optimizes by scanning existing files first and jumping to likely-available index.
+
+        Args:
+            parsed_macro: Parsed macro template
+            variables: Known variable values (index variable NOT included)
+            index_var_info: Information about the index variable
+            max_attempts: Maximum number of attempts before giving up
+            create_parents: If True, create parent directories when creating placeholder
+
+        Returns:
+            Tuple of (available_path, index_used)
+
+        Raises:
+            RuntimeError: If max_attempts exceeded without finding available filename
+        """
+        secrets_manager = GriptapeNodes.SecretsManager()
+        index_var_name = index_var_info.variable_name
+
+        # Fast path: Try index=1 first
+        test_vars = {**variables, index_var_name: 1}
+        resolved_path = parsed_macro.resolve(test_vars, secrets_manager)
+        candidate = Path(resolved_path)
+
+        if self._atomic_create_placeholder(candidate, create_parents=create_parents):
+            return candidate, 1
+
+        # Collision on index=1 - do optimized search
+        # Build glob pattern by partially resolving with known variables
+        partial = partial_resolve(parsed_macro.template, parsed_macro.segments, variables, secrets_manager)
+        glob_pattern = self._build_glob_pattern_from_partially_resolved(partial.segments, index_var_name)
+
+        # Scan existing files matching pattern
+        glob_path = Path(glob_pattern)
+        existing_files = list(glob_path.parent.glob(glob_path.name))
+        existing_indices = []
+
+        for filepath in existing_files:
+            filename = Path(filepath).name
+            extracted_index = self._extract_index_from_filename(filename, parsed_macro, index_var_name, variables)
+            if extracted_index is not None:
+                existing_indices.append(extracted_index)
+
+        # Sort indices to find gaps
+        existing_indices.sort()
+
+        # Try to find first gap starting from 1
+        attempt_index = 1
+        max_existing = max(existing_indices) if existing_indices else 0
+
+        for _ in range(max_attempts):
+            # Skip known existing indices (optimization)
+            while attempt_index in existing_indices:
+                attempt_index += 1
+
+            # Also try past the max if we've filled gaps
+            if attempt_index > max_existing:
+                attempt_index = max_existing + 1
+                max_existing = attempt_index
+
+            # Try to claim this index
+            test_vars = {**variables, index_var_name: attempt_index}
+            resolved_path = parsed_macro.resolve(test_vars, secrets_manager)
+            candidate = Path(resolved_path)
+
+            if self._atomic_create_placeholder(candidate, create_parents=create_parents):
+                return candidate, attempt_index
+
+            # Race condition - someone else claimed it
+            # Add to existing indices and try next
+            existing_indices.append(attempt_index)
+            existing_indices.sort()
+            attempt_index += 1
+
+        # Max attempts exceeded
+        msg = f"Could not find available filename after {max_attempts} attempts"
+        raise RuntimeError(msg)
+
+    def _find_next_available_with_suffix(
+        self, base_path: Path, *, max_attempts: int = 1000, create_parents: bool = True
+    ) -> tuple[Path, int]:
+        """Find next available filename using suffix injection strategy.
+
+        Appends _{index} before the extension, trying indices starting from 1.
+
+        Args:
+            base_path: Base file path without suffix (e.g., /path/to/render.png)
+            max_attempts: Maximum number of attempts before giving up
+            create_parents: If True, create parent directories when creating placeholder
+
+        Returns:
+            Tuple of (available_path, index_used)
+
+        Raises:
+            RuntimeError: If max_attempts exceeded without finding available filename
+
+        Examples:
+            base_path = Path("/path/render.png")
+            → Returns (Path("/path/render_1.png"), 1) if available
+            → Returns (Path("/path/render_2.png"), 2) if _1 exists
+        """
+        parts = self._parse_filename_parts(base_path)
+
+        # Fast path: Try index=1 first
+        if parts.extension:
+            candidate = parts.directory / f"{parts.basename}_1{parts.extension}"
+        else:
+            candidate = parts.directory / f"{parts.basename}_1"
+
+        if self._atomic_create_placeholder(candidate, create_parents=create_parents):
+            return candidate, 1
+
+        # Collision on index=1 - do optimized search
+        glob_pattern = self._build_suffix_glob_pattern(parts.directory, parts.basename, parts.extension)
+
+        # Scan existing files matching pattern
+        glob_path = Path(glob_pattern)
+        existing_files = list(glob_path.parent.glob(glob_path.name))
+        existing_indices = []
+
+        for filepath in existing_files:
+            filename = Path(filepath).name
+            extracted_index = self._extract_suffix_index(filename, parts.basename, parts.extension)
+            if extracted_index is not None:
+                existing_indices.append(extracted_index)
+
+        # Sort indices to find gaps
+        existing_indices.sort()
+
+        # Try to find first gap starting from 1
+        attempt_index = 1
+        max_existing = max(existing_indices) if existing_indices else 0
+
+        for _ in range(max_attempts):
+            # Skip known existing indices (optimization)
+            while attempt_index in existing_indices:
+                attempt_index += 1
+
+            # Also try past the max if we've filled gaps
+            if attempt_index > max_existing:
+                attempt_index = max_existing + 1
+                max_existing = attempt_index
+
+            # Try to claim this index
+            if parts.extension:
+                candidate = parts.directory / f"{parts.basename}_{attempt_index}{parts.extension}"
+            else:
+                candidate = parts.directory / f"{parts.basename}_{attempt_index}"
+
+            if self._atomic_create_placeholder(candidate, create_parents=create_parents):
+                return candidate, attempt_index
+
+            # Race condition - someone else claimed it
+            existing_indices.append(attempt_index)
+            existing_indices.sort()
+            attempt_index += 1
+
+        # Max attempts exceeded
+        msg = f"Could not find available filename after {max_attempts} attempts"
+        raise RuntimeError(msg)
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""
@@ -723,15 +1231,193 @@ class OSManager:
         else:
             return static_url
 
+    def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+        """Handle a request to find the next available filename with auto-incrementing index."""
+        # Handle str vs MacroPath
+        if isinstance(request.file_path, str):
+            # Simple string path - use suffix injection strategy
+            try:
+                file_path = self._resolve_file_path(request.file_path, workspace_only=False)
+            except (ValueError, RuntimeError) as e:
+                msg = f"Invalid path: {e}"
+                logger.error(msg)
+                return GetNextUnusedFilenameResultFailure(
+                    failure_reason=FileIOFailureReason.INVALID_PATH,
+                    result_details=msg,
+                )
+
+            try:
+                available_path, index = self._find_next_available_with_suffix(
+                    file_path, create_parents=request.create_parents
+                )
+            except OSError as e:
+                msg = f"Error finding next available filename for {file_path}: {e}"
+                logger.error(msg)
+                return GetNextUnusedFilenameResultFailure(
+                    failure_reason=FileIOFailureReason.IO_ERROR,
+                    result_details=msg,
+                )
+        else:
+            # MacroPath - use macro-based strategy
+            macro_path = request.file_path
+            parsed_macro = macro_path.parsed_macro
+            variables = macro_path.variables
+
+            # Identify index variable
+            try:
+                index_info = self._identify_index_variable(parsed_macro, variables)
+            except ValueError as e:
+                msg = str(e)
+                logger.error(msg)
+                return GetNextUnusedFilenameResultFailure(
+                    failure_reason=FileIOFailureReason.INVALID_PATH,
+                    result_details=msg,
+                )
+
+            # Resolve base path from macro
+            secrets_manager = GriptapeNodes.SecretsManager()
+
+            if index_info is None:
+                # No unresolved variables - fall back to suffix injection
+                # Resolve the full path first
+                try:
+                    resolved_path_str = parsed_macro.resolve(variables, secrets_manager)
+                except Exception as e:
+                    msg = f"Error resolving macro path: {e}"
+                    logger.error(msg)
+                    return GetNextUnusedFilenameResultFailure(
+                        failure_reason=FileIOFailureReason.INVALID_PATH,
+                        result_details=msg,
+                    )
+
+                try:
+                    file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
+                except (ValueError, RuntimeError) as e:
+                    msg = f"Invalid resolved path: {e}"
+                    logger.error(msg)
+                    return GetNextUnusedFilenameResultFailure(
+                        failure_reason=FileIOFailureReason.INVALID_PATH,
+                        result_details=msg,
+                    )
+
+                try:
+                    available_path, index = self._find_next_available_with_suffix(
+                        file_path, create_parents=request.create_parents
+                    )
+                except OSError as e:
+                    msg = f"Error finding next available filename for {file_path}: {e}"
+                    logger.error(msg)
+                    return GetNextUnusedFilenameResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR,
+                        result_details=msg,
+                    )
+            else:
+                # Use macro-based strategy with index variable
+                try:
+                    available_path, index = self._find_next_available_with_macro(
+                        parsed_macro,
+                        variables,
+                        index_info,
+                        create_parents=request.create_parents,
+                    )
+                except OSError as e:
+                    msg = f"Error finding next available filename: {e}"
+                    logger.error(msg)
+                    return GetNextUnusedFilenameResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR,
+                        result_details=msg,
+                    )
+
+        # Note: _find_next_available_* methods already create placeholders atomically
+        # as part of their search logic. The create_placeholder flag controls whether
+        # we keep that placeholder or delete it.
+        if not request.create_placeholder:
+            # Caller doesn't want the placeholder - remove it
+            try:
+                available_path.unlink()
+            except OSError as e:
+                msg = f"Failed to remove placeholder file at {available_path}: {e}"
+                logger.error(msg)
+                # Continue anyway - file exists and caller knows the name
+
+        return GetNextUnusedFilenameResultSuccess(
+            available_filename=str(available_path),
+            index_used=index,
+            result_details=f"Found available filename with index {index}",
+        )
+
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Handle a request to write content to a file."""
-        # Check for CREATE_NEW policy - not yet implemented
+        # Handle CREATE_NEW policy
         if request.existing_file_policy == ExistingFilePolicy.CREATE_NEW:
-            msg = "CREATE_NEW policy not yet implemented"
-            logger.error(msg)
-            return WriteFileResultFailure(
-                failure_reason=FileIOFailureReason.IO_ERROR,
-                result_details=msg,
+            # Use GetNextUnusedFilenameRequest to find available filename
+            get_next_request = GetNextUnusedFilenameRequest(
+                file_path=request.file_path,
+                create_placeholder=True,
+                create_parents=request.create_parents,
+            )
+            result = self.on_get_next_unused_filename_request(get_next_request)
+
+            if isinstance(result, GetNextUnusedFilenameResultFailure):
+                # Convert failure to WriteFileResultFailure
+                return WriteFileResultFailure(
+                    failure_reason=result.failure_reason,
+                    result_details=result.result_details,
+                )
+
+            # Success - narrow type and use the available filename
+            if not isinstance(result, GetNextUnusedFilenameResultSuccess):
+                msg = "Unexpected result type from GetNextUnusedFilenameRequest"
+                logger.error(msg)
+                return WriteFileResultFailure(
+                    failure_reason=FileIOFailureReason.IO_ERROR,
+                    result_details=msg,
+                )
+
+            available_filename = result.available_filename
+            file_path = Path(available_filename)
+
+            # Normalize for platform
+            normalized_path = self.normalize_path_for_platform(file_path)
+
+            # Write to the placeholder file (already exists and is reserved)
+            try:
+                bytes_written = self._write_file_content(
+                    normalized_path, request.content, request.encoding, append=False
+                )
+            except PermissionError as e:
+                msg = f"Permission denied writing to file {file_path}: {e}"
+                logger.error(msg)
+                return WriteFileResultFailure(
+                    failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                    result_details=msg,
+                )
+            except UnicodeEncodeError as e:
+                msg = f"Encoding error writing to file {file_path}: {e}"
+                logger.error(msg)
+                return WriteFileResultFailure(
+                    failure_reason=FileIOFailureReason.ENCODING_ERROR,
+                    result_details=msg,
+                )
+            except OSError as e:
+                if "No space left" in str(e) or "Disk full" in str(e):
+                    msg = f"Disk full writing to file {file_path}: {e}"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.DISK_FULL,
+                        result_details=msg,
+                    )
+                msg = f"I/O error writing to file {file_path}: {e}"
+                logger.error(msg)
+                return WriteFileResultFailure(
+                    failure_reason=FileIOFailureReason.IO_ERROR,
+                    result_details=msg,
+                )
+
+            return WriteFileResultSuccess(
+                final_file_path=str(file_path),
+                bytes_written=bytes_written,
+                result_details=f"File written successfully with CREATE_NEW policy (index: {result.index_used})",
             )
 
         # Resolve file path

@@ -327,6 +327,7 @@ class GetNextUnusedFilenameRequest(RequestPayload):
     Args:
         file_path: Path to the file (str for direct path, MacroPath for macro resolution)
         create_placeholder: If True, atomically create 0-byte file to reserve filename (default: False)
+        create_parents: If True, create parent directories when creating placeholder (default: True)
 
     Results: GetNextUnusedFilenameResultSuccess | GetNextUnusedFilenameResultFailure
 
@@ -345,6 +346,7 @@ class GetNextUnusedFilenameRequest(RequestPayload):
 
     file_path: str | MacroPath
     create_placeholder: bool = False
+    create_parents: bool = True
 
 
 @dataclass

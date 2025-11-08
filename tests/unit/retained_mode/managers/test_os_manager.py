@@ -121,22 +121,6 @@ class TestWriteFileRequest:
         assert isinstance(result.result_details, ResultDetails)
         assert "exists" in result.result_details.result_details[0].message.lower()
 
-    def test_write_file_create_new_policy_not_implemented(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test CREATE_NEW policy returns not implemented error."""
-        os_manager = griptape_nodes.OSManager()
-        file_path = temp_dir / "test.txt"
-        request = WriteFileRequest(
-            file_path=str(file_path), content="Content", existing_file_policy=ExistingFilePolicy.CREATE_NEW
-        )
-
-        result = os_manager.on_write_file_request(request)
-
-        assert isinstance(result, WriteFileResultFailure)
-        assert result.failure_reason == FileIOFailureReason.IO_ERROR
-        # Type checker: result_details is always ResultDetails after __post_init__
-        assert isinstance(result.result_details, ResultDetails)
-        assert "not yet implemented" in result.result_details.result_details[0].message.lower()
-
     def test_write_file_create_parents_true(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test creating parent directories when create_parents=True."""
         os_manager = griptape_nodes.OSManager()
@@ -587,3 +571,94 @@ class TestFileIOFailureReasons:
         """Test that all failure reason values are unique."""
         values = [reason.value for reason in FileIOFailureReason]
         assert len(values) == len(set(values))
+
+
+class TestCreateNewFilePolicy:
+    """Test CREATE_NEW file policy with auto-incrementing filenames."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Automatically set workspace to temp_dir for all tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_create_new_first_file(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test CREATE_NEW policy creates first file with suffix _1."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        request = WriteFileRequest(
+            file_path=str(file_path),
+            content="First file",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+
+        result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        # First file should be test_1.txt
+        expected_path = temp_dir / "test_1.txt"
+        assert Path(result.final_file_path).resolve() == expected_path.resolve()
+        assert expected_path.read_text() == "First file"
+
+    def test_create_new_increments_suffix(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test CREATE_NEW policy increments suffix for subsequent files."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "output.txt"
+
+        # Create first file
+        request1 = WriteFileRequest(
+            file_path=str(file_path),
+            content="File 1",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+        result1 = os_manager.on_write_file_request(request1)
+        assert isinstance(result1, WriteFileResultSuccess)
+        assert (temp_dir / "output_1.txt").exists()
+
+        # Create second file
+        request2 = WriteFileRequest(
+            file_path=str(file_path),
+            content="File 2",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+        result2 = os_manager.on_write_file_request(request2)
+        assert isinstance(result2, WriteFileResultSuccess)
+        assert (temp_dir / "output_2.txt").exists()
+
+        # Create third file
+        request3 = WriteFileRequest(
+            file_path=str(file_path),
+            content="File 3",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+        result3 = os_manager.on_write_file_request(request3)
+        assert isinstance(result3, WriteFileResultSuccess)
+        assert (temp_dir / "output_3.txt").exists()
+
+    def test_create_new_fills_gaps(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test CREATE_NEW policy fills gaps in sequence."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "render.png"
+
+        # Create files with gaps manually
+        (temp_dir / "render_1.png").write_text("File 1")
+        (temp_dir / "render_5.png").write_text("File 5")
+
+        # CREATE_NEW should use _2
+        request = WriteFileRequest(
+            file_path=str(file_path),
+            content="File 2",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+        result = os_manager.on_write_file_request(request)
+        assert isinstance(result, WriteFileResultSuccess)
+        expected_path = temp_dir / "render_2.png"
+        assert Path(result.final_file_path).resolve() == expected_path.resolve()
