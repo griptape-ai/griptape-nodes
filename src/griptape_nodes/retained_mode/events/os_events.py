@@ -554,13 +554,13 @@ class GetFileInfoRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetFileInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """File/directory info retrieved successfully.
+    """File/directory either did not exist (we do not treat this as failure), or the info was retrieved successfully.
 
     Attributes:
-        file_entry: FileSystemEntry with complete metadata
+        file_entry: FileSystemEntry with complete metadata, or None if the file/directory doesn't exist
     """
 
-    file_entry: FileSystemEntry
+    file_entry: FileSystemEntry | None
 
 
 @dataclass

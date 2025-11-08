@@ -722,6 +722,7 @@ class TestGetFileInfoRequest:
         result = os_manager.on_get_file_info_request(request)
 
         assert isinstance(result, GetFileInfoResultSuccess)
+        assert result.file_entry is not None
         assert result.file_entry.is_dir is False
         assert result.file_entry.name == "test.txt"
         assert result.file_entry.size > 0
@@ -737,20 +738,21 @@ class TestGetFileInfoRequest:
         result = os_manager.on_get_file_info_request(request)
 
         assert isinstance(result, GetFileInfoResultSuccess)
+        assert result.file_entry is not None
         assert result.file_entry.is_dir is True
         assert result.file_entry.name == "testdir"
         assert result.file_entry.mime_type is None
 
-    def test_get_file_info_nonexistent_fails(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test that getting info for nonexistent path fails."""
+    def test_get_file_info_nonexistent_returns_none(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that getting info for nonexistent path returns success with file_entry=None."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "nonexistent.txt"
         request = GetFileInfoRequest(path=str(file_path), workspace_only=False)
 
         result = os_manager.on_get_file_info_request(request)
 
-        assert isinstance(result, GetFileInfoResultFailure)
-        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+        assert isinstance(result, GetFileInfoResultSuccess)
+        assert result.file_entry is None
 
     def test_get_file_info_empty_path_fails(self, griptape_nodes: GriptapeNodes) -> None:
         """Test that empty path fails."""

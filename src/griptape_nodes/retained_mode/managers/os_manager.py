@@ -1426,7 +1426,9 @@ class OSManager:
             result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
         )
 
-    def on_get_file_info_request(self, request: GetFileInfoRequest) -> ResultPayload:  # noqa: PLR0911
+    def on_get_file_info_request(  # noqa: PLR0911
+        self, request: GetFileInfoRequest
+    ) -> GetFileInfoResultSuccess | GetFileInfoResultFailure:
         """Handle a request to get file/directory information."""
         # FAILURE CASES FIRST (per CLAUDE.md)
 
@@ -1442,10 +1444,10 @@ class OSManager:
             msg = f"Attempted to get file info at path {request.path}. Failed due to invalid path: {e}"
             return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
-        # Check if path exists
+        # Check if path exists - if not, return success with None (file doesn't exist)
         if not resolved_path.exists():
-            msg = f"Attempted to get file info at path {request.path}. Failed due to path not found"
-            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+            msg = f"File info retrieved for path {request.path}: file does not exist"
+            return GetFileInfoResultSuccess(file_entry=None, result_details=msg)
 
         # Get file information
         try:

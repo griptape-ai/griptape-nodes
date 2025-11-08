@@ -22,7 +22,11 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.traits.file_system_picker import FileSystemPicker
+
+# Default warning message for destructive operation
+DEFAULT_DELETION_WARNING = (
+    "⚠️ Destructive Operation: This node permanently deletes files and directories. Deleted items cannot be recovered."
+)
 
 
 class DeletionStatus(Enum):
@@ -31,7 +35,6 @@ class DeletionStatus(Enum):
     PENDING = "pending"
     SUCCESS = "success"
     FAILED = "failed"
-    SKIPPED = "skipped"  # Skipped because parent directory was deleted
     INVALID = "invalid"  # Invalid or inaccessible path
 
 
@@ -61,56 +64,39 @@ class DeleteFile(SuccessFailureNode):
 
         # Input parameter - accepts str or list[str]
         self.file_paths = ParameterList(
-            name="paths",
+            name="file_paths",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             input_types=["str", "list"],
             default_value=None,
             tooltip="Paths to files or directories to delete. Supports glob patterns (e.g., '/path/*.txt').",
-            traits={
-                FileSystemPicker(
-                    allow_files=True,
-                    allow_directories=True,
-                    multiple=True,
-                )
-            },
         )
         self.add_parameter(self.file_paths)
-
-        # Warning message (always visible)
-        self.deletion_warning = ParameterMessage(
-            variant="warning",
-            value="⚠️ Destructive Operation: This node permanently deletes files and directories. Deleted items cannot be recovered.",
-            name="deletion_warning",
-        )
-        self.add_node_element(self.deletion_warning)
 
         # Output parameter
         self.deleted_paths_output = Parameter(
             name="deleted_paths",
             allow_input=False,
             allow_property=False,
-            output_type="list[str]",
+            output_type="list",
             default_value=[],
             tooltip="List of all paths that were deleted.",
         )
         self.add_parameter(self.deleted_paths_output)
 
-        # Create status parameters (initially expanded)
+        # Warning message (always visible)
+        self.deletion_warning = ParameterMessage(
+            variant="warning",
+            value=DEFAULT_DELETION_WARNING,
+            name="deletion_warning",
+        )
+        self.add_node_element(self.deletion_warning)
+
+        # Create status parameters
         self._create_status_parameters(
             result_details_tooltip="Details about the deletion result",
             result_details_placeholder="Details on the deletion attempt will be presented here.",
             parameter_group_initially_collapsed=True,
         )
-
-    def _normalize_paths_input(self, value: Any) -> list[str]:
-        """Normalize input to list of path strings."""
-        if isinstance(value, str):
-            if not value:
-                return []
-            return [value]
-        if isinstance(value, list):
-            return [str(p) for p in value if p]
-        return []
 
     def _is_glob_pattern(self, path_str: str) -> bool:
         """Check if a path string contains glob pattern characters."""
@@ -238,23 +224,36 @@ class DeleteFile(SuccessFailureNode):
             if isinstance(result, GetFileInfoResultSuccess):
                 file_entry = result.file_entry
 
-                # Add the root item with PENDING status (explicitly requested by user)
-                all_targets.append(
-                    DeleteFileInfo(
-                        path=file_entry.path,
-                        is_directory=file_entry.is_dir,
-                        absolute_path=file_entry.absolute_path,
-                        status=DeletionStatus.PENDING,
-                        explicitly_requested=True,
+                # Check if file_entry is None (file doesn't exist)
+                if file_entry is None:
+                    # File doesn't exist - add with INVALID status
+                    all_targets.append(
+                        DeleteFileInfo(
+                            path=path_str,
+                            is_directory=False,
+                            absolute_path=path_str,
+                            status=DeletionStatus.INVALID,
+                            failure_reason="File or directory does not exist",
+                        )
                     )
-                )
+                else:
+                    # Add the root item with PENDING status (explicitly requested by user)
+                    all_targets.append(
+                        DeleteFileInfo(
+                            path=file_entry.path,
+                            is_directory=file_entry.is_dir,
+                            absolute_path=file_entry.absolute_path,
+                            status=DeletionStatus.PENDING,
+                            explicitly_requested=True,
+                        )
+                    )
 
-                # If it's a directory, recursively get ALL contents for the WARNING display only
-                # These children will NOT be deleted individually - they'll be deleted when the parent is deleted
-                if file_entry.is_dir:
-                    self._list_directory_recursively(file_entry.path, all_targets)
+                    # If it's a directory, recursively get ALL contents for the WARNING display only
+                    # These children will NOT be deleted individually - they'll be deleted when the parent is deleted
+                    if file_entry.is_dir:
+                        self._list_directory_recursively(file_entry.path, all_targets)
             else:
-                # Path doesn't exist or can't be accessed - add with INVALID status
+                # Request failed (permission error, I/O error, etc.) - add with INVALID status
                 failure_msg = (
                     result.failure_reason.value if isinstance(result, GetFileInfoResultFailure) else "Unknown error"
                 )
@@ -380,7 +379,7 @@ class DeleteFile(SuccessFailureNode):
                 self.deletion_warning.value = warning_text
             else:
                 # Reset to default warning when no paths specified
-                self.deletion_warning.value = "⚠️ Destructive Operation: This node permanently deletes files and directories. Deleted items cannot be recovered."
+                self.deletion_warning.value = DEFAULT_DELETION_WARNING
 
     def _execute_deletions(self, deletion_order: list[DeleteFileInfo]) -> tuple[list[str], list[Path]]:
         """Execute deletions and track results.
@@ -395,12 +394,6 @@ class DeleteFile(SuccessFailureNode):
         all_deleted_paths_pathobj: list[Path] = []
 
         for target in deletion_order:
-            # Skip if this path was already deleted as part of a parent directory
-            target_path = Path(target.path)
-            if any(deleted_parent in target_path.parents for deleted_parent in all_deleted_paths_pathobj):
-                target.status = DeletionStatus.SKIPPED
-                continue
-
             # Create and send delete request
             request = DeleteFileRequest(path=target.path, workspace_only=False)
             result = GriptapeNodes.handle_request(request)
@@ -430,12 +423,10 @@ class DeleteFile(SuccessFailureNode):
         succeeded = [t for t in all_targets if t.status == DeletionStatus.SUCCESS]
         failed = [t for t in all_targets if t.status == DeletionStatus.FAILED]
         invalid = [t for t in all_targets if t.status == DeletionStatus.INVALID]
-        skipped = [t for t in all_targets if t.status == DeletionStatus.SKIPPED]
 
-        # Summary line
-        lines.append(
-            f"Deleted {len(succeeded)}/{len([t for t in all_targets if t.status != DeletionStatus.INVALID])} valid items"
-        )
+        # Summary line - only count explicitly requested items
+        valid_requested = [t for t in all_targets if t.explicitly_requested and t.status != DeletionStatus.INVALID]
+        lines.append(f"Deleted {len(succeeded)}/{len(valid_requested)} items")
 
         # Show failures if any
         if failed:
@@ -451,13 +442,14 @@ class DeleteFile(SuccessFailureNode):
                 reason = target.failure_reason or "Invalid or inaccessible"
                 lines.append(f"  ⚠️ {target.path}: {reason}")
 
-        # Show skipped if any
-        if skipped:
-            max_skipped_to_show = 5
-            lines.append(f"\nSkipped (parent directory deleted) ({len(skipped)}):")
-            lines.extend(f"  ⏭️ {target.path}" for target in skipped[:max_skipped_to_show])
-            if len(skipped) > max_skipped_to_show:
-                lines.append(f"  ... and {len(skipped) - max_skipped_to_show} more")
+        # Show successfully deleted files
+        if succeeded:
+            lines.append(f"\nSuccessfully deleted ({len(succeeded)}):")
+            for target in succeeded:
+                if target.is_directory:
+                    lines.append(f"  📁 {target.path}")
+                else:
+                    lines.append(f"  📄 {target.path}")
 
         return "\n".join(lines)
 
