@@ -43,14 +43,14 @@ class LocalStorageDriver(BaseStorageDriver):
             response = httpx.post(static_url, json={"file_path": str(path)})
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned URL for file {path}: {e}"
+            msg = f"Failed to create upload URL for file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
         url = response_data.get("url")
         if url is None:
-            msg = f"Failed to create presigned URL for file {path}: {response_data}"
+            msg = f"Failed to get upload URL for file {path}: {response_data}"
             logger.error(msg)
             raise ValueError(msg)
 
