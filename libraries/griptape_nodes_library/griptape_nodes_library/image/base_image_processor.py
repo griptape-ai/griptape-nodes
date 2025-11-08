@@ -8,7 +8,7 @@ from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -425,7 +425,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         """Get the output filename suffix. Override in subclasses if needed."""
         return ""
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[None]:
         """Main workflow execution method following LoadImage pattern."""
         # Reset execution state and result details at the start of each run
         self._clear_execution_status()
@@ -456,7 +456,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
 
             # Run the image processing
             self.append_value_to_parameter("logs", "[Started image processing..]\n")
-            self._process(pil_image, detected_format, **custom_params)
+            yield lambda: self._process(pil_image, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished image processing.]\n")
 
             # Success case
