@@ -32,6 +32,9 @@ DEFAULT_DELETION_WARNING = (
     "⚠️ Destructive Operation: This node permanently deletes files and directories. Deleted items cannot be recovered."
 )
 
+# Maximum number of files to list in the warning display before truncating
+MAX_FILES_TO_DISPLAY = 50
+
 
 class DeletionStatus(Enum):
     """Status of a deletion attempt."""
@@ -62,6 +65,9 @@ class DeleteFile(SuccessFailureNode):
     Accepts single path (str) or multiple paths (list[str]).
     Supports glob patterns (e.g., "/path/to/*.txt") for matching multiple files.
     """
+
+    # Track if file listing was truncated for display
+    _listing_truncated: bool = False
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -359,13 +365,25 @@ class DeleteFile(SuccessFailureNode):
                 )
             )
 
-    def _list_directory_recursively(self, dir_path: str, targets: list[DeleteFileInfo]) -> None:
-        """Recursively list all files in a directory and add to targets."""
+    def _list_directory_recursively(self, dir_path: str, targets: list[DeleteFileInfo]) -> bool:
+        """Recursively list all files in a directory and add to targets.
+
+        Returns:
+            True if limit reached, False otherwise
+        """
+        # Check if we've hit the display limit
+        if len(targets) >= MAX_FILES_TO_DISPLAY:
+            return True
+
         request = ListDirectoryRequest(directory_path=dir_path, show_hidden=True, workspace_only=False)
         result = GriptapeNodes.handle_request(request)
 
         if isinstance(result, ListDirectoryResultSuccess):
             for entry in result.entries:
+                # Check limit before adding each entry
+                if len(targets) >= MAX_FILES_TO_DISPLAY:
+                    return True
+
                 # Add this entry with PENDING status
                 targets.append(
                     DeleteFileInfo(
@@ -378,7 +396,9 @@ class DeleteFile(SuccessFailureNode):
 
                 # If it's a directory, recurse into it
                 if entry.is_dir:
-                    self._list_directory_recursively(entry.path, targets)
+                    limit_reached = self._list_directory_recursively(entry.path, targets)
+                    if limit_reached:
+                        return True
         elif isinstance(result, ListDirectoryResultFailure):
             # Failed to list directory (permission denied, doesn't exist, etc.)
             # Add as INVALID and stop recursion into this directory
@@ -392,6 +412,8 @@ class DeleteFile(SuccessFailureNode):
                 )
             )
 
+        return False
+
     def _collect_all_deletion_targets(self, paths: set[str]) -> list[DeleteFileInfo]:
         """Collect all files/directories that will be deleted.
 
@@ -401,6 +423,8 @@ class DeleteFile(SuccessFailureNode):
         Returns:
             Set of DeleteFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
         """
+        # Reset truncation flag
+        self._listing_truncated = False
         all_targets: list[DeleteFileInfo] = []
 
         for path_str in paths:
@@ -445,7 +469,10 @@ class DeleteFile(SuccessFailureNode):
                     # If it's a directory, recursively get ALL contents for the WARNING display only
                     # These children will NOT be deleted individually - they'll be deleted when the parent is deleted
                     if file_entry.is_dir:
-                        self._list_directory_recursively(file_entry.path, all_targets)
+                        limit_reached = self._list_directory_recursively(file_entry.path, all_targets)
+                        if limit_reached:
+                            # Mark that listing was truncated
+                            self._listing_truncated = True
             else:
                 # Request failed (permission error, I/O error, etc.) - add with INVALID status
                 failure_msg = (
@@ -473,7 +500,7 @@ class DeleteFile(SuccessFailureNode):
 
         return list(unique_targets.values())
 
-    def _format_deletion_warning(self, all_targets: list[DeleteFileInfo]) -> str:
+    def _format_deletion_warning(self, all_targets: list[DeleteFileInfo]) -> str:  # noqa: C901, PLR0912
         """Format warning message with all files sorted by directory."""
         lines = []
 
@@ -520,7 +547,17 @@ class DeleteFile(SuccessFailureNode):
                     lines.append(f"  📄 {path.name}")
 
             lines.append("")
-            lines.append(f"Total: {len(valid_targets)} items will be deleted")
+
+            # Show truncation message if listing was truncated
+            if self._listing_truncated:
+                lines.append(f"... (listing truncated after {MAX_FILES_TO_DISPLAY} files)")
+                lines.append("")
+
+            # Show total count - indicate if truncated
+            if self._listing_truncated:
+                lines.append(f"More than {len(valid_targets)} items will be deleted")
+            else:
+                lines.append(f"Total: {len(valid_targets)} items will be deleted")
 
         # If nothing valid, just show that
         if not valid_targets and not invalid_targets:
