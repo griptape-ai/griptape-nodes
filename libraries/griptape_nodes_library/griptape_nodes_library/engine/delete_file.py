@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 
 if TYPE_CHECKING:
@@ -60,20 +60,19 @@ class DeleteFile(SuccessFailureNode):
         super().__init__(name, metadata)
 
         # Input parameter - accepts str or list[str]
-        self.file_paths = Parameter(
-            name="file_paths",
-            type="list",
+        self.file_paths = ParameterList(
+            name="paths",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             input_types=["str", "list"],
-            default_value=[],
-            tooltip="Path(s) to file(s) or directory(ies) to delete. Supports glob patterns (e.g., '/path/*.txt').",
-        )
-        self.file_paths.add_trait(
-            FileSystemPicker(
-                allow_files=True,
-                allow_directories=True,
-                multiple=True,
-            )
+            default_value=None,
+            tooltip="Paths to files or directories to delete. Supports glob patterns (e.g., '/path/*.txt').",
+            traits={
+                FileSystemPicker(
+                    allow_files=True,
+                    allow_directories=True,
+                    multiple=True,
+                )
+            },
         )
         self.add_parameter(self.file_paths)
 
@@ -346,7 +345,7 @@ class DeleteFile(SuccessFailureNode):
         # If connection to file_paths was removed, reset the warning
         if target_parameter is self.file_paths:
             # Clear the parameter value and reset warning
-            self.set_parameter_value(self.file_paths.name, None)
+            self.file_paths.clear_list()
 
     def set_parameter_value(
         self,
@@ -370,7 +369,7 @@ class DeleteFile(SuccessFailureNode):
         # Update warning if file_paths changed
         if param_name == self.file_paths.name:
             # Normalize input to list
-            paths = self._normalize_paths_input(value)
+            paths = self.get_parameter_list_value(self.file_paths.name)
 
             if paths:
                 # Collect all files/directories that will be deleted
@@ -467,8 +466,7 @@ class DeleteFile(SuccessFailureNode):
         self._clear_execution_status()
 
         # Get parameter value
-        value = self.get_parameter_value(self.file_paths.name)
-        paths = self._normalize_paths_input(value)
+        paths = self.get_parameter_list_value(self.file_paths.name)
 
         # FAILURE CASE: Empty paths
         if not paths:
