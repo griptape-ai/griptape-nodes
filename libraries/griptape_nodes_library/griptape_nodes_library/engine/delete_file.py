@@ -211,7 +211,7 @@ class DeleteFile(SuccessFailureNode):
         deletion_order = sorted_files + sorted_directories
 
         # Execute deletions and track results
-        all_deleted_paths_str = self._execute_deletions(deletion_order)[0]
+        all_deleted_paths = self._execute_deletions(deletion_order)
 
         # For summary counts, only count explicitly requested items
         requested_targets = [t for t in all_targets if t.explicitly_requested]
@@ -231,8 +231,8 @@ class DeleteFile(SuccessFailureNode):
 
         # SUCCESS PATH AT END (even if some failed, as long as at least one succeeded)
         # Set output parameters
-        self.set_parameter_value(self.deleted_paths_output.name, all_deleted_paths_str)
-        self.parameter_output_values[self.deleted_paths_output.name] = all_deleted_paths_str
+        self.set_parameter_value(self.deleted_paths_output.name, all_deleted_paths)
+        self.parameter_output_values[self.deleted_paths_output.name] = all_deleted_paths
 
         # Generate detailed result message showing all targets (including children)
         details = self._format_result_details(all_targets)
@@ -565,17 +565,16 @@ class DeleteFile(SuccessFailureNode):
 
         return "\n".join(lines)
 
-    def _execute_deletions(self, deletion_order: list[DeleteFileInfo]) -> tuple[list[str], list[Path]]:
+    def _execute_deletions(self, deletion_order: list[DeleteFileInfo]) -> list[str]:
         """Execute deletions and track results.
 
         Args:
             deletion_order: List of targets to delete in order
 
         Returns:
-            Tuple of (deleted_paths_str, deleted_paths_pathobj) for tracking
+            List of all paths that were successfully deleted (as strings)
         """
-        all_deleted_paths_str: list[str] = []
-        all_deleted_paths_pathobj: list[Path] = []
+        all_deleted_paths: list[str] = []
 
         for target in deletion_order:
             # Create and send delete request
@@ -590,14 +589,13 @@ class DeleteFile(SuccessFailureNode):
                 # Track success
                 target.status = DeletionStatus.SUCCESS
                 target.deleted_paths = result.deleted_paths
-                all_deleted_paths_str.extend(result.deleted_paths)
-                all_deleted_paths_pathobj.extend(Path(p) for p in result.deleted_paths)
+                all_deleted_paths.extend(result.deleted_paths)
             else:
                 # Unexpected result type - track as failure
                 target.status = DeletionStatus.FAILED
                 target.failure_reason = "Unexpected result type from delete operation"
 
-        return all_deleted_paths_str, all_deleted_paths_pathobj
+        return all_deleted_paths
 
     def _format_result_details(self, all_targets: list[DeleteFileInfo]) -> str:
         """Format detailed results showing what happened to each file."""
