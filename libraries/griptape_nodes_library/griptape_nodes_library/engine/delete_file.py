@@ -5,7 +5,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    NodeMessageResult,
+    Parameter,
+    ParameterList,
+    ParameterMessage,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
@@ -19,6 +25,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 
 # Default warning message for destructive operation
 DEFAULT_DELETION_WARNING = (
@@ -80,11 +87,22 @@ class DeleteFile(SuccessFailureNode):
         )
         self.add_parameter(self.deleted_paths_output)
 
-        # Warning message (always visible)
+        # Warning message (always visible) with refresh button
         self.deletion_warning = ParameterMessage(
             variant="warning",
             value=DEFAULT_DELETION_WARNING,
             name="deletion_warning",
+            button_text="Refresh List",
+            button_variant="secondary",
+            traits={
+                Button(
+                    label="Refresh List",
+                    icon="refresh-cw",
+                    variant="secondary",
+                    tooltip="Re-scan the file system to update the deletion list",
+                    on_click=self._refresh_deletion_list,
+                )
+            },
         )
         self.add_node_element(self.deletion_warning)
 
@@ -93,6 +111,173 @@ class DeleteFile(SuccessFailureNode):
             result_details_tooltip="Details about the deletion result",
             result_details_placeholder="Details on the deletion attempt will be presented here.",
             parameter_group_initially_collapsed=True,
+        )
+
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        """Override to update deletion warning when file_paths changes."""
+        # Call parent implementation first
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
+        # Update warning if file_paths changed
+        if param_name == self.file_paths.name:
+            # Reset variant to warning when parameters change
+            self.deletion_warning.variant = "warning"
+
+            # Normalize input to list
+            param_values = self.get_parameter_list_value(self.file_paths.name)
+            # Dupe strip
+            paths = set(param_values)
+
+            if paths:
+                # Collect all files/directories that will be deleted
+                all_targets = self._collect_all_deletion_targets(paths)
+
+                # Update warning with detailed file list
+                warning_text = self._format_deletion_warning(all_targets)
+                self.deletion_warning.value = warning_text
+            else:
+                # Reset to default warning when no paths specified
+                self.deletion_warning.value = DEFAULT_DELETION_WARNING
+
+    def process(self) -> None:
+        """Execute the file deletion."""
+        self._clear_execution_status()
+
+        # Get paths from param list.
+        param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Dupe strip
+        paths = set(param_values)
+
+        # Handle empty paths as success with info message
+        if not paths:
+            msg = "No files specified for deletion"
+            self.set_parameter_value(self.deleted_paths_output.name, [])
+            self._set_status_results(was_successful=True, result_details=msg)
+            # Update warning message with info
+            self.deletion_warning.variant = "info"
+            self.deletion_warning.value = msg
+            return
+
+        # Collect all targets (includes INVALID status for bad paths)
+        all_targets = self._collect_all_deletion_targets(paths)
+
+        # Separate valid and invalid targets
+        pending_targets = [t for t in all_targets if t.status == DeletionStatus.PENDING]
+
+        # FAILURE CASE: No valid targets at all
+        if not pending_targets:
+            msg = f"{self.name} attempted to delete but all paths were invalid. No files deleted"
+            details = self._format_result_details(all_targets)
+            self.set_parameter_value(self.deleted_paths_output.name, None)
+            self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
+            # Update warning message with error
+            self.deletion_warning.variant = "error"
+            self.deletion_warning.value = details
+            return
+
+        # Only delete explicitly requested items
+        # Children are included in all_targets for WARNING display, but deleting a directory deletes its contents
+        explicitly_requested = [t for t in pending_targets if t.explicitly_requested]
+
+        # Sort deletion order: files first (deepest first), then directories (deepest first)
+        files = [t for t in explicitly_requested if not t.is_directory]
+        directories = [t for t in explicitly_requested if t.is_directory]
+
+        # Use Path.parts for cross-platform depth calculation (works on Windows and Unix)
+        sorted_files = sorted(files, key=lambda t: len(Path(t.path).parts), reverse=True)
+        sorted_directories = sorted(directories, key=lambda t: len(Path(t.path).parts), reverse=True)
+
+        # Delete in order: files first, then directories
+        deletion_order = sorted_files + sorted_directories
+
+        # Execute deletions and track results
+        all_deleted_paths_str = self._execute_deletions(deletion_order)[0]
+
+        # For summary counts, only count explicitly requested items
+        requested_targets = [t for t in all_targets if t.explicitly_requested]
+        succeeded_count = len([t for t in requested_targets if t.status == DeletionStatus.SUCCESS])
+
+        # FAILURE CASE: Zero files were successfully deleted
+        if succeeded_count == 0:
+            msg = f"{self.name} failed to delete any files"
+            # Show all targets in details (including children)
+            details = self._format_result_details(all_targets)
+            self.set_parameter_value(self.deleted_paths_output.name, None)
+            self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
+            # Update warning message with error
+            self.deletion_warning.variant = "error"
+            self.deletion_warning.value = details
+            return
+
+        # SUCCESS PATH AT END (even if some failed, as long as at least one succeeded)
+        # Set output parameters
+        self.set_parameter_value(self.deleted_paths_output.name, all_deleted_paths_str)
+        self.parameter_output_values[self.deleted_paths_output.name] = all_deleted_paths_str
+
+        # Generate detailed result message showing all targets (including children)
+        details = self._format_result_details(all_targets)
+
+        self._set_status_results(was_successful=True, result_details=details)
+
+        # Update warning message with results
+        # Determine variant: success if no problems, error if there were failures or invalid paths
+        failed_count = len([t for t in all_targets if t.status == DeletionStatus.FAILED])
+        invalid_count = len([t for t in all_targets if t.status == DeletionStatus.INVALID])
+
+        if failed_count > 0 or invalid_count > 0:
+            self.deletion_warning.variant = "error"
+        else:
+            self.deletion_warning.variant = "success"
+
+        self.deletion_warning.value = details
+
+    def _refresh_deletion_list(
+        self,
+        button: Button,  # noqa: ARG002
+        button_details: ButtonDetailsMessagePayload,
+    ) -> NodeMessageResult:
+        """Refresh the deletion list by re-scanning the file system.
+
+        Called when the user clicks the Refresh List button.
+        """
+        # Get current file paths
+        param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Dupe strip
+        paths = set(param_values)
+
+        if paths:
+            # Re-scan file system
+            all_targets = self._collect_all_deletion_targets(paths)
+
+            # Update warning message with fresh results
+            warning_text = self._format_deletion_warning(all_targets)
+            self.deletion_warning.value = warning_text
+
+            return NodeMessageResult(
+                success=True,
+                details="File list refreshed successfully",
+                response=button_details,
+            )
+
+        # No paths to refresh
+        return NodeMessageResult(
+            success=True,
+            details="No file paths provided",
+            response=button_details,
         )
 
     def _is_glob_pattern(self, path_str: str) -> bool:
@@ -194,6 +379,18 @@ class DeleteFile(SuccessFailureNode):
                 # If it's a directory, recurse into it
                 if entry.is_dir:
                     self._list_directory_recursively(entry.path, targets)
+        elif isinstance(result, ListDirectoryResultFailure):
+            # Failed to list directory (permission denied, doesn't exist, etc.)
+            # Add as INVALID and stop recursion into this directory
+            targets.append(
+                DeleteFileInfo(
+                    path=dir_path,
+                    is_directory=True,
+                    absolute_path=dir_path,
+                    status=DeletionStatus.INVALID,
+                    failure_reason=result.failure_reason.value,
+                )
+            )
 
     def _collect_all_deletion_targets(self, paths: set[str]) -> list[DeleteFileInfo]:
         """Collect all files/directories that will be deleted.
@@ -331,46 +528,6 @@ class DeleteFile(SuccessFailureNode):
 
         return "\n".join(lines)
 
-    def set_parameter_value(
-        self,
-        param_name: str,
-        value: Any,
-        *,
-        initial_setup: bool = False,
-        emit_change: bool = True,
-        skip_before_value_set: bool = False,
-    ) -> None:
-        """Override to update deletion warning when file_paths changes."""
-        # Call parent implementation first
-        super().set_parameter_value(
-            param_name,
-            value,
-            initial_setup=initial_setup,
-            emit_change=emit_change,
-            skip_before_value_set=skip_before_value_set,
-        )
-
-        # Update warning if file_paths changed
-        if param_name == self.file_paths.name:
-            # Reset variant to warning when parameters change
-            self.deletion_warning.variant = "warning"
-
-            # Normalize input to list
-            param_values = self.get_parameter_list_value(self.file_paths.name)
-            # Dupe strip
-            paths = set(param_values)
-
-            if paths:
-                # Collect all files/directories that will be deleted
-                all_targets = self._collect_all_deletion_targets(paths)
-
-                # Update warning with detailed file list
-                warning_text = self._format_deletion_warning(all_targets)
-                self.deletion_warning.value = warning_text
-            else:
-                # Reset to default warning when no paths specified
-                self.deletion_warning.value = DEFAULT_DELETION_WARNING
-
     def _execute_deletions(self, deletion_order: list[DeleteFileInfo]) -> tuple[list[str], list[Path]]:
         """Execute deletions and track results.
 
@@ -442,95 +599,3 @@ class DeleteFile(SuccessFailureNode):
                     lines.append(f"  📄 {target.path}")
 
         return "\n".join(lines)
-
-    def process(self) -> None:
-        """Execute the file deletion."""
-        self._clear_execution_status()
-
-        # Get paths from param list.
-        param_values = self.get_parameter_list_value(self.file_paths.name)
-        # Dupe strip
-        paths = set(param_values)
-
-        # Handle empty paths as success with info message
-        if not paths:
-            msg = "No files specified for deletion"
-            self.set_parameter_value(self.deleted_paths_output.name, [])
-            self._set_status_results(was_successful=True, result_details=msg)
-            # Update warning message with info
-            self.deletion_warning.variant = "info"
-            self.deletion_warning.value = msg
-            return
-
-        # Collect all targets (includes INVALID status for bad paths)
-        all_targets = self._collect_all_deletion_targets(paths)
-
-        # Separate valid and invalid targets
-        pending_targets = [t for t in all_targets if t.status == DeletionStatus.PENDING]
-
-        # FAILURE CASE: No valid targets at all
-        if not pending_targets:
-            msg = f"{self.name} attempted to delete but all paths were invalid. No files deleted"
-            details = self._format_result_details(all_targets)
-            self.set_parameter_value(self.deleted_paths_output.name, None)
-            self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
-            # Update warning message with error
-            self.deletion_warning.variant = "error"
-            self.deletion_warning.value = details
-            return
-
-        # Only delete explicitly requested items
-        # Children are included in all_targets for WARNING display, but deleting a directory deletes its contents
-        explicitly_requested = [t for t in pending_targets if t.explicitly_requested]
-
-        # Sort deletion order: files first (deepest first), then directories (deepest first)
-        files = [t for t in explicitly_requested if not t.is_directory]
-        directories = [t for t in explicitly_requested if t.is_directory]
-
-        # Use Path.parts for cross-platform depth calculation (works on Windows and Unix)
-        sorted_files = sorted(files, key=lambda t: len(Path(t.path).parts), reverse=True)
-        sorted_directories = sorted(directories, key=lambda t: len(Path(t.path).parts), reverse=True)
-
-        # Delete in order: files first, then directories
-        deletion_order = sorted_files + sorted_directories
-
-        # Execute deletions and track results
-        all_deleted_paths_str = self._execute_deletions(deletion_order)[0]
-
-        # For summary counts, only count explicitly requested items
-        requested_targets = [t for t in all_targets if t.explicitly_requested]
-        succeeded_count = len([t for t in requested_targets if t.status == DeletionStatus.SUCCESS])
-
-        # FAILURE CASE: Zero files were successfully deleted
-        if succeeded_count == 0:
-            msg = f"{self.name} failed to delete any files"
-            # Show all targets in details (including children)
-            details = self._format_result_details(all_targets)
-            self.set_parameter_value(self.deleted_paths_output.name, None)
-            self._set_status_results(was_successful=False, result_details=f"{msg}\n\n{details}")
-            # Update warning message with error
-            self.deletion_warning.variant = "error"
-            self.deletion_warning.value = details
-            return
-
-        # SUCCESS PATH AT END (even if some failed, as long as at least one succeeded)
-        # Set output parameters
-        self.set_parameter_value(self.deleted_paths_output.name, all_deleted_paths_str)
-        self.parameter_output_values[self.deleted_paths_output.name] = all_deleted_paths_str
-
-        # Generate detailed result message showing all targets (including children)
-        details = self._format_result_details(all_targets)
-
-        self._set_status_results(was_successful=True, result_details=details)
-
-        # Update warning message with results
-        # Determine variant: success if no problems, error if there were failures or invalid paths
-        failed_count = len([t for t in all_targets if t.status == DeletionStatus.FAILED])
-        invalid_count = len([t for t in all_targets if t.status == DeletionStatus.INVALID])
-
-        if failed_count > 0 or invalid_count > 0:
-            self.deletion_warning.variant = "error"
-        else:
-            self.deletion_warning.variant = "success"
-
-        self.deletion_warning.value = details
