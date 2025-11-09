@@ -95,10 +95,15 @@ from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStat
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+    EngineVersionErrorProblem,
+    InvalidVersionStringProblem,
     LibraryJsonDecodeProblem,
     LibraryLoadExceptionProblem,
     LibraryNotFoundProblem,
     LibraryProblem,
+    LibrarySchemaExceptionProblem,
+    LibrarySchemaValidationProblem,
+    SandboxDirectoryMissingProblem,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
@@ -466,7 +471,7 @@ class LibraryManager:
                 loc = " -> ".join(map(str, error["loc"]))
                 msg = error["msg"]
                 error_type = error["type"]
-                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problem = LibrarySchemaValidationProblem(location=loc, error_type=error_type, message=msg)
                 problems.append(problem)
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
             logger.error(details)
@@ -484,7 +489,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_name,
                 status=LibraryStatus.UNUSABLE,
-                problems=[f"Library file did not match the library schema specified due to: {err}"],
+                problems=[LibrarySchemaExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
 
@@ -555,7 +560,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.MISSING,
-                problems=[details],
+                problems=[SandboxDirectoryMissingProblem()],
                 result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
@@ -612,7 +617,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.UNUSABLE,
-                problems=[details],
+                problems=[EngineVersionErrorProblem()],
                 result_details=details,
             )
 
@@ -730,9 +735,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 status=LibraryStatus.UNUSABLE,
-                problems=[
-                    f"Library's version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
-                ],
+                problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
             )
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
             logger.error(details)
