@@ -725,7 +725,7 @@ class LibraryManager:
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
         # Add the directory to the Python path to allow for relative imports
-        sys.path.insert(0, str(base_dir))
+        sys.path.insert(0, OSManager().normalize_path_for_platform(base_dir))
 
         # Load the advanced library module if specified
         advanced_library_instance = None
@@ -1050,15 +1050,13 @@ class LibraryManager:
             library_venv_python_path = library_venv_path / "bin" / "python"
 
         # Need to insert into the path so that the library picks up on the venv
-        site_packages = str(
-            Path(
-                sysconfig.get_path(
-                    "purelib",
-                    vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
-                )
+        site_packages = Path(
+            sysconfig.get_path(
+                "purelib",
+                vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
             )
         )
-        sys.path.insert(0, site_packages)
+        sys.path.insert(0, OSManager().normalize_path_for_platform(site_packages))
 
         return library_venv_python_path
 
@@ -1588,7 +1586,7 @@ class LibraryManager:
                             library_path = Path(library_info.library_path)
                             base_dir = library_path.parent.absolute()
                             # Add the directory to the Python path to allow for relative imports.
-                            sys.path.insert(0, str(base_dir))
+                            sys.path.insert(0, OSManager().normalize_path_for_platform(base_dir))
                             for workflow in library_data.workflows:
                                 final_workflow_path = base_dir / workflow
                                 library_workflow_files_to_register.append(str(final_workflow_path))

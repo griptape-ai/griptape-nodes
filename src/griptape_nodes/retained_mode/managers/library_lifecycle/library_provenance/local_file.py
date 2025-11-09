@@ -319,7 +319,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         library_version = library_data.metadata.library_version
 
         # Add the directory to the Python path to allow for relative imports
-        sys.path.insert(0, str(base_dir))
+        sys.path.insert(0, GriptapeNodes.OSManager().normalize_path_for_platform(base_dir))
 
         # Attempt to load nodes from the library
         library_load_results = library_manager._attempt_load_nodes_from_library(
