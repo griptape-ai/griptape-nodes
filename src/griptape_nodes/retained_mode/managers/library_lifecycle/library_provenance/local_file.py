@@ -318,6 +318,10 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         # Get library version from schema metadata
         library_version = library_data.metadata.library_version
 
+        # Patch open() to handle long paths before adding library to sys.path
+        # This fixes issues where third-party libraries call open() with long paths
+        GriptapeNodes.OSManager()._patch_open_for_long_paths()
+
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, GriptapeNodes.OSManager().normalize_path_for_platform(base_dir))
 

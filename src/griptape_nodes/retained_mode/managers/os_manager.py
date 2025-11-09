@@ -1,4 +1,6 @@
 import base64
+import builtins
+import contextlib
 import logging
 import mimetypes
 import os
@@ -291,6 +293,41 @@ class OSManager:
             return f"\\\\?\\{path_str}"
 
         return path_str
+
+    def _patch_open_for_long_paths(self) -> None:
+        r"""Patch Python's built-in open() to handle Windows long paths.
+
+        On Windows, this patches builtins.open to automatically normalize paths
+        with the \\?\ prefix when they exceed MAX_PATH. This fixes issues where
+        third-party libraries (like transformers) call open() with long paths
+        during initialization.
+
+        This method is idempotent - calling it multiple times is safe.
+        """
+        if not self.is_windows():
+            return
+
+        # Check if already patched by looking for our marker attribute
+        if hasattr(builtins.open, "_griptape_nodes_patched"):
+            return
+
+        # Save reference to original open
+        _original_open = builtins.open
+
+        def _patched_open(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            # Only normalize if file is a path-like object
+            if isinstance(file, (str, Path)):
+                # If normalization fails (e.g., invalid path), use original path
+                with contextlib.suppress(OSError, ValueError):
+                    file = self.normalize_path_for_platform(Path(file))
+            return _original_open(file, mode, *args, **kwargs)
+
+        # Mark as patched to prevent re-patching
+        _patched_open._griptape_nodes_patched = True  # type: ignore[attr-defined]
+
+        # Install the patch
+        builtins.open = _patched_open
+        logger.debug("Patched builtins.open for Windows long path support")
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""

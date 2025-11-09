@@ -1049,6 +1049,10 @@ class LibraryManager:
         else:
             library_venv_python_path = library_venv_path / "bin" / "python"
 
+        # Patch open() to handle long paths before adding venv to sys.path
+        # This fixes issues where third-party libraries call open() with long paths
+        OSManager()._patch_open_for_long_paths()
+
         # Need to insert into the path so that the library picks up on the venv
         site_packages = Path(
             sysconfig.get_path(
@@ -1467,7 +1471,7 @@ class LibraryManager:
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
             except Exception as err:
                 msg = f"Module at '{file_path}' failed to load with error: {err}"
-                logger.exception(err)
+                logger.exception(msg)
                 raise ImportError(msg) from err
 
         return module
