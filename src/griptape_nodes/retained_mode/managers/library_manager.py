@@ -95,6 +95,8 @@ from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStat
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+    LibraryJsonDecodeProblem,
+    LibraryLoadExceptionProblem,
     LibraryNotFoundProblem,
     LibraryProblem,
 )
@@ -437,7 +439,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.UNUSABLE,
-                problems=["Library file not formatted as proper JSON."],
+                problems=[LibraryJsonDecodeProblem()],
                 result_details=details,
             )
         except Exception as err:
@@ -447,7 +449,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
+                problems=[LibraryLoadExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
 

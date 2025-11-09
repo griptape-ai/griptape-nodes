@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 
-from .library_problem import LibraryProblem
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +15,7 @@ class LibraryNotFoundProblem(LibraryProblem):
     library_path: str
 
     @classmethod
-    def collate_problems_for_display(cls, instances: list["LibraryNotFoundProblem"]) -> str:
+    def collate_problems_for_display(cls, instances: list[LibraryNotFoundProblem]) -> str:
         """Display library not found problem.
 
         There should only be one instance per library since each LibraryInfo
