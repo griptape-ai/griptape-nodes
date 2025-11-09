@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 import sysconfig
+from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
@@ -93,6 +94,10 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+    LibraryNotFoundProblem,
+    LibraryProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
     LibraryProvenanceLocalFile,
@@ -131,7 +136,7 @@ class LibraryManager:
         library_path: str
         library_name: str | None = None
         library_version: str | None = None
-        problems: list[str] = field(default_factory=list)
+        problems: list[LibraryProblem] = field(default_factory=list)
 
     _library_file_path_to_info: dict[str, LibraryInfo]
 
@@ -272,14 +277,27 @@ class LibraryManager:
             else:
                 version_str = "*UNKNOWN*"
 
-            # Problems column - format with numbers if there's more than one
+            # Problems column - collate by type then format
             if not lib_info.problems:
                 problems = "No problems detected."
-            elif len(lib_info.problems) == 1:
-                problems = lib_info.problems[0]
             else:
-                # Number the problems when there's more than one
-                problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
+                # Group problems by type
+                problems_by_type = defaultdict(list)
+                for problem in lib_info.problems:
+                    problems_by_type[type(problem)].append(problem)
+
+                # Collate each group
+                collated_strings = []
+                for problem_class, instances in problems_by_type.items():
+                    collated_display = problem_class.collate_problems_for_display(instances)
+                    collated_strings.append(collated_display)
+
+                # Format for display
+                if len(collated_strings) == 1:
+                    problems = collated_strings[0]
+                else:
+                    # Number the problems when there's more than one
+                    problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
 
             # Add the row to the table
             table.add_row(library_name, lib_info.status.value, version_str, file_path_text, problems)
@@ -404,9 +422,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.MISSING,
-                problems=[
-                    "Library could not be found at the file path specified. It will be removed from the configuration."
-                ],
+                problems=[LibraryNotFoundProblem(library_path=str(json_path))],
                 result_details=details,
             )
 
@@ -680,9 +696,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.MISSING,
-                problems=[
-                    "Library could not be found at the file path specified. It will be removed from the configuration."
-                ],
+                problems=[LibraryNotFoundProblem(library_path=file_path)],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
             logger.error(details)

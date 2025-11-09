@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -225,7 +226,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues=problems,
         )
 
-    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:
+    def load_library(self, context: LibraryLifecycleContext) -> LibraryLoadedResult:  # noqa: C901
         """Load this local file library into the registry."""
         issues = []
 
@@ -333,7 +334,18 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
 
         # Convert any problems from library_load_results to issues
         if library_load_results.problems:
-            collated_problems = "\n".join(library_load_results.problems)
+            # Group problems by type and collate them for display
+            problems_by_type = defaultdict(list)
+            for problem in library_load_results.problems:
+                problems_by_type[type(problem)].append(problem)
+
+            # Collate each group
+            collated_strings = []
+            for problem_class, instances in problems_by_type.items():
+                collated_display = problem_class.collate_problems_for_display(instances)
+                collated_strings.append(collated_display)
+
+            collated_problems = "\n".join(collated_strings)
             issues.append(
                 LifecycleIssue(
                     message=collated_problems,

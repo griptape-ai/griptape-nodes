@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
+    from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 
@@ -201,14 +202,14 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
                      None if the name couldn't be determined.
         status: The LibraryStatus enum indicating the type of failure
                (MISSING, UNUSABLE, etc.).
-        problems: List of specific error messages describing what went wrong
-                 during loading (JSON parse errors, validation failures, etc.).
+        problems: List of specific problems encountered during loading
+                 (file not found, JSON parse errors, validation failures, etc.).
     """
 
     library_path: str
     library_name: str | None
     status: LibraryStatus
-    problems: list[str]
+    problems: list[LibraryProblem]
 
 
 @dataclass
