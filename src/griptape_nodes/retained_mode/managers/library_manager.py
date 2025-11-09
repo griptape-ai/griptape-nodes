@@ -2065,8 +2065,10 @@ class LibraryManager:
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
         for library_path_str in config_libraries:
-            library_path = Path(library_path_str)
-            if library_path.exists():
-                process_path(library_path)
+            # Filter out falsy values that will resolve to current directory
+            if library_path_str:
+                library_path = Path(library_path_str)
+                if library_path.exists():
+                    process_path(library_path)
 
         return list(discovered_libraries)
