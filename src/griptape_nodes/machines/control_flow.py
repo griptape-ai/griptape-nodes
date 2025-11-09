@@ -414,7 +414,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         return start_nodes
 
-
     async def cancel_flow(self) -> None:
         """Cancel all nodes in the flow by delegating to the resolution machine."""
         await self.resolution_machine.cancel_all_nodes()

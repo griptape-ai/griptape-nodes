@@ -1109,7 +1109,12 @@ class FlowManager:
                     break
 
         # If source is in a group, untrack outgoing external connection
-        if conn and source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
+        if (
+            conn
+            and source_parent is not None
+            and isinstance(source_parent, NodeGroupNode)
+            and target_parent != source_parent
+        ):
             source_parent.untrack_external_connection(
                 conn=conn,
                 conn_id=conn_id,
@@ -1117,7 +1122,12 @@ class FlowManager:
             )
 
         # If target is in a group, untrack incoming external connection
-        if conn and target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
+        if (
+            conn
+            and target_parent is not None
+            and isinstance(target_parent, NodeGroupNode)
+            and source_parent != target_parent
+        ):
             target_parent.untrack_external_connection(
                 conn=conn,
                 conn_id=conn_id,
@@ -1125,7 +1135,12 @@ class FlowManager:
             )
 
         # If both in same group, untrack internal connection
-        if conn and source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
+        if (
+            conn
+            and source_parent is not None
+            and source_parent == target_parent
+            and isinstance(source_parent, NodeGroupNode)
+        ):
             source_parent.untrack_internal_connection(conn)
 
         # Remove the connection.
@@ -1244,9 +1259,7 @@ class FlowManager:
         self._inject_output_mode_for_property_parameters(nodes_to_package, serialized_package_nodes)
 
         # Step 7: Analyze external connections (connections from/to nodes outside our selection)
-        node_connections_dict = self._analyze_multi_node_external_connections(
-            package_nodes=nodes_to_package
-        )
+        node_connections_dict = self._analyze_multi_node_external_connections(package_nodes=nodes_to_package)
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
@@ -1455,9 +1468,7 @@ class FlowManager:
             # Populate the shared node_name_to_uuid mapping
             create_cmd = serialize_result.serialized_node_commands.create_node_command
             node_name = (
-                create_cmd.node_group_name
-                if isinstance(create_cmd, CreateNodeGroupRequest)
-                else create_cmd.node_name
+                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
             )
             if node_name is not None:
                 node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
@@ -1621,7 +1632,6 @@ class FlowManager:
             node_connections[package_node.name] = connection_analysis
 
         return node_connections
-
 
     def _analyze_package_node_connections(
         self,

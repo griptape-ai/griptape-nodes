@@ -62,9 +62,7 @@ class DagBuilder:
         parent_execution_env = node.parent_node.get_parameter_value(node.parent_node.execution_environment.name)
         return parent_execution_env != LOCAL_EXECUTION
 
-    def _ensure_group_node_in_dag(
-        self, group_node: NodeGroupNode, graph: DirectedGraph, graph_name: str
-    ) -> None:
+    def _ensure_group_node_in_dag(self, group_node: NodeGroupNode, graph: DirectedGraph, graph_name: str) -> None:
         """Ensure a NodeGroupNode is added to the DAG if not already present.
 
         Args:

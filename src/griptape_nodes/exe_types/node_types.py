@@ -1888,7 +1888,7 @@ class NodeGroupNode(BaseNode):
             type=ParameterTypeBuiltin.STR,
             allowed_modes={ParameterMode.PROPERTY},
             default_value=LOCAL_EXECUTION,
-            traits={Options(choices=get_library_names_with_publish_handlers())}
+            traits={Options(choices=get_library_names_with_publish_handlers())},
         )
         self.add_parameter(self.execution_environment)
         self.nodes = {}
@@ -2052,7 +2052,6 @@ class NodeGroupNode(BaseNode):
             if conn_id in self.stored_connections.original_targets.outgoing_targets:
                 del self.stored_connections.original_targets.outgoing_targets[conn_id]
 
-
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group and track their connections.
 
@@ -2079,6 +2078,7 @@ class NodeGroupNode(BaseNode):
         # Track connections for the newly added nodes
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
+        self.metadata["node_names_in_group"] = list(node_names_in_group)
 
         # Identify internal connections (between nodes being added)
         nodes_being_added = {node.name for node in nodes}
@@ -2151,7 +2151,9 @@ class NodeGroupNode(BaseNode):
             for conn in list(self.stored_connections.internal_connections):
                 # If connection involves this node and the other node is also being removed, untrack it
                 if conn.source_node.name == node.name or conn.target_node.name == node.name:
-                    other_node_name = conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
+                    other_node_name = (
+                        conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
+                    )
                     # Only untrack if the other node is also being removed or not in group
                     if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
                         self.untrack_internal_connection(conn)
@@ -2160,6 +2162,8 @@ class NodeGroupNode(BaseNode):
         for node in nodes:
             node.parent_node = None
             self.nodes.pop(node.name)
+
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
     async def aprocess(self) -> None:
         """Execute all nodes in the group in parallel.

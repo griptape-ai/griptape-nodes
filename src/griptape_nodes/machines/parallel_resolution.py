@@ -210,6 +210,7 @@ class ExecuteDagState(State):
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
         from griptape_nodes.exe_types.node_types import NodeGroupNode
+
         if (
             isinstance(node, NodeGroupNode)
             and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
@@ -532,7 +533,6 @@ class ExecuteDagState(State):
                         context.flow_name,
                         exc,
                     )
-
 
                     context.task_to_node.pop(task)
                     context.error_message = f"Task execution failed for node '{node_name}': {exc}"
