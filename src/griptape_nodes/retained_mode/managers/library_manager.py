@@ -1467,6 +1467,7 @@ class LibraryManager:
                 self._register_stable_module_alias(module_name, stable_namespace, module, library_name)
             except Exception as err:
                 msg = f"Module at '{file_path}' failed to load with error: {err}"
+                logger.exception(err)
                 raise ImportError(msg) from err
 
         return module
