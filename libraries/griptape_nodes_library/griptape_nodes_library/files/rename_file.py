@@ -162,8 +162,6 @@ class RenameFile(FileOperationBaseNode):
             self._set_status_results(was_successful=False, result_details=msg)
             return
 
-        old_is_dir = old_path_result.is_directory
-
         # FAILURE CASE: New path exists and overwrite is False
         new_path_result = self._check_path_exists(new_path)
         if new_path_result.exists and not overwrite:

@@ -240,7 +240,13 @@ class CopyFiles(FileOperationBaseNode):
 
         # Log the operation attempt for better error context
         operation_type = "directory" if target.is_directory else "file"
-        logger.info(f"{self.name}: Attempting to copy {operation_type} '{target.source_path}' to '{destination_path}'")
+        logger.info(
+            "%s: Attempting to copy %s '%s' to '%s'",
+            self.name,
+            operation_type,
+            target.source_path,
+            destination_path,
+        )
 
         # Check if source is a file or directory
         if target.is_directory:

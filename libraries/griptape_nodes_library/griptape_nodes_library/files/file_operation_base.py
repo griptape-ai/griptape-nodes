@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlparse
 
 from griptape.artifacts import UrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoRequest,
@@ -17,6 +14,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from enum import Enum
+
+    from griptape_nodes.exe_types.core_types import Parameter
 
 # TypeVar for file operation Info types
 T = TypeVar("T", bound="FileOperationInfo")
