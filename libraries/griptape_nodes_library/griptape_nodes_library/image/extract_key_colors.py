@@ -302,7 +302,7 @@ class ExtractKeyColors(DataNode):
             pixels = image_array.reshape(-1, 3)
 
             # Perform KMeans clustering
-            kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init="auto")
             kmeans.fit(pixels)
 
             # Get cluster centers (the dominant colors)
@@ -310,6 +310,9 @@ class ExtractKeyColors(DataNode):
 
             # Count pixels in each cluster to get prominence
             labels = kmeans.labels_
+            if labels is None:
+                msg = "KMeans clustering failed to assign labels"
+                raise ValueError(msg)
             unique_labels, counts = np.unique(labels, return_counts=True)
 
             # Sort clusters by count (most prominent first)
