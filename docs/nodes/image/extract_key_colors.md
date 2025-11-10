@@ -37,7 +37,7 @@ Use this node when you want to:
 
 #### Color Settings
 
-- **num_colors** (1-12, default: 3): Number of colors to extract
+- **num_colors** (2-12, default: 3): Number of colors to extract
 
     - Slider interface for easy selection
     - Colors are ordered by prominence (most frequent first)
