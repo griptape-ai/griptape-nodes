@@ -19,12 +19,16 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
+    DeprecatedNodeWarningProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -33,7 +37,7 @@ logger = logging.getLogger("griptape_nodes")
 class LibraryVersionCompatibilityIssue(NamedTuple):
     """Represents a library version compatibility issue found in a library."""
 
-    message: str
+    problem: LibraryProblem
     severity: LibraryStatus
 
 
@@ -165,7 +169,12 @@ class VersionCompatibilityManager:
         """Check a library for deprecated nodes."""
         return [
             LibraryVersionCompatibilityIssue(
-                message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and {'will be removed in version ' + node.metadata.deprecation.removal_version if node.metadata.deprecation.removal_version else 'may be removed in future versions'}. {node.metadata.deprecation.deprecation_message or ''}".strip(),
+                problem=DeprecatedNodeWarningProblem(
+                    display_name=node.metadata.display_name,
+                    class_name=node.class_name,
+                    removal_version=node.metadata.deprecation.removal_version,
+                    deprecation_message=node.metadata.deprecation.deprecation_message,
+                ),
                 severity=LibraryStatus.FLAWED,
             )
             for node in library_data.nodes

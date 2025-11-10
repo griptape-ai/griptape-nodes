@@ -109,7 +109,9 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(schema)
         for issue in version_issues:
             lifecycle_severity = LibraryStatus(issue.severity.value)
-            issues.append(LifecycleIssue(message=issue.message, severity=lifecycle_severity))
+            # Collate the problem to get the display message
+            problem_message = type(issue.problem).collate_problems_for_display([issue.problem])
+            issues.append(LifecycleIssue(message=problem_message, severity=lifecycle_severity))
 
         # NOTE: Library name conflicts are checked at the manager level
         # across all evaluated libraries, not here
