@@ -434,22 +434,42 @@ class WorkflowManager:
 
         return matches
 
-    def print_workflow_load_status(self) -> None:
+    def print_workflow_load_status(self, min_status: WorkflowStatus = WorkflowStatus.FLAWED) -> None:  # noqa: PLR0915
         workflow_file_paths = self.get_workflows_attempted_to_load()
         workflow_infos = []
         for workflow_file_path in workflow_file_paths:
             workflow_info = self.get_workflow_info_for_attempted_load(workflow_file_path)
             workflow_infos.append(workflow_info)
 
+        # Filter workflows to only show those at or worse than min_status
+        all_statuses = list(self.WorkflowStatus)
+        min_status_index = all_statuses.index(min_status)
+        filtered_workflow_infos = [
+            wf_info for wf_info in workflow_infos if all_statuses.index(wf_info.status) >= min_status_index
+        ]
+
+        # Sort workflows by severity (worst to best)
+        filtered_workflow_infos.sort(key=lambda wf: all_statuses.index(wf.status), reverse=True)
+
         console = Console()
 
         # Check if the list is empty
-        if not workflow_infos:
-            # Display a message indicating no workflows are available
+        if not filtered_workflow_infos:
             empty_message = Text("No workflow information available", style="italic")
             panel = Panel(empty_message, title="Workflow Information", border_style="blue")
             console.print(panel)
             return
+
+        # Add filter message if not showing all workflows
+        if min_status != self.WorkflowStatus.GOOD:
+            statuses_shown = all_statuses[min_status_index:]
+            status_names = ", ".join(s.value for s in statuses_shown)
+            filter_message = Text(
+                f"Only displaying workflows with a fitness of {status_names}",
+                style="italic yellow",
+            )
+            console.print(filter_message)
+            console.print()
 
         # Create a table with five columns and row dividers
         table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
@@ -477,7 +497,7 @@ class WorkflowManager:
         }
 
         # Add rows for each workflow info
-        for wf_info in workflow_infos:
+        for wf_info in filtered_workflow_infos:
             # File path column
             file_path = wf_info.workflow_path
             file_path_text = Text(file_path, style="cyan")
