@@ -1,7 +1,16 @@
 """Macro language parser for template-based path generation."""
 
 from griptape_nodes.common.macro_parser.core import ParsedMacro
-from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroSyntaxError
+from griptape_nodes.common.macro_parser.exceptions import (
+    MacroMatchFailure,
+    MacroMatchFailureReason,
+    MacroParseFailure,
+    MacroParseFailureReason,
+    MacroResolutionError,
+    MacroResolutionFailure,
+    MacroResolutionFailureReason,
+    MacroSyntaxError,
+)
 from griptape_nodes.common.macro_parser.formats import (
     DateFormat,
     LowerCaseFormat,
@@ -15,7 +24,13 @@ from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, Parse
 __all__ = [
     "DateFormat",
     "LowerCaseFormat",
+    "MacroMatchFailure",
+    "MacroMatchFailureReason",
+    "MacroParseFailure",
+    "MacroParseFailureReason",
     "MacroResolutionError",
+    "MacroResolutionFailure",
+    "MacroResolutionFailureReason",
     "MacroSyntaxError",
     "NumericPaddingFormat",
     "ParsedMacro",

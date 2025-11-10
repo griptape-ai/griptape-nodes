@@ -14,7 +14,7 @@ import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import requests
 from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignore[reportMissingImports]
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
 
 # static_ffmpeg is dynamically installed by the library loader at runtime

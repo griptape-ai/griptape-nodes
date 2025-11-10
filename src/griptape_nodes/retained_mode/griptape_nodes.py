@@ -51,6 +51,7 @@ if TYPE_CHECKING:
         OperationDepthManager,
     )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
+    from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
     from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
     from griptape_nodes.retained_mode.managers.session_manager import SessionManager
@@ -95,8 +96,9 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _resource_manager: ResourceManager
     _sync_manager: SyncManager
     _user_manager: UserManager
+    _project_manager: ProjectManager
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
@@ -115,6 +117,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             OperationDepthManager,
         )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
         from griptape_nodes.retained_mode.managers.session_manager import SessionManager
@@ -160,6 +163,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
+            self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -329,6 +333,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def UserManager(cls) -> UserManager:
         return GriptapeNodes.get_instance()._user_manager
+
+    @classmethod
+    def ProjectManager(cls) -> ProjectManager:
+        return GriptapeNodes.get_instance()._project_manager
 
     @classmethod
     def clear_data(cls) -> None:

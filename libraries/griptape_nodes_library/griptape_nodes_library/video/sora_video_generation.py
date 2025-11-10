@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -20,7 +20,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SoraVideoGeneration"]
 

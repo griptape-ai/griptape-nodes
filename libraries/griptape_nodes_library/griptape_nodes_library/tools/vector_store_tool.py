@@ -7,7 +7,7 @@ from griptape.tools import VectorStoreTool as GtVectorStoreTool
 
 from griptape_nodes_library.tools.base_tool import BaseTool
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 class VectorStore(BaseTool):

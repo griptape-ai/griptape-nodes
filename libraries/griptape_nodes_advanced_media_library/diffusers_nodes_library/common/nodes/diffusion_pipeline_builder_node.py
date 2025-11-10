@@ -27,8 +27,8 @@ UNION_PRO_2_CONFIG_HASH_POSTFIX = 1  # 0001
 
 class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, ControlNode):
     STATIC_PARAMS: ClassVar = ["provider", "pipeline"]
-    START_PARAMS: ClassVar = ["provider"]
-    END_PARAMS: ClassVar = ["logs", "pipeline"]
+    START_PARAMS: ClassVar = ["pipeline", "provider"]
+    END_PARAMS: ClassVar = ["logs"]
 
     def __init__(self, **kwargs) -> None:
         self._initializing = True

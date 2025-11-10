@@ -71,7 +71,7 @@ lint: ## Lint project.
 .PHONY: format
 format: ## Format project.
 	@uv run ruff format
-	@uv run mdformat .
+	@uv run mdformat .github docs libraries src tests *.md
 
 .PHONY: fix
 fix: ## Fix project.

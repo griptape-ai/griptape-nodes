@@ -12,14 +12,14 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SeedanceVideoGeneration"]
 
@@ -93,6 +93,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                     Options(
                         choices=[
                             "seedance-1-0-pro-250528",
+                            "seedance-1-0-pro-fast-251015",
                             "seedance-1-0-lite-t2v-250428",
                             "seedance-1-0-lite-i2v-250428",
                         ]
@@ -488,12 +489,12 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 return
 
             if status.lower() in {"succeeded", "success", "completed"} or is_complete:
-                self._handle_completion(last_json)
+                self._handle_completion(last_json, generation_id)
                 return
 
             sleep(poll_interval_s)
 
-    def _handle_completion(self, last_json: dict[str, Any] | None) -> None:
+    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)
         if not extracted_url:
             self.parameter_output_values["video_url"] = None
@@ -514,7 +515,9 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             try:
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
-                filename = f"seedance_video_{int(time.time())}.mp4"
+                filename = (
+                    f"seedance_video_{generation_id}.mp4" if generation_id else f"seedance_video_{int(time.time())}.mp4"
+                )
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)

@@ -24,6 +24,7 @@ EXECUTION = Category(name="Execution", description="Workflow execution and proce
 STORAGE = Category(name="Storage", description="Data storage and persistence configuration")
 SYSTEM_REQUIREMENTS = Category(name="System Requirements", description="System resource requirements and limits")
 MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol server configurations")
+PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -99,6 +100,11 @@ class AppInitializationComplete(BaseModel):
         description="Core secrets to register in the secrets manager. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
+    projects_to_register: list[str] = Field(
+        category=PROJECTS,
+        default_factory=list,
+        description="List of project.yml file paths to load at startup",
+    )
 
 
 class AppEvents(BaseModel):
@@ -210,6 +216,11 @@ class Settings(BaseModel):
         category=FILE_SYSTEM,
         default="synced_workflows",
         description="Path to the synced workflows directory, relative to the workspace directory.",
+    )
+    thread_storage_backend: Literal["local", "gtc"] = Field(
+        category=STORAGE,
+        default="local",
+        description="Storage backend for conversation threads: 'local' for filesystem or 'gtc' for Griptape Cloud",
     )
     enable_workspace_file_watching: bool = Field(
         category=FILE_SYSTEM,

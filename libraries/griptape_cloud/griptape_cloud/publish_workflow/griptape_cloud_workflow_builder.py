@@ -15,10 +15,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from griptape_cloud_client.models.update_structure_response_content import UpdateStructureResponseContent
+
 from griptape_cloud.publish_workflow.griptape_cloud_published_workflow import GriptapeCloudPublishedWorkflow
+from griptape_cloud.publish_workflow.griptape_cloud_start_flow import GriptapeCloudStartFlow
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
+
+
+@dataclass
+class GriptapeCloudWebhookIntegration:
+    integration_id: str
+    webhook_url: str
 
 
 @dataclass
@@ -26,7 +35,8 @@ class GriptapeCloudWorkflowBuilderInput:
     workflow_name: str
     workflow_shape: dict[str, Any]
     executor_workflow_name: str
-    structure_id: str
+    structure: UpdateStructureResponseContent
+    webhook_integration: GriptapeCloudWebhookIntegration | None = None
     libraries: list[str] = field(default_factory=list)
     pickle_control_flow_result: bool = False
 
@@ -48,11 +58,7 @@ class GriptapeCloudWorkflowBuilder:
     def generate_executor_workflow(self) -> Path:
         """Generate an executor workflow that can invoke the published structure."""
         # Generate a simple workflow creation script using PublishedWorkflow node
-        workflow_script = self._build_simple_workflow_script(
-            self.workflow_builder_input.structure_id,
-            self.workflow_builder_input.workflow_shape,
-            self.workflow_builder_input.libraries,
-        )
+        workflow_script = self._build_simple_workflow_script()
 
         # Execute the script in a subprocess to create the workflow
         self._execute_workflow_script(workflow_script)
@@ -118,11 +124,10 @@ class GriptapeCloudWorkflowBuilder:
 
         return input_params, output_params
 
-    def _build_script_header(self, structure_id: str, libraries: list[str]) -> str:
+    def _build_script_header(self, libraries: list[str]) -> str:
         """Build the header section of the workflow script.
 
         Args:
-            structure_id: The Griptape Cloud structure ID
             libraries: List of libraries needed for the workflow
 
         Returns:
@@ -131,7 +136,7 @@ class GriptapeCloudWorkflowBuilder:
         return f'''
 """
 Generated executor workflow for invoking published Griptape Cloud structure.
-This workflow was automatically created to execute structure: {structure_id}
+This workflow was automatically created to execute structure: {self.workflow_builder_input.structure.structure_id}
 """
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -158,7 +163,7 @@ def main():
 
     with GriptapeNodes.ContextManager().flow(flow_name):'''
 
-    def _build_node_creation_script(self, structure_id: str, workflow_shape: dict[str, Any]) -> str:
+    def _build_node_creation_script(self) -> str:
         """Build the node creation section of the workflow script.
 
         Args:
@@ -171,9 +176,17 @@ def main():
         return f"""
         # Create StartNode
         start_node_response = GriptapeNodes.handle_request(CreateNodeRequest(
-            node_type="StartFlow",
-            specific_library_name="Griptape Nodes Library",
-            node_name="Start Flow",
+            node_type="GriptapeCloudStartFlow",
+            specific_library_name="Griptape Cloud Library",
+            node_name="Griptape Cloud Start Flow",
+            metadata={{
+                "structure_id": "{self.workflow_builder_input.structure.structure_id}",
+                "structure_name": "{self.workflow_builder_input.structure.name}",
+                "structure_description": "{self.workflow_builder_input.structure.description}",
+                "integration_id": "{self.workflow_builder_input.webhook_integration.integration_id if self.workflow_builder_input.webhook_integration else None}",
+                "webhook_url": "{self.workflow_builder_input.webhook_integration.webhook_url if self.workflow_builder_input.webhook_integration else None}",
+                "hide_structure_config": {True}
+            }},
             initial_setup=True
         ))
         start_node_name = start_node_response.node_name
@@ -184,9 +197,12 @@ def main():
             specific_library_name="Griptape Cloud Library",
             node_name="Griptape Cloud Published Workflow",
             metadata={{
-                "workflow_shape": {workflow_shape!r},
-                "structure_id": "{structure_id}",
-                "structure_name": "{self.workflow_builder_input.workflow_name}"
+                "workflow_shape": {self.workflow_builder_input.workflow_shape!r},
+                "structure_id": "{self.workflow_builder_input.structure.structure_id}",
+                "structure_name": "{self.workflow_builder_input.structure.name}",
+                "structure_description": "{self.workflow_builder_input.structure.description}",
+                "integration_id": "{self.workflow_builder_input.webhook_integration.integration_id if self.workflow_builder_input.webhook_integration else None}",
+                "webhook_url": "{self.workflow_builder_input.webhook_integration.webhook_url if self.workflow_builder_input.webhook_integration else None}",
             }},
             initial_setup=True
         ))
@@ -194,9 +210,9 @@ def main():
 
         # Create EndNode
         end_node_response = GriptapeNodes.handle_request(CreateNodeRequest(
-            node_type="EndFlow",
-            specific_library_name="Griptape Nodes Library",
-            node_name="End Flow",
+            node_type="GriptapeCloudEndFlow",
+            specific_library_name="Griptape Cloud Library",
+            node_name="Griptape Cloud End Flow",
             initial_setup=True
         ))
         end_node_name = end_node_response.node_name"""
@@ -218,11 +234,11 @@ def main():
 
         script += self._build_node_parameters(
             input_params,
-            "StartNode",
+            "GriptapeCloudStartNode",
             mode_input=False,
             mode_property=True,
             mode_output=True,
-            omit_parameters=["exec_out"],
+            omit_parameters=GriptapeCloudStartFlow.get_default_node_parameter_names(),
         )
 
         script += """
@@ -254,7 +270,7 @@ def main():
 
         script += self._build_node_parameters(
             output_params,
-            "EndNode",
+            "GriptapeCloudEndNode",
             mode_input=True,
             mode_property=True,
             mode_output=False,
@@ -289,6 +305,7 @@ def main():
         if omit_parameters is None:
             omit_parameters = []
         omit_parameters.append("execution_environment")  # Always omit this parameter
+        omit_parameters.append("job_group")  # Always omit this parameter
 
         # Check if there are any parameters left after omitting
         param_names = {param["name"] for param in params}
@@ -394,7 +411,7 @@ if __name__ == "__main__":
 """
 
     def _build_simple_workflow_script(
-        self, structure_id: str, workflow_shape: dict[str, Any], libraries: list[str]
+        self,
     ) -> str:
         """Build a simple workflow creation script using PublishedWorkflow node.
 
@@ -407,11 +424,11 @@ if __name__ == "__main__":
             Complete Python script as string
         """
         # Extract parameters from workflow shape
-        input_params, output_params = self._extract_parameters_from_shape(workflow_shape)
+        input_params, output_params = self._extract_parameters_from_shape(self.workflow_builder_input.workflow_shape)
 
         # Build script sections
-        header = self._build_script_header(structure_id, libraries)
-        nodes = self._build_node_creation_script(structure_id, workflow_shape)
+        header = self._build_script_header(self.workflow_builder_input.libraries)
+        nodes = self._build_node_creation_script()
         params = self._build_parameter_configuration_script(input_params, output_params)
         connections = self._build_connection_creation_script(input_params, output_params)
         footer = self._build_script_footer()

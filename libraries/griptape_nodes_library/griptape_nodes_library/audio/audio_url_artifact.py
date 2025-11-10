@@ -1,7 +1,9 @@
 from griptape.artifacts.url_artifact import UrlArtifact
 
 
-# Remove after next framework release
-# https://github.com/griptape-ai/griptape/pull/1938
 class AudioUrlArtifact(UrlArtifact):
-    """AudioUrlArtifact is a specialized artifact for handling audio URLs."""
+    """AudioUrlArtifact is a specialized artifact for handling audio URLs.
+
+    Keeping to maintain backward compatibility for workflows created with this import.
+    Prefer to import from griptape directly.
+    """

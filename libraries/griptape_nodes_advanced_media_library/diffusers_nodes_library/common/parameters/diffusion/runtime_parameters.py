@@ -120,11 +120,15 @@ class DiffusionPipelineRuntimeParameters(ABC):
                 self.publish_output_image_preview_latents(pipe, callback_kwargs["latents"])
             if i == 0:
                 self._node.log_params.append_to_logs(f"Completed inference step 1 of {strength_affected_steps}.\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
             else:
                 self._node.log_params.append_to_logs(  # type: ignore[reportAttributeAccessIssue]
                     f"Completed inference step {i + 1} of {strength_affected_steps}. {f'{(datetime.now(tz=UTC) - first_iteration_time).total_seconds() / i:.2f}'} s/it\n"
                 )
+                self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
             return {}
+
+        self._node.progress_bar_component.initialize(num_inference_steps)  # type: ignore[reportAttributeAccessIssue]
 
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),

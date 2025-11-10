@@ -9,10 +9,10 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.events.execution_events import ResolveNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -184,16 +184,9 @@ class RandomText(DataNode):
             )
         )
 
-        # Add seed parameter with Slider trait
-        seed_param = Parameter(
-            name="seed",
-            default_value=42,
-            input_types=["int"],
-            tooltip="Set a seed value to get the same random selection every time. Leave empty for truly random selection.",
-            ui_options={"step": 1, "placeholder_text": "Enter a number between 0 and 10000"},
-        )
-        seed_param.add_trait(Slider(min_val=0, max_val=10000))
-        self.add_parameter(seed_param)
+        # Initialize SeedParameter component
+        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter.add_input_parameters()
 
         # Add selection type option
         selection_type_param = Parameter(
@@ -267,12 +260,11 @@ class RandomText(DataNode):
         """Get a random selection from the input text based on the selection type."""
         # Get input parameters
         input_text = self.parameter_values.get("input_text", "")
-        seed = self.parameter_values.get("seed")
+        seed = self._seed_parameter.get_seed()
         selection_type = self.parameter_values.get("selection_type", "word")
 
-        # Set the random seed if provided
-        if seed is not None:
-            random.seed(seed)
+        # Set the random seed
+        random.seed(seed)
 
         try:
             # If input text is empty, generate random content
@@ -300,11 +292,17 @@ class RandomText(DataNode):
         except Exception:
             return self._generate_with_agent(selection_type, seed)
 
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
+
     def after_value_set(
         self,
         parameter: Parameter,
         value: Any,
     ) -> None:
+        # Handle seed parameter component
+        self._seed_parameter.after_value_set(parameter, value)
+
         if parameter.name != "output":
             # Get current values
             input_text = self.parameter_values.get("input_text", "")
@@ -314,7 +312,7 @@ class RandomText(DataNode):
             if (
                 not input_text.strip()
                 and selection_type in ["sentence", "paragraph"]
-                and parameter.name in ["selection_type", "seed"]
+                and parameter.name in ["selection_type", "seed", "randomize_seed"]
             ):
                 # Trigger node execution
                 request = ResolveNodeRequest(node_name=self.name)

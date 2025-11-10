@@ -8,11 +8,17 @@ from griptape_cloud_client.models.deployment_status import DeploymentStatus
 from griptape_cloud_client.types import Unset
 
 from griptape_cloud.base.base_griptape_cloud_node import BaseGriptapeCloudNode
+from griptape_cloud.publish_workflow.parameters.griptape_cloud_structure_config_parameter import (
+    GriptapeCloudStructureConfigParameter,
+)
+from griptape_cloud.publish_workflow.parameters.griptape_cloud_webhook_config_parameter import (
+    GriptapeCloudWebhookConfigParameter,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 
@@ -60,28 +66,26 @@ class GriptapeCloudPublishedWorkflow(SuccessFailureNode, BaseGriptapeCloudNode):
         )
         self.has_successful_deployment = True
 
+        # Add structure config group
+        self._structure_config_params = GriptapeCloudStructureConfigParameter(
+            self,
+            metadata=metadata,
+            allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
+            hide_structure_config=False,
+            hide_structure_id=False,
+        )
+
+        # Add webhook config group
+        self._webhook_config_params = GriptapeCloudWebhookConfigParameter(
+            self,
+            metadata=metadata,
+            allowed_modes={ParameterMode.OUTPUT, ParameterMode.INPUT},
+            hide_integration_details=False,
+        )
+        self._webhook_config_params.set_webhook_config_param_visibility(visible=False)
+
         # Add basic structure information parameters
-        with ParameterGroup(name="Griptape Cloud Structure Details") as structure_details_group:
-            Parameter(
-                name="name",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value=self.structure_name,
-                tooltip="The name of the published workflow structure",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-
-            Parameter(
-                name="structure_id",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value=self.structure_id,
-                tooltip="The structure ID of the published workflow",
-                allowed_modes={ParameterMode.OUTPUT},
-            )
-
+        with ParameterGroup(name="Griptape Cloud Structure Run Details") as structure_run_details_group:
             Parameter(
                 name="structure_run_id",
                 input_types=["str"],
@@ -92,8 +96,8 @@ class GriptapeCloudPublishedWorkflow(SuccessFailureNode, BaseGriptapeCloudNode):
                 allowed_modes={ParameterMode.OUTPUT},
             )
 
-        structure_details_group.ui_options = {"hide": False, "collapsed": True}
-        self.add_node_element(structure_details_group)
+        structure_run_details_group.ui_options = {"hide": False, "collapsed": True}
+        self.add_node_element(structure_run_details_group)
 
         # Add events group
         with ParameterGroup(name="Events") as events_group:
@@ -122,10 +126,11 @@ class GriptapeCloudPublishedWorkflow(SuccessFailureNode, BaseGriptapeCloudNode):
     @classmethod
     def get_default_node_parameter_names(cls) -> list[str]:
         """Get the names of the parameters configured on the node by default."""
-        # Execution Status Component parameters
-        structure_params = ["name", "structure_id", "structure_run_id"]
-        event_params = ["include_events", "events"]
-        params = structure_params + event_params
+        params = []
+        params.extend(GriptapeCloudStructureConfigParameter.get_param_names())
+        params.extend(GriptapeCloudWebhookConfigParameter.get_param_names())
+        params.extend(["structure_run_id"])
+        params.extend(["include_events", "events"])
         params.extend(["was_successful", "result_details"])
         params.extend(["exec_in", "exec_out", "failed"])
         return params

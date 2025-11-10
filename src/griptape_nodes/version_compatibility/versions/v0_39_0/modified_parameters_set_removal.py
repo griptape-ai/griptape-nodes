@@ -9,6 +9,18 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.modified_parameters_set_deprecation_warning_problem import (
+    ModifiedParametersSetDeprecationWarningProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.modified_parameters_set_removed_problem import (
+    ModifiedParametersSetRemovedProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.ui_options_field_modified_incompatible_problem import (
+    UiOptionsFieldModifiedIncompatibleProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.ui_options_field_modified_warning_problem import (
+    UiOptionsFieldModifiedWarningProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     LibraryVersionCompatibilityCheck,
@@ -49,15 +61,11 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
             # 0.39+ Release: Parameter removed, reject incompatible libraries
             return [
                 LibraryVersionCompatibilityIssue(
-                    message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+. "
-                    "The 'modified_parameters_set' parameter has been removed from BaseNode methods: 'after_incoming_connection', 'after_outgoing_connection', 'after_incoming_connection_removed', 'after_outgoing_connection_removed', 'before_value_set', and 'after_value_set'. "
-                    "If this library overrides any of these methods, it will not load or function properly. Please update to a newer version of this library or contact the library author immediately.",
+                    problem=ModifiedParametersSetRemovedProblem(library_engine_version=library_version_str),
                     severity=LibraryStatus.UNUSABLE,
                 ),
                 LibraryVersionCompatibilityIssue(
-                    message=f"This library (built for engine version {library_version_str}) is incompatible with Griptape Nodes 0.39+."
-                    "The 'ui_options' field has been modified on all Elements. In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field _ui_options will no longer create UI updates in the editor."
-                    "If this library accesses the private _ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    problem=UiOptionsFieldModifiedIncompatibleProblem(library_engine_version=library_version_str),
                     severity=LibraryStatus.UNUSABLE,
                 ),
             ]
@@ -65,15 +73,11 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
             # 0.38 Release: Warning about upcoming removal in 0.39
             return [
                 LibraryVersionCompatibilityIssue(
-                    message=f"WARNING: The 'modified_parameters_set' parameter will be removed in Griptape Nodes 0.39 from BaseNode methods: 'after_incoming_connection', 'after_outgoing_connection', 'after_incoming_connection_removed', 'after_outgoing_connection_removed', 'before_value_set', and 'after_value_set'. "
-                    f"This library (built for engine version {library_version_str}) must be updated before the 0.39 release. "
-                    "If this library overrides any of these methods, it will fail to load in 0.39. If not, no action is necessary. Please contact the library author to confirm whether this library is impacted.",
+                    problem=ModifiedParametersSetDeprecationWarningProblem(library_engine_version=library_version_str),
                     severity=LibraryStatus.FLAWED,
                 ),
                 LibraryVersionCompatibilityIssue(
-                    message="WARNING: The 'ui_options' field has been modified in Griptape Nodes 0.38 on all BaseNodeElements."
-                    "In order to function properly, all nodes must update ui_options by setting its value to a new dictionary. Updating ui_options by accessing the private field _ui_options will no longer create UI updates in the editor."
-                    "If this library accesses the private _ui_options field, it will not update the editor properly. Please update to a newer version of this library or contact the library author immediately.",
+                    problem=UiOptionsFieldModifiedWarningProblem(),
                     severity=LibraryStatus.FLAWED,
                 ),
             ]

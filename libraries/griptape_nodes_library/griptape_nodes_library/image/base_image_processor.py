@@ -8,7 +8,7 @@ from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -201,14 +201,121 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
             output_path = Path(output_file.name)
         return str(output_path), output_path
 
+    def _determine_target_mode(self, current_mode: str, format_extension: str) -> str:  # noqa: PLR0911, PLR0912, C901
+        """Determine the target mode for conversion based on current mode and format.
+
+        Args:
+            current_mode: The current PIL image mode
+            format_extension: The target format (e.g., "JPEG", "PNG", "WEBP")
+
+        Returns:
+            str: The target mode to convert to
+
+        Raises:
+            ValueError: If the format is unknown/unsupported
+        """
+        format_upper = format_extension.upper()
+
+        match format_upper:
+            case "JPEG" | "JPG":
+                match current_mode:
+                    case "RGBA":
+                        return "RGB"
+                    case "LA":
+                        return "L"
+                    case "P":
+                        return "RGB"
+                    case "CMYK":
+                        return "RGB"
+
+            case "PNG":
+                match current_mode:
+                    case "CMYK":
+                        return "RGB"
+
+            case "WEBP":
+                match current_mode:
+                    case "CMYK":
+                        return "RGB"
+                    case "L":
+                        return "RGB"
+                    case "LA":
+                        return "RGBA"
+                    case "P":
+                        return "RGB"
+                    case "1":
+                        return "RGB"
+
+            case "BMP":
+                match current_mode:
+                    case "CMYK":
+                        return "RGB"
+                    case "RGBA":
+                        return "RGB"
+                    case "LA":
+                        return "L"
+
+            case "TIFF":
+                # TIFF supports almost everything, no conversions needed
+                pass
+
+            case _:
+                msg = f"{self.name}: Unsupported image format '{format_extension}'"
+                raise ValueError(msg)
+
+        # Success path: current mode is compatible
+        return current_mode
+
+    def _create_converted_image_for_format_if_necessary(
+        self, pil_image: Image.Image, format_extension: str
+    ) -> Image.Image | None:
+        """Convert image to compatible mode if necessary for the target format.
+
+        Args:
+            pil_image: The PIL Image to check and potentially convert
+            format_extension: The target format (e.g., "JPEG", "PNG", "WEBP")
+
+        Returns:
+            Image.Image | None: A new converted image if conversion was necessary, None if original is compatible
+        """
+        current_mode = pil_image.mode
+
+        # Determine target mode for conversion
+        target_mode = self._determine_target_mode(current_mode, format_extension)
+
+        # If target mode is same as current mode, no conversion needed
+        if target_mode == current_mode:
+            return None
+
+        # Log the conversion
+        logger.warning(
+            f"{self.name}: Converting image from mode '{current_mode}' to '{target_mode}' for {format_extension.upper()} format"
+        )
+
+        # Special handling for RGBA -> RGB: composite with white background
+        if current_mode == "RGBA" and target_mode == "RGB":
+            background = Image.new("RGB", pil_image.size, (255, 255, 255))
+            background.paste(pil_image, mask=pil_image.split()[3])  # Use alpha channel as mask
+            return background
+
+        # Standard conversion for all other cases
+        converted_image = pil_image.copy()
+        return converted_image.convert(target_mode)
+
     def _save_image_artifact(self, pil_image: Image.Image, format_extension: str, suffix: str = "") -> ImageUrlArtifact:
         """Save PIL image to static file and return ImageUrlArtifact."""
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(suffix, format_extension)
 
+        # Check if image needs conversion for the target format.
+        # This will create a copy in the new format ONLY if the source image required a conversion
+        # (does not alter the original).
+        converted_image = self._create_converted_image_for_format_if_necessary(pil_image, format_extension)
+        image_to_save = converted_image if converted_image is not None else pil_image
+
         # Convert PIL image to bytes and save with our custom filename
         buffer = io.BytesIO()
-        pil_image.save(buffer, format=format_extension.upper())
+        image_to_save.save(buffer, format=format_extension.upper())
         image_bytes = buffer.getvalue()
 
         # Save to static file with our custom filename
@@ -222,6 +329,12 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         # for cases where we need quality control
         output_format = format_extension.upper()
         quality = self._get_quality_setting()
+
+        # Check if image needs conversion for the target format.
+        # This will create a copy in the new format ONLY if the source image required a conversion
+        # (does not alter the original).
+        converted_image = self._create_converted_image_for_format_if_necessary(pil_image, format_extension)
+        image_to_save = converted_image if converted_image is not None else pil_image
 
         # Prepare save options
         save_kwargs = {}
@@ -237,7 +350,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
 
         # Convert to bytes
         buffer = io.BytesIO()
-        pil_image.save(buffer, format=output_format, **save_kwargs)
+        image_to_save.save(buffer, format=output_format, **save_kwargs)
         buffer.seek(0)
         return buffer.getvalue()
 
@@ -312,7 +425,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         """Get the output filename suffix. Override in subclasses if needed."""
         return ""
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[None]:
         """Main workflow execution method following LoadImage pattern."""
         # Reset execution state and result details at the start of each run
         self._clear_execution_status()
@@ -343,7 +456,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
 
             # Run the image processing
             self.append_value_to_parameter("logs", "[Started image processing..]\n")
-            self._process(pil_image, detected_format, **custom_params)
+            yield lambda: self._process(pil_image, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished image processing.]\n")
 
             # Success case

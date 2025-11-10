@@ -1,18 +1,17 @@
 """Tests for project template layering and merge functionality."""
 
 from griptape_nodes.common.project_templates import (
-    DEFAULT_PROJECT_YAML_PATH,
+    DEFAULT_PROJECT_TEMPLATE,
     ProjectOverrideAction,
     ProjectOverrideCategory,
     ProjectTemplate,
     ProjectValidationInfo,
     ProjectValidationStatus,
     load_partial_project_template,
-    load_project_template_from_yaml,
 )
 
-# Load system defaults once for all tests
-_SYSTEM_DEFAULTS_YAML = DEFAULT_PROJECT_YAML_PATH.read_text(encoding="utf-8")
+# Use system defaults directly (no longer loading from YAML)
+_SYSTEM_DEFAULTS = DEFAULT_PROJECT_TEMPLATE
 
 
 class TestPartialLoading:
@@ -43,8 +42,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   my_situation:
-    situation_template_schema_version: "0.1.0"
-    schema: "{outputs}/custom.{file_extension}"
+    macro: "{outputs}/custom.{file_extension}"
     policy:
       on_collision: "overwrite"
       create_dirs: true
@@ -57,7 +55,7 @@ situations:
         assert validation.status == ProjectValidationStatus.GOOD
         assert overlay.name == "Custom Project"
         assert "my_situation" in overlay.situations
-        assert overlay.situations["my_situation"]["schema"] == "{outputs}/custom.{file_extension}"
+        assert overlay.situations["my_situation"]["macro"] == "{outputs}/custom.{file_extension}"
 
     def test_overlay_with_custom_directory(self) -> None:
         """Test loading overlay with custom directory definition."""
@@ -66,7 +64,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 directories:
   custom_dir:
-    path_schema: "my_custom_path"
+    path_macro: "my_custom_path"
 """
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, validation)
@@ -74,7 +72,7 @@ directories:
         assert overlay is not None
         assert validation.status == ProjectValidationStatus.GOOD
         assert "custom_dir" in overlay.directories
-        assert overlay.directories["custom_dir"]["path_schema"] == "my_custom_path"
+        assert overlay.directories["custom_dir"]["path_macro"] == "my_custom_path"
 
     def test_overlay_with_environment(self) -> None:
         """Test loading overlay with environment variables."""
@@ -142,8 +140,8 @@ name: "My Custom Project"
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         merge_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -167,7 +165,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   save_node_output:
-    schema: "{outputs}/custom_{node_name}.{file_extension}"
+    macro: "{outputs}/custom_{node_name}.{file_extension}"
     policy:
       on_collision: "overwrite"
       create_dirs: true
@@ -176,8 +174,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -189,7 +187,7 @@ situations:
         )
 
         # Check situation was modified
-        assert merged.situations["save_node_output"].schema == "{outputs}/custom_{node_name}.{file_extension}"
+        assert merged.situations["save_node_output"].macro == "{outputs}/custom_{node_name}.{file_extension}"
         # Check other situations are inherited
         assert "save_file" in merged.situations
         assert "copy_external_file" in merged.situations
@@ -201,8 +199,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   my_new_situation:
-    situation_template_schema_version: "0.1.0"
-    schema: "{outputs}/new_{file_name}.{file_extension}"
+    macro: "{outputs}/new_{file_name}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -212,8 +209,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -226,25 +223,25 @@ situations:
 
         # Check new situation was added
         assert "my_new_situation" in merged.situations
-        assert merged.situations["my_new_situation"].schema == "{outputs}/new_{file_name}.{file_extension}"
+        assert merged.situations["my_new_situation"].macro == "{outputs}/new_{file_name}.{file_extension}"
         # Check base situations are still there
         assert len(merged.situations) == len(default_template.situations) + 1
 
     def test_merge_partial_situation_override(self) -> None:
-        """Test merging overlay that only overrides schema, inherits other fields."""
+        """Test merging overlay that only overrides macro, inherits other fields."""
         yaml_text = """
 project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   save_node_output:
-    schema: "{outputs}/different_schema.{file_extension}"
+    macro: "{outputs}/different_schema.{file_extension}"
 """
         overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -255,8 +252,8 @@ situations:
             validation_info=validation,
         )
 
-        # Check schema was overridden
-        assert merged.situations["save_node_output"].schema == "{outputs}/different_schema.{file_extension}"
+        # Check macro was overridden
+        assert merged.situations["save_node_output"].macro == "{outputs}/different_schema.{file_extension}"
         # Check policy was inherited from base
         base_policy = default_template.situations["save_node_output"].policy
         merged_policy = merged.situations["save_node_output"].policy
@@ -270,14 +267,14 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 directories:
   outputs:
-    path_schema: "my_custom_outputs"
+    path_macro: "my_custom_outputs"
 """
         overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -289,7 +286,7 @@ directories:
         )
 
         # Check directory was overridden
-        assert merged.directories["outputs"].path_schema == "my_custom_outputs"
+        assert merged.directories["outputs"].path_macro == "my_custom_outputs"
         # Check other directories are inherited
         assert "inputs" in merged.directories
 
@@ -300,14 +297,14 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 directories:
   custom_dir:
-    path_schema: "path/to/custom"
+    path_macro: "path/to/custom"
 """
         overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -320,7 +317,7 @@ directories:
 
         # Check new directory was added
         assert "custom_dir" in merged.directories
-        assert merged.directories["custom_dir"].path_schema == "path/to/custom"
+        assert merged.directories["custom_dir"].path_macro == "path/to/custom"
         # Check base directories are still there
         assert len(merged.directories) == len(default_template.directories) + 1
 
@@ -337,8 +334,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -367,8 +364,8 @@ name: "Custom Project"
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -393,7 +390,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   save_file:
-    schema: "{outputs}/different.{file_extension}"
+    macro: "{outputs}/different.{file_extension}"
     policy:
       on_collision: "fail"
       create_dirs: false
@@ -402,8 +399,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -428,8 +425,7 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   brand_new_situation:
-    situation_template_schema_version: "0.1.0"
-    schema: "{outputs}/new.{file_extension}"
+    macro: "{outputs}/new.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -439,8 +435,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -467,14 +463,14 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 directories:
   inputs:
-    path_schema: "custom_inputs"
+    path_macro: "custom_inputs"
 """
         overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -499,14 +495,14 @@ project_template_schema_version: "0.1.0"
 name: "Custom Project"
 directories:
   new_directory:
-    path_schema: "path/to/new"
+    path_macro: "path/to/new"
 """
         overlay_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -539,8 +535,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         # Create a base template with the env var
@@ -582,8 +578,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -609,22 +605,21 @@ name: "Custom Project"
 description: "Custom description"
 situations:
   save_file:
-    schema: "{custom}.{file_extension}"
+    macro: "{custom}.{file_extension}"
     policy:
       on_collision: "overwrite"
       create_dirs: true
   new_situation:
-    situation_template_schema_version: "0.1.0"
-    schema: "{new}.{file_extension}"
+    macro: "{new}.{file_extension}"
     policy:
       on_collision: "create_new"
       create_dirs: true
     fallback: null
 directories:
   outputs:
-    path_schema: "custom_outputs"
+    path_macro: "custom_outputs"
   new_dir:
-    path_schema: "new_directory"
+    path_macro: "new_directory"
 environment:
   VAR1: "value1"
   VAR2: "value2"
@@ -633,8 +628,8 @@ environment:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -665,14 +660,13 @@ class TestValidationDuringMerge:
     """Tests for validation errors during merge."""
 
     def test_invalid_new_situation_schema(self) -> None:
-        """Test that invalid schema in new situation causes validation error."""
+        """Test that invalid macro in new situation causes validation error."""
         yaml_text = """
 project_template_schema_version: "0.1.0"
 name: "Custom Project"
 situations:
   bad_situation:
-    situation_template_schema_version: "0.1.0"
-    schema: "{unclosed"
+    macro: "{unclosed"
     policy:
       on_collision: "create_new"
       create_dirs: true
@@ -682,8 +676,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
@@ -696,7 +690,7 @@ situations:
 
         # Check validation error was recorded
         assert validation.status == ProjectValidationStatus.UNUSABLE
-        assert any("schema" in p.field_path.lower() for p in validation.problems)
+        assert any("macro" in p.field_path.lower() for p in validation.problems)
 
     def test_incomplete_policy_in_override(self) -> None:
         """Test that incomplete policy in situation override causes validation error."""
@@ -712,8 +706,8 @@ situations:
         overlay = load_partial_project_template(yaml_text, overlay_validation)
         assert overlay is not None
 
-        base_validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
-        default_template = load_project_template_from_yaml(_SYSTEM_DEFAULTS_YAML, base_validation)
+        ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        default_template = _SYSTEM_DEFAULTS
         assert default_template is not None
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)

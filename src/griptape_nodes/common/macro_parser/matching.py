@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from griptape_nodes.common.macro_parser.exceptions import MacroSyntaxError
+from griptape_nodes.common.macro_parser.exceptions import MacroParseFailureReason, MacroSyntaxError
 from griptape_nodes.common.macro_parser.segments import (
     ParsedSegment,
     ParsedStaticValue,
@@ -49,7 +49,10 @@ def extract_unknown_variables(
                 current_pos = new_pos
             case _:
                 msg = f"Unexpected segment type: {type(segment).__name__}"
-                raise MacroSyntaxError(msg)
+                raise MacroSyntaxError(
+                    msg,
+                    failure_reason=MacroParseFailureReason.UNEXPECTED_SEGMENT_TYPE,
+                )
 
     return current_match
 

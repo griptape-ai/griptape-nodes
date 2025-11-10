@@ -45,7 +45,7 @@ class WorkflowShape(BaseModel):
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.11.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.12.0"
 
     name: str
     schema_version: str
