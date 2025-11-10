@@ -664,8 +664,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
-
             result = GetNodeMetadataFromLibraryResultFailure(result_details=details)
             return result
 
@@ -674,8 +672,6 @@ class LibraryManager:
             metadata = library.get_node_metadata(node_type=request.node_type)
         except KeyError:
             details = f"Attempted to get node metadata for a node type '{request.node_type}' in a Library named '{request.library}'. Failed because no node type of that name could be found in the Library."
-            logger.error(details)
-
             result = GetNodeMetadataFromLibraryResultFailure(result_details=details)
             return result
 
