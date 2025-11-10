@@ -38,11 +38,13 @@ Use this node when you want to:
 #### Color Settings
 
 - **num_colors** (1-12, default: 3): Number of colors to extract
+
     - Slider interface for easy selection
     - Colors are ordered by prominence (most frequent first)
     - Each extracted color becomes a separate output parameter
 
 - **algorithm** (default: kmeans): Color extraction algorithm to use
+
     - **kmeans**: Uses KMeans clustering for accurate color grouping
     - **median_cut**: Uses Modified Median Cut Quantization (MMCQ) for balanced color space division
     - Dropdown menu for easy selection
@@ -112,17 +114,20 @@ The node uses a sophisticated color extraction process:
 ### Algorithm Benefits
 
 - **KMeans Algorithm**:
+
     - Accurate color clustering based on perceptual similarity
     - Excellent for images with distinct color regions
     - Handles gradients and transitions well
-    
+
 - **Median Cut Algorithm**:
+
     - Balanced color space representation
     - Classic quantization approach
     - Good for images with uniform color distribution
     - Faster than KMeans for large images
 
 - **Shared Benefits**:
+
     - Native Python implementations using stable libraries (sklearn, numpy)
     - Compatible with Pillow 11+ and NumPy 1.20+
     - Efficient processing for images of various sizes

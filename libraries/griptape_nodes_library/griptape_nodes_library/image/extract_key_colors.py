@@ -260,8 +260,14 @@ class ExtractKeyColors(DataNode):
             for count, color in color_data:
                 r, g, b = color
                 selected_colors.append((int(r), int(g), int(b)))
-                logger.debug("Median Cut color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
-                           int(r), int(g), int(b), count, (count / total_pixels) * 100)
+                logger.debug(
+                    "Median Cut color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
+                    int(r),
+                    int(g),
+                    int(b),
+                    count,
+                    (count / total_pixels) * 100,
+                )
 
         except Exception as e:
             msg = f"Median Cut color extraction failed: {e!s}"
@@ -314,8 +320,14 @@ class ExtractKeyColors(DataNode):
             for idx in sorted_indices:
                 r, g, b = centers[unique_labels[idx]]
                 selected_colors.append((int(r), int(g), int(b)))
-                logger.debug("KMeans color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
-                           int(r), int(g), int(b), counts[idx], (counts[idx] / len(pixels)) * 100)
+                logger.debug(
+                    "KMeans color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
+                    int(r),
+                    int(g),
+                    int(b),
+                    counts[idx],
+                    (counts[idx] / len(pixels)) * 100,
+                )
 
         except Exception as e:
             msg = f"KMeans color extraction failed: {e!s}"
@@ -323,7 +335,9 @@ class ExtractKeyColors(DataNode):
         else:
             return selected_colors
 
-    def _get_colors_by_prominence(self, image_bytes: bytes, num_colors: int, algorithm: str = "kmeans") -> list[tuple[int, int, int]]:
+    def _get_colors_by_prominence(
+        self, image_bytes: bytes, num_colors: int, algorithm: str = "kmeans"
+    ) -> list[tuple[int, int, int]]:
         """Extract colors using the specified algorithm, ordered by prominence.
 
         This method dispatches to the appropriate color extraction algorithm
