@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 import sysconfig
+from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
@@ -93,6 +94,29 @@ from griptape_nodes.retained_mode.events.library_events import (
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
+    AdvancedLibraryLoadFailureProblem,
+    AfterLibraryCallbackProblem,
+    BeforeLibraryCallbackProblem,
+    CreateConfigCategoryProblem,
+    DependencyInstallationFailedProblem,
+    DuplicateLibraryProblem,
+    EngineVersionErrorProblem,
+    InsufficientDiskSpaceProblem,
+    InvalidVersionStringProblem,
+    LibraryJsonDecodeProblem,
+    LibraryLoadExceptionProblem,
+    LibraryNotFoundProblem,
+    LibraryProblem,
+    LibrarySchemaExceptionProblem,
+    LibrarySchemaValidationProblem,
+    NodeClassNotBaseNodeProblem,
+    NodeClassNotFoundProblem,
+    NodeModuleImportProblem,
+    SandboxDirectoryMissingProblem,
+    UpdateConfigCategoryProblem,
+    VenvCreationFailedProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
     LibraryProvenanceLocalFile,
@@ -131,7 +155,7 @@ class LibraryManager:
         library_path: str
         library_name: str | None = None
         library_version: str | None = None
-        problems: list[str] = field(default_factory=list)
+        problems: list[LibraryProblem] = field(default_factory=list)
 
     _library_file_path_to_info: dict[str, LibraryInfo]
 
@@ -272,14 +296,27 @@ class LibraryManager:
             else:
                 version_str = "*UNKNOWN*"
 
-            # Problems column - format with numbers if there's more than one
+            # Problems column - collate by type then format
             if not lib_info.problems:
                 problems = "No problems detected."
-            elif len(lib_info.problems) == 1:
-                problems = lib_info.problems[0]
             else:
-                # Number the problems when there's more than one
-                problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(lib_info.problems)])
+                # Group problems by type
+                problems_by_type = defaultdict(list)
+                for problem in lib_info.problems:
+                    problems_by_type[type(problem)].append(problem)
+
+                # Collate each group
+                collated_strings = []
+                for problem_class, instances in problems_by_type.items():
+                    collated_display = problem_class.collate_problems_for_display(instances)
+                    collated_strings.append(collated_display)
+
+                # Format for display
+                if len(collated_strings) == 1:
+                    problems = collated_strings[0]
+                else:
+                    # Number the problems when there's more than one
+                    problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
 
             # Add the row to the table
             table.add_row(library_name, lib_info.status.value, version_str, file_path_text, problems)
@@ -404,9 +441,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.MISSING,
-                problems=[
-                    "Library could not be found at the file path specified. It will be removed from the configuration."
-                ],
+                problems=[LibraryNotFoundProblem(library_path=str(json_path))],
                 result_details=details,
             )
 
@@ -421,7 +456,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.UNUSABLE,
-                problems=["Library file not formatted as proper JSON."],
+                problems=[LibraryJsonDecodeProblem()],
                 result_details=details,
             )
         except Exception as err:
@@ -431,7 +466,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.UNUSABLE,
-                problems=[f"Exception occurred when attempting to load the library: {err}."],
+                problems=[LibraryLoadExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
 
@@ -448,7 +483,7 @@ class LibraryManager:
                 loc = " -> ".join(map(str, error["loc"]))
                 msg = error["msg"]
                 error_type = error["type"]
-                problem = f"Error in section '{loc}': {error_type}, {msg}"
+                problem = LibrarySchemaValidationProblem(location=loc, error_type=error_type, message=msg)
                 problems.append(problem)
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
             logger.error(details)
@@ -466,7 +501,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_name,
                 status=LibraryStatus.UNUSABLE,
-                problems=[f"Library file did not match the library schema specified due to: {err}"],
+                problems=[LibrarySchemaExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
 
@@ -537,7 +572,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.MISSING,
-                problems=[details],
+                problems=[SandboxDirectoryMissingProblem()],
                 result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
@@ -594,7 +629,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
                 status=LibraryStatus.UNUSABLE,
-                problems=[details],
+                problems=[EngineVersionErrorProblem()],
                 result_details=details,
             )
 
@@ -680,9 +715,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.MISSING,
-                problems=[
-                    "Library could not be found at the file path specified. It will be removed from the configuration."
-                ],
+                problems=[LibraryNotFoundProblem(library_path=file_path)],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
             logger.error(details)
@@ -714,9 +747,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 status=LibraryStatus.UNUSABLE,
-                problems=[
-                    f"Library's version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
-                ],
+                problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
             )
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
             logger.error(details)
@@ -742,7 +773,9 @@ class LibraryManager:
                     library_version=library_version,
                     status=LibraryStatus.UNUSABLE,
                     problems=[
-                        f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}"
+                        AdvancedLibraryLoadFailureProblem(
+                            advanced_library_path=library_data.advanced_library_path, error_message=str(err)
+                        )
                     ],
                 )
                 details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
@@ -765,9 +798,7 @@ class LibraryManager:
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryStatus.UNUSABLE,
-                problems=[
-                    "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
-                ],
+                problems=[DuplicateLibraryProblem()],
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
@@ -794,7 +825,7 @@ class LibraryManager:
                         library_name=library_data.name,
                         library_version=library_version,
                         status=LibraryStatus.UNUSABLE,
-                        problems=[str(e)],
+                        problems=[VenvCreationFailedProblem(error_message=str(e))],
                     )
                     details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
                     logger.error(details)
@@ -812,9 +843,7 @@ class LibraryManager:
                             library_name=library_data.name,
                             library_version=library_version,
                             status=LibraryStatus.UNUSABLE,
-                            problems=[
-                                f"Insufficient disk space for dependencies (requires {min_space_gb} GB): {error_msg}"
-                            ],
+                            problems=[InsufficientDiskSpaceProblem(min_space_gb=min_space_gb, error_message=error_msg)],
                         )
                         return RegisterLibraryFromFileResultFailure(result_details=details)
 
@@ -853,7 +882,7 @@ class LibraryManager:
                 library_name=library_data.name,
                 library_version=library_version,
                 status=LibraryStatus.UNUSABLE,
-                problems=[f"Dependency installation failed: {error_details}"],
+                problems=[DependencyInstallationFailedProblem(error_details=error_details)],
             )
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
@@ -877,7 +906,7 @@ class LibraryManager:
                     )
                     create_new_category_result = GriptapeNodes.handle_request(create_new_category_request)
                     if not isinstance(create_new_category_result, SetConfigCategoryResultSuccess):
-                        problems.append(f"Failed to create new config category '{library_data_setting.category}'.")
+                        problems.append(CreateConfigCategoryProblem(category_name=library_data_setting.category))
                         details = f"Failed attempting to create new config category '{library_data_setting.category}' for library '{library_data.name}'."
                         logger.error(details)
                         continue  # SKIP IT
@@ -891,7 +920,7 @@ class LibraryManager:
                     )
                     set_category_result = GriptapeNodes.handle_request(set_category_request)
                     if not isinstance(set_category_result, SetConfigCategoryResultSuccess):
-                        problems.append(f"Failed to update config category '{library_data_setting.category}'.")
+                        problems.append(UpdateConfigCategoryProblem(category_name=library_data_setting.category))
                         details = f"Failed attempting to update config category '{library_data_setting.category}' for library '{library_data.name}'."
                         logger.error(details)
                         continue  # SKIP IT
@@ -1391,6 +1420,21 @@ class LibraryManager:
         """
         return module_name.startswith("gtn_dynamic_module_")
 
+    @staticmethod
+    def _get_root_cause_from_exception(exception: BaseException) -> BaseException:
+        """Walk the exception chain to find the root cause.
+
+        Args:
+            exception: The exception to walk
+
+        Returns:
+            The root cause exception (the innermost exception in the chain)
+        """
+        current = exception
+        while current.__cause__ is not None:
+            current = current.__cause__
+        return current
+
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
 
@@ -1779,7 +1823,7 @@ class LibraryManager:
         base_dir: Path,
         library_file_path: str,
         library_version: str | None,
-        problems: list[str],
+        problems: list[LibraryProblem],
     ) -> LibraryManager.LibraryInfo:
         any_nodes_loaded_successfully = False
 
@@ -1787,7 +1831,7 @@ class LibraryManager:
         version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(library_data)
         has_disqualifying_issues = False
         for issue in version_issues:
-            problems.append(issue.message)
+            problems.append(issue.problem)
             if issue.severity == LibraryStatus.UNUSABLE:
                 has_disqualifying_issues = True
 
@@ -1809,8 +1853,7 @@ class LibraryManager:
                 details = f"Successfully called before_library_nodes_loaded callback for library '{library_data.name}'"
                 logger.debug(details)
             except Exception as err:
-                problem = f"Error calling before_library_nodes_loaded callback: {err}"
-                problems.append(problem)
+                problems.append(BeforeLibraryCallbackProblem(error_message=str(err)))
                 details = (
                     f"Failed to call before_library_nodes_loaded callback for library '{library_data.name}': {err}"
                 )
@@ -1826,26 +1869,38 @@ class LibraryManager:
             try:
                 # Dynamically load the module containing the node class
                 node_class = self._load_class_from_file(node_file_path, node_definition.class_name, library_data.name)
-            except Exception as err:
+            except ImportError as err:
+                root_cause = self._get_root_cause_from_exception(err)
                 problems.append(
-                    f"Failed to load node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
+                    NodeModuleImportProblem(
+                        class_name=node_definition.class_name,
+                        file_path=str(node_file_path),
+                        error_message=str(err),
+                        root_cause=str(root_cause),
+                    )
                 )
-                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because module could not be imported: {err}"
+                logger.error(details)
+                continue  # SKIP IT
+            except AttributeError:
+                problems.append(
+                    NodeClassNotFoundProblem(class_name=node_definition.class_name, file_path=str(node_file_path))
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because class not found in module"
+                logger.error(details)
+                continue  # SKIP IT
+            except TypeError:
+                problems.append(
+                    NodeClassNotBaseNodeProblem(class_name=node_definition.class_name, file_path=str(node_file_path))
+                )
+                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because class doesn't inherit from BaseNode"
                 logger.error(details)
                 continue  # SKIP IT
 
-            try:
-                # Register the node type with the library
-                forensics_string = library.register_new_node_type(node_class, metadata=node_definition.metadata)
-                if forensics_string is not None:
-                    problems.append(forensics_string)
-            except Exception as err:
-                problems.append(
-                    f"Failed to register node '{node_definition.class_name}' from '{node_file_path}' with error: {err}"
-                )
-                details = f"Attempted to load node '{node_definition.class_name}' from '{node_file_path}'. Failed because an exception occurred: {err}"
-                logger.error(details)
-                continue  # SKIP IT
+            # Register the node type with the library
+            library_problem = library.register_new_node_type(node_class, metadata=node_definition.metadata)
+            if library_problem is not None:
+                problems.append(library_problem)
 
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
@@ -1857,8 +1912,7 @@ class LibraryManager:
                 details = f"Successfully called after_library_nodes_loaded callback for library '{library_data.name}'"
                 logger.debug(details)
             except Exception as err:
-                problem = f"Error calling after_library_nodes_loaded callback: {err}"
-                problems.append(problem)
+                problems.append(AfterLibraryCallbackProblem(error_message=str(err)))
                 details = f"Failed to call after_library_nodes_loaded callback for library '{library_data.name}': {err}"
                 logger.error(details)
 
@@ -1963,9 +2017,7 @@ class LibraryManager:
                 library_name=library_data.name,
                 library_version=library_data.metadata.library_version,
                 status=LibraryStatus.UNUSABLE,
-                problems=[
-                    "Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded."
-                ],
+                problems=[DuplicateLibraryProblem()],
             )
 
             details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
