@@ -675,39 +675,6 @@
       }
     },
     {
-      "class_name": "OmnihumanSubjectRecognition",
-      "file_path": "griptape_nodes_library/video/omnihuman_subject_recognition.py",
-      "metadata": {
-        "category": "video",
-        "description": "Identify whether an image contains human, human-like, anthropomorphic, or similar subjects using OmniHuman 1.5",
-        "display_name": "OmniHuman Subject Recognition",
-        "icon": "User",
-        "group": "describe"
-      }
-    },
-    {
-      "class_name": "OmnihumanSubjectDetection",
-      "file_path": "griptape_nodes_library/video/omnihuman_subject_detection.py",
-      "metadata": {
-        "category": "video",
-        "description": "Detect and locate subjects in an image, returning masks and bounding boxes using OmniHuman 1.5",
-        "display_name": "OmniHuman Subject Detection",
-        "icon": "ScanFace",
-        "group": "describe"
-      }
-    },
-    {
-      "class_name": "OmnihumanVideoGeneration",
-      "file_path": "griptape_nodes_library/video/omnihuman_video_generation.py",
-      "metadata": {
-        "category": "video",
-        "description": "Generate talking head videos from image and audio using OmniHuman 1.5",
-        "display_name": "OmniHuman Video Generation",
-        "icon": "UserCircle",
-        "group": "create"
-      }
-    },
-    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {
@@ -2191,6 +2158,16 @@
         "description": "List files in a directory with optional pattern matching and recursive search",
         "display_name": "List Files",
         "icon": "FolderOpen"
+      }
+    },
+    {
+      "class_name": "DeleteFile",
+      "file_path": "griptape_nodes_library/engine/delete_file.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Delete a file or directory from the file system. Directories are deleted with all their contents.",
+        "display_name": "Delete File",
+        "icon": "Trash"
       }
     },
     {
