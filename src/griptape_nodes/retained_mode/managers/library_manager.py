@@ -264,14 +264,10 @@ class LibraryManager:
             console.print(panel)
             return
 
-        # Create a table with three columns and row dividers
-        # Using SQUARE box style which includes row dividers
+        # Create a table with two columns and row dividers
         table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
-        table.add_column("Library Name", style="green")
-        table.add_column("Status", style="green")
-        table.add_column("Version", style="green")
-        table.add_column("File Path", style="cyan")
-        table.add_column("Problems", style="yellow")
+        table.add_column("Library", style="green", ratio=1)
+        table.add_column("Problems", style="yellow", ratio=1)
 
         # Status emojis mapping
         status_emoji = {
@@ -281,23 +277,32 @@ class LibraryManager:
             LibraryStatus.MISSING: "[red]?[/red]",
         }
 
+        # Status text mapping (colored)
+        status_text = {
+            LibraryStatus.GOOD: "[green](GOOD)[/green]",
+            LibraryStatus.FLAWED: "[yellow](FLAWED)[/yellow]",
+            LibraryStatus.UNUSABLE: "[red](UNUSABLE)[/red]",
+            LibraryStatus.MISSING: "[red](MISSING)[/red]",
+        }
+
         # Add rows for each library info
         for lib_info in library_infos:
-            # File path column
-            file_path = lib_info.library_path
-            file_path_text = Text(file_path, style="cyan")
-            file_path_text.overflow = "fold"  # Force wrapping
-
-            # Library name column with emoji based on status
+            # Library column with emoji, name, version, colored status, and file path underneath
             emoji = status_emoji.get(lib_info.status, "ERROR: Unknown/Unexpected Library Status")
+            colored_status = status_text.get(lib_info.status, "(UNKNOWN)")
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
-            library_name = f"{emoji} - {name}"
 
             library_version = lib_info.library_version
             if library_version:
                 version_str = str(library_version)
             else:
                 version_str = "*UNKNOWN*"
+
+            file_path = lib_info.library_path
+            library_name_with_details = Text.from_markup(
+                f"{emoji} - {name} v{version_str} {colored_status}\n[cyan dim]{file_path}[/cyan dim]"
+            )
+            library_name_with_details.overflow = "fold"
 
             # Problems column - collate by type then format
             if not lib_info.problems:
@@ -322,7 +327,7 @@ class LibraryManager:
                     problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
 
             # Add the row to the table
-            table.add_row(library_name, lib_info.status.value, version_str, file_path_text, problems)
+            table.add_row(library_name_with_details, problems)
 
         # Create a panel containing the table
         panel = Panel(table, title="Library Information", border_style="blue")
