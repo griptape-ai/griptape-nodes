@@ -4,13 +4,15 @@ import io
 import logging
 import uuid
 
+import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
-from Pylette import extract_colors
+from sklearn.cluster import KMeans
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.color_picker import ColorPicker
+from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,20 @@ class ExtractKeyColors(DataNode):
                 default_value=3,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Target Number of Colors"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="algorithm",
+                tooltip="Algorithm to use for color extraction",
+                type=ParameterTypeBuiltin.STR.value,
+                default_value="kmeans",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["kmeans", "median_cut"])},
+                ui_options={
+                    "display_name": "Algorithm",
+                },
             )
         )
 
@@ -156,25 +172,25 @@ class ExtractKeyColors(DataNode):
             msg = f"Failed to extract image data: {e!s}"
             raise ValueError(msg) from e
 
-    def _get_colors_by_prominence(self, image_bytes: bytes, num_colors: int) -> list[tuple[int, int, int]]:
-        """Extract colors using Pylette's KMeans algorithm, ordered by frequency.
+    def _extract_colors_median_cut(self, image_bytes: bytes, num_colors: int) -> list[tuple[int, int, int]]:
+        """Extract colors using Median Cut algorithm (MMCQ variant).
 
-        This method uses Pylette's KMeans clustering to extract the most prominent
-        colors from the image. Colors are automatically sorted by their frequency
-        in the image (most frequent first).
+        This implements the Modified Median Cut Quantization (MMCQ) algorithm,
+        which iteratively splits color space buckets until reaching the desired
+        number of colors. Always splits the bucket with the largest color range.
 
         Args:
             image_bytes: Raw image data as bytes
             num_colors: Number of colors to extract
 
         Returns:
-            List of RGB tuples ordered by prominence (most prominent first)
+            List of RGB tuples ordered by bucket size (most prominent first)
 
         Raises:
             ValueError: If image processing fails
         """
         try:
-            # Convert bytes to PIL Image object
+            # Convert bytes to PIL Image
             image_io = io.BytesIO(image_bytes)
             pil_image = Image.open(image_io)
 
@@ -182,23 +198,154 @@ class ExtractKeyColors(DataNode):
             if pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
 
-            # Extract colors using Pylette
-            palette = extract_colors(image=pil_image, palette_size=num_colors, mode="KMeans")
+            # Convert image to numpy array and get all pixels
+            image_array = np.array(pil_image)
+            pixels = image_array.reshape(-1, 3)
 
-            logger.debug("Pylette extracted %d colors using KMeans", len(palette.colors))
+            # Start with all pixels in one bucket
+            buckets = [pixels]
 
-            # Convert Pylette Color objects to RGB tuples
+            # Iteratively split buckets until we have the desired number
+            while len(buckets) < num_colors:
+                # Find the bucket with the largest color range
+                largest_range = -1
+                largest_bucket_idx = -1
+
+                for idx, bucket in enumerate(buckets):
+                    if len(bucket) <= 1:
+                        continue
+
+                    # Calculate range for each color channel
+                    ranges = np.ptp(bucket, axis=0)  # ptp = peak to peak (max - min)
+                    total_range = np.sum(ranges)
+
+                    if total_range > largest_range:
+                        largest_range = total_range
+                        largest_bucket_idx = idx
+
+                # If no bucket can be split, stop
+                if largest_bucket_idx == -1:
+                    break
+
+                # Split the largest bucket
+                bucket_to_split = buckets[largest_bucket_idx]
+
+                # Find the channel with the largest range
+                ranges = np.ptp(bucket_to_split, axis=0)
+                channel = np.argmax(ranges)
+
+                # Sort pixels by the selected channel
+                sorted_pixels = bucket_to_split[bucket_to_split[:, channel].argsort()]
+
+                # Split at median
+                median_idx = len(sorted_pixels) // 2
+
+                # Replace the old bucket with two new buckets
+                buckets[largest_bucket_idx] = sorted_pixels[:median_idx]
+                buckets.append(sorted_pixels[median_idx:])
+
+            # Calculate average color for each bucket
+            total_pixels = len(pixels)
+            color_data = []
+            for bucket in buckets:
+                if len(bucket) > 0:
+                    avg_color = np.mean(bucket, axis=0)
+                    color_data.append((len(bucket), avg_color))
+
+            # Sort by bucket size (descending) for consistent ordering
+            color_data.sort(key=lambda x: x[0], reverse=True)
+
+            # Extract colors as RGB tuples
             selected_colors = []
-            for color in palette.colors:
-                r, g, b = color.rgb
-                selected_colors.append((r, g, b))
-                logger.debug("Selected color: RGB(%3d, %3d, %3d) - frequency: %.2f%%", r, g, b, color.freq * 100)
+            for count, color in color_data:
+                r, g, b = color
+                selected_colors.append((int(r), int(g), int(b)))
+                logger.debug("Median Cut color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
+                           int(r), int(g), int(b), count, (count / total_pixels) * 100)
 
         except Exception as e:
-            msg = f"Pylette color extraction failed: {e!s}"
+            msg = f"Median Cut color extraction failed: {e!s}"
             raise ValueError(msg) from e
         else:
             return selected_colors
+
+    def _extract_colors_kmeans(self, image_bytes: bytes, num_colors: int) -> list[tuple[int, int, int]]:
+        """Extract colors using KMeans clustering algorithm.
+
+        Args:
+            image_bytes: Raw image data as bytes
+            num_colors: Number of colors to extract
+
+        Returns:
+            List of RGB tuples ordered by cluster size (most prominent first)
+
+        Raises:
+            ValueError: If image processing or clustering fails
+        """
+        try:
+            # Convert bytes to PIL Image
+            image_io = io.BytesIO(image_bytes)
+            pil_image = Image.open(image_io)
+
+            # Convert to RGB if necessary
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            # Convert image to numpy array and reshape to list of pixels
+            image_array = np.array(pil_image)
+            pixels = image_array.reshape(-1, 3)
+
+            # Perform KMeans clustering
+            kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init=10)
+            kmeans.fit(pixels)
+
+            # Get cluster centers (the dominant colors)
+            centers = kmeans.cluster_centers_
+
+            # Count pixels in each cluster to get prominence
+            labels = kmeans.labels_
+            unique_labels, counts = np.unique(labels, return_counts=True)
+
+            # Sort clusters by count (most prominent first)
+            sorted_indices = np.argsort(-counts)
+
+            # Extract colors as RGB tuples
+            selected_colors = []
+            for idx in sorted_indices:
+                r, g, b = centers[unique_labels[idx]]
+                selected_colors.append((int(r), int(g), int(b)))
+                logger.debug("KMeans color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
+                           int(r), int(g), int(b), counts[idx], (counts[idx] / len(pixels)) * 100)
+
+        except Exception as e:
+            msg = f"KMeans color extraction failed: {e!s}"
+            raise ValueError(msg) from e
+        else:
+            return selected_colors
+
+    def _get_colors_by_prominence(self, image_bytes: bytes, num_colors: int, algorithm: str = "kmeans") -> list[tuple[int, int, int]]:
+        """Extract colors using the specified algorithm, ordered by prominence.
+
+        This method dispatches to the appropriate color extraction algorithm
+        based on the algorithm parameter.
+
+        Args:
+            image_bytes: Raw image data as bytes
+            num_colors: Number of colors to extract
+            algorithm: Algorithm to use ("kmeans" or "median_cut")
+
+        Returns:
+            List of RGB tuples ordered by prominence (most prominent first)
+
+        Raises:
+            ValueError: If image processing fails or algorithm is invalid
+        """
+        if algorithm == "kmeans":
+            return self._extract_colors_kmeans(image_bytes, num_colors)
+        if algorithm == "median_cut":
+            return self._extract_colors_median_cut(image_bytes, num_colors)
+        msg = f"Unknown algorithm: {algorithm}"
+        raise ValueError(msg)
 
     def _clear_color_picker_parameters(self) -> None:
         """Clear all dynamically created color picker parameters.
@@ -230,16 +377,16 @@ class ExtractKeyColors(DataNode):
 
         This method performs the following steps:
         1. Clears any existing color parameters from previous runs
-        2. Retrieves the input image and target number of colors
+        2. Retrieves the input image, target number of colors, and algorithm choice
         3. Converts the image artifact to bytes for processing
-        4. Uses Pylette's KMeans algorithm to extract dominant colors
-        5. Colors are automatically ordered by frequency (most prominent first)
+        4. Uses the selected algorithm (KMeans or Median Cut) to extract dominant colors
+        5. Colors are automatically ordered by prominence (most prominent first)
         6. Creates dynamic color picker parameters for each extracted color
         7. Logs color information for inspection
 
-        The algorithm uses Pylette's KMeans clustering to identify the most
-        prominent colors in the image. Pylette handles color extraction,
-        frequency calculation, and diversity automatically.
+        The supported algorithms are:
+        - KMeans: Uses sklearn's KMeans clustering to identify dominant colors
+        - Median Cut: Recursively divides color space to find representative colors
 
         The selected colors are made available as dynamic output parameters
         named color_1, color_2, etc., each containing the hexadecimal color value
@@ -247,7 +394,7 @@ class ExtractKeyColors(DataNode):
 
         Raises:
             ValueError: If image processing fails or no colors can be extracted
-            Exception: If Pylette processing encounters an error
+            Exception: If color extraction encounters an error
         """
         self._clear_color_picker_parameters()
 
@@ -257,6 +404,7 @@ class ExtractKeyColors(DataNode):
 
         input_image = self.get_parameter_value("input_image")
         num_colors = self.get_parameter_value("num_colors")
+        algorithm = self.get_parameter_value("algorithm")
 
         # Debug: Log image artifact information to detect caching issues
         if hasattr(input_image, "value"):
@@ -270,7 +418,7 @@ class ExtractKeyColors(DataNode):
         else:
             logger.debug("Processing image of type: %s", type(input_image))
 
-        logger.debug("Extracting %d colors from input image", num_colors)
+        logger.debug("Extracting %d colors from input image using %s algorithm", num_colors, algorithm)
         image_bytes = self._image_to_bytes(input_image)
 
         # Debug: Create hash to detect if the same image data is being processed
@@ -279,7 +427,7 @@ class ExtractKeyColors(DataNode):
         logger.debug("Image data hash: %s (size: %d bytes)", image_hash, len(image_bytes))
 
         # Extract colors ordered by actual prominence in the image
-        selected_colors = self._get_colors_by_prominence(image_bytes, num_colors)
+        selected_colors = self._get_colors_by_prominence(image_bytes, num_colors, algorithm)
         selected_count = len(selected_colors)
 
         logger.debug("Extracted %d colors ordered by prominence", selected_count)
