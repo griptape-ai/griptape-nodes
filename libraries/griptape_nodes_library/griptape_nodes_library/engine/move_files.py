@@ -221,31 +221,11 @@ class MoveFiles(FileOperationBaseNode):
         Returns:
             List of MoveFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
         """
-        all_targets: list[MoveFileInfo] = []
-
-        def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> MoveFileInfo:
-            return MoveFileInfo(
-                source_path=source_path,
-                destination_path=destination_path,
-                is_directory=is_directory,
-                status=MoveStatus.PENDING,
-                explicitly_requested=True,
-            )
-
-        def create_invalid_info(source_path: str, failure_reason: str) -> MoveFileInfo:
-            return MoveFileInfo(
-                source_path=source_path,
-                destination_path="",
-                is_directory=False,
-                status=MoveStatus.INVALID,
-                failure_reason=failure_reason,
-            )
-
-        return self._collect_all_targets(
+        return self._collect_all_files(
             paths=paths,
-            all_targets=all_targets,
-            create_pending_info=create_pending_info,
-            create_invalid_info=create_invalid_info,
+            info_class=MoveFileInfo,
+            pending_status=MoveStatus.PENDING,
+            invalid_status=MoveStatus.INVALID,
             expand_glob_pattern=self._expand_glob_pattern,
         )
 

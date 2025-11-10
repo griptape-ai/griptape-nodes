@@ -218,31 +218,11 @@ class CopyFiles(FileOperationBaseNode):
         Returns:
             List of CopyFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
         """
-        all_targets: list[CopyFileInfo] = []
-
-        def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> CopyFileInfo:
-            return CopyFileInfo(
-                source_path=source_path,
-                destination_path=destination_path,
-                is_directory=is_directory,
-                status=CopyStatus.PENDING,
-                explicitly_requested=True,
-            )
-
-        def create_invalid_info(source_path: str, failure_reason: str) -> CopyFileInfo:
-            return CopyFileInfo(
-                source_path=source_path,
-                destination_path="",
-                is_directory=False,
-                status=CopyStatus.INVALID,
-                failure_reason=failure_reason,
-            )
-
-        return self._collect_all_targets(
+        return self._collect_all_files(
             paths=paths,
-            all_targets=all_targets,
-            create_pending_info=create_pending_info,
-            create_invalid_info=create_invalid_info,
+            info_class=CopyFileInfo,
+            pending_status=CopyStatus.PENDING,
+            invalid_status=CopyStatus.INVALID,
             expand_glob_pattern=self._expand_glob_pattern,
         )
 

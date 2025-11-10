@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 from urllib.parse import urlparse
@@ -325,3 +326,56 @@ class FileOperationBaseNode(SuccessFailureNode):
                     unique_targets[source_path] = target
 
         return list(unique_targets.values())
+
+    def _collect_all_files(
+        self,
+        paths: list[str],
+        info_class: type[Any],  # Dataclass type (e.g., CopyFileInfo, MoveFileInfo)
+        pending_status: Enum,
+        invalid_status: Enum,
+        expand_glob_pattern: Callable[[str, list[T]], None],
+    ) -> list[T]:
+        """Generic method to collect all files/directories that will be operated on.
+
+        Handles both explicit paths and glob patterns (e.g., "/path/to/*.txt").
+        Glob patterns match individual files in a directory, not subdirectories.
+
+        Args:
+            paths: List of path strings to process
+            info_class: The Info dataclass class (e.g., CopyFileInfo, MoveFileInfo)
+            pending_status: The PENDING status enum value (e.g., CopyStatus.PENDING)
+            invalid_status: The INVALID status enum value (e.g., CopyStatus.INVALID)
+            expand_glob_pattern: Function to expand glob patterns and add matches to all_targets
+
+        Returns:
+            List of Info objects with status set (PENDING for valid paths, INVALID for invalid paths)
+        """
+        all_targets: list[T] = []
+
+        def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> T:
+            # info_class is a dataclass with these fields (CopyFileInfo, MoveFileInfo, etc.)
+            return info_class(  # type: ignore[call-arg]
+                source_path=source_path,
+                destination_path=destination_path,
+                is_directory=is_directory,
+                status=pending_status,
+                explicitly_requested=True,
+            )
+
+        def create_invalid_info(source_path: str, failure_reason: str) -> T:
+            # info_class is a dataclass with these fields (CopyFileInfo, MoveFileInfo, etc.)
+            return info_class(  # type: ignore[call-arg]
+                source_path=source_path,
+                destination_path="",
+                is_directory=False,
+                status=invalid_status,
+                failure_reason=failure_reason,
+            )
+
+        return self._collect_all_targets(
+            paths=paths,
+            all_targets=all_targets,
+            create_pending_info=create_pending_info,
+            create_invalid_info=create_invalid_info,
+            expand_glob_pattern=expand_glob_pattern,
+        )
