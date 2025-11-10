@@ -29,11 +29,6 @@ logger = logging.getLogger("griptape_nodes_api")
 logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
-"""Create and configure the FastAPI application."""
-app = FastAPI()
-
-
-@app.post("/static-upload-urls")
 async def _create_static_file_upload_url(request: Request) -> dict:
     """Create a URL for uploading a static file.
 
@@ -47,7 +42,6 @@ async def _create_static_file_upload_url(request: Request) -> dict:
     return {"url": url}
 
 
-@app.put("/static-uploads/{file_path:path}")
 async def _create_static_file(request: Request, file_path: str) -> dict:
     """Upload a static file to the static server."""
     if not STATIC_SERVER_ENABLED:
@@ -76,8 +70,6 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
     return {"url": static_url}
 
 
-@app.get("/static-uploads/{file_path_prefix:path}")
-@app.get("/static-uploads/")
 async def _list_static_files(file_path_prefix: str = "") -> dict:
     """List static files in the static server under the specified path prefix."""
     if not STATIC_SERVER_ENABLED:
@@ -107,7 +99,6 @@ async def _list_static_files(file_path_prefix: str = "") -> dict:
         return {"files": file_names}
 
 
-@app.delete("/static-files/{file_path:path}")
 async def _delete_static_file(file_path: str) -> dict:
     """Delete a static file from the static server."""
     if not STATIC_SERVER_ENABLED:
@@ -139,11 +130,21 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
-def _setup_app() -> None:
-    """Setup FastAPI app with middleware and static files."""
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
-    static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
+def start_static_server() -> None:
+    """Run uvicorn server synchronously using uvicorn.run."""
+    logger.debug("Starting static server...")
 
+    # Create FastAPI app
+    app = FastAPI()
+
+    # Register routes
+    app.add_api_route("/static-upload-urls", _create_static_file_upload_url, methods=["POST"])
+    app.add_api_route("/static-uploads/{file_path:path}", _create_static_file, methods=["PUT"])
+    app.add_api_route("/static-uploads/{file_path_prefix:path}", _list_static_files, methods=["GET"])
+    app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
+    app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
+
+    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -155,6 +156,10 @@ def _setup_app() -> None:
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
     )
+
+    # Mount static files
+    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
 
     app.mount(
         STATIC_SERVER_URL,
@@ -169,12 +174,6 @@ def _setup_app() -> None:
         StaticFiles(directory=workspace_directory / static_files_directory),
         name="static",
     )
-
-
-def start_static_server() -> None:
-    """Run uvicorn server synchronously using uvicorn.run."""
-    # Setup the FastAPI app
-    _setup_app()
 
     try:
         # Run server using uvicorn.run
