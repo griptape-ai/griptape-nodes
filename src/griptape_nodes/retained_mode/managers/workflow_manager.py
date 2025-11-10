@@ -55,6 +55,8 @@ from griptape_nodes.retained_mode.events.flow_events import (
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
     GetLibraryMetadataResultSuccess,
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
@@ -1020,6 +1022,18 @@ class WorkflowManager:
             workflow_metadata.last_modified_date = WorkflowManager.EPOCH_START
             problems.append(MissingLastModifiedDateProblem(default_date=str(WorkflowManager.EPOCH_START)))
 
+        # Get list of registered libraries once (silent check - no error logging)
+        list_libraries_request = ListRegisteredLibrariesRequest()
+        list_libraries_result = GriptapeNodes.LibraryManager().on_list_registered_libraries_request(
+            list_libraries_request
+        )
+
+        if not isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess):
+            # Should not happen, but handle gracefully - treat as no libraries registered
+            registered_libraries = []
+        else:
+            registered_libraries = list_libraries_result.libraries
+
         dependency_infos = []
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
             library_name = node_library_referenced.library_name
@@ -1042,16 +1056,30 @@ class WorkflowManager:
                 # SKIP IT.
                 continue
             # See how our desired version compares against the actual library we (may) have.
-            # See if the library exists.
+            # Check if library is registered (silent check - no error logging)
+            if library_name not in registered_libraries:
+                # Library not registered
+                had_critical_error = True
+                problems.append(LibraryNotRegisteredProblem(library_name=library_name))
+                dependency_infos.append(
+                    WorkflowManager.WorkflowDependencyInfo(
+                        library_name=library_name,
+                        version_requested=desired_version_str,
+                        version_present=None,
+                        status=WorkflowManager.WorkflowDependencyStatus.MISSING,
+                    )
+                )
+                # SKIP IT.
+                continue
+
+            # Get library metadata (we know library is registered, so no error logging)
             library_metadata_request = GetLibraryMetadataRequest(library=library_name)
-            # NOTE: Per https://github.com/griptape-ai/griptape-vsl-gui/issues/1123, we
-            # generate a FLOOD of error messages here that can swamp the GUI. We'll call
-            # directly instead of the usual handle_request() path so we don't generate those.
             library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
                 library_metadata_request
             )
+
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                # Metadata failed to be found.
+                # Should not happen since we verified library is registered, but handle gracefully
                 had_critical_error = True
                 problems.append(LibraryNotRegisteredProblem(library_name=library_name))
                 dependency_infos.append(

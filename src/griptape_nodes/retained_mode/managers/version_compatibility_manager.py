@@ -17,6 +17,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultSuccess,
+    ListNodeTypesInLibraryRequest,
+    ListNodeTypesInLibraryResultSuccess,
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
@@ -221,7 +225,7 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def _check_workflow_for_deprecated_nodes(
+    def _check_workflow_for_deprecated_nodes(  # noqa: C901
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for deprecated nodes.
@@ -231,18 +235,33 @@ class VersionCompatibilityManager:
         """
         issues: list[WorkflowVersionCompatibilityIssue] = []
 
+        # Get list of registered libraries once (silent check - no error logging)
+        list_request = ListRegisteredLibrariesRequest()
+        list_result = GriptapeNodes.LibraryManager().on_list_registered_libraries_request(list_request)
+
+        if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
+            # Should not happen, but handle gracefully - return empty issues
+            return issues
+
+        registered_libraries = list_result.libraries
+
         for library_name_and_node_type in workflow_metadata.node_types_used:
             library_name = library_name_and_node_type.library_name
             node_type = library_name_and_node_type.node_type
 
-            # Get library metadata to check if library exists and get version
+            # Check if library is registered
+            if library_name not in registered_libraries:
+                # Library not registered - skip this node silently, other checks handle missing libraries
+                continue
+
+            # Get library metadata to get version
             library_metadata_request = GetLibraryMetadataRequest(library=library_name)
             library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
                 library_metadata_request
             )
 
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                # Library not found - skip this node, other checks handle missing libraries
+                # Should not happen since we verified library exists, but handle gracefully
                 continue
 
             current_library_version = library_metadata_result.metadata.library_version
@@ -254,13 +273,17 @@ class VersionCompatibilityManager:
                     workflow_library_version = lib_ref.library_version
                     break
 
-            # Get node metadata from library
-            node_metadata_request = GetNodeMetadataFromLibraryRequest(library=library_name, node_type=node_type)
-            node_metadata_result = GriptapeNodes.LibraryManager().get_node_metadata_from_library_request(
-                node_metadata_request
+            # Check if node type exists in library (silent check - no error logging)
+            list_node_types_request = ListNodeTypesInLibraryRequest(library=library_name)
+            list_node_types_result = GriptapeNodes.LibraryManager().on_list_node_types_in_library_request(
+                list_node_types_request
             )
 
-            if not isinstance(node_metadata_result, GetNodeMetadataFromLibraryResultSuccess):
+            if not isinstance(list_node_types_result, ListNodeTypesInLibraryResultSuccess):
+                # Should not happen since we verified library exists, but handle gracefully
+                continue
+
+            if node_type not in list_node_types_result.node_types:
                 # Node type doesn't exist in current library version
                 issues.append(
                     WorkflowVersionCompatibilityIssue(
@@ -273,6 +296,16 @@ class VersionCompatibilityManager:
                         severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
                     )
                 )
+                continue
+
+            # Get node metadata from library (we know the node exists now)
+            node_metadata_request = GetNodeMetadataFromLibraryRequest(library=library_name, node_type=node_type)
+            node_metadata_result = GriptapeNodes.LibraryManager().get_node_metadata_from_library_request(
+                node_metadata_request
+            )
+
+            if not isinstance(node_metadata_result, GetNodeMetadataFromLibraryResultSuccess):
+                # Should not happen since we verified node exists, but handle gracefully
                 continue
 
             node_metadata = node_metadata_result.metadata
