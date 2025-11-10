@@ -677,7 +677,7 @@ class ExecuteDagState(State):
         for node in queued_nodes:
             # Process all queued nodes - the async semaphore will handle concurrency limits
             node_reference = context.node_to_reference[node]
-            #HACK
+            # Skip BaseIterativeEndNode as it's handled by loop execution flow
             if isinstance(node_reference.node_reference, BaseIterativeEndNode):
                 continue
             # Collect parameter values from upstream nodes before executing

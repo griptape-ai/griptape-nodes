@@ -120,7 +120,6 @@ class DagBuilder:
                 # DO NOT create edge from start → end in the DAG
                 # The start and end nodes should be independent leaf nodes
                 # Control flow from start→end is handled by HandleDoneState in parallel_resolution.py
-                # dag_debug_logger.debug("Start and end nodes added as independent nodes (no edge between them)")
 
                 # Return early to skip loop body
                 return

@@ -83,9 +83,12 @@ class EventManager:
         """Check if events should be suppressed from being sent to websockets."""
         if self._suppress_events_count <= 0:
             return False
-
         event_type_name = type(event).__name__
         return event_type_name in self._events_to_suppress
+
+    def clear_event_suppression(self) -> None:
+        self._suppress_events_count = 0
+        self._events_to_suppress.clear()
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.
@@ -360,7 +363,7 @@ class EventSuppressionContext:
     from sending events to the GUI while still allowing the operations to complete normally.
     """
 
-    events_to_suppress:list[str]
+    events_to_suppress: list[str]
 
     def __init__(self, manager: EventManager, events_to_suppress: list[str]):
         self.manager = manager
