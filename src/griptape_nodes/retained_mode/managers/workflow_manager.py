@@ -471,13 +471,11 @@ class WorkflowManager:
             console.print(filter_message)
             console.print()
 
-        # Create a table with five columns and row dividers
+        # Create a table with three columns and row dividers
         table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
-        table.add_column("Workflow Name", style="green")
-        table.add_column("Status", style="green")
-        table.add_column("File Path", style="cyan")
-        table.add_column("Problems", style="yellow")
-        table.add_column("Dependencies", style="magenta")
+        table.add_column("Workflow", style="green", ratio=2)
+        table.add_column("Problems", style="yellow", ratio=3)
+        table.add_column("Dependencies", style="magenta", ratio=2)
 
         # Status emojis mapping
         status_emoji = {
@@ -485,6 +483,14 @@ class WorkflowManager:
             self.WorkflowStatus.FLAWED: "[yellow]![/yellow]",
             self.WorkflowStatus.UNUSABLE: "[red]X[/red]",
             self.WorkflowStatus.MISSING: "[red]?[/red]",
+        }
+
+        # Status text mapping (colored)
+        status_text = {
+            self.WorkflowStatus.GOOD: "[green](GOOD)[/green]",
+            self.WorkflowStatus.FLAWED: "[yellow](FLAWED)[/yellow]",
+            self.WorkflowStatus.UNUSABLE: "[red](UNUSABLE)[/red]",
+            self.WorkflowStatus.MISSING: "[red](MISSING)[/red]",
         }
 
         dependency_status_emoji = {
@@ -498,15 +504,15 @@ class WorkflowManager:
 
         # Add rows for each workflow info
         for wf_info in filtered_workflow_infos:
-            # File path column
-            file_path = wf_info.workflow_path
-            file_path_text = Text(file_path, style="cyan")
-            file_path_text.overflow = "fold"  # Force wrapping
-
-            # Workflow name column with emoji based on status
+            # Workflow name column with emoji, name, colored status, and file path underneath
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
+            colored_status = status_text.get(wf_info.status, "(UNKNOWN)")
             name = wf_info.workflow_name if wf_info.workflow_name else "*UNKNOWN*"
-            workflow_name = f"{emoji} - {name}"
+            file_path = wf_info.workflow_path
+            workflow_name_with_path = Text.from_markup(
+                f"{emoji} - {name} {colored_status}\n[cyan dim]{file_path}[/cyan dim]"
+            )
+            workflow_name_with_path.overflow = "fold"
 
             # Problems column - collate by type
             if not wf_info.problems:
@@ -545,9 +551,7 @@ class WorkflowManager:
                 )
 
             table.add_row(
-                workflow_name,
-                wf_info.status.value,
-                file_path_text,
+                workflow_name_with_path,
                 problems,
                 dependencies,
             )
