@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12.0, <3.13"
 
 [[package]]
@@ -777,17 +777,17 @@ wheels = [
 
 [[package]]
 name = "mdformat-gfm"
-version = "0.4.1"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "mdformat" },
-    { name = "mdformat-tables" },
     { name = "mdit-py-plugins" },
+    { name = "wcwidth" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e5/db/873bad63b36e390a33bc0cf7222442010997d3ccf29a1889f24d28fdeddd/mdformat_gfm-0.4.1.tar.gz", hash = "sha256:e189e728e50cfb15746abc6b3178ca0e2bebbb7a8d3d98fbc9e24bc1a4c65564", size = 7528, upload-time = "2024-12-13T09:21:27.212Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/6f/a626ebb142a290474401b67e2d61e73ce096bf7798ee22dfe6270f924b3f/mdformat_gfm-1.0.0.tar.gz", hash = "sha256:d1d49a409a6acb774ce7635c72d69178df7dce1dc8cdd10e19f78e8e57b72623", size = 10112, upload-time = "2025-10-16T09:12:22.402Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/ba/3d4c680a2582593b8ba568ab60b119d93542fa39d757d65aae3c4f357e29/mdformat_gfm-0.4.1-py3-none-any.whl", hash = "sha256:63c92cfa5102f55779d4e04b16a79a6a5171e658c6c479175c0955fb4ca78dde", size = 8750, upload-time = "2024-12-13T09:21:25.158Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/18/6bc2189b744dd383cad03764f41f30352b1278d2205096f77a29c0b327ad/mdformat_gfm-1.0.0-py3-none-any.whl", hash = "sha256:7305a50efd2a140d7c83505b58e3ac5df2b09e293f9bbe72f6c7bee8c678b005", size = 10970, upload-time = "2025-10-16T09:12:21.276Z" },
 ]
 
 [[package]]
@@ -803,19 +803,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8e/95/61a5d23f0b232a12b55772d7564e27eb796f86b9577f21de1cfa631253ce/mdformat_mkdocs-4.4.2.tar.gz", hash = "sha256:347f44f78dd72b8e174aead88f46ae4205188ddcc0acac061e97a1dbcae064f5", size = 29385, upload-time = "2025-10-26T23:38:52.15Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e3/80/b7391f2f03a867bfe90245aaad5eeda240d36e5d110755fd49a84ff5ea4f/mdformat_mkdocs-4.4.2-py3-none-any.whl", hash = "sha256:c923318ce4079fed2a2c11b6dd4e411b6a83ba8640f68f5dc84e1955d26ba5c0", size = 33226, upload-time = "2025-10-26T23:38:50.663Z" },
-]
-
-[[package]]
-name = "mdformat-tables"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "mdformat" },
-    { name = "wcwidth" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/64/fc/995ba209096bdebdeb8893d507c7b32b7e07d9a9f2cdc2ec07529947794b/mdformat_tables-1.0.0.tar.gz", hash = "sha256:a57db1ac17c4a125da794ef45539904bb8a9592e80557d525e1f169c96daa2c8", size = 6106, upload-time = "2024-08-23T23:41:33.413Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/37/d78e37d14323da3f607cd1af7daf262cb87fe614a245c15ad03bb03a2706/mdformat_tables-1.0.0-py3-none-any.whl", hash = "sha256:94cd86126141b2adc3b04c08d1441eb1272b36c39146bab078249a41c7240a9a", size = 5104, upload-time = "2024-08-23T23:41:31.863Z" },
 ]
 
 [[package]]
