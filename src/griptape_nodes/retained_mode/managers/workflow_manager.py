@@ -32,12 +32,15 @@ from griptape_nodes.node_library.workflow_registry import (
     WorkflowShape,
 )
 from griptape_nodes.retained_mode.events.app_events import (
+    EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
+    InitializationPhase,
+    InitializationStatus,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import ResultDetail, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetail, ResultDetails
 from griptape_nodes.retained_mode.events.flow_events import (
     CreateFlowRequest,
     GetTopLevelFlowRequest,
@@ -4097,40 +4100,98 @@ class WorkflowManager:
         Returns:
             WorkflowRegistrationResult with succeeded and failed workflow names
         """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         succeeded = []
         failed = []
 
-        def process_workflow_file(workflow_file: Path) -> None:
-            """Process a single workflow file for registration."""
-            # Check if the file has workflow metadata before processing
-            metadata_blocks = self.get_workflow_metadata(
-                workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
-            )
-            if len(metadata_blocks) == 1:
-                workflow_name = self._process_single_workflow_file(workflow_file)
-                if workflow_name:
-                    succeeded.append(workflow_name)
-                else:
-                    failed.append(str(workflow_file))
+        # First pass: collect all workflow files to determine total count
+        all_workflow_files: list[Path] = []
 
-        def process_path(path: Path) -> None:
-            """Process a path, handling both files and directories."""
+        def collect_workflow_files(path: Path) -> None:
+            """Collect workflow files from a path."""
             if not path.exists():
-                failed.append(str(path))
                 return
             if path.is_dir():
-                # Process all Python files recursively in the directory
-                # Exclude .venv directories to avoid encoding issues with test files
                 for workflow_file in path.rglob("*.py"):
-                    # Skip files in .venv directories
                     if ".venv" in workflow_file.parts:
                         continue
-                    process_workflow_file(workflow_file)
+                    # Check if file has workflow metadata
+                    try:
+                        metadata_blocks = self.get_workflow_metadata(
+                            workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
+                        )
+                        if len(metadata_blocks) == 1:
+                            all_workflow_files.append(workflow_file)
+                    except Exception as e:
+                        # Skip files that can't be read or parsed
+                        logger.debug("Skipping workflow file %s due to error: %s", workflow_file, e)
+                        continue
             elif path.suffix == ".py":
-                process_workflow_file(path)
+                try:
+                    metadata_blocks = self.get_workflow_metadata(
+                        path, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
+                    )
+                    if len(metadata_blocks) == 1:
+                        all_workflow_files.append(path)
+                except Exception as e:
+                    logger.debug("Skipping workflow file %s due to error: %s", path, e)
 
+        # Collect all workflow files first
         for workflow_to_register in workflows_to_register:
-            process_path(Path(workflow_to_register))
+            collect_workflow_files(Path(workflow_to_register))
+
+        # Track progress
+        total_workflows = len(all_workflow_files)
+
+        # Second pass: process each workflow file with progress events
+        for current_index, workflow_file in enumerate(all_workflow_files, start=1):
+            workflow_name = str(workflow_file.name)
+
+            # Emit loading event
+            GriptapeNodes.EventManager().put_event(
+                AppEvent(
+                    payload=EngineInitializationProgress(
+                        phase=InitializationPhase.WORKFLOWS,
+                        item_name=workflow_name,
+                        status=InitializationStatus.LOADING,
+                        current=current_index,
+                        total=total_workflows,
+                    )
+                )
+            )
+
+            # Process the workflow
+            result_name = self._process_single_workflow_file(workflow_file)
+            if result_name:
+                succeeded.append(result_name)
+                # Emit success event
+                GriptapeNodes.EventManager().put_event(
+                    AppEvent(
+                        payload=EngineInitializationProgress(
+                            phase=InitializationPhase.WORKFLOWS,
+                            item_name=workflow_name,
+                            status=InitializationStatus.COMPLETE,
+                            current=current_index,
+                            total=total_workflows,
+                        )
+                    )
+                )
+            else:
+                failed.append(str(workflow_file))
+                # Emit failure event
+                GriptapeNodes.EventManager().put_event(
+                    AppEvent(
+                        payload=EngineInitializationProgress(
+                            phase=InitializationPhase.WORKFLOWS,
+                            item_name=workflow_name,
+                            status=InitializationStatus.FAILED,
+                            current=current_index,
+                            total=total_workflows,
+                            error="Failed to process workflow file",
+                        )
+                    )
+                )
 
         return WorkflowRegistrationResult(succeeded=succeeded, failed=failed)
 

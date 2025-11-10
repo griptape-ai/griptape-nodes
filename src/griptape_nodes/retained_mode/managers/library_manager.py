@@ -37,12 +37,15 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
+    EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
+    InitializationPhase,
+    InitializationStatus,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import ResultDetails
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -1576,12 +1579,43 @@ class LibraryManager:
                     problems=failed_library.problems,
                 )
 
+            # Calculate total libraries for progress tracking
+            total_libraries = len(metadata_result.successful_libraries)
+
             # Use metadata results to selectively load libraries
-            for library_result in metadata_result.successful_libraries:
+            for current_library_index, library_result in enumerate(metadata_result.successful_libraries, start=1):
+                library_name = library_result.library_schema.name
+
+                # Emit loading event
+                GriptapeNodes.EventManager().put_event(
+                    AppEvent(
+                        payload=EngineInitializationProgress(
+                            phase=InitializationPhase.LIBRARIES,
+                            item_name=library_name,
+                            status=InitializationStatus.LOADING,
+                            current=current_library_index,
+                            total=total_libraries,
+                        )
+                    )
+                )
+
+                # Register the library
                 if library_result.library_schema.name == LibraryManager.SANDBOX_LIBRARY_NAME:
                     # Handle sandbox library - use the schema we already have
                     await self._attempt_generate_sandbox_library_from_schema(
                         library_schema=library_result.library_schema, sandbox_directory=library_result.file_path
+                    )
+                    # Emit success event for sandbox library
+                    GriptapeNodes.EventManager().put_event(
+                        AppEvent(
+                            payload=EngineInitializationProgress(
+                                phase=InitializationPhase.LIBRARIES,
+                                item_name=library_name,
+                                status=InitializationStatus.COMPLETE,
+                                current=current_library_index,
+                                total=total_libraries,
+                            )
+                        )
                     )
                 else:
                     # Handle config-based library - register it directly using the file path
@@ -1593,6 +1627,37 @@ class LibraryManager:
                         # Registration failed - the failure info is already recorded in _library_file_path_to_info
                         # by register_library_from_file_request, so we just log it here for visibility
                         logger.warning("Failed to register library from %s", library_result.file_path)
+                        # Emit failure event
+                        error_message = (
+                            register_result.result_details.result_details[0].message
+                            if isinstance(register_result.result_details, ResultDetails)
+                            else register_result.result_details
+                        )
+                        GriptapeNodes.EventManager().put_event(
+                            AppEvent(
+                                payload=EngineInitializationProgress(
+                                    phase=InitializationPhase.LIBRARIES,
+                                    item_name=library_name,
+                                    status=InitializationStatus.FAILED,
+                                    current=current_library_index,
+                                    total=total_libraries,
+                                    error=error_message,
+                                )
+                            )
+                        )
+                    else:
+                        # Emit success event
+                        GriptapeNodes.EventManager().put_event(
+                            AppEvent(
+                                payload=EngineInitializationProgress(
+                                    phase=InitializationPhase.LIBRARIES,
+                                    item_name=library_name,
+                                    status=InitializationStatus.COMPLETE,
+                                    current=current_library_index,
+                                    total=total_libraries,
+                                )
+                            )
+                        )
 
             # Print 'em all pretty
             self.print_library_load_status()
