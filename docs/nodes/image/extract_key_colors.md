@@ -2,7 +2,7 @@
 
 ## What is it?
 
-The ExtractKeyColors node analyzes images and extracts the most prominent colors using Pylette's KMeans clustering algorithm. It automatically orders colors by their frequency in the image and creates dynamic color picker parameters for each extracted color, making it perfect for color palette generation, brand analysis, and design workflows.
+The ExtractKeyColors node analyzes images and extracts the most prominent colors using either KMeans clustering or Median Cut (MMCQ) algorithms. It automatically orders colors by their frequency in the image and creates dynamic color picker parameters for each extracted color, making it perfect for color palette generation, brand analysis, and design workflows.
 
 ## When would I use it?
 
@@ -42,6 +42,11 @@ Use this node when you want to:
     - Colors are ordered by prominence (most frequent first)
     - Each extracted color becomes a separate output parameter
 
+- **algorithm** (default: kmeans): Color extraction algorithm to use
+    - **kmeans**: Uses KMeans clustering for accurate color grouping
+    - **median_cut**: Uses Modified Median Cut Quantization (MMCQ) for balanced color space division
+    - Dropdown menu for easy selection
+
 ### Outputs
 
 Dynamic color picker parameters are created for each extracted color:
@@ -69,12 +74,13 @@ A typical color extraction workflow:
 
 ## Important Notes
 
-- **KMeans Clustering**: Uses Pylette's optimized KMeans algorithm for perceptual color grouping
+- **Algorithm Choice**: Choose between KMeans (accurate clustering) and Median Cut (balanced color space)
 - **Automatic Sorting**: Colors are automatically ordered by their frequency in the image
-- **Color Diversity**: Pylette ensures extracted colors are distinct and representative
+- **Color Diversity**: Both algorithms ensure extracted colors are distinct and representative
 - **Dynamic Parameters**: The node creates only the number of color parameters you request
 - **Real-time Processing**: Colors are extracted immediately when the image changes
 - **Hex Format**: All colors are provided as hexadecimal values (#RRGGBB)
+- **Compatibility**: Works with Pillow 11+ and NumPy 1.20+ without compatibility issues
 
 ## Common Issues
 
@@ -88,19 +94,38 @@ A typical color extraction workflow:
 The node uses a sophisticated color extraction process:
 
 1. **Image Conversion**: Converts input image to PIL Image format and ensures RGB color space
-1. **KMeans Clustering**: Uses Pylette's KMeans algorithm to identify dominant color clusters
-    - Groups similar pixels into clusters based on perceptual similarity
-    - Identifies representative colors for each cluster
+1. **Algorithm Selection**: Choose between two proven color extraction algorithms:
+    - **KMeans**: Uses scikit-learn's KMeans clustering to identify dominant color clusters
+        - Groups similar pixels into clusters based on perceptual similarity
+        - Identifies representative colors for each cluster
+        - Orders colors by cluster size (pixel count)
+    - **Median Cut (MMCQ)**: Modified Median Cut Quantization algorithm
+        - Iteratively divides color space into buckets
+        - Always splits the bucket with the largest color range
+        - Stops at exactly the requested number of colors
+        - Orders colors by bucket size (pixel count)
 1. **Frequency Analysis**: Each extracted color includes its frequency/prominence in the image
 1. **Automatic Ordering**: Colors are automatically sorted by frequency (most prominent first)
-1. **Color Diversity**: Pylette ensures extracted colors are distinct and representative
+1. **Color Diversity**: Both algorithms ensure extracted colors are distinct and representative
 1. **Dynamic UI Creation**: Generates color picker parameters for each extracted color
 
 ### Algorithm Benefits
 
-- **Perceptual Grouping**: Colors are selected based on how humans perceive color similarity
-- **Optimized Processing**: Efficient algorithm handles images of various sizes effectively
-- **Automatic Diversity**: No need for manual filtering - colors are naturally distinct
-- **Built-in Frequency Data**: Each color knows its prominence in the image
+- **KMeans Algorithm**:
+    - Accurate color clustering based on perceptual similarity
+    - Excellent for images with distinct color regions
+    - Handles gradients and transitions well
+    
+- **Median Cut Algorithm**:
+    - Balanced color space representation
+    - Classic quantization approach
+    - Good for images with uniform color distribution
+    - Faster than KMeans for large images
+
+- **Shared Benefits**:
+    - Native Python implementations using stable libraries (sklearn, numpy)
+    - Compatible with Pillow 11+ and NumPy 1.20+
+    - Efficient processing for images of various sizes
+    - Built-in frequency data for each color
 
 This provides a professional-grade solution for color extraction using modern, actively-maintained libraries, making it ideal for both creative and technical workflows.
