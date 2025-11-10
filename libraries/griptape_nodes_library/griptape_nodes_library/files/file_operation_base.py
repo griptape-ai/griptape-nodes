@@ -355,7 +355,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         all_targets: list[T],
         *,
         create_invalid_info: Callable[[str, str], T],
-        create_pending_info: Callable[[str, str, bool], T],
+        create_pending_info: Callable[..., T],  # Takes (source_path, destination_path, *, is_directory)
     ) -> None:
         """Expand a glob pattern using ListDirectoryRequest and add matches to all_targets.
 
@@ -407,7 +407,7 @@ class FileOperationBaseNode(SuccessFailureNode):
                     create_pending_info(
                         entry.path,
                         "",  # Will be set during operation
-                        entry.is_dir,
+                        is_directory=entry.is_dir,
                     )
                     for entry in matching_entries
                 )
@@ -446,7 +446,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         """
         all_targets: list[T] = []
 
-        def create_pending_info(source_path: str, destination_path: str, is_directory: bool) -> T:
+        def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> T:
             # info_class is a dataclass with these fields (CopyFileInfo, MoveFileInfo, etc.)
             return info_class(  # type: ignore[call-arg]
                 source_path=source_path,
