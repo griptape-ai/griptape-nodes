@@ -127,16 +127,16 @@ class MoveFiles(FileOperationBaseNode):
         )
         self.add_parameter(self.moved_paths_output)
 
+        # Create progress bar component
+        self.progress_component = ProgressBarComponent(self)
+        self.progress_component.add_property_parameters()
+
         # Create status parameters
         self._create_status_parameters(
             result_details_tooltip="Details about the move result",
             result_details_placeholder="Details on the move attempt will be presented here.",
             parameter_group_initially_collapsed=True,
         )
-
-        # Create progress bar component
-        self.progress_component = ProgressBarComponent(self)
-        self.progress_component.add_property_parameters()
 
     def _expand_glob_pattern(self, path_str: str, all_targets: list[MoveFileInfo]) -> None:
         """Expand a glob pattern using ListDirectoryRequest and add matches to all_targets.
@@ -358,6 +358,15 @@ class MoveFiles(FileOperationBaseNode):
             for target in invalid:
                 reason = target.failure_reason or "Invalid or inaccessible"
                 lines.append(f"  ⚠️ {target.source_path}: {reason}")
+
+        # Show successfully moved files
+        if succeeded:
+            lines.append(f"\nSuccessfully moved ({len(succeeded)}):")
+            for target in succeeded:
+                if target.is_directory:
+                    lines.append(f"  📁 {target.source_path} → {target.destination_path}")
+                else:
+                    lines.append(f"  📄 {target.source_path} → {target.destination_path}")
 
         return "\n".join(lines)
 

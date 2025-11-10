@@ -11,9 +11,9 @@ from griptape.artifacts import UrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.events.os_events import (
-    ListDirectoryRequest,
-    ListDirectoryResultFailure,
-    ListDirectoryResultSuccess,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    GetFileInfoResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -34,12 +34,6 @@ class PathExistsResult:
 
     exists: bool
     is_directory: bool
-
-
-class PendingInfoFactory(Protocol[T]):
-    """Protocol for factory functions that create Info objects with PENDING status."""
-
-    def __call__(self, source_path: str, destination_path: str, *, is_directory: bool) -> T: ...
 
 
 class FileOperationBaseNode(SuccessFailureNode):
@@ -85,23 +79,36 @@ class FileOperationBaseNode(SuccessFailureNode):
     def _extract_value_from_artifact(self, value: Any) -> str:
         """Extract string value from artifact objects, dicts, or strings.
 
+        Also resolves localhost URLs to workspace paths.
+
         Args:
             value: Artifact object, dict with "value" key, or string
 
         Returns:
-            String value extracted from the artifact
+            String value extracted from the artifact, with URLs resolved
         """
         if isinstance(value, str):
-            return value
+            # Resolve localhost URLs to workspace paths
+            return self._resolve_localhost_url_to_path(value)
 
         if isinstance(value, dict):
-            return str(value.get("value", value))
+            extracted = str(value.get("value", value))
+            # Resolve URLs if it's a string
+            if isinstance(extracted, str):
+                return self._resolve_localhost_url_to_path(extracted)
+            return extracted
 
         if isinstance(value, UrlArtifact):
-            return str(value.value)
+            extracted = str(value.value)
+            # Resolve URLs
+            return self._resolve_localhost_url_to_path(extracted)
 
         if hasattr(value, "value"):
-            return str(value.value)
+            extracted = str(value.value)
+            # Resolve URLs if it's a string
+            if isinstance(extracted, str):
+                return self._resolve_localhost_url_to_path(extracted)
+            return extracted
 
         return str(value)
 
@@ -150,21 +157,20 @@ class FileOperationBaseNode(SuccessFailureNode):
         Returns:
             PathExistsResult with exists and is_directory flags
         """
-        path_obj = Path(path)
-        parent_dir = str(path_obj.parent) if path_obj.parent != path_obj else "."
-        file_name = path_obj.name
-
-        request = ListDirectoryRequest(directory_path=parent_dir, show_hidden=True, workspace_only=False)
+        request = GetFileInfoRequest(path=path, workspace_only=False)
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, ListDirectoryResultFailure):
+        if isinstance(result, GetFileInfoResultFailure):
             return PathExistsResult(exists=False, is_directory=False)
 
-        if isinstance(result, ListDirectoryResultSuccess):
-            for entry in result.entries:
-                if entry.path == path or entry.name == file_name:
-                    return PathExistsResult(exists=True, is_directory=entry.is_dir)
+        if isinstance(result, GetFileInfoResultSuccess):
+            if result.file_entry is None:
+                # File doesn't exist
+                return PathExistsResult(exists=False, is_directory=False)
+            # File exists - return its directory status
+            return PathExistsResult(exists=True, is_directory=result.file_entry.is_dir)
 
+        # Unexpected result type
         return PathExistsResult(exists=False, is_directory=False)
 
     def _resolve_destination_path(self, source_path: str, destination_dir: str) -> str:
@@ -189,15 +195,19 @@ class FileOperationBaseNode(SuccessFailureNode):
 
         # Check if destination exists and is a directory
         # If it doesn't exist, we'll treat it as a directory and let CopyFileRequest create it
-        dest_info_request = ListDirectoryRequest(directory_path=destination_dir, show_hidden=True, workspace_only=False)
+        dest_info_request = GetFileInfoRequest(path=destination_dir, workspace_only=False)
         dest_info_result = GriptapeNodes.handle_request(dest_info_request)
 
-        if isinstance(dest_info_result, ListDirectoryResultSuccess):
+        if (
+            isinstance(dest_info_result, GetFileInfoResultSuccess)
+            and dest_info_result.file_entry is not None
+            and dest_info_result.file_entry.is_dir
+        ):
             # It's a directory - append source filename
             source_name = Path(source_path).name
             return str(destination_path_obj / source_name)
 
-        # Destination doesn't exist or isn't accessible - treat it as a directory
+        # Destination doesn't exist or isn't a directory - treat it as a directory
         # CopyFileRequest/CopyTreeRequest will create parent directories as needed
         # This handles the case where the destination directory doesn't exist yet
         source_name = Path(source_path).name
@@ -234,7 +244,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         self,
         paths: list[str],
         all_targets: list[T],
-        create_pending_info: PendingInfoFactory[T],
+        create_pending_info: Callable[..., T],  # (source_path: str, destination_path: str, *, is_directory: bool) -> T
         create_invalid_info: Callable[[str, str], T],
         expand_glob_pattern: Callable[[str, list[T]], None],
     ) -> list[T]:
@@ -261,32 +271,15 @@ class FileOperationBaseNode(SuccessFailureNode):
                 continue
 
             # Not a glob pattern - handle as explicit path
-            # Get file info by listing parent directory and finding matching entry
-            path_obj = Path(path_str)
-            parent_dir = str(path_obj.parent) if path_obj.parent != path_obj else "."
-            file_name = path_obj.name
-
-            request = ListDirectoryRequest(directory_path=parent_dir, show_hidden=True, workspace_only=False)
+            # Get file info for this path (OS manager handles path resolution)
+            request = GetFileInfoRequest(path=path_str, workspace_only=False)
             result = GriptapeNodes.handle_request(request)
 
-            if isinstance(result, ListDirectoryResultSuccess):
-                # Find matching entry
-                matching_entry = None
-                for entry in result.entries:
-                    if entry.path == path_str or entry.name == file_name:
-                        matching_entry = entry
-                        break
+            if isinstance(result, GetFileInfoResultSuccess):
+                file_entry = result.file_entry
 
-                if matching_entry:
-                    # Add the root item with PENDING status (explicitly requested by user)
-                    all_targets.append(
-                        create_pending_info(
-                            matching_entry.path,
-                            "",  # Will be set during operation
-                            is_directory=matching_entry.is_dir,
-                        )
-                    )
-                else:
+                # Check if file_entry is None (file doesn't exist)
+                if file_entry is None:
                     # Path doesn't exist
                     all_targets.append(
                         create_invalid_info(
@@ -294,10 +287,19 @@ class FileOperationBaseNode(SuccessFailureNode):
                             "File or directory not found",
                         )
                     )
+                else:
+                    # Add the root item with PENDING status (explicitly requested by user)
+                    all_targets.append(
+                        create_pending_info(
+                            file_entry.path,
+                            "",  # Will be set during operation
+                            is_directory=file_entry.is_dir,
+                        )
+                    )
             else:
-                # Directory doesn't exist or can't be accessed
+                # Request failed (permission error, I/O error, etc.)
                 failure_msg = (
-                    result.failure_reason.value if isinstance(result, ListDirectoryResultFailure) else "Unknown error"
+                    result.failure_reason.value if isinstance(result, GetFileInfoResultFailure) else "Unknown error"
                 )
                 all_targets.append(
                     create_invalid_info(

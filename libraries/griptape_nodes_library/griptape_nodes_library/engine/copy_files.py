@@ -354,6 +354,15 @@ class CopyFiles(FileOperationBaseNode):
                 reason = target.failure_reason or "Invalid or inaccessible"
                 lines.append(f"  ⚠️ {target.source_path}: {reason}")
 
+        # Show successfully copied files
+        if succeeded:
+            lines.append(f"\nSuccessfully copied ({len(succeeded)}):")
+            for target in succeeded:
+                if target.is_directory:
+                    lines.append(f"  📁 {target.source_path} → {target.destination_path}")
+                else:
+                    lines.append(f"  📄 {target.source_path} → {target.destination_path}")
+
         return "\n".join(lines)
 
     def process(self) -> None:
