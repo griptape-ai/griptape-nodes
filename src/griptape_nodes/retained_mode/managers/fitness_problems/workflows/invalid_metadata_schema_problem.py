@@ -28,4 +28,4 @@ class InvalidMetadataSchemaProblem(WorkflowProblem):
             )
 
         problem = instances[0]
-        return f"Failed because the metadata in the '{problem.section_path}' section did not match the requisite schema with error: {problem.error_message}"
+        return f"'{problem.section_path}' metadata doesn't match schema: {problem.error_message}"

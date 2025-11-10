@@ -27,4 +27,4 @@ class MissingCreationDateProblem(WorkflowProblem):
             )
 
         problem = instances[0]
-        return f"Workflow metadata was missing a creation date. Defaulting to {problem.default_date}. This value will be replaced with the current date the first time it is saved."
+        return f"Missing creation date. Defaulting to {problem.default_date}. Will be replaced on next save."

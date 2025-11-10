@@ -27,4 +27,4 @@ class InvalidTomlFormatProblem(WorkflowProblem):
             )
 
         problem = instances[0]
-        return f"Failed because the metadata was not valid TOML: {problem.error_message}"
+        return f"Metadata not valid TOML: {problem.error_message}"

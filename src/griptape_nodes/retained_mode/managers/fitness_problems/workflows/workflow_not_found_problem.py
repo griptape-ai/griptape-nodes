@@ -24,4 +24,4 @@ class WorkflowNotFoundProblem(WorkflowProblem):
                 len(instances),
             )
 
-        return "Workflow could not be found at the file path specified. It will be removed from the configuration."
+        return "Workflow file not found. Will be removed from configuration."

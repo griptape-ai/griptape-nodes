@@ -43,9 +43,7 @@ class LocalExecutorArgumentAddition(WorkflowVersionCompatibilityCheck):
             issues.append(
                 WorkflowVersionCompatibilityIssue(
                     problem=WorkflowSchemaVersionProblem(
-                        description=f"Workflow schema version {workflow_metadata.schema_version} is older than version 0.7.0. "
-                        "The generated LocalExecutor code for the workflow file is missing the `--json-input` argument, which may cause issues for Publish Workflow requests when using certain Library targets. "
-                        "Consider updating the workflow by saving it again."
+                        description=f"Schema version {workflow_metadata.schema_version} older than 0.7.0. This workflow may not publish or execute properly. Re-save workflow to update."
                     ),
                     severity=WorkflowManager.WorkflowStatus.FLAWED,
                 )

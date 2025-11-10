@@ -22,13 +22,13 @@ class LibraryNotRegisteredProblem(WorkflowProblem):
         """
         if len(instances) == 1:
             problem = instances[0]
-            return f"Library '{problem.library_name}' was not successfully registered. It may have other problems that prevented it from loading."
+            return f"'{problem.library_name}' not registered. May have other problems preventing load."
 
         # Sort by library_name
         sorted_instances = sorted(instances, key=lambda p: p.library_name)
 
         output_lines = []
-        output_lines.append(f"Encountered {len(instances)} unregistered libraries:")
+        output_lines.append(f"{len(instances)} libraries not registered (may have other problems preventing load):")
         for i, problem in enumerate(sorted_instances, 1):
             output_lines.append(f"  {i}. {problem.library_name}")
 

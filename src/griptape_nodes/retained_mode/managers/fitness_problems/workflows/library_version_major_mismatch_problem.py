@@ -24,18 +24,18 @@ class LibraryVersionMajorMismatchProblem(WorkflowProblem):
         """
         if len(instances) == 1:
             problem = instances[0]
-            return f"This workflow requires library '{problem.library_name}' v{problem.workflow_version}, but you have v{problem.current_version}. Major version changes may include breaking changes. Consider updating the library to match, or save this workflow to update it to your current library versions."
+            return f"Saved with '{problem.library_name}' v{problem.workflow_version}. You have v{problem.current_version}. Major version changes may include breaking changes. Re-save workflow (likely requires manual adjustments) to update to latest."
 
         # Sort by library_name
         sorted_instances = sorted(instances, key=lambda p: p.library_name)
 
         output_lines = []
         output_lines.append(
-            f"Encountered {len(instances)} libraries with major version mismatches (may include breaking changes):"
+            f"Uses {len(instances)} libraries with major version mismatches (may include breaking changes). Re-save workflow (likely requires manual adjustments) to update to latest:"
         )
         for i, problem in enumerate(sorted_instances, 1):
             output_lines.append(
-                f"  {i}. {problem.library_name}: workflow requires v{problem.workflow_version}, current v{problem.current_version}"
+                f"  {i}. {problem.library_name}: saved with v{problem.workflow_version}, current v{problem.current_version}"
             )
 
         return "\n".join(output_lines)

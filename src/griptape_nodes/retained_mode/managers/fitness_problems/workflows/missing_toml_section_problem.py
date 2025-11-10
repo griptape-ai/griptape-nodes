@@ -27,4 +27,4 @@ class MissingTomlSectionProblem(WorkflowProblem):
             )
 
         problem = instances[0]
-        return f"Failed because the '{problem.section_path}' section could not be found."
+        return f"'{problem.section_path}' in TOML metadata not found."

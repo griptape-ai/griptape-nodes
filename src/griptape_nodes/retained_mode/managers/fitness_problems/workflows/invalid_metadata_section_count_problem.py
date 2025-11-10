@@ -28,4 +28,4 @@ class InvalidMetadataSectionCountProblem(WorkflowProblem):
             )
 
         problem = instances[0]
-        return f"Failed as it had {problem.count} sections titled '{problem.section_name}', and we expect exactly 1 such section."
+        return f"Has {problem.count} '{problem.section_name}' sections. Expected exactly 1."

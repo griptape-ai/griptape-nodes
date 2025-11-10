@@ -24,13 +24,15 @@ class LibraryVersionBelowRequiredProblem(WorkflowProblem):
         """
         if len(instances) == 1:
             problem = instances[0]
-            return f"Library '{problem.library_name}' is at version '{problem.current_version}', which is below the desired version '{problem.required_version}'."
+            return f"'{problem.library_name}' v{problem.current_version} below required v{problem.required_version}. Update library to match workflow requirements."
 
         # Sort by library_name
         sorted_instances = sorted(instances, key=lambda p: p.library_name)
 
         output_lines = []
-        output_lines.append(f"Encountered {len(instances)} libraries with versions below requirements:")
+        output_lines.append(
+            f"{len(instances)} libraries below required versions. Update libraries to match workflow requirements:"
+        )
         for i, problem in enumerate(sorted_instances, 1):
             output_lines.append(
                 f"  {i}. {problem.library_name}: current v{problem.current_version}, required v{problem.required_version}"

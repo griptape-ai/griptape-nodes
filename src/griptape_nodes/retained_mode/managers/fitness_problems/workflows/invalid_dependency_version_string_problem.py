@@ -23,16 +23,16 @@ class InvalidDependencyVersionStringProblem(WorkflowProblem):
         """
         if len(instances) == 1:
             problem = instances[0]
-            return f"Workflow cited an invalid version string '{problem.version_string}' for library '{problem.library_name}'. Must be specified in major.minor.patch format."
+            return f"Workflow has invalid version string '{problem.version_string}' for '{problem.library_name}'. Must be major.minor.patch format."
 
         # Sort by library_name
         sorted_instances = sorted(instances, key=lambda p: p.library_name)
 
         output_lines = []
-        output_lines.append(f"Encountered {len(instances)} invalid dependency version strings:")
+        output_lines.append(
+            f"Workflow has {len(instances)} invalid dependency version strings (must be major.minor.patch format):"
+        )
         for i, problem in enumerate(sorted_instances, 1):
-            output_lines.append(
-                f"  {i}. Library '{problem.library_name}' has invalid version string '{problem.version_string}'"
-            )
+            output_lines.append(f"  {i}. {problem.library_name}: '{problem.version_string}'")
 
         return "\n".join(output_lines)
